@@ -80,12 +80,7 @@ fun OpeningScreen(
     val latestOnFinished by rememberUpdatedState(onFinished)
     val interactionSource = remember { MutableInteractionSource() }
     val slides = remember { openingSlides.shuffled() }
-    val targetSlideCount = remember {
-        Random.nextInt(
-            from = MINIMUM_SLIDESHOW_SLIDES,
-            until = MAXIMUM_SLIDESHOW_SLIDES + 1,
-        )
-    }
+    val targetSlideCount = remember { selectSlideshowSlideCount() }
 
     LaunchedEffect(Unit) {
         delay(IT_PLAY_HOLD_MILLIS)
@@ -378,13 +373,32 @@ private fun OpeningErrorPanel(
     }
 }
 
+private fun selectSlideshowSlideCount(): Int {
+    var ticket = Random.nextInt(SLIDESHOW_SLIDE_COUNT_WEIGHTS.sum())
+    SLIDESHOW_SLIDE_COUNT_WEIGHTS.forEachIndexed { index, weight ->
+        if (ticket < weight) return MINIMUM_SLIDESHOW_SLIDES + index
+        ticket -= weight
+    }
+    error("슬라이드 장수를 선택하지 못했습니다.")
+}
+
 private const val IT_PLAY_HOLD_MILLIS: Long = 3_200L
 private const val BLACKOUT_MILLIS: Long = 500L
 private const val EXCHANGES_HOLD_MILLIS: Long = 4_200L
 private const val TECHNOLOGY_HOLD_MILLIS: Long = 3_600L
 private const val SLIDE_HOLD_MILLIS: Long = 6_500L
-private const val MINIMUM_SLIDESHOW_SLIDES: Int = 3
-private const val MAXIMUM_SLIDESHOW_SLIDES: Int = 7
+private const val MINIMUM_SLIDESHOW_SLIDES: Int = 2
+private const val MAXIMUM_SLIDESHOW_SLIDES: Int = 8
+// Three to five slides end closest to the 27.7-second track; four is the closest and rarest.
+private val SLIDESHOW_SLIDE_COUNT_WEIGHTS: IntArray = intArrayOf(
+    15, // 2 slides: 15%
+    8, // 3 slides: 8%
+    2, // 4 slides: 2%
+    10, // 5 slides: 10%
+    18, // 6 slides: 18%
+    25, // 7 slides: 25%
+    22, // 8 slides: 22%
+)
 private const val FRAME_CROSSFADE_MILLIS: Int = 350
 private const val SLIDE_CROSSFADE_MILLIS: Int = 900
 private const val ERROR_PANEL_FADE_MILLIS: Int = 240
