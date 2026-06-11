@@ -40,30 +40,31 @@ fun AudioSettingsContent(
             title = "전체 음소거",
             detail = "모든 게임 소리를 끕니다.",
         )
-        if (!settings.muted) {
-            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                MarketSlider(
-                    title = "전체 음량",
-                    detail = "모든 소리",
-                    value = settings.masterVolume,
-                    valueText = "${settings.masterVolume.asPercent()}%",
-                    onValueChange = { onSettingsChanged(settings.copy(masterVolume = it)) },
-                )
-                MarketSlider(
-                    title = "배경음악",
-                    detail = "메뉴와 게임 음악",
-                    value = settings.musicVolume,
-                    valueText = "${settings.musicVolume.asPercent()}%",
-                    onValueChange = { onSettingsChanged(settings.copy(musicVolume = it)) },
-                )
-                MarketSlider(
-                    title = "효과음",
-                    detail = "버튼과 게임 알림",
-                    value = settings.effectsVolume,
-                    valueText = "${settings.effectsVolume.asPercent()}%",
-                    onValueChange = { onSettingsChanged(settings.copy(effectsVolume = it)) },
-                )
-            }
+        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            MarketSlider(
+                title = "전체 음량",
+                detail = "모든 소리",
+                value = settings.masterVolume,
+                valueText = "${settings.masterVolume.asPercent()}%",
+                onValueChange = { onSettingsChanged(settings.copy(masterVolume = it)) },
+                enabled = !settings.muted,
+            )
+            MarketSlider(
+                title = "배경음악",
+                detail = "메뉴와 게임 음악",
+                value = settings.musicVolume,
+                valueText = "${settings.musicVolume.asPercent()}%",
+                onValueChange = { onSettingsChanged(settings.copy(musicVolume = it)) },
+                enabled = !settings.muted,
+            )
+            MarketSlider(
+                title = "효과음",
+                detail = "버튼과 게임 알림",
+                value = settings.effectsVolume,
+                valueText = "${settings.effectsVolume.asPercent()}%",
+                onValueChange = { onSettingsChanged(settings.copy(effectsVolume = it)) },
+                enabled = !settings.muted,
+            )
         }
     }
 }
