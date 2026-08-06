@@ -8,6 +8,7 @@ plugins {
 
 kotlin {
     jvm("desktop")
+    jvmToolchain(21)
 
     sourceSets {
         commonMain.dependencies {
@@ -20,10 +21,12 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.kotlinx.datetime)
         }
         val desktopMain by getting
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
+            implementation(libs.gson)
             implementation(libs.kotlinx.coroutines.swing)
         }
         commonTest.dependencies {
@@ -37,9 +40,21 @@ compose.desktop {
         mainClass = "com.amond.kmpbook.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "KMPBook"
+            targetFormats(TargetFormat.Msi)
+            packageName = "MarketLedger2040"
             packageVersion = "1.0.0"
+            vendor = "Market Ledger 2040"
+            description = "Turn-based Korean and U.S. stock market simulator"
+
+            windows {
+                console = false
+                dirChooser = true
+                perUserInstall = true
+                shortcut = true
+                menu = true
+                menuGroup = "Market Ledger 2040"
+                upgradeUuid = "9D509036-9E61-4F1B-9D02-86F71FC2C184"
+            }
         }
     }
 }

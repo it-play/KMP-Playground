@@ -1,0 +1,355 @@
+package com.amond.kmpbook.domain.simulation
+
+import com.amond.kmpbook.domain.model.EventScope
+import com.amond.kmpbook.domain.model.EventSeverity
+import com.amond.kmpbook.domain.model.EventType
+import com.amond.kmpbook.domain.model.ImpactDirection
+import com.amond.kmpbook.domain.model.Market
+import com.amond.kmpbook.domain.model.Sector
+
+/**
+ * Built-in rules are deliberately data-only. Adding a stock requires no event
+ * code change: market/sector/company scopes select it from StockCatalog data.
+ */
+object DefaultEventTemplates {
+    val all: List<EventTemplate> = listOf(
+        // Monetary policy, prices, currency, and the business cycle.
+        rule(
+            "surprise_rate_hike", "{market} 기준금리 깜짝 인상",
+            "물가 압력에 대응해 예상보다 강한 긴축이 발표됐다.", EventScope.COUNTRY,
+            EventType.CENTRAL_BANK, EventSeverity.MAJOR, ImpactDirection.NEGATIVE,
+            0.003, 720, 24..96, -0.045..-0.018, -0.00020..-0.00005, 1.35..1.75, 1.3..2.0,
+            0.55..0.85, -0.8..-0.45, EventCondition.INFLATION_HIGH,
+        ),
+        rule(
+            "surprise_rate_cut", "{market} 기준금리 깜짝 인하",
+            "경기 하방 위험에 대응한 완화 조치가 위험자산 선호를 높였다.", EventScope.COUNTRY,
+            EventType.CENTRAL_BANK, EventSeverity.MAJOR, ImpactDirection.POSITIVE,
+            0.003, 720, 24..96, 0.018..0.050, 0.00004..0.00020, 1.25..1.65, 1.25..1.9,
+            0.65..0.90, 0.45..0.8, EventCondition.GROWTH_NEGATIVE,
+        ),
+        rule(
+            "inflation_hot", "소비자물가 예상 상회",
+            "핵심 물가가 시장 예상보다 높아 금리 경로 불확실성이 커졌다.", EventScope.GLOBAL,
+            EventType.ECONOMIC_INDICATOR, EventSeverity.MODERATE, ImpactDirection.NEGATIVE,
+            0.006, 240, 12..48, -0.025..-0.008, -0.00012..-0.00003, 1.2..1.5, 1.1..1.55,
+            0.7..0.95, -0.55..-0.25, EventCondition.INFLATION_HIGH,
+        ),
+        rule(
+            "inflation_cools", "물가 상승세 둔화",
+            "소비자물가가 예상보다 안정되며 긴축 우려가 완화됐다.", EventScope.GLOBAL,
+            EventType.ECONOMIC_INDICATOR, EventSeverity.MODERATE, ImpactDirection.POSITIVE,
+            0.006, 240, 12..48, 0.008..0.026, 0.00003..0.00012, 1.1..1.35, 1.05..1.45,
+            0.8..1.0, 0.25..0.55, EventCondition.INFLATION_COOLING,
+        ),
+        rule(
+            "growth_recession", "경기 침체 신호 확대",
+            "생산과 소비 지표가 동시에 둔화하며 실적 전망이 낮아졌다.", EventScope.GLOBAL,
+            EventType.ECONOMIC_INDICATOR, EventSeverity.MAJOR, ImpactDirection.NEGATIVE,
+            0.004, 720, 72..336, -0.055..-0.022, -0.00018..-0.00006, 1.35..1.8, 1.15..1.65,
+            0.55..0.8, -0.8..-0.45, EventCondition.GROWTH_NEGATIVE,
+        ),
+        rule(
+            "growth_rebound", "경기 선행지표 반등",
+            "신규 주문과 소비 심리가 개선되며 연착륙 기대가 커졌다.", EventScope.GLOBAL,
+            EventType.ECONOMIC_INDICATOR, EventSeverity.MODERATE, ImpactDirection.POSITIVE,
+            0.005, 480, 48..168, 0.012..0.034, 0.00005..0.00015, 1.1..1.4, 1.1..1.5,
+            0.75..1.0, 0.35..0.65, EventCondition.GROWTH_STRONG,
+        ),
+        rule(
+            "krw_weakens", "원화 가치 급락",
+            "달러-원 환율이 급등해 외국인 수급과 수입 비용 우려가 커졌다.", EventScope.COUNTRY,
+            EventType.CURRENCY, EventSeverity.MAJOR, ImpactDirection.MIXED,
+            0.005, 336, 24..120, -0.030..-0.008, -0.00008..0.00002, 1.35..1.75, 1.25..1.8,
+            0.55..0.8, -0.65..-0.3, EventCondition.KRW_WEAK,
+            markets = setOf(Market.KOSPI, Market.KOSDAQ),
+        ),
+        rule(
+            "krw_strengthens", "원화 가치 빠른 회복",
+            "달러-원 환율 하락으로 외국인 자금 유입 기대가 높아졌다.", EventScope.COUNTRY,
+            EventType.CURRENCY, EventSeverity.MODERATE, ImpactDirection.MIXED,
+            0.004, 336, 24..96, 0.004..0.020, 0.00001..0.00008, 1.15..1.45, 1.1..1.5,
+            0.75..0.95, 0.2..0.5, EventCondition.KRW_STRONG,
+            markets = setOf(Market.KOSPI, Market.KOSDAQ),
+        ),
+        rule(
+            "liquidity_injection", "대규모 유동성 공급",
+            "금융당국의 시장 안정 조치로 단기 자금 경색이 완화됐다.", EventScope.COUNTRY,
+            EventType.CENTRAL_BANK, EventSeverity.MAJOR, ImpactDirection.POSITIVE,
+            0.002, 720, 48..168, 0.015..0.045, 0.00005..0.00015, 1.2..1.6, 1.3..2.0,
+            1.15..1.5, 0.4..0.75, EventCondition.RISK_OFF,
+        ),
+        rule(
+            "credit_crunch", "신용시장 경색",
+            "회사채 스프레드가 확대되고 자금 조달 여건이 빠르게 악화됐다.", EventScope.GLOBAL,
+            EventType.MARKET_SENTIMENT, EventSeverity.CRITICAL, ImpactDirection.NEGATIVE,
+            0.0015, 1_440, 96..336, -0.080..-0.035, -0.00025..-0.00008, 1.7..2.5, 1.4..2.4,
+            0.35..0.65, -0.95..-0.6, EventCondition.HIGH_VOLATILITY,
+        ),
+        rule(
+            "risk_on_rally", "위험자산 선호 확산",
+            "변동성 하락과 자금 유입이 주요 시장 전반의 매수세를 강화했다.", EventScope.GLOBAL,
+            EventType.MARKET_SENTIMENT, EventSeverity.MODERATE, ImpactDirection.POSITIVE,
+            0.005, 240, 12..72, 0.008..0.026, 0.00003..0.00012, 1.05..1.3, 1.15..1.65,
+            1.05..1.25, 0.35..0.7, EventCondition.RISK_ON,
+        ),
+        rule(
+            "capitulation", "투매성 매도 출현",
+            "손절과 반대매매가 겹치며 시장 변동성이 급격히 확대됐다.", EventScope.MARKET,
+            EventType.MARKET_SENTIMENT, EventSeverity.CRITICAL, ImpactDirection.NEGATIVE,
+            0.004, 240, 6..36, -0.070..-0.025, -0.00015..-0.00004, 1.8..2.8, 2.0..4.0,
+            0.3..0.6, -0.95..-0.65, EventCondition.MARKET_DRAWDOWN,
+        ),
+
+        // Industry supply/demand and policy cycles.
+        industry(
+            "chip_shortage", "{sector} 공급 부족", "첨단 공정 공급이 수요를 따라가지 못해 가격 협상력이 높아졌다.",
+            Sector.SEMICONDUCTOR, true, 0.006, 168..720, 0.018..0.055,
+        ),
+        industry(
+            "chip_inventory_glut", "반도체 재고 조정", "고객사 재고가 누적되며 출하와 가격 전망이 하향됐다.",
+            Sector.SEMICONDUCTOR, false, 0.006, 168..720, -0.060..-0.020,
+        ),
+        industry(
+            "ai_capex_boom", "AI 인프라 투자 확대", "대형 고객사의 데이터센터 투자 계획이 상향됐다.",
+            Sector.INFORMATION_TECHNOLOGY, true, 0.006, 96..480, 0.016..0.050,
+        ),
+        industry(
+            "platform_regulation", "플랫폼 규제 강화", "수수료와 데이터 활용을 제한하는 정책안이 공개됐다.",
+            Sector.INTERNET_PLATFORM, false, 0.004, 168..504, -0.055..-0.018,
+            type = EventType.REGULATION_POLICY,
+        ),
+        industry(
+            "oil_supply_shock", "에너지 공급 차질", "주요 산유 지역의 공급 차질로 에너지 가격이 급등했다.",
+            Sector.ENERGY, true, 0.004, 72..336, 0.020..0.065, severity = EventSeverity.MAJOR,
+        ),
+        industry(
+            "oil_price_collapse", "에너지 가격 급락", "수요 둔화와 증산이 겹치며 에너지 가격이 하락했다.",
+            Sector.ENERGY, false, 0.004, 72..336, -0.065..-0.020, severity = EventSeverity.MAJOR,
+        ),
+        industry(
+            "battery_demand", "이차전지 수요 회복", "전기차 판매와 저장장치 발주가 예상보다 빠르게 회복됐다.",
+            Sector.BATTERY, true, 0.005, 120..480, 0.018..0.052,
+        ),
+        industry(
+            "battery_material_shortage", "배터리 원재료 공급 부족", "핵심 광물 조달 차질로 원가 부담이 확대됐다.",
+            Sector.BATTERY, false, 0.004, 96..336, -0.050..-0.016,
+        ),
+        industry(
+            "biotech_breakthrough", "바이오 임상 성과", "주요 치료 영역에서 유의미한 임상 데이터가 발표됐다.",
+            Sector.HEALTHCARE_BIO, true, 0.004, 48..240, 0.025..0.085, severity = EventSeverity.MAJOR,
+            type = EventType.PRODUCT_TECHNOLOGY,
+        ),
+        industry(
+            "auto_demand_slowdown", "자동차 수요 둔화", "주요 지역 신차 판매와 주문 잔고가 감소했다.",
+            Sector.AUTOMOTIVE, false, 0.005, 120..480, -0.045..-0.015,
+        ),
+        industry(
+            "defense_orders", "방산 수주 사이클 확대", "각국의 국방 예산과 장기 조달 계획이 상향됐다.",
+            Sector.AEROSPACE_DEFENSE, true, 0.004, 168..720, 0.018..0.052,
+        ),
+        industry(
+            "freight_rate_surge", "운임 지수 급등", "선복 부족과 항로 차질로 운임이 빠르게 상승했다.",
+            Sector.TRANSPORTATION_LOGISTICS, true, 0.004, 72..336, 0.015..0.050,
+        ),
+        industry(
+            "consumer_slowdown", "소비 심리 위축", "고금리와 생활비 부담으로 선택 소비 지출이 둔화됐다.",
+            Sector.CONSUMER_DISCRETIONARY, false, 0.006, 120..480, -0.040..-0.012,
+        ),
+        industry(
+            "bank_margin_expansion", "은행 순이자마진 개선", "대출 금리와 조달 비용의 차이가 확대됐다.",
+            Sector.FINANCIALS, true, 0.005, 96..336, 0.012..0.035,
+        ),
+        industry(
+            "property_downturn", "부동산 거래 위축", "거래량과 가격 지표 하락으로 관련 자산 우려가 커졌다.",
+            Sector.REAL_ESTATE, false, 0.005, 168..720, -0.050..-0.016,
+        ),
+        industry(
+            "game_hit_cycle", "신작 흥행 기대", "주요 신작의 초기 이용자와 매출 지표가 강하게 나타났다.",
+            Sector.GAMING, true, 0.006, 72..240, 0.018..0.060, type = EventType.PRODUCT_TECHNOLOGY,
+        ),
+        industry(
+            "entertainment_global_hit", "글로벌 콘텐츠 흥행", "신규 콘텐츠가 여러 지역의 순위 상단에 올랐다.",
+            Sector.ENTERTAINMENT, true, 0.006, 72..240, 0.015..0.050,
+        ),
+        industry(
+            "chemical_oversupply", "화학 제품 공급 과잉", "증설 물량과 수요 부진으로 제품 스프레드가 축소됐다.",
+            Sector.MATERIALS_CHEMICALS, false, 0.005, 168..504, -0.045..-0.014,
+        ),
+        industry(
+            "robotics_orders", "로봇 자동화 발주 확대", "제조업 자동화 투자와 서비스 로봇 수요가 늘었다.",
+            Sector.ROBOTICS, true, 0.005, 96..336, 0.018..0.055,
+        ),
+
+        // Company results, guidance, operations, governance, and technology.
+        company("earnings_beat", "{company} 어닝 서프라이즈", "매출과 이익이 시장 전망을 웃돌았다.", EventType.EARNINGS, true, 0.012, 24..120, 0.025..0.090),
+        company("earnings_miss", "{company} 실적 쇼크", "매출과 이익이 시장 전망에 미치지 못했다.", EventType.EARNINGS, false, 0.012, 24..120, -0.095..-0.030),
+        company("guidance_upgrade", "{company} 실적 전망 상향", "경영진이 수요와 수익성 전망을 상향했다.", EventType.EARNINGS, true, 0.009, 48..168, 0.022..0.070),
+        company("guidance_cut", "{company} 실적 전망 하향", "경영진이 수요 둔화를 반영해 전망을 낮췄다.", EventType.EARNINGS, false, 0.009, 48..168, -0.075..-0.025),
+        company("contract_win", "{company} 대형 계약 수주", "중장기 매출에 기여할 신규 계약이 확정됐다.", EventType.INDUSTRY_SUPPLY_DEMAND, true, 0.009, 48..240, 0.020..0.080),
+        company("contract_loss", "{company} 핵심 계약 해지", "주요 고객이 계약을 축소하거나 종료했다.", EventType.INDUSTRY_SUPPLY_DEMAND, false, 0.006, 48..240, -0.085..-0.025),
+        company("product_recall", "{company} 제품 리콜", "안전 또는 품질 문제로 대규모 회수가 결정됐다.", EventType.PRODUCT_TECHNOLOGY, false, 0.005, 72..336, -0.110..-0.035, EventSeverity.MAJOR),
+        company("accounting_issue", "{company} 회계 처리 의혹", "재무 보고의 신뢰성에 대한 조사 소식이 전해졌다.", EventType.REGULATION_POLICY, false, 0.0025, 168..720, -0.180..-0.060, EventSeverity.CRITICAL),
+        company("ceo_departure", "{company} 최고경영자 돌연 사임", "경영 공백과 전략 변화 가능성이 제기됐다.", EventType.CORPORATE_ACTION, false, 0.004, 72..240, -0.065..-0.018),
+        company("new_ceo", "{company} 신임 경영진 선임", "사업 재편 경험을 갖춘 새 경영진이 선임됐다.", EventType.CORPORATE_ACTION, true, 0.004, 72..240, 0.010..0.045),
+        company("patent_win", "{company} 특허 분쟁 승소", "핵심 기술의 권리와 판매 지속성이 확인됐다.", EventType.REGULATION_POLICY, true, 0.005, 48..168, 0.015..0.055),
+        company("major_lawsuit", "{company} 대형 소송 제기", "손해배상과 사업 제한 가능성이 불확실성을 높였다.", EventType.REGULATION_POLICY, false, 0.005, 72..336, -0.080..-0.022),
+        company("cyber_breach", "{company} 고객 정보 침해", "서비스 장애와 정보 유출 정황이 확인됐다.", EventType.PRODUCT_TECHNOLOGY, false, 0.004, 48..240, -0.075..-0.020),
+        company("factory_accident", "{company} 주요 설비 가동 중단", "사고 조사와 복구를 위해 핵심 설비가 멈췄다.", EventType.INDUSTRY_SUPPLY_DEMAND, false, 0.004, 48..240, -0.080..-0.025),
+        company("technology_breakthrough", "{company} 핵심 기술 성과", "성능과 원가를 개선한 기술 검증 결과가 공개됐다.", EventType.PRODUCT_TECHNOLOGY, true, 0.007, 48..240, 0.022..0.085),
+
+        // Corporate actions. Split is an announcement effect; mechanical share
+        // adjustment belongs to the portfolio/corporate-action settlement layer.
+        company("dividend_raise", "{company} 배당 확대", "이사회가 주주환원 정책과 배당 규모를 상향했다.", EventType.CORPORATE_ACTION, true, 0.006, 24..120, 0.008..0.035),
+        company("dividend_cut", "{company} 배당 축소", "현금 보전을 위해 예상 배당 규모가 낮아졌다.", EventType.CORPORATE_ACTION, false, 0.004, 24..120, -0.045..-0.012),
+        company("stock_split", "{company} 주식 분할 발표", "거래 접근성과 유동성 개선을 위한 주식 분할이 발표됐다.", EventType.CORPORATE_ACTION, true, 0.003, 24..96, 0.004..0.020),
+        company("rights_offering", "{company} 유상증자 발표", "신규 자금 조달에 따른 지분 희석 우려가 반영됐다.", EventType.CORPORATE_ACTION, false, 0.004, 72..240, -0.090..-0.028),
+        company("share_buyback", "{company} 자사주 매입", "이사회가 유통 주식 수를 줄이는 매입 계획을 승인했다.", EventType.CORPORATE_ACTION, true, 0.005, 48..240, 0.012..0.050),
+        company("merger_offer", "{company} 인수 제안 접수", "경영권 프리미엄을 포함한 인수 제안이 공개됐다.", EventType.CORPORATE_ACTION, true, 0.0025, 72..336, 0.050..0.180, EventSeverity.MAJOR),
+        company("spinoff", "{company} 사업 분할 추진", "핵심 사업의 독립 운영과 가치 재평가 계획이 공개됐다.", EventType.CORPORATE_ACTION, ImpactDirection.MIXED, 0.003, 72..240, -0.015..0.040),
+        company("delisting_warning", "{company} 상장 유지 요건 경고", "거래소가 재무 또는 공시 요건 미달 가능성을 통보했다.", EventType.REGULATION_POLICY, false, 0.0015, 168..720, -0.250..-0.090, EventSeverity.CRITICAL),
+
+        // Geopolitics, disasters, public health, and infrastructure.
+        global("trade_dispute", "무역 분쟁 격화", "주요국이 관세와 수출 통제 범위를 확대했다.", EventType.GEOPOLITICAL, false, 0.002, 168..720, -0.060..-0.018, EventSeverity.MAJOR),
+        global("new_sanctions", "경제 제재 확대", "금융·기술·원자재 거래를 제한하는 추가 제재가 발표됐다.", EventType.GEOPOLITICAL, false, 0.0015, 168..720, -0.065..-0.020, EventSeverity.MAJOR),
+        global("military_conflict", "군사적 충돌 발생", "주요 지역의 무력 충돌로 위험 회피와 공급망 우려가 확산됐다.", EventType.GEOPOLITICAL, false, 0.0008, 240..1_008, -0.120..-0.045, EventSeverity.CRITICAL),
+        global("ceasefire", "휴전 합의 진전", "분쟁 당사자 간 휴전과 협상 재개 소식이 전해졌다.", EventType.GEOPOLITICAL, true, 0.001, 96..480, 0.020..0.065, EventSeverity.MAJOR),
+        global("major_earthquake", "대규모 지진 발생", "산업 시설과 물류 인프라의 피해 여부를 확인 중이다.", EventType.NATURAL_DISASTER, false, 0.0008, 72..336, -0.075..-0.025, EventSeverity.MAJOR),
+        global("typhoon_disruption", "초강력 태풍 접근", "생산·운송 시설의 예방적 가동 중단이 이어졌다.", EventType.NATURAL_DISASTER, false, 0.0015, 24..168, -0.040..-0.012),
+        global("pandemic_alert", "신종 감염병 경보", "국제 보건 당국이 확산 위험과 대응 지침을 상향했다.", EventType.HEALTH_CRISIS, false, 0.0005, 336..1_440, -0.140..-0.050, EventSeverity.CRITICAL),
+        global("supply_chain_blockage", "글로벌 물류 병목", "핵심 항로와 항만 운영 차질로 납기와 운임 부담이 커졌다.", EventType.INDUSTRY_SUPPLY_DEMAND, false, 0.002, 120..504, -0.055..-0.018, EventSeverity.MAJOR),
+        global("infrastructure_cyberattack", "금융 인프라 사이버 공격", "복수 기관의 결제·거래 시스템이 일시적인 장애를 겪었다.", EventType.GEOPOLITICAL, false, 0.0008, 12..72, -0.065..-0.020, EventSeverity.MAJOR),
+    )
+
+    init {
+        check(all.size >= 30) { "The simulator requires at least 30 event templates" }
+        check(all.map(EventTemplate::id).distinct().size == all.size)
+    }
+
+    private fun industry(
+        id: String,
+        title: String,
+        description: String,
+        sector: Sector,
+        positive: Boolean,
+        probability: Double,
+        duration: IntRange,
+        shock: ClosedFloatingPointRange<Double>,
+        severity: EventSeverity = EventSeverity.MODERATE,
+        type: EventType = EventType.INDUSTRY_SUPPLY_DEMAND,
+    ): EventTemplate = rule(
+        id, title, description, EventScope.SECTOR, type, severity,
+        if (positive) ImpactDirection.POSITIVE else ImpactDirection.NEGATIVE,
+        probability, 480, duration, shock,
+        if (positive) 0.00003..0.00013 else -0.00013..-0.00003,
+        1.2..1.65, 1.15..1.8, 0.65..0.95,
+        if (positive) 0.25..0.65 else -0.65..-0.25,
+        sectors = setOf(sector),
+    )
+
+    private fun company(
+        id: String,
+        title: String,
+        description: String,
+        type: EventType,
+        positive: Boolean,
+        probability: Double,
+        duration: IntRange,
+        shock: ClosedFloatingPointRange<Double>,
+        severity: EventSeverity = EventSeverity.MODERATE,
+    ): EventTemplate = company(
+        id, title, description, type,
+        if (positive) ImpactDirection.POSITIVE else ImpactDirection.NEGATIVE,
+        probability, duration, shock, severity,
+    )
+
+    private fun company(
+        id: String,
+        title: String,
+        description: String,
+        type: EventType,
+        direction: ImpactDirection,
+        probability: Double,
+        duration: IntRange,
+        shock: ClosedFloatingPointRange<Double>,
+        severity: EventSeverity = EventSeverity.MODERATE,
+    ): EventTemplate {
+        return rule(
+            id, title, description, EventScope.STOCK, type, severity, direction,
+            probability, 240, duration, shock,
+            when (direction) {
+                ImpactDirection.POSITIVE -> 0.00003..0.00016
+                ImpactDirection.NEGATIVE -> -0.00018..-0.00003
+                else -> -0.00004..0.00004
+            },
+            1.25..1.9, 1.3..2.5, 0.5..0.9,
+            when (direction) {
+                ImpactDirection.POSITIVE -> 0.3..0.75
+                ImpactDirection.NEGATIVE -> -0.85..-0.3
+                else -> -0.2..0.2
+            },
+        )
+    }
+
+    private fun global(
+        id: String,
+        title: String,
+        description: String,
+        type: EventType,
+        positive: Boolean,
+        probability: Double,
+        duration: IntRange,
+        shock: ClosedFloatingPointRange<Double>,
+        severity: EventSeverity = EventSeverity.MODERATE,
+    ): EventTemplate = rule(
+        id, title, description, EventScope.GLOBAL, type, severity,
+        if (positive) ImpactDirection.POSITIVE else ImpactDirection.NEGATIVE,
+        probability, 1_440, duration, shock,
+        if (positive) 0.00003..0.00012 else -0.00016..-0.00004,
+        1.35..2.1, 1.25..2.2, 0.45..0.85,
+        if (positive) 0.3..0.7 else -0.9..-0.4,
+    )
+
+    @Suppress("LongParameterList")
+    private fun rule(
+        id: String,
+        title: String,
+        description: String,
+        scope: EventScope,
+        type: EventType,
+        severity: EventSeverity,
+        direction: ImpactDirection,
+        probability: Double,
+        cooldown: Int,
+        duration: IntRange,
+        shock: ClosedFloatingPointRange<Double>,
+        drift: ClosedFloatingPointRange<Double> = 0.0..0.0,
+        volatility: ClosedFloatingPointRange<Double> = 1.0..1.0,
+        volume: ClosedFloatingPointRange<Double> = 1.0..1.0,
+        liquidity: ClosedFloatingPointRange<Double> = 1.0..1.0,
+        sentiment: ClosedFloatingPointRange<Double> = 0.0..0.0,
+        condition: EventCondition = EventCondition.ALWAYS,
+        markets: Set<Market> = emptySet(),
+        sectors: Set<Sector> = emptySet(),
+    ): EventTemplate = EventTemplate(
+        id = id,
+        titleTemplate = title,
+        descriptionTemplate = description,
+        scope = scope,
+        type = type,
+        severity = severity,
+        direction = direction,
+        probabilityPerDay = probability,
+        cooldownHours = cooldown,
+        durationHours = duration,
+        shockReturn = shock,
+        hourlyDrift = drift,
+        volatilityMultiplier = volatility,
+        volumeMultiplier = volume,
+        liquidityMultiplier = liquidity,
+        sentiment = sentiment,
+        condition = condition,
+        eligibleMarkets = markets,
+        eligibleSectors = sectors,
+    )
+}
