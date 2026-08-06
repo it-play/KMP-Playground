@@ -1,0 +1,28 @@
+groups:
+  - claude
+  - codex
+
+overrides:
+  claude/skills/api-design: false
+  claude/skills/database-schema: false
+  claude/skills/docker: false
+  claude/skills/kotest-guide: false
+  claude/skills/kotlin-spring-arch: false
+  claude/skills/migration-guide: false
+  claude/skills/planning: false
+  claude/agents/kotlin-convention-validator: false
+  claude/agents/kotlin-test-fixer: false
+  claude/agents/web-researcher: false
+  codex/skills/api-design: false
+  codex/skills/database-schema: false
+  codex/skills/docker: false
+  codex/skills/kotest-guide: false
+  codex/skills/kotlin-spring-arch: false
+  codex/skills/migration-guide: false
+  codex/skills/planning: false
+  codex/agents/kotlin-convention-validator: false
+  codex/agents/kotlin-test-fixer: false
+  codex/agents/web-researcher: false
+
+base_branch: main
+language: ko
