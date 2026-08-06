@@ -1,28 +1,28 @@
-groups:
-  - claude
-  - codex
+groups: []
 
 overrides:
-  claude/skills/api-design: false
-  claude/skills/database-schema: false
-  claude/skills/docker: false
-  claude/skills/kotest-guide: false
-  claude/skills/kotlin-spring-arch: false
-  claude/skills/migration-guide: false
-  claude/skills/planning: false
-  claude/agents/kotlin-convention-validator: false
-  claude/agents/kotlin-test-fixer: false
-  claude/agents/web-researcher: false
-  codex/skills/api-design: false
-  codex/skills/database-schema: false
-  codex/skills/docker: false
-  codex/skills/kotest-guide: false
-  codex/skills/kotlin-spring-arch: false
-  codex/skills/migration-guide: false
-  codex/skills/planning: false
-  codex/agents/kotlin-convention-validator: false
-  codex/agents/kotlin-test-fixer: false
-  codex/agents/web-researcher: false
+  claude/skills/systematic-debugging: true
+  claude/skills/security-checklist: true
+  claude/skills/test: true
+  claude/agents/contradiction-finder: true
+  claude/agents/doc-polisher: true
+  claude/agents/prompt-polisher: true
+  claude/hooks/dispatcher: true
+  claude/settings: true
+  claude/hooks/secret-guard: true
+  claude/hooks/command-guard: true
+  codex/skills/systematic-debugging: true
+  codex/skills/security-checklist: true
+  codex/skills/test: true
+  codex/agents/contradiction-finder: true
+  codex/agents/doc-polisher: true
+  codex/agents/prompt-polisher: true
+  codex/config: true
+  codex/hooks/dispatcher: true
+  codex/hooks-json: true
+  codex/hooks/secret-guard: true
+  codex/hooks/command-guard: true
 
 base_branch: main
 language: ko
+pr_label: false
