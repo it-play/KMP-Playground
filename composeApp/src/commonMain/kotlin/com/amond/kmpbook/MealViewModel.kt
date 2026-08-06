@@ -12,7 +12,6 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
 import kotlinx.datetime.number
 import kotlinx.datetime.plus
-import kotlinx.datetime.toLocalDateTime
 import kotlinx.datetime.todayIn
 import kotlin.time.Clock
 
@@ -106,7 +105,7 @@ class MealViewModel : ViewModel() {
     }
 }
 
-private fun today(): LocalDate = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+private fun today(): LocalDate = Clock.System.todayIn(TimeZone.of("Asia/Seoul"))
 
 fun LocalDate.toNeisFormat(): String =
     "${year}${month.number.toString().padStart(2, '0')}${day.toString().padStart(2, '0')}"
