@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Usage: collect_artifacts.sh <staging-dir> <tag>
-# Builds whatever the project declares and stages renamed artifacts in <staging-dir>.
-# Prints one absolute path per line; prints nothing if there is nothing to attach.
-
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 STAGING="${1:-}"

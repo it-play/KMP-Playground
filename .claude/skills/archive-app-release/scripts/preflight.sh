@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Usage: preflight.sh <tag>
-# Verifies the repo is in a state where <tag> can be cut and released.
 
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 

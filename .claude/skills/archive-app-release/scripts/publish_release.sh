@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Usage: publish_release.sh <tag> <title> <notes-file> [asset...]
-# Creates the annotated tag, pushes it, and publishes a public release.
 
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
