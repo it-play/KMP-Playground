@@ -2,6 +2,8 @@ name: Windows MSI
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
 
@@ -16,28 +18,164 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # A push can contain several commits; the version comparison uses the push's
+          # before SHA rather than assuming the bump is in HEAD's first parent.
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Java 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
 
       - name: Run desktop tests
         shell: pwsh
-        run: .\gradlew.bat :composeApp:desktopTest --no-daemon
+        run: .\gradlew.bat clean :composeApp:desktopTest --no-daemon
+
+      - name: Decide whether to package a new version
+        id: version
+        shell: pwsh
+        env:
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          function Assert-MsiVersion {
+            param(
+              [string] $Value,
+              [string] $Source
+            )
+
+            if ($Value -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+              throw "$Source must use MAJOR.MINOR.PATCH without leading zeroes: $Value"
+            }
+
+            $parts = $Value.Split('.') | ForEach-Object { [int] $_ }
+            if ($parts[0] -gt 255 -or $parts[1] -gt 255 -or $parts[2] -gt 65535) {
+              throw "$Source exceeds the Windows MSI limit 255.255.65535: $Value"
+            }
+          }
+
+          function Find-SingleVersion {
+            param(
+              [string[]] $Lines,
+              [string] $Pattern,
+              [string] $Source
+            )
+
+            $versions = @()
+            foreach ($line in $Lines) {
+              if ($line -match $Pattern) {
+                $versions += $Matches[1]
+              }
+            }
+
+            if ($versions.Count -gt 1) {
+              throw "$Source contains more than one version declaration"
+            }
+            if ($versions.Count -eq 1) {
+              return $versions[0]
+            }
+            return $null
+          }
+
+          $appVersion = (.\gradlew.bat -q :composeApp:printAppVersion --no-daemon | Select-Object -Last 1).Trim()
+          Assert-MsiVersion -Value $appVersion -Source 'appVersion'
+
+          $shouldPackage = $false
+          if ($env:GITHUB_EVENT_NAME -eq 'push') {
+            if ($env:GITHUB_REF -ne 'refs/heads/main') {
+              throw "Packaging is only allowed for refs/heads/main, not $env:GITHUB_REF"
+            }
+
+            $checkedOutSha = (& git rev-parse HEAD).Trim()
+            if ($LASTEXITCODE -ne 0 -or $checkedOutSha -ne $env:GITHUB_SHA) {
+              throw "Checked-out SHA $checkedOutSha does not match event SHA $env:GITHUB_SHA"
+            }
+
+            $previousSha = $env:PUSH_BEFORE_SHA
+            if ($previousSha -notmatch '^[0-9a-f]{40}$' -or $previousSha -match '^0{40}$') {
+              throw "Cannot prove a version increase from push before SHA '$previousSha'"
+            }
+            & git cat-file -e "${previousSha}^{commit}"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Push before commit $previousSha is unavailable in the checkout"
+            }
+
+            $previousProperties = @(& git show "${previousSha}:gradle.properties")
+            if ($LASTEXITCODE -ne 0) {
+              throw "Cannot read gradle.properties from parent commit $previousSha"
+            }
+            $previousVersion = Find-SingleVersion `
+              -Lines $previousProperties `
+              -Pattern '^\s*appVersion\s*=\s*([^\s#]+)\s*(?:#.*)?$' `
+              -Source "gradle.properties at $previousSha"
+
+            # Bootstrap repositories that used Compose's packageVersion before appVersion
+            # became the single source of truth.
+            if ($null -eq $previousVersion) {
+              $previousBuildScript = @(& git show "${previousSha}:composeApp/build.gradle.kts")
+              if ($LASTEXITCODE -ne 0) {
+                throw "Cannot read composeApp/build.gradle.kts from parent commit $previousSha"
+              }
+              $previousVersion = Find-SingleVersion `
+                -Lines $previousBuildScript `
+                -Pattern '^\s*packageVersion\s*=\s*"([^"]+)"\s*$' `
+                -Source "composeApp/build.gradle.kts at $previousSha"
+            }
+
+            if ($null -eq $previousVersion) {
+              throw "Cannot determine the MSI version from parent commit $previousSha"
+            }
+            Assert-MsiVersion -Value $previousVersion -Source "parent appVersion at $previousSha"
+
+            $currentParsedVersion = [version] $appVersion
+            $previousParsedVersion = [version] $previousVersion
+            if ($currentParsedVersion -lt $previousParsedVersion) {
+              throw "appVersion regressed from $previousVersion to $appVersion"
+            }
+            $shouldPackage = $currentParsedVersion -gt $previousParsedVersion
+
+            if ($shouldPackage) {
+              "MSI $appVersion will be packaged because it is newer than $previousVersion." >> $env:GITHUB_STEP_SUMMARY
+            } else {
+              "MSI packaging skipped because appVersion remains $appVersion." >> $env:GITHUB_STEP_SUMMARY
+            }
+          } elseif ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+            if ($env:GITHUB_REF -ne 'refs/heads/main') {
+              throw "Manual MSI recovery is only allowed for refs/heads/main, not $env:GITHUB_REF"
+            }
+
+            $checkedOutSha = (& git rev-parse HEAD).Trim()
+            if ($LASTEXITCODE -ne 0 -or $checkedOutSha -ne $env:GITHUB_SHA) {
+              throw "Checked-out SHA $checkedOutSha does not match event SHA $env:GITHUB_SHA"
+            }
+
+            # Recovery path for a failed version-bump run. It deliberately rebuilds the
+            # current main version without requiring a tag or another version increase.
+            $shouldPackage = $true
+            "MSI $appVersion will be packaged by a manual main-branch recovery run." >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            "MSI packaging skipped for pull request validation." >> $env:GITHUB_STEP_SUMMARY
+          }
+
+          "appVersion=$appVersion" >> $env:GITHUB_OUTPUT
+          "should_package=$($shouldPackage.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
 
       - name: Build Windows installer
+        if: steps.version.outputs.should_package == 'true'
         shell: pwsh
         run: .\gradlew.bat :composeApp:packageMsi --no-daemon
 
       - name: Upload MSI
-        uses: actions/upload-artifact@v7
+        if: steps.version.outputs.should_package == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: MarketLedger2040-Windows-MSI
-          path: composeApp/build/compose/binaries/main/msi/*.msi
+          name: MarketLedger2040-${{ steps.version.outputs.appVersion }}-Windows-x64
+          path: composeApp/build/compose/binaries/main/msi/MarketLedger2040-${{ steps.version.outputs.appVersion }}.msi
           if-no-files-found: error
+          retention-days: 90
