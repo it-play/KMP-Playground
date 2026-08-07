@@ -96,5 +96,19 @@ class DeterministicRandom(seed: Long) {
             }
             return mixed.toLong()
         }
+
+        /** Stable FNV-1a key for occurrence ids and other persisted textual identities. */
+        fun stableHash64(value: String): Long {
+            var hash = 0xCBF29CE484222325uL
+            for (character in value) {
+                hash = hash xor character.code.toULong()
+                hash *= 0x100000001B3uL
+            }
+            return hash.toLong()
+        }
+
+        /** Creates a stream whose output depends on the key, never on iteration or query order. */
+        fun keyed(seed: Long, key: String): DeterministicRandom =
+            DeterministicRandom(mixSeed(seed, stableHash64(key)))
     }
 }

@@ -52,6 +52,59 @@ data class FifoCostBasisBook(
 
     val method: CostBasisMethod get() = CostBasisMethod.FIFO
 
+    /**
+     * 분할·병합은 처분이 아니므로 취득일과 총 원화원가를 보존하고 수량만 조정한다.
+     * 단주는 캠페인에서 소수 권리로 유지하며, 전량 처분 시 단위 예외를 허용한다.
+     */
+    fun applyQuantityMultiplier(stockId: String, multiplier: Double): FifoCostBasisBook {
+        require(stockId.isNotBlank())
+        require(multiplier > 0.0 && multiplier.isFinite())
+        return copy(
+            lots = lots.map { lot ->
+                if (lot.stockId == stockId) {
+                    lot.copy(remainingQuantity = lot.remainingQuantity * multiplier)
+                } else {
+                    lot
+                }
+            },
+        )
+    }
+
+    /**
+     * RIC/CEF 분배의 원금환급(ROC)은 현금은 받지만 즉시 배당소득이 아니므로, 분배 기준일에
+     * 보유한 각 lot에 주당 동일 금액을 배분해 원화 세무원가를 낮춘다. 특정 FIFO lot부터
+     * 차감하지 않으며, 각 lot에 배분된 금액이 그 lot의 원가를 넘는 부분만 양도이득으로 돌린다.
+     */
+    fun applyReturnOfCapital(stockId: String, amountKrw: Long): Pair<FifoCostBasisBook, Long> {
+        require(stockId.isNotBlank())
+        require(amountKrw >= 0L)
+        if (amountKrw == 0L) return this to 0L
+        val matching = lots.filter { it.stockId == stockId }
+        if (matching.isEmpty()) return this to amountKrw
+        val totalQuantity = matching.sumOf(TaxLot::remainingQuantity)
+        require(totalQuantity > 0.0)
+
+        var allocatedRoc = 0L
+        var excessGain = 0L
+        var matchingIndex = 0
+        val adjustedLots = lots.map { lot ->
+            if (lot.stockId != stockId) return@map lot
+            val isLast = matchingIndex == matching.lastIndex
+            val lotRoc = if (isLast) {
+                amountKrw - allocatedRoc
+            } else {
+                floor(amountKrw.toDouble() * lot.remainingQuantity / totalQuantity).toLong()
+            }
+            matchingIndex += 1
+            allocatedRoc += lotRoc
+            val lotReduction = minOf(lot.remainingCostBasisKrw, lotRoc)
+            excessGain += lotRoc - lotReduction
+            lot.copy(remainingCostBasisKrw = lot.remainingCostBasisKrw - lotReduction)
+        }
+        check(allocatedRoc == amountKrw) { "ROC allocation did not consume the requested amount." }
+        return copy(lots = adjustedLots) to excessGain
+    }
+
     fun addPurchase(
         lotId: String,
         stockId: String,
@@ -155,6 +208,7 @@ data class FifoCostBasisBook(
 
 enum class StockGainTaxTreatment(val displayName: String) {
     DOMESTIC_EXEMPT_SMALL_ON_EXCHANGE("국내 장내 소액주주 비과세"),
+    DOMESTIC_ETF_HOLDING_PERIOD_WITHHELD("국내상장 기타 ETF 보유기간 과세"),
     DOMESTIC_MAJOR_GENERAL("국내 대주주 일반세율"),
     DOMESTIC_MAJOR_NON_SME_SHORT_TERM("국내 비중소기업 대주주 1년 미만"),
     FOREIGN_STANDARD("국외주식 일반"),
@@ -205,7 +259,10 @@ class AnnualStockTaxCalculator(
         val closingDate = LocalDate(request.taxYear, 12, 31)
         policy.requireSimulationDate(closingDate)
         val taxableEntries = request.gains
-            .filter { it.treatment != StockGainTaxTreatment.DOMESTIC_EXEMPT_SMALL_ON_EXCHANGE }
+            .filter {
+                it.treatment != StockGainTaxTreatment.DOMESTIC_EXEMPT_SMALL_ON_EXCHANGE &&
+                    it.treatment != StockGainTaxTreatment.DOMESTIC_ETF_HOLDING_PERIOD_WITHHELD
+            }
             .sortedBy { it.realizedOn }
 
         val domesticGain = taxableEntries

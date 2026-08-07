@@ -33,7 +33,6 @@ import com.amond.kmpbook.domain.model.Currency
 import com.amond.kmpbook.domain.model.Holding
 import com.amond.kmpbook.domain.model.OrderSide
 import com.amond.kmpbook.domain.model.PortfolioSnapshot
-import com.amond.kmpbook.domain.model.Sector
 import com.amond.kmpbook.domain.model.StockDefinition
 import com.amond.kmpbook.domain.model.Trade
 import com.amond.kmpbook.ui.charts.AllocationDonut
@@ -49,6 +48,7 @@ import com.amond.kmpbook.ui.format.formatPercent
 import com.amond.kmpbook.ui.format.formatPrice
 import com.amond.kmpbook.ui.format.formatQuantity
 import com.amond.kmpbook.ui.theme.MarketColors
+import com.amond.kmpbook.ui.theme.MarketLayout
 import com.amond.kmpbook.ui.theme.MarketType
 import kotlin.math.pow
 import kotlin.math.sqrt
@@ -63,18 +63,29 @@ fun PortfolioScreen(
 ) {
     val stockById = stocks.associateBy { it.id }
     val holdings = snapshot.holdings.sortedByDescending { it.marketValue * snapshot.rateToKrw(it.currency) }
-    val sectorValues = holdings.groupBy { stockById[it.stockId]?.sector ?: Sector.OTHER }
+    val allocationValues = holdings.groupBy { holding ->
+        val stock = stockById[holding.stockId]
+        stock?.etfProfile?.assetClass?.let { "ETF · ${it.displayName}" }
+            ?: stock?.sector?.let { "개별주 · ${it.displayName}" }
+            ?: "기타"
+    }
         .mapValues { (_, group) -> group.sumOf { it.marketValue * snapshot.rateToKrw(it.currency) } }
         .toList().sortedByDescending { it.second }
 
-    Column(modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(
+        modifier.fillMaxSize().padding(MarketLayout.screenPadding),
+        verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
             PortfolioTile("총자산", formatMoney(snapshot.totalAssetValueKrw, Currency.KRW), formatPercent(snapshot.totalReturnRate), deltaColor(snapshot.totalProfitKrw), Modifier.weight(1f))
-            PortfolioTile("주식 평가액", formatMoney(snapshot.stockValueKrw, Currency.KRW), "${holdings.size}개 종목", MarketColors.Ink, Modifier.weight(1f))
+            PortfolioTile("투자상품 평가액", formatMoney(snapshot.stockValueKrw, Currency.KRW), "${holdings.size}개 상품", MarketColors.Ink, Modifier.weight(1f))
             PortfolioTile("현금", formatMoney(snapshot.cashValueKrw, Currency.KRW), "비중 ${formatPercent(snapshot.cashWeight, false)}", MarketColors.Celadon, Modifier.weight(1f))
             PortfolioTile("미실현손익", formatMoney(snapshot.unrealizedProfitKrw, Currency.KRW), "현재가 기준", deltaColor(snapshot.unrealizedProfitKrw), Modifier.weight(1f))
         }
-        Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+        ) {
             LedgerPanel(Modifier.weight(1.45f).fillMaxSize(), padding = 0.dp) {
                 Column(Modifier.fillMaxSize()) {
                     SectionHeading("포지션 원장", eyebrow = "CURRENT HOLDINGS", modifier = Modifier.padding(12.dp))
@@ -98,8 +109,8 @@ fun PortfolioScreen(
                     }
                 }
             }
-            Column(Modifier.width(350.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SectorAllocationPanel(sectorValues, snapshot.totalAssetValueKrw, Modifier.fillMaxWidth().weight(1f))
+            Column(Modifier.width(350.dp), verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
+                AssetAllocationPanel(allocationValues, snapshot.totalAssetValueKrw, Modifier.fillMaxWidth().weight(1f))
                 CashPanel(snapshot, Modifier.fillMaxWidth().height(155.dp))
                 LedgerPanel(Modifier.fillMaxWidth().height(150.dp)) {
                     Column(Modifier.fillMaxSize()) {
@@ -137,20 +148,30 @@ fun AnalyticsScreen(
     val turnover = trades.sumOf { it.grossAmount * if (it.currency == Currency.USD) 1_350.0 else 1.0 }
     val costs = trades.sumOf { (it.commission + it.tax) * if (it.currency == Currency.USD) 1_350.0 else 1.0 }
     val marketValues = snapshot.holdings.mapNotNull { holding ->
-        stocks.firstOrNull { it.id == holding.stockId }?.let { stock -> stock to holding.returnRate }
+        stocks.firstOrNull { it.id == holding.stockId }
+            ?.let { stock -> stock to snapshot.holdingReturnRateKrw(holding) }
     }
     val best = marketValues.maxByOrNull { it.second }
     val worst = marketValues.minByOrNull { it.second }
 
-    Column(modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(
+        modifier.fillMaxSize().padding(MarketLayout.screenPadding),
+        verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
             AnalyticsTile("누적 수익률", formatPercent(snapshot.totalReturnRate), "초기자본 대비", deltaColor(snapshot.totalReturnRate), Modifier.weight(1f))
             AnalyticsTile("연환산 변동성", formatPercent(volatility, false), "일별 수익률 기준", MarketColors.Amber, Modifier.weight(1f))
             AnalyticsTile("샤프 지수", formatNumber(sharpe), "무위험수익률 3% 가정", if (sharpe >= 1.0) MarketColors.Celadon else MarketColors.Ink, Modifier.weight(1f))
             AnalyticsTile("최대 낙폭", formatPercent(maxDrawdown, false), "고점 대비 저점", MarketColors.Fall, Modifier.weight(1f))
         }
-        Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Column(Modifier.weight(1.35f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+        ) {
+            Column(
+                Modifier.weight(1.35f),
+                verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+            ) {
                 LedgerPanel(Modifier.fillMaxWidth().weight(1.1f)) {
                     Column(Modifier.fillMaxSize()) {
                         SectionHeading("수익률·낙폭", eyebrow = "PERFORMANCE PATH") {
@@ -172,7 +193,7 @@ fun AnalyticsScreen(
                     }
                 }
             }
-            Column(Modifier.width(360.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.width(360.dp), verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
                 LedgerPanel(Modifier.fillMaxWidth().height(185.dp)) {
                     Column {
                         SectionHeading("운용 효율", eyebrow = "EFFICIENCY")
@@ -217,12 +238,12 @@ fun AnalyticsScreen(
 
 @Composable
 private fun PortfolioTile(label: String, value: String, detail: String, color: Color, modifier: Modifier) {
-    LedgerPanel(modifier.height(91.dp)) { Metric(label, value, valueColor = color, detail = detail) }
+    LedgerPanel(modifier.height(108.dp)) { Metric(label, value, valueColor = color, detail = detail) }
 }
 
 @Composable
 private fun AnalyticsTile(label: String, value: String, detail: String, color: Color, modifier: Modifier) {
-    LedgerPanel(modifier.height(91.dp)) { Metric(label, value, valueColor = color, detail = detail) }
+    LedgerPanel(modifier.height(108.dp)) { Metric(label, value, valueColor = color, detail = detail) }
 }
 
 @Composable
@@ -251,14 +272,15 @@ private fun PositionRow(
     ) {
         Column(Modifier.weight(1.4f)) {
             Text(stock.name, style = MarketType.body.copy(fontWeight = FontWeight.Medium), color = MarketColors.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("${stock.symbol} · ${stock.market.displayName}", style = MarketType.label.copy(fontSize = 9.sp), color = MarketColors.InkMuted)
+            Text("${stock.symbol} · ${stock.market.displayName}", style = MarketType.caption, color = MarketColors.InkMuted)
         }
         PositionCell(formatQuantity(holding.quantity), 0.7f)
         PositionCell(formatPrice(holding.averagePrice, stock.currency), 0.9f)
         PositionCell(formatPrice(holding.currentPrice, stock.currency), 0.9f)
         PositionCell(formatMoney(holding.marketValue * snapshot.rateToKrw(holding.currency), Currency.KRW, true), 1f)
-        PositionCell(formatMoney(holding.unrealizedProfit * snapshot.rateToKrw(holding.currency), Currency.KRW, true), 1f, deltaColor(holding.unrealizedProfit))
-        PositionCell(formatPercent(holding.returnRate), 0.75f, deltaColor(holding.unrealizedProfit))
+        val unrealizedKrw = snapshot.holdingUnrealizedProfitKrw(holding)
+        PositionCell(formatMoney(unrealizedKrw, Currency.KRW, true), 1f, deltaColor(unrealizedKrw))
+        PositionCell(formatPercent(snapshot.holdingReturnRateKrw(holding)), 0.75f, deltaColor(unrealizedKrw))
     }
 }
 
@@ -269,15 +291,15 @@ private fun RowScope.PositionHeader(text: String, weight: Float) {
 
 @Composable
 private fun RowScope.PositionCell(text: String, weight: Float, color: Color = MarketColors.Ink) {
-    Text(text, Modifier.weight(weight), style = MarketType.number.copy(fontSize = 10.sp), color = color, maxLines = 1)
+    Text(text, Modifier.weight(weight), style = MarketType.number, color = color, maxLines = 1)
 }
 
 @Composable
-private fun SectorAllocationPanel(values: List<Pair<Sector, Double>>, total: Double, modifier: Modifier) {
+private fun AssetAllocationPanel(values: List<Pair<String, Double>>, total: Double, modifier: Modifier) {
     val palette = listOf(MarketColors.Celadon, MarketColors.Rise, MarketColors.Fall, MarketColors.Amber, MarketColors.InkMuted)
     LedgerPanel(modifier) {
         Column(Modifier.fillMaxSize()) {
-            SectionHeading("섹터 배분", eyebrow = "SECTOR EXPOSURE")
+            SectionHeading("자산군·섹터 배분", eyebrow = "ASSET EXPOSURE")
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AllocationDonut(
@@ -286,12 +308,12 @@ private fun SectorAllocationPanel(values: List<Pair<Sector, Double>>, total: Dou
                 )
                 Spacer(Modifier.width(15.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    values.take(7).forEachIndexed { index, (sector, value) ->
+                    values.take(7).forEachIndexed { index, (label, value) ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(7.dp).background(palette[index % palette.size], RoundedCornerShape(50)))
                             Spacer(Modifier.width(6.dp))
-                            Text(sector.displayName, Modifier.weight(1f), style = MarketType.label, color = MarketColors.InkMuted, maxLines = 1)
-                            Text(formatPercent(if (total == 0.0) 0.0 else value / total, false), style = MarketType.number.copy(fontSize = 9.sp))
+                            Text(label, Modifier.weight(1f), style = MarketType.label, color = MarketColors.InkMuted, maxLines = 1)
+                            Text(formatPercent(if (total == 0.0) 0.0 else value / total, false), style = MarketType.number)
                         }
                     }
                 }

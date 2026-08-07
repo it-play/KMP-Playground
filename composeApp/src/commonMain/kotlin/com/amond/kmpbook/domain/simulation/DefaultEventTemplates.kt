@@ -4,6 +4,8 @@ import com.amond.kmpbook.domain.model.EventScope
 import com.amond.kmpbook.domain.model.EventSeverity
 import com.amond.kmpbook.domain.model.EventType
 import com.amond.kmpbook.domain.model.ImpactDirection
+import com.amond.kmpbook.domain.model.InstrumentStrategy
+import com.amond.kmpbook.domain.model.InstrumentType
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.Sector
 
@@ -181,9 +183,8 @@ object DefaultEventTemplates {
             Sector.ROBOTICS, true, 0.005, 96..336, 0.018..0.055,
         ),
 
-        // Company results, guidance, operations, governance, and technology.
-        company("earnings_beat", "{company} 어닝 서프라이즈", "매출과 이익이 시장 전망을 웃돌았다.", EventType.EARNINGS, true, 0.012, 24..120, 0.025..0.090),
-        company("earnings_miss", "{company} 실적 쇼크", "매출과 이익이 시장 전망에 미치지 못했다.", EventType.EARNINGS, false, 0.012, 24..120, -0.095..-0.030),
+        // Reported quarterly beat/miss is owned by the scheduled calendar. Management guidance
+        // remains an unscheduled company event because it can change between reporting dates.
         company("guidance_upgrade", "{company} 실적 전망 상향", "경영진이 수요와 수익성 전망을 상향했다.", EventType.EARNINGS, true, 0.009, 48..168, 0.022..0.070),
         company("guidance_cut", "{company} 실적 전망 하향", "경영진이 수요 둔화를 반영해 전망을 낮췄다.", EventType.EARNINGS, false, 0.009, 48..168, -0.075..-0.025),
         company("contract_win", "{company} 대형 계약 수주", "중장기 매출에 기여할 신규 계약이 확정됐다.", EventType.INDUSTRY_SUPPLY_DEMAND, true, 0.009, 48..240, 0.020..0.080),
@@ -198,16 +199,103 @@ object DefaultEventTemplates {
         company("factory_accident", "{company} 주요 설비 가동 중단", "사고 조사와 복구를 위해 핵심 설비가 멈췄다.", EventType.INDUSTRY_SUPPLY_DEMAND, false, 0.004, 48..240, -0.080..-0.025),
         company("technology_breakthrough", "{company} 핵심 기술 성과", "성능과 원가를 개선한 기술 검증 결과가 공개됐다.", EventType.PRODUCT_TECHNOLOGY, true, 0.007, 48..240, 0.022..0.085),
 
-        // Corporate actions. Split is an announcement effect; mechanical share
-        // adjustment belongs to the portfolio/corporate-action settlement layer.
+        // Corporate actions. Splits and reverse splits are intentionally absent here:
+        // SimulatorRuntime announces and settles them as one atomic mechanical action.
         company("dividend_raise", "{company} 배당 확대", "이사회가 주주환원 정책과 배당 규모를 상향했다.", EventType.CORPORATE_ACTION, true, 0.006, 24..120, 0.008..0.035),
         company("dividend_cut", "{company} 배당 축소", "현금 보전을 위해 예상 배당 규모가 낮아졌다.", EventType.CORPORATE_ACTION, false, 0.004, 24..120, -0.045..-0.012),
-        company("stock_split", "{company} 주식 분할 발표", "거래 접근성과 유동성 개선을 위한 주식 분할이 발표됐다.", EventType.CORPORATE_ACTION, true, 0.003, 24..96, 0.004..0.020),
         company("rights_offering", "{company} 유상증자 발표", "신규 자금 조달에 따른 지분 희석 우려가 반영됐다.", EventType.CORPORATE_ACTION, false, 0.004, 72..240, -0.090..-0.028),
         company("share_buyback", "{company} 자사주 매입", "이사회가 유통 주식 수를 줄이는 매입 계획을 승인했다.", EventType.CORPORATE_ACTION, true, 0.005, 48..240, 0.012..0.050),
         company("merger_offer", "{company} 인수 제안 접수", "경영권 프리미엄을 포함한 인수 제안이 공개됐다.", EventType.CORPORATE_ACTION, true, 0.0025, 72..336, 0.050..0.180, EventSeverity.MAJOR),
         company("spinoff", "{company} 사업 분할 추진", "핵심 사업의 독립 운영과 가치 재평가 계획이 공개됐다.", EventType.CORPORATE_ACTION, ImpactDirection.MIXED, 0.003, 72..240, -0.015..0.040),
         company("delisting_warning", "{company} 상장 유지 요건 경고", "거래소가 재무 또는 공시 요건 미달 가능성을 통보했다.", EventType.REGULATION_POLICY, false, 0.0015, 168..720, -0.250..-0.090, EventSeverity.CRITICAL),
+
+        // ETF-specific flows and fund operations. Ordinary corporate templates above are
+        // explicitly stock-only, so funds never receive CEO, earnings-guidance, or recall news.
+        fund("etf_rebalance", "{company} 정기 리밸런싱", "기초지수 정기변경에 맞춘 편입·편출 수급이 발생했다.", ImpactDirection.MIXED, 0.006, 24..96, -0.012..0.012),
+        fund("etf_inflow", "{company} 대규모 자금 유입", "설정 좌수와 거래량이 늘며 기초자산 매수 수요가 확대됐다.", ImpactDirection.POSITIVE, 0.008, 12..72, 0.003..0.018),
+        fund("etf_outflow", "{company} 대규모 환매 수요", "환매와 유동성 수요가 겹치며 기준가격 대비 할인 압력이 커졌다.", ImpactDirection.NEGATIVE, 0.006, 12..72, -0.020..-0.004),
+        fund("etf_tracking_error", "{company} 추적오차 확대", "시장 변동성과 거래비용으로 기초지수 대비 추적오차가 일시적으로 확대됐다.", ImpactDirection.NEGATIVE, 0.003, 12..48, -0.012..-0.002),
+        fund(
+            "covered_call_roc_spike", "{company} 원금환급 비중 확대",
+            "이번 분배금에서 옵션 프리미엄으로 충당하지 못한 원금환급 추정 비중이 커져 주당 순자산 침식 우려가 높아졌다.",
+            ImpactDirection.NEGATIVE, 0.004, 72..240, -0.030..-0.008,
+            strategies = setOf(InstrumentStrategy.COVERED_CALL, InstrumentStrategy.BUFFER_INCOME),
+            severity = EventSeverity.MODERATE,
+        ),
+        fund(
+            "leveraged_rebalance_stress", "{company} 일일 재조정 비용 확대",
+            "장중 급등락이 반복되며 일일 목표배율 재조정과 변동성 끌림이 누적됐다. 장기 성과는 기초지수 누적수익의 단순 배수가 아니다.",
+            ImpactDirection.NEGATIVE, 0.004, 24..120, -0.040..-0.010,
+            strategies = setOf(InstrumentStrategy.DAILY_LEVERAGED, InstrumentStrategy.DAILY_INVERSE),
+            severity = EventSeverity.MODERATE,
+        ),
+        fund(
+            "clo_credit_downgrade", "{company} 기초대출 신용 경계",
+            "레버리지론의 등급 하향과 부도율 전망 상승으로 CLO 트랜치 스프레드가 확대됐다.",
+            ImpactDirection.NEGATIVE, 0.003, 96..336, -0.045..-0.012,
+            strategies = setOf(InstrumentStrategy.CLO, InstrumentStrategy.HIGH_YIELD_BOND),
+            severity = EventSeverity.MAJOR,
+        ),
+        fund(
+            "floating_rate_carry_improves", "{company} 변동금리 이자수익 개선",
+            "기준금리 재설정이 쿠폰에 반영되며 단기 이자 캐리가 높아졌다. 신용스프레드 위험은 그대로 남아 있다.",
+            ImpactDirection.POSITIVE, 0.003, 72..240, 0.003..0.016,
+            strategies = setOf(InstrumentStrategy.FLOATING_RATE, InstrumentStrategy.CLO, InstrumentStrategy.MONEY_MARKET),
+        ),
+        fund(
+            "cef_discount_widens", "{company} 순자산가치 대비 할인 확대",
+            "시장가격 할인율이 장기 평균보다 벌어지고 차입비용 부담이 높아졌다. 분배율과 총수익률은 별개다.",
+            ImpactDirection.NEGATIVE, 0.004, 72..336, -0.055..-0.015,
+            strategies = setOf(InstrumentStrategy.CLOSED_END_INCOME),
+            severity = EventSeverity.MAJOR,
+        ),
+        fund(
+            "cef_discount_narrows", "{company} 순자산가치 할인 축소",
+            "자사주 매입·공개매수 기대와 수요 유입으로 NAV 대비 할인율이 좁혀졌다.",
+            ImpactDirection.POSITIVE, 0.003, 48..240, 0.010..0.040,
+            strategies = setOf(InstrumentStrategy.CLOSED_END_INCOME),
+        ),
+        fund(
+            "etn_issuer_spread", "{company} 발행사 신용스프레드 확대",
+            "기초지수와 무관하게 무담보 채무증권 발행사의 조달비용이 상승해 지표가치 대비 거래가격 괴리가 커졌다.",
+            ImpactDirection.NEGATIVE, 0.0025, 96..336, -0.060..-0.015,
+            strategies = setOf(InstrumentStrategy.ETN_LINKED),
+            severity = EventSeverity.MAJOR,
+        ),
+        fund(
+            "etn_issuer_call_decision", "{company} 선택적 가속상환(콜) 결정",
+            "발행사가 공식 조건에 포함된 선택적 가속상환 권리를 행사하는 캠페인 시나리오다. 30일 뒤 지표가치 대용 상환가격으로 거래가 종료될 수 있으며 이는 실제 미래 공시의 예측이 아니다.",
+            ImpactDirection.MIXED, 0.0002, 720..720, -0.010..0.010,
+            strategies = setOf(InstrumentStrategy.ETN_LINKED),
+            severity = EventSeverity.MAJOR,
+            cooldownHours = 8_760,
+        ),
+        fund(
+            "etn_issuer_acceleration", "{company} 발행사 가속상환 사유 발생",
+            "발행사 신용·계약상 가속상환 사유가 발생한 극단 캠페인 시나리오다. 7일 뒤 회수율을 반영한 상환가격으로 거래가 종료될 수 있다.",
+            ImpactDirection.NEGATIVE, 0.00001, 168..168, -0.180..-0.060,
+            strategies = setOf(InstrumentStrategy.ETN_LINKED),
+            severity = EventSeverity.CRITICAL,
+            cooldownHours = 17_520,
+        ),
+        fund(
+            "commodity_roll_headwind", "{company} 선물 롤오버 비용 증가",
+            "원월물 프리미엄이 확대돼 만기 교체 과정의 손실 압력이 커졌다. 현물 가격과 ETF 수익률이 달라질 수 있다.",
+            ImpactDirection.NEGATIVE, 0.004, 72..240, -0.035..-0.008,
+            strategies = setOf(InstrumentStrategy.COMMODITY_FUTURES, InstrumentStrategy.CRYPTO_FUTURES),
+        ),
+        fund(
+            "treasury_duration_rally", "{company} 듀레이션 수혜 확대",
+            "시장금리 하락으로 보유 채권의 가격 상승 효과가 발생했다. 만기가 긴 상품일수록 민감도가 크다.",
+            ImpactDirection.POSITIVE, 0.003, 48..168, 0.005..0.035,
+            strategies = setOf(InstrumentStrategy.TREASURY, InstrumentStrategy.INFLATION_LINKED_BOND),
+        ),
+        fund(
+            "fund_liquidity_warning", "{company} 유동성·청산 가능성 점검",
+            "거래량과 운용자산 감소로 스프레드가 넓어졌다. 운용사는 합병 또는 청산을 검토할 수 있다.",
+            ImpactDirection.NEGATIVE, 0.0015, 120..504, -0.050..-0.012,
+            severity = EventSeverity.MAJOR,
+        ),
 
         // Geopolitics, disasters, public health, and infrastructure.
         global("trade_dispute", "무역 분쟁 격화", "주요국이 관세와 수출 통제 범위를 확대했다.", EventType.GEOPOLITICAL, false, 0.002, 168..720, -0.060..-0.018, EventSeverity.MAJOR),
@@ -224,6 +312,9 @@ object DefaultEventTemplates {
     init {
         check(all.size >= 30) { "The simulator requires at least 30 event templates" }
         check(all.map(EventTemplate::id).distinct().size == all.size)
+        check(all.none { it.id == "earnings_beat" || it.id == "earnings_miss" }) {
+            "Reported earnings beat/miss must be generated by the scheduled quarterly calendar"
+        }
     }
 
     private fun industry(
@@ -288,8 +379,41 @@ object DefaultEventTemplates {
                 ImpactDirection.NEGATIVE -> -0.85..-0.3
                 else -> -0.2..0.2
             },
+            instrumentTypes = setOf(InstrumentType.STOCK, InstrumentType.REIT, InstrumentType.ADR),
         )
     }
+
+    private fun fund(
+        id: String,
+        title: String,
+        description: String,
+        direction: ImpactDirection,
+        probability: Double,
+        duration: IntRange,
+        shock: ClosedFloatingPointRange<Double>,
+        strategies: Set<InstrumentStrategy> = emptySet(),
+        severity: EventSeverity = EventSeverity.MINOR,
+        cooldownHours: Int = 480,
+    ): EventTemplate = rule(
+        id = id,
+        title = title,
+        description = description,
+        scope = EventScope.STOCK,
+        type = EventType.FUND_OPERATION,
+        severity = severity,
+        direction = direction,
+        probability = probability,
+        cooldown = cooldownHours,
+        duration = duration,
+        shock = shock,
+        drift = -0.00004..0.00004,
+        volatility = 1.05..1.35,
+        volume = 1.2..2.1,
+        liquidity = 0.7..1.2,
+        sentiment = -0.15..0.15,
+        instrumentTypes = setOf(InstrumentType.ETF, InstrumentType.CLOSED_END_FUND, InstrumentType.ETN),
+        strategies = strategies,
+    )
 
     private fun global(
         id: String,
@@ -331,6 +455,8 @@ object DefaultEventTemplates {
         condition: EventCondition = EventCondition.ALWAYS,
         markets: Set<Market> = emptySet(),
         sectors: Set<Sector> = emptySet(),
+        instrumentTypes: Set<InstrumentType> = emptySet(),
+        strategies: Set<InstrumentStrategy> = emptySet(),
     ): EventTemplate = EventTemplate(
         id = id,
         titleTemplate = title,
@@ -351,5 +477,7 @@ object DefaultEventTemplates {
         condition = condition,
         eligibleMarkets = markets,
         eligibleSectors = sectors,
+        eligibleInstrumentTypes = instrumentTypes,
+        eligibleStrategies = strategies,
     )
 }

@@ -43,6 +43,7 @@ import com.amond.kmpbook.presentation.SimulatorViewModel
 import com.amond.kmpbook.ui.screens.AnalyticsScreen
 import com.amond.kmpbook.ui.screens.EndingScreen
 import com.amond.kmpbook.ui.screens.EventsScreen
+import com.amond.kmpbook.ui.screens.EventNewsFilterState
 import com.amond.kmpbook.ui.screens.GameSettingsDisplay
 import com.amond.kmpbook.ui.screens.HomeDashboardScreen
 import com.amond.kmpbook.ui.screens.MarketTradingScreen
@@ -259,6 +260,7 @@ private fun ScreenContent(
     onLoadGame: () -> Unit,
     onDeleteSave: () -> Unit,
 ) {
+    var eventNewsFilterState by remember { mutableStateOf(EventNewsFilterState()) }
     val portfolioHistory = state.portfolioSnapshots.ifEmpty { listOf(state.currentPortfolio) }
     val estimatedTax = state.annualTaxSummary?.totalPayableKrw?.toDouble() ?: 0.0
     val openStock: (String) -> Unit = { stockId ->
@@ -271,7 +273,8 @@ private fun ScreenContent(
             snapshot = state.currentPortfolio,
             history = portfolioHistory,
             stocks = state.stocks,
-            quotes = state.quotes,
+            marketIndices = state.marketIndices.orEmpty(),
+            usCircuitBreakerState = state.usCircuitBreakerState ?: com.amond.kmpbook.presentation.UsCircuitBreakerState(),
             events = state.newsEvents,
             estimatedTaxKrw = estimatedTax,
             usdKrw = state.macro.usdKrw,
@@ -296,6 +299,8 @@ private fun ScreenContent(
             cashKrw = state.cashByCurrency[Currency.KRW] ?: 0.0,
             cashUsd = state.cashByCurrency[Currency.USD] ?: 0.0,
             onSelectStock = viewModel::selectStock,
+            watchlistedStockIds = state.watchlist,
+            onToggleWatchlist = viewModel::toggleWatchlist,
             onSubmitOrder = { side, type, timeInForce, quantity, limitPrice ->
                 state.selectedStockId?.let { stockId ->
                     viewModel.placeOrder(stockId, side, type, quantity, limitPrice, timeInForce)
@@ -321,6 +326,13 @@ private fun ScreenContent(
         Screen.EVENTS -> EventsScreen(
             currentTime = state.currentTime,
             events = state.newsEvents,
+            upcomingEvents = state.upcomingScheduledEvents,
+            stocks = state.stocks,
+            holdingIds = state.holdings.keys,
+            watchlistIds = state.watchlist,
+            onOpenStock = openStock,
+            filterState = eventNewsFilterState,
+            onFilterStateChange = { eventNewsFilterState = it },
         )
 
         Screen.ANALYTICS -> AnalyticsScreen(
@@ -391,6 +403,12 @@ private fun SimulatorUiState.toTaxCenterData(): TaxCenterData {
                 ?.sumOf { it.amount.amount }
                 ?: 0.0
         }
+        val etfHoldingPeriodWithholding = yearCosts.sumOf { cost ->
+            cost.taxBreakdown?.items
+                ?.filter { it.category == TaxCategory.DIVIDEND_WITHHOLDING }
+                ?.sumOf { it.amount.amount }
+                ?: 0.0
+        }
         TaxYearDisplay(
             year = year,
             taxableStockGainKrw = annual?.currentYearNetStockGainKrw?.coerceAtLeast(0L)?.toDouble() ?: 0.0,
@@ -399,8 +417,10 @@ private fun SimulatorUiState.toTaxCenterData(): TaxCenterData {
             capitalGainsTaxKrw = annual?.totalPayableKrw?.toDouble() ?: 0.0,
             securitiesTransactionTaxKrw = transactionTax,
             ruralSpecialTaxKrw = ruralTax,
-            grossDividendKrw = yearDividends.sumOf { it.grossAmountKrw },
-            dividendWithheldKrw = yearDividends.sumOf { it.withholdingTaxKrw },
+            financialIncomeGrossKrw = annual?.financialIncomeGrossKrw?.toDouble()
+                ?: yearDividends.sumOf { it.financialIncomeAmountKrw },
+            financialIncomeWithheldKrw = yearDividends.sumOf { it.withholdingTaxKrw } +
+                etfHoldingPeriodWithholding,
             paidKrw = taxPaymentNotices
                 .filter { it.taxYear == year && it.status == TaxLiabilityStatus.PAID }
                 .sumOf { it.amountKrw }
@@ -419,9 +439,10 @@ private fun SimulatorUiState.toTaxCenterData(): TaxCenterData {
         years = yearRows,
         brokerFeesKrw = totalCommissionKrw + fxCosts,
         secFinraFeesKrw = secFinra,
-        financialIncomeGrossKrw = dividendLedger
-            .filter { it.paidAt.toLocalDateTime(timeZone).year == currentDate.year }
-            .sumOf { it.grossAmountKrw },
+        financialIncomeGrossKrw = annualTaxSummary?.financialIncomeGrossKrw?.toDouble()
+            ?: dividendLedger
+                .filter { it.paidAt.toLocalDateTime(timeZone).year == currentDate.year }
+                .sumOf { it.grossAmountKrw },
         highDividendEligibleKrw = annualTaxSummary?.highDividendIncomeKrw?.toDouble() ?: 0.0,
         nextDueDate = "${currentDate.year + 1}.05.31",
     )

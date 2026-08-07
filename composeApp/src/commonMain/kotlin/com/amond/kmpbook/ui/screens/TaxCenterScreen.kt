@@ -32,6 +32,8 @@ import com.amond.kmpbook.ui.components.StatusLabel
 import com.amond.kmpbook.ui.format.formatMoney
 import com.amond.kmpbook.ui.format.formatPercent
 import com.amond.kmpbook.ui.theme.MarketColors
+import com.amond.kmpbook.ui.theme.MarketLayout
+import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
 
 data class TaxYearDisplay(
@@ -42,8 +44,8 @@ data class TaxYearDisplay(
     val capitalGainsTaxKrw: Double,
     val securitiesTransactionTaxKrw: Double,
     val ruralSpecialTaxKrw: Double,
-    val grossDividendKrw: Double,
-    val dividendWithheldKrw: Double,
+    val financialIncomeGrossKrw: Double,
+    val financialIncomeWithheldKrw: Double,
     val paidKrw: Double = 0.0,
 )
 
@@ -66,29 +68,38 @@ data class TaxCenterData(
 fun TaxCenterScreen(data: TaxCenterData, modifier: Modifier = Modifier) {
     val current = data.current
     val estimatedDue = current.capitalGainsTaxKrw +
-        (current.dividendWithheldKrw - current.paidKrw).coerceAtLeast(0.0)
-    Column(modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TaxTopTile("즉시 납부 누계", current.securitiesTransactionTaxKrw + current.ruralSpecialTaxKrw + current.dividendWithheldKrw, "매도·배당 시 원천징수", MarketColors.Ink, Modifier.weight(1f))
+        (current.financialIncomeWithheldKrw - current.paidKrw).coerceAtLeast(0.0)
+    Column(
+        modifier.fillMaxSize().padding(MarketLayout.screenPadding),
+        verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
+            TaxTopTile("즉시 납부 누계", current.securitiesTransactionTaxKrw + current.ruralSpecialTaxKrw + current.financialIncomeWithheldKrw, "거래세·ETF·분배금 원천징수", MarketColors.Ink, Modifier.weight(1f))
             TaxTopTile("신고 예정액", estimatedDue, "납부기한 ${data.nextDueDate}", MarketColors.Amber, Modifier.weight(1f))
             TaxTopTile("증권사·규제 비용", data.brokerFeesKrw + data.secFinraFeesKrw, "세금과 분리한 필요경비", MarketColors.Celadon, Modifier.weight(1f))
             TaxTopTile("금융소득", data.financialIncomeGrossKrw, "종합과세 기준 2,000만원", if (data.financialIncomeGrossKrw > 20_000_000.0) MarketColors.Rise else MarketColors.Ink, Modifier.weight(1f))
         }
-        Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Column(Modifier.weight(1.38f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+        ) {
+            Column(
+                Modifier.weight(1.38f),
+                verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+            ) {
                 CapitalGainsCalculation(current, Modifier.fillMaxWidth().height(250.dp))
                 AnnualTaxLedger(data.years, Modifier.fillMaxWidth().weight(1f))
             }
-            Column(Modifier.width(360.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.width(360.dp), verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
                 TaxPolicyCards(data, Modifier.fillMaxWidth().weight(1f))
                 Box(
-                    Modifier.fillMaxWidth().background(MarketColors.AmberSoft, RoundedCornerShape(4.dp)).padding(12.dp),
+                    Modifier.fillMaxWidth().background(MarketColors.AmberSoft, RoundedCornerShape(MarketRadii.small)).padding(16.dp),
                 ) {
                     Column {
                         Text("2026 세법 동결 시나리오", style = MarketType.label.copy(fontWeight = FontWeight.Bold), color = MarketColors.Amber)
                         Text(
                             "2040년까지 알려지지 않은 법 개정은 예측하지 않습니다. 표시 세액은 교육용 추정치이며 실제 신고는 전체 계좌·소득·가족 합산 정보가 필요합니다.",
-                            style = MarketType.label.copy(fontSize = 9.sp, lineHeight = 14.sp),
+                            style = MarketType.caption,
                             color = MarketColors.InkMuted,
                         )
                     }
@@ -100,7 +111,7 @@ fun TaxCenterScreen(data: TaxCenterData, modifier: Modifier = Modifier) {
 
 @Composable
 private fun TaxTopTile(label: String, amount: Double, detail: String, color: Color, modifier: Modifier) {
-    LedgerPanel(modifier.height(91.dp)) {
+    LedgerPanel(modifier.height(108.dp)) {
         Metric(label, formatMoney(amount, Currency.KRW), valueColor = color, detail = detail)
     }
 }
@@ -140,7 +151,7 @@ private fun CapitalGainsCalculation(year: TaxYearDisplay, modifier: Modifier) {
 @Composable
 private fun TaxStep(label: String, value: Double, color: Color, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.fillMaxWidth().height(5.dp).background(color, RoundedCornerShape(2.dp)))
+        Box(Modifier.fillMaxWidth().height(5.dp).background(color, RoundedCornerShape(MarketRadii.pill)))
         Spacer(Modifier.height(7.dp))
         Text(label, style = MarketType.label, color = MarketColors.InkMuted)
         Text(formatMoney(value, Currency.KRW, true), style = MarketType.number, color = color)
@@ -164,8 +175,8 @@ private fun AnnualTaxLedger(years: List<TaxYearDisplay>, modifier: Modifier) {
                 TaxHeader("양도세", 1f)
                 TaxHeader("거래세", 1f)
                 TaxHeader("농특세", 1f)
-                TaxHeader("세전 배당", 1f)
-                TaxHeader("배당 원천세", 1f)
+                TaxHeader("금융소득", 1f)
+                TaxHeader("금융소득 원천세", 1f)
                 TaxHeader("상태", 0.7f)
             }
             LazyColumn(Modifier.weight(1f)) {
@@ -176,8 +187,8 @@ private fun AnnualTaxLedger(years: List<TaxYearDisplay>, modifier: Modifier) {
                         TaxCell(formatMoney(year.capitalGainsTaxKrw, Currency.KRW, true), 1f, MarketColors.Amber)
                         TaxCell(formatMoney(year.securitiesTransactionTaxKrw, Currency.KRW, true), 1f)
                         TaxCell(formatMoney(year.ruralSpecialTaxKrw, Currency.KRW, true), 1f)
-                        TaxCell(formatMoney(year.grossDividendKrw, Currency.KRW, true), 1f)
-                        TaxCell(formatMoney(year.dividendWithheldKrw, Currency.KRW, true), 1f)
+                        TaxCell(formatMoney(year.financialIncomeGrossKrw, Currency.KRW, true), 1f)
+                        TaxCell(formatMoney(year.financialIncomeWithheldKrw, Currency.KRW, true), 1f)
                         Box(Modifier.weight(0.7f)) {
                             StatusLabel(if (year.paidKrw >= year.capitalGainsTaxKrw) "정산" else "예상", if (year.paidKrw >= year.capitalGainsTaxKrw) MarketColors.Celadon else MarketColors.Amber)
                         }
@@ -221,6 +232,22 @@ private fun TaxPolicyCards(data: TaxCenterData, modifier: Modifier) {
                 }
                 item {
                     PolicyRule(
+                        "국내상장 ETF",
+                        "ETF 증권거래세 면제 · 국내주식형 매매차익 비과세",
+                        "기타 ETF: 매매차익/과표증분 중 작은 금액에 15.4%",
+                        MarketColors.Celadon,
+                    )
+                }
+                item {
+                    PolicyRule(
+                        "미국상장 ETF",
+                        "국외주식과 연간 손익통산 − 기본공제 250만원",
+                        "국세 20% + 지방세 2% · RIC 현금분배 통상 15% 원천징수",
+                        MarketColors.Fall,
+                    )
+                }
+                item {
+                    PolicyRule(
                         "배당소득",
                         "국내 15.4% · 미국 W-8BEN 통상 15%",
                         "세전 금융소득 2천만원 초과 시 종합과세 추정",
@@ -243,12 +270,12 @@ private fun TaxPolicyCards(data: TaxCenterData, modifier: Modifier) {
 @Composable
 private fun PolicyRule(title: String, rule: String, detail: String, color: Color) {
     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Top) {
-        Box(Modifier.width(4.dp).height(44.dp).background(color, RoundedCornerShape(2.dp)))
+        Box(Modifier.width(4.dp).height(44.dp).background(color, RoundedCornerShape(MarketRadii.pill)))
         Spacer(Modifier.width(9.dp))
         Column {
             Text(title, style = MarketType.body.copy(fontWeight = FontWeight.SemiBold), color = MarketColors.Ink)
             Text(rule, style = MarketType.label.copy(lineHeight = 14.sp), color = MarketColors.Ink)
-            Text(detail, style = MarketType.label.copy(fontSize = 9.sp, lineHeight = 13.sp), color = MarketColors.InkMuted)
+            Text(detail, style = MarketType.caption, color = MarketColors.InkMuted)
         }
     }
 }
@@ -260,5 +287,5 @@ private fun RowScope.TaxHeader(text: String, weight: Float) {
 
 @Composable
 private fun RowScope.TaxCell(text: String, weight: Float, color: Color = MarketColors.Ink) {
-    Text(text, Modifier.weight(weight), style = MarketType.number.copy(fontSize = 9.sp), color = color, maxLines = 1)
+    Text(text, Modifier.weight(weight), style = MarketType.number, color = color, maxLines = 1)
 }

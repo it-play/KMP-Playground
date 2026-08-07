@@ -1,6 +1,7 @@
 package com.amond.kmpbook.domain.data
 
 import com.amond.kmpbook.domain.model.Market
+import com.amond.kmpbook.domain.model.InstrumentType
 import com.amond.kmpbook.domain.model.Sector
 import com.amond.kmpbook.domain.model.StockDefinition
 
@@ -9,13 +10,14 @@ import com.amond.kmpbook.domain.model.StockDefinition
  *
  * 가격·변동성·배당·시가총액은 실제 투자 판단용 실시간 정보가 아니라 2026-08-07에 시작하는
  * 게임의 밸런스 기준값이다. marketCap은 각 종목의 상장 시장 통화(KRW 또는 USD) 단위다.
- * 새 종목은 [definitions]에 stock(...) 데이터 행 하나를 추가하면 검색과 시장 분류에 자동 반영된다.
+ * 새 개별주식은 [stockDefinitions]에 stock(...) 데이터 행 하나를 추가하면 검색과 시장 분류에
+ * 자동 반영된다. 기본 ETF는 [EtfCatalog], 별도 검증 상품은 요청 카탈로그에서 병합한다.
  */
 object StockCatalog {
     const val BASE_DATE: String = "2026-08-07"
     const val DISCLAIMER: String = "모든 가격과 기업 지표는 투자 정보가 아닌 주식 시뮬레이션용 게임 시세입니다."
 
-    val definitions: List<StockDefinition> = listOf(
+    val stockDefinitions: List<StockDefinition> = listOf(
         // KOSPI
         stock("005930", "삼성전자", "Samsung Electronics", Market.KOSPI, Sector.SEMICONDUCTOR, 98_000.0, 0.28, 0.015, 585_000_000_000_000.0, 5_969_782_550L, 1.02, "메모리·파운드리와 모바일 기기를 아우르는 대한민국 대표 전자기업"),
         stock("000660", "SK하이닉스", "SK hynix", Market.KOSPI, Sector.SEMICONDUCTOR, 310_000.0, 0.36, 0.005, 225_000_000_000_000.0, 728_002_365L, 1.22, "HBM과 메모리 반도체를 중심으로 성장하는 글로벌 반도체 기업"),
@@ -55,14 +57,39 @@ object StockCatalog {
         stock("XOM", "엑슨 모빌", "Exxon Mobil", Market.NYSE, Sector.ENERGY, 125.0, 0.26, 0.033, 540_000_000_000.0, 4_320_000_000L, 0.91, "석유·천연가스 탐사부터 정제·화학까지 영위하는 통합 에너지기업"),
         stock("UNH", "유나이티드헬스 그룹", "UnitedHealth Group", Market.NYSE, Sector.HEALTHCARE_BIO, 330.0, 0.31, 0.027, 303_000_000_000.0, 918_000_000L, 0.78, "건강보험과 의료 데이터·서비스 사업을 운영하는 헬스케어 그룹"),
         stock("KO", "코카콜라", "Coca-Cola", Market.NYSE, Sector.CONSUMER_STAPLES, 78.0, 0.16, 0.026, 336_000_000_000.0, 4_310_000_000L, 0.57, "탄산·스포츠·커피·생수 등 세계적인 음료 브랜드 포트폴리오를 운영하는 기업"),
+
+        // NYSE American (구 AMEX)
+        stock("UEC", "우라늄 에너지", "Uranium Energy Corp.", Market.NYSE_AMERICAN, Sector.ENERGY, 13.50, 0.55, 0.0, 4_800_000_000.0, 360_000_000L, 1.72, "미국 내 우라늄 탐사·개발과 생산 자산을 운영하는 에너지 기업"),
+        stock("CMT", "코어 몰딩 테크놀로지스", "Core Molding Technologies", Market.NYSE_AMERICAN, Sector.INDUSTRIALS, 18.00, 0.38, 0.0, 250_000_000.0, 13_900_000L, 1.16, "복합소재 성형 제품을 제조하는 미국 산업재 기업"),
+        stock("KULR", "KULR 테크놀로지 그룹", "KULR Technology Group", Market.NYSE_AMERICAN, Sector.BATTERY, 4.50, 0.82, 0.0, 1_200_000_000.0, 270_000_000L, 2.08, "배터리 열관리·안전 기술과 에너지 저장 솔루션을 개발하는 기술기업"),
     )
+
+    /** 이번 검증 요청으로 기본 100/300 목록에 추가된 상품. */
+    val requestedDefinitions: List<StockDefinition> by lazy {
+        RequestedKoreanInstrumentCatalog.definitions + RequestedUsInstrumentCatalog.definitions
+    }
+
+    /** 개별주식, ETF, CEF, ETN, REIT, ADR을 합친 기본 거래 유니버스. */
+    val definitions: List<StockDefinition> by lazy {
+        val enrichedBaseEtfs = EtfCatalog.definitions.map(RequestedExistingInstrumentMetadata::enrich)
+        stockDefinitions + enrichedBaseEtfs + requestedDefinitions
+    }
 
     /** 기존 호출부에서 간결하게 사용할 수 있는 별칭. */
     val all: List<StockDefinition> get() = definitions
 
+    /** 기업 실적 이벤트가 적용되는 개별주식·REIT·ADR. */
+    val stocks: List<StockDefinition> get() = definitions.filter(StockDefinition::hasCorporateEarnings)
+
+    /** 법적 구조가 ETF인 상품만 반환한다. CEF와 ETN은 포함하지 않는다. */
+    val etfs: List<StockDefinition> get() = definitions.filter { it.instrumentType == InstrumentType.ETF }
+
+    /** ETF·CEF·ETN처럼 펀드 운용 및 구조 이벤트가 적용되는 상품. */
+    val fundLike: List<StockDefinition> get() = definitions.filter(StockDefinition::isFundLike)
+
     private val byId: Map<String, StockDefinition> = definitions.associateBy(StockDefinition::id)
     private val byMarketAndSymbol: Map<Pair<Market, String>, StockDefinition> =
-        definitions.associateBy { it.market to it.symbol.uppercase() }
+        definitions.associateBy { it.market to it.symbol.trim().uppercase() }
 
     init {
         require(byId.size == definitions.size) { "종목 ID가 중복되었습니다." }
@@ -91,7 +118,13 @@ object StockCatalog {
             keyword in stock.symbol.lowercase() ||
                 keyword in stock.name.lowercase() ||
                 keyword in stock.englishName.lowercase() ||
-                keyword in stock.sector.displayName.lowercase()
+                keyword in stock.sector.displayName.lowercase() ||
+                stock.etfProfile?.let { keyword in it.benchmark.lowercase() || keyword in it.assetClass.displayName.lowercase() } == true ||
+                stock.identityProfile?.let { identity ->
+                    keyword in identity.legalName.lowercase() ||
+                        identity.aliases.any { keyword in it.lowercase() } ||
+                        identity.eventRiskTags.any { keyword in it.lowercase() }
+                } == true
         }
     }
 
@@ -103,10 +136,13 @@ object StockCatalog {
         }
     }
 
-    /** 사용자 정의 종목을 합친 새 불변 목록. 중복 ID는 즉시 거부한다. */
+    /** 사용자 정의 종목을 합친 새 불변 목록. 중복 ID와 동일시장 중복 코드는 즉시 거부한다. */
     fun withAdditional(additional: Iterable<StockDefinition>): List<StockDefinition> {
         val merged = definitions + additional
         require(merged.distinctBy(StockDefinition::id).size == merged.size) { "추가 종목의 ID가 중복되었습니다." }
+        require(merged.distinctBy { it.market to it.symbol.trim().uppercase() }.size == merged.size) {
+            "같은 시장에 중복된 추가 종목 코드가 있습니다."
+        }
         return merged
     }
 

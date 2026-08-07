@@ -25,6 +25,7 @@ enum class EventType(val displayName: String) {
     NATURAL_DISASTER("자연재해"),
     HEALTH_CRISIS("보건 위기"),
     MARKET_SENTIMENT("투자 심리"),
+    FUND_OPERATION("펀드·ETN 운용"),
 }
 
 enum class EventSeverity(
@@ -106,8 +107,19 @@ data class GameEvent(
         EventScope.GLOBAL -> true
         EventScope.COUNTRY,
         EventScope.MARKET,
-        -> stock.market in affectedMarkets
-        EventScope.SECTOR -> stock.sector in affectedSectors
-        EventScope.STOCK -> stock.id in affectedStockIds
+        -> stock.market in affectedMarkets || stock.etfProfile?.let { profile ->
+            affectedMarkets.any(profile::isExposedTo)
+        } == true
+        EventScope.SECTOR -> {
+            val explicitExposure = stock.identityProfile?.exposedSectors.orEmpty()
+            when {
+                explicitExposure.isNotEmpty() -> explicitExposure.any(affectedSectors::contains)
+                !stock.isFundLike -> stock.sector in affectedSectors
+                stock.etfProfile?.assetClass == EtfAssetClass.SECTOR_EQUITY -> stock.sector in affectedSectors
+                else -> false
+            }
+        }
+        EventScope.STOCK -> stock.id in affectedStockIds ||
+            stock.identityProfile?.underlyingInstrumentIds?.any(affectedStockIds::contains) == true
     }
 }

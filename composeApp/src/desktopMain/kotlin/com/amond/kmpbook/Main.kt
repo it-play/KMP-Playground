@@ -5,21 +5,29 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.unit.dp
+import com.amond.kmpbook.ui.theme.MarketDesignSystem
+import com.amond.kmpbook.ui.theme.MarketLayout
 import java.awt.Dimension
+import kmpbook.composeapp.generated.resources.Res
+import kmpbook.composeapp.generated.resources.market_ledger_icon
+import org.jetbrains.compose.resources.painterResource
 
 fun main() = application {
     val windowState = rememberWindowState(
-        width = 1_500.dp,
-        height = 940.dp,
+        width = MarketLayout.defaultWindowWidth,
+        height = MarketLayout.defaultWindowHeight,
         position = WindowPosition(Alignment.Center),
     )
     Window(
         onCloseRequest = ::exitApplication,
-        title = "Market Ledger 2040 · Stock Simulator",
+        title = "${MarketDesignSystem.NAME} · Stock Simulator",
+        icon = painterResource(Res.drawable.market_ledger_icon),
         state = windowState,
     ) {
-        window.minimumSize = Dimension(1_180, 720)
+        window.minimumSize = Dimension(
+            MarketLayout.minimumWindowWidthPx,
+            MarketLayout.minimumWindowHeightPx,
+        )
         App()
     }
 }

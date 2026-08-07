@@ -2,6 +2,7 @@ package com.amond.kmpbook.domain.time
 
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.MarketSession
+import com.amond.kmpbook.domain.model.MarketVenueProfiles
 import com.amond.kmpbook.domain.model.TurnStep
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
@@ -29,7 +30,8 @@ data class MarketSessionWindow(
  *
  * 게임 기준 시각은 KST이며, 미국 시장 판단은 America/New_York 변환 결과를 사용하므로
  * 서머타임(EDT/EST) 전환이 자동 반영된다. 거래소별 임시 휴장일은 [closedDates] 인자로
- * 주입할 수 있어 엔진과 테스트가 외부 상태 없이 동일한 결과를 얻는다.
+ * 주입할 수 있어 엔진과 테스트가 외부 상태 없이 동일한 결과를 얻는다. 미국 정규장은
+ * 공통 09:30-16:00이고 확장 세션 표시는 [MarketVenueProfiles]의 venue 규칙을 따른다.
  */
 object GameCalendar {
     val KOREA_TIME_ZONE: TimeZone = TimeZone.of("Asia/Seoul")
@@ -47,10 +49,8 @@ object GameCalendar {
 
     private val krxOpen: LocalTime = LocalTime(9, 0)
     private val krxClose: LocalTime = LocalTime(15, 30)
-    private val usPreMarketOpen: LocalTime = LocalTime(4, 0)
     private val usRegularOpen: LocalTime = LocalTime(9, 30)
     private val usRegularClose: LocalTime = LocalTime(16, 0)
-    private val usAfterHoursClose: LocalTime = LocalTime(20, 0)
 
     fun timeZoneFor(market: Market): TimeZone = when {
         market.isKorean -> KOREA_TIME_ZONE
@@ -150,12 +150,25 @@ object GameCalendar {
         val local = marketLocalDateTime(market, time)
         if (isWeekend(local.date) || local.date in closedDates) return MarketSession.CLOSED
 
+        if (market.isKorean) {
+            return if (local.time.isInHalfOpenRange(krxOpen, krxClose)) {
+                MarketSession.REGULAR
+            } else {
+                MarketSession.CLOSED
+            }
+        }
+
+        val venue = MarketVenueProfiles.forMarket(market)
+        val preMarketOpen = venue.preMarketOpensAt
+        val afterHoursClose = venue.afterHoursClosesAt
         return when {
-            market.isKorean && local.time.isInHalfOpenRange(krxOpen, krxClose) -> MarketSession.REGULAR
-            market.isKorean -> MarketSession.CLOSED
-            local.time.isInHalfOpenRange(usPreMarketOpen, usRegularOpen) -> MarketSession.PRE_MARKET
+            preMarketOpen != null && local.time.isInHalfOpenRange(preMarketOpen, usRegularOpen) ->
+                MarketSession.PRE_MARKET
+
             local.time.isInHalfOpenRange(usRegularOpen, usRegularClose) -> MarketSession.REGULAR
-            local.time.isInHalfOpenRange(usRegularClose, usAfterHoursClose) -> MarketSession.AFTER_HOURS
+            afterHoursClose != null && local.time.isInHalfOpenRange(usRegularClose, afterHoursClose) ->
+                MarketSession.AFTER_HOURS
+
             else -> MarketSession.CLOSED
         }
     }

@@ -118,6 +118,12 @@ class SimulatorViewModel(
         publish()
     }
 
+    fun toggleWatchlist(stockId: String): Boolean {
+        val added = runtime.toggleWatchlist(stockId)
+        publish()
+        return added
+    }
+
     fun clearMessage() {
         runtime.clearMessage()
         publish()

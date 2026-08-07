@@ -1,5 +1,6 @@
 package com.amond.kmpbook.persistence
 
+import com.amond.kmpbook.domain.data.StockCatalog
 import com.amond.kmpbook.domain.model.Currency
 import com.amond.kmpbook.domain.model.EventScope
 import com.amond.kmpbook.domain.model.EventSeverity
@@ -47,7 +48,9 @@ import com.amond.kmpbook.presentation.DividendLedgerEntry
 import com.amond.kmpbook.presentation.ForeignExchangeRecord
 import com.amond.kmpbook.presentation.NewGameOptions
 import com.amond.kmpbook.presentation.RealizedGainRecord
+import com.amond.kmpbook.presentation.SimulatorRuntime
 import com.amond.kmpbook.presentation.SimulatorUiState
+import com.amond.kmpbook.presentation.SimulatorViewModel
 import com.amond.kmpbook.presentation.TaxPaymentNotice
 import com.amond.kmpbook.presentation.TransactionCostRecord
 import kotlinx.coroutines.runBlocking
@@ -227,6 +230,30 @@ class DesktopGameSaveStorageTest {
         val writeFailure = assertIs<GameSaveResult.Failure>(writeStorage.save(richState()))
         assertEquals(GameSaveErrorCode.FILE_TOO_LARGE, writeFailure.error.code)
         assertFalse(writeFile.exists())
+    }
+
+    @Test
+    fun fullCatalogWithSaturatedRecentHistoryStaysUnderSaveLimit(): Unit = runBlocking {
+        val file = temporaryDirectory.resolve("full-catalog-savegame.json")
+        val storage = GameSaveStorage(file.toString())
+        val initial = SimulatorViewModel().apply {
+            newGame(NewGameOptions(seed = 20_260_807L))
+        }.currentState
+        val saturated = initial.copy(
+            priceHistory = initial.priceHistory.mapValues { (_, bars) ->
+                List(SimulatorRuntime.MAX_RECENT_BARS) { bars.single() }
+            },
+            marketIndexHistory = initial.marketIndexHistory?.mapValues { (_, values) ->
+                List(SimulatorRuntime.MAX_INDEX_BARS) { values.single() }
+            },
+        )
+
+        val saved = assertIs<GameSaveResult.Success>(storage.save(saturated))
+        assertTrue(saved.bytesWritten < DEFAULT_MAX_GAME_SAVE_FILE_BYTES)
+        val loaded = assertIs<GameLoadResult.Success>(storage.load()).state
+        assertEquals(StockCatalog.all.size, loaded.stocks.size)
+        assertTrue(loaded.priceHistory.values.all { it.size == SimulatorRuntime.MAX_RECENT_BARS })
+        assertTrue(loaded.marketIndexHistory.orEmpty().values.all { it.size == SimulatorRuntime.MAX_INDEX_BARS })
     }
 
     private fun richState(): SimulatorUiState {

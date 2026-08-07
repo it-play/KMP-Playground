@@ -26,9 +26,17 @@ fun formatMoney(value: Double, currency: Currency, compact: Boolean = false): St
     }
 }
 
-fun formatPrice(value: Double, currency: Currency): String = when (currency) {
-    Currency.KRW -> groupDigits(value.roundToLong())
-    Currency.USD -> groupDecimal(value, 2)
+fun formatPrice(value: Double, currency: Currency, includeCurrency: Boolean = true): String {
+    val formatted = when (currency) {
+        Currency.KRW -> groupDigits(value.roundToLong())
+        Currency.USD -> groupDecimal(value, 2)
+    }
+    if (!includeCurrency) return formatted
+    return if (formatted.startsWith('-')) {
+        "-${currency.symbol}${formatted.removePrefix("-")}"
+    } else {
+        "${currency.symbol}$formatted"
+    }
 }
 
 fun formatPercent(value: Double, withSign: Boolean = true): String {
@@ -37,13 +45,14 @@ fun formatPercent(value: Double, withSign: Boolean = true): String {
     return "$sign${formatDecimal(value * 100.0, 2)}%"
 }
 
-fun formatQuantity(value: Double): String {
+fun formatQuantity(value: Double, unit: String = "주"): String {
     val rounded = value.roundToLong().toDouble()
-    return if (abs(value - rounded) < 0.000001) {
+    val formatted = if (abs(value - rounded) < 0.000001) {
         groupDigits(rounded.toLong())
     } else {
         formatDecimal(value, 6).trimEnd('0').trimEnd('.')
     }
+    return "$formatted$unit"
 }
 
 fun formatDateTimeKst(instant: Instant): String {

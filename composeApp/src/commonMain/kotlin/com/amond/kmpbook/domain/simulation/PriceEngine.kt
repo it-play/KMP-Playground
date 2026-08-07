@@ -1,10 +1,13 @@
 package com.amond.kmpbook.domain.simulation
 
 import com.amond.kmpbook.domain.model.Currency
+import com.amond.kmpbook.domain.model.EtfExposureRegion
+import com.amond.kmpbook.domain.model.InstrumentStrategy
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.MarketSession
 import com.amond.kmpbook.domain.model.PriceBar
 import com.amond.kmpbook.domain.model.Quote
+import com.amond.kmpbook.domain.model.ReferenceCurrency
 import com.amond.kmpbook.domain.model.Sector
 import com.amond.kmpbook.domain.model.StockDefinition
 import com.amond.kmpbook.domain.model.TurnStep
@@ -27,11 +30,17 @@ data class MacroEnvironment(
     val growthSurprise: Double = 0.0,
     val usdKrw: Double = 1_350.0,
     val previousUsdKrw: Double = usdKrw,
+    /** 다중통화 ETF NAV용 원화 환율. 구형 저장은 null이며 USD 필드로 안전하게 fallback한다. */
+    val fxRatesToKrw: Map<ReferenceCurrency, Double>? = null,
+    val previousFxRatesToKrw: Map<ReferenceCurrency, Double>? = null,
     val riskSentiment: Double = 0.0,
     val volatilityRegime: Double = 1.0,
     val marketHourlyReturns: Map<Market, Double> = emptyMap(),
     val sectorHourlyReturns: Map<Sector, Double> = emptyMap(),
+    val regionalEtfHourlyReturns: Map<EtfExposureRegion, Double>? = null,
     val marketChangeFromPreviousClose: Map<Market, Double> = emptyMap(),
+    /** S&P 500 프록시 기준으로 런타임이 이번 시간에 발동한 미국 공통 MWCB 레벨. */
+    val usCircuitBreakerLevel: Int = 0,
 ) {
     init {
         require(policyRate.isFinite() && inflationRate.isFinite() && growthRate.isFinite())
@@ -40,17 +49,35 @@ data class MacroEnvironment(
         require(previousUsdKrw > 0.0 && previousUsdKrw.isFinite()) {
             "Previous USD/KRW must be positive and finite"
         }
+        require(fxRatesToKrw.orEmpty().values.all { it > 0.0 && it.isFinite() })
+        require(previousFxRatesToKrw.orEmpty().values.all { it > 0.0 && it.isFinite() })
         require(riskSentiment in -1.0..1.0) { "Risk sentiment must be in [-1, 1]" }
         require(volatilityRegime in 0.1..10.0) { "Volatility regime must be in [0.1, 10]" }
         require(marketHourlyReturns.values.all { it.isFinite() })
         require(sectorHourlyReturns.values.all { it.isFinite() })
+        require(regionalEtfHourlyReturns.orEmpty().values.all { it.isFinite() })
         require(marketChangeFromPreviousClose.values.all { it.isFinite() })
+        require(usCircuitBreakerLevel in 0..3)
+    }
+
+    fun rateToKrw(currency: ReferenceCurrency, previous: Boolean = false): Double {
+        if (currency == ReferenceCurrency.KRW) return 1.0
+        val rates = if (previous) previousFxRatesToKrw else fxRatesToKrw
+        return rates?.get(currency) ?: if (currency == ReferenceCurrency.USD) {
+            if (previous) previousUsdKrw else usdKrw
+        } else {
+            // A v1 save has no non-USD basket. Holding the missing cross-rate flat avoids
+            // inventing a restore-time jump until the runtime seeds the current FX state.
+            1.0
+        }
     }
 }
 
 /** Price, volatility, and liquidity effect applied during this one-hour step. */
 data class PriceImpulse(
     val returnRate: Double = 0.0,
+    /** 종목 자체의 운용·발행사 사건. 인버스·레버리지 배율을 다시 곱하지 않는다. */
+    val directProductReturnRate: Double = 0.0,
     val volatilityMultiplier: Double = 1.0,
     val volumeMultiplier: Double = 1.0,
 ) {
@@ -58,11 +85,17 @@ data class PriceImpulse(
         require(returnRate > -1.0 && returnRate.isFinite()) {
             "Impulse return must be finite and greater than -100%"
         }
+        require(directProductReturnRate > -1.0 && directProductReturnRate.isFinite()) {
+            "Direct product impulse must be finite and greater than -100%"
+        }
         require(volatilityMultiplier in 0.0..20.0) {
             "Volatility multiplier must be in [0, 20]"
         }
         require(volumeMultiplier in 0.0..100.0) { "Volume multiplier must be in [0, 100]" }
     }
+
+    val referenceReturnRate: Double
+        get() = ((1.0 + returnRate) / (1.0 + directProductReturnRate) - 1.0).coerceAtLeast(-0.95)
 }
 
 data class PriceGenerationInput(
@@ -84,6 +117,18 @@ data class PriceGenerationInput(
      * for KRX's 15:00-15:30 final half-hour and 1.0 for ordinary full hours.
      */
     val regularTradingFraction: Double = 1.0,
+    /**
+     * Fair-value clock visible to this bar. Normally the same as the regular fraction;
+     * after an intrahour L1/L2 reopening it keeps running for the ordinary session even
+     * though volume and idiosyncratic volatility use the reduced trading fraction.
+     */
+    val fairValueTradingFraction: Double? = null,
+    /** 기초자산 시장이 이 시간에 실제로 거래된 비율. 해외 ETF의 개장 갭에 사용한다. */
+    val referenceTradingFraction: Double? = null,
+    /** 상장시장 폐장 중 누적된 기초자산·환율 fair-value 로그수익률. 개장 시 한 번 적용한다. */
+    val carriedReferenceLogReturn: Double = 0.0,
+    /** 이번 봉이 현지 거래일의 첫 정규장 봉인지를 런타임이 지정한다. */
+    val isFirstRegularBarOfDay: Boolean = false,
 ) {
     init {
         require(previousPrice > 0.0 && previousPrice.isFinite()) {
@@ -100,6 +145,13 @@ data class PriceGenerationInput(
         require(regularTradingFraction in 0.0..1.0) {
             "Regular trading fraction must be in [0, 1]"
         }
+        require(fairValueTradingFraction == null || fairValueTradingFraction in 0.0..1.0) {
+            "Fair-value trading fraction must be in [0, 1]"
+        }
+        require(referenceTradingFraction == null || referenceTradingFraction in 0.0..1.0) {
+            "Reference trading fraction must be in [0, 1]"
+        }
+        require(carriedReferenceLogReturn.isFinite())
     }
 
     companion object {
@@ -109,6 +161,8 @@ data class PriceGenerationInput(
                 .toLong()
 
         fun defaultFxSensitivity(stock: StockDefinition): Double = when {
+            stock.etfProfile?.fxProfile != null -> 0.0
+            stock.etfProfile != null -> stock.etfProfile.legacyUsdKrwSensitivity
             stock.market.isUnitedStates -> -0.10
             stock.sector in EXPORT_HEAVY_SECTORS -> 0.25
             stock.sector in IMPORT_HEAVY_SECTORS -> -0.15
@@ -151,11 +205,13 @@ data class PriceAttribution(
     val growthAndSentiment: Double,
     val foreignExchange: Double,
     val event: Double,
+    val fundCosts: Double,
+    val carriedReference: Double,
     val idiosyncratic: Double,
 ) {
     val totalBeforeStabilization: Double
         get() = market + sector + ratesAndInflation + growthAndSentiment +
-            foreignExchange + event + idiosyncratic
+            foreignExchange + event + fundCosts + carriedReference + idiosyncratic
 }
 
 data class PriceGenerationResult(
@@ -175,14 +231,14 @@ data class PriceGenerationResult(
 class PriceEngine(private val seed: Long) {
     fun generateHour(input: PriceGenerationInput): PriceGenerationResult {
         val endTime = input.startTime + 1.hours
+        val stock = input.stock
+        val referenceFraction = input.referenceTradingFraction ?: input.regularTradingFraction
+        val fairValueFraction = input.fairValueTradingFraction ?: input.regularTradingFraction
+        val circuitLevel = if (stock.market.isUnitedStates) input.macro.usCircuitBreakerLevel else 0
+        if (circuitLevel == 3) return haltedUsResult(input, endTime)
         if (!input.session.isTradable || input.regularTradingFraction == 0.0) {
             return closedResult(input, endTime)
         }
-
-        val stock = input.stock
-        val marketDrawdown = input.macro.marketChangeFromPreviousClose[stock.market] ?: 0.0
-        val circuitLevel = usCircuitLevel(stock.market, marketDrawdown)
-        if (circuitLevel == 3) return haltedUsResult(input, endTime)
 
         val random = DeterministicRandom(
             DeterministicRandom.mixSeed(seed, stableHash64(stock.id), input.startTime.epochSeconds),
@@ -193,53 +249,83 @@ class PriceEngine(private val seed: Long) {
             1, 2 -> US_REOPENED_VOLATILITY_FACTOR
             else -> 1.0
         }
+        val behavior = stock.behavior
+        val combinedAnnualVolatility = sqrt(
+            stock.volatility * stock.volatility +
+                behavior.priceDislocationVolatility * behavior.priceDislocationVolatility,
+        )
         val hourlyVolatility = (
-            stock.volatility / sqrt(hoursPerTradingYear) *
+            combinedAnnualVolatility / sqrt(hoursPerTradingYear) *
                 input.macro.volatilityRegime *
                 input.eventImpulse.volatilityMultiplier *
                 circuitVolatilityFactor *
                 sqrt(input.regularTradingFraction)
             ).coerceIn(0.0, MAX_HOURLY_VOLATILITY)
 
-        val marketComponent = stock.beta *
-            (input.macro.marketHourlyReturns[stock.market] ?: 0.0) * input.regularTradingFraction
-        val sectorComponent = SECTOR_LOADING *
-            (input.macro.sectorHourlyReturns[stock.sector] ?: 0.0) * input.regularTradingFraction
-        val ratesAndInflation =
-            -rateSensitivity(stock.sector) * input.macro.policyRateChange -
-                inflationSensitivity(stock.sector) * input.macro.inflationSurprise * HOURLY_MACRO_SCALE
-        val growthAndSentiment =
-            growthSensitivity(stock.sector) * input.macro.growthSurprise * HOURLY_MACRO_SCALE +
-                input.macro.riskSentiment * RISK_SENTIMENT_HOURLY_SCALE
-        val fxReturn = ln(input.macro.usdKrw / input.macro.previousUsdKrw) *
-            input.fxSensitivity * input.regularTradingFraction
+        val fundLeverage = stock.etfProfile?.leverage ?: 1.0
+        val factor = factorReturn(stock, input.macro)
+        val marketComponent = fundLeverage * stock.beta *
+            strategyParticipation(behavior, factor) * factor * referenceFraction
+        val sectorFactor = input.macro.sectorHourlyReturns[stock.sector] ?: 0.0
+        val sectorComponent = fundLeverage * SECTOR_LOADING *
+            strategyParticipation(behavior, sectorFactor) * sectorFactor * referenceFraction
+        val ratesAndInflation = instrumentRateReturn(stock, input.macro)
+        val growthAndSentiment = instrumentGrowthAndCreditReturn(stock, input.macro)
+        val fxReturn = structuredFxReturn(stock, input.macro, input.fxSensitivity) *
+            fairValueFraction
+        val resetVolatilityDrag = dailyResetVolatilityDrag(stock, hoursPerTradingYear)
+        // 분배 재원은 NAV에 먼저 적립된 뒤 배당락일에 빠진다. 커버드콜·ETN의
+        // coverage<1 부분은 이 적립에서 제외되므로 반복 분배가 원금을 잠식할 수 있다.
+        val earnedDistributionCarry = stock.dividendYield * behavior.distributionCoverageRatio /
+            hoursPerTradingYear * fairValueFraction
+        val fundCosts = earnedDistributionCarry - (
+            (stock.etfProfile?.annualExpenseRatio ?: 0.0) +
+                (stock.etfProfile?.fxProfile?.annualHedgeCostRate ?: 0.0) +
+                behavior.annualStructuralDrag
+            ) /
+            hoursPerTradingYear * fairValueFraction + resetVolatilityDrag * fairValueFraction
         val randomComponent = -0.5 * hourlyVolatility * hourlyVolatility +
             hourlyVolatility * random.nextGaussian()
 
         val attribution = PriceAttribution(
             market = marketComponent,
             sector = sectorComponent,
-            ratesAndInflation = ratesAndInflation * input.regularTradingFraction,
-            growthAndSentiment = growthAndSentiment * input.regularTradingFraction,
+            ratesAndInflation = fundLeverage * ratesAndInflation * referenceFraction,
+            growthAndSentiment = fundLeverage * growthAndSentiment * referenceFraction,
+            // Currency hedging is an independent overlay. Multiplying it by an inverse or
+            // leveraged equity mandate would incorrectly reverse/double the FX leg.
             foreignExchange = fxReturn,
-            event = ln(1.0 + input.eventImpulse.returnRate) * input.regularTradingFraction,
+            event = fundLeverage * strategyParticipation(behavior, input.eventImpulse.referenceReturnRate) *
+                ln(1.0 + input.eventImpulse.referenceReturnRate) * referenceFraction +
+                ln(1.0 + input.eventImpulse.directProductReturnRate) * fairValueFraction,
+            fundCosts = fundCosts,
+            carriedReference = input.carriedReferenceLogReturn,
             idiosyncratic = randomComponent,
         )
 
-        val proposedLogReturn = attribution.totalBeforeStabilization.coerceIn(
+        // A return accumulated while the listing was closed is an opening auction gap,
+        // not intrahour drift. Stabilize the live-session return independently so a
+        // queued market order observes the same opening price as the OHLC bar.
+        val boundedCarry = input.carriedReferenceLogReturn.coerceIn(
             -MAX_RAW_LOG_RETURN,
             MAX_RAW_LOG_RETURN,
         )
+        val rawOpen = input.previousPrice * exp(boundedCarry)
+        val open = boundedPrice(stock.market, rawOpen, input.dailyBasePrice)
+        val activeLogReturn = (
+            attribution.market + attribution.sector + attribution.ratesAndInflation +
+                attribution.growthAndSentiment + attribution.foreignExchange +
+                attribution.event + attribution.fundCosts + attribution.idiosyncratic
+            ).coerceIn(-MAX_RAW_LOG_RETURN, MAX_RAW_LOG_RETURN)
         val stabilizedLogReturn = if (stock.market.isUnitedStates) {
-            proposedLogReturn.coerceIn(-MAX_US_HOURLY_LOG_MOVE, MAX_US_HOURLY_LOG_MOVE)
+            activeLogReturn.coerceIn(-MAX_US_HOURLY_LOG_MOVE, MAX_US_HOURLY_LOG_MOVE)
         } else {
-            proposedLogReturn
+            activeLogReturn
         }
-        val volatilityPause = stock.market.isUnitedStates && stabilizedLogReturn != proposedLogReturn
+        val volatilityPause = stock.market.isUnitedStates && stabilizedLogReturn != activeLogReturn
 
-        val rawClose = input.previousPrice * exp(stabilizedLogReturn)
+        val rawClose = open.price * exp(stabilizedLogReturn)
         val boundedClose = boundedPrice(stock.market, rawClose, input.dailyBasePrice)
-        val open = boundedPrice(stock.market, input.previousPrice, input.dailyBasePrice)
         val close = boundedClose.price
 
         val rangeScale = (hourlyVolatility + abs(stabilizedLogReturn) * 0.35)
@@ -271,8 +357,8 @@ class PriceEngine(private val seed: Long) {
             volume = volume,
         )
         val stabilizer = when {
-            boundedClose.hitUpperLimit -> TradingStabilizer.KRX_UPPER_LIMIT
-            boundedClose.hitLowerLimit -> TradingStabilizer.KRX_LOWER_LIMIT
+            open.hitUpperLimit || boundedClose.hitUpperLimit -> TradingStabilizer.KRX_UPPER_LIMIT
+            open.hitLowerLimit || boundedClose.hitLowerLimit -> TradingStabilizer.KRX_LOWER_LIMIT
             circuitLevel == 2 -> TradingStabilizer.US_LEVEL_2_REOPENED
             circuitLevel == 1 -> TradingStabilizer.US_LEVEL_1_REOPENED
             volatilityPause -> TradingStabilizer.US_VOLATILITY_PAUSE
@@ -283,9 +369,9 @@ class PriceEngine(private val seed: Long) {
             timestamp = endTime,
             price = close,
             previousClose = input.dailyBasePrice,
-            open = input.dayOpen,
-            high = max(input.dayHigh, high.price),
-            low = min(input.dayLow, low.price),
+            open = if (input.isFirstRegularBarOfDay) open.price else input.dayOpen,
+            high = if (input.isFirstRegularBarOfDay) high.price else max(input.dayHigh, high.price),
+            low = if (input.isFirstRegularBarOfDay) low.price else min(input.dayLow, low.price),
             volume = volume,
             session = input.session,
         )
@@ -295,9 +381,159 @@ class PriceEngine(private val seed: Long) {
             closeValueKrw = if (stock.currency == Currency.USD) close * input.macro.usdKrw else close,
             attribution = attribution,
             stabilizer = stabilizer,
-            wasClamped = boundedClose.wasClamped || open.wasClamped ||
-                high.wasClamped || low.wasClamped || volatilityPause,
+            wasClamped = boundedCarry != input.carriedReferenceLogReturn ||
+                boundedClose.wasClamped || open.wasClamped || high.wasClamped ||
+                low.wasClamped || volatilityPause,
         )
+    }
+
+    private fun factorReturn(stock: StockDefinition, macro: MacroEnvironment): Double {
+        val profile = stock.etfProfile ?: return macro.marketHourlyReturns[stock.market] ?: 0.0
+        macro.regionalEtfHourlyReturns?.get(profile.exposureRegion)?.let { return it }
+        val candidates = when (profile.exposureRegion) {
+            EtfExposureRegion.KOREA -> macro.marketHourlyReturns.filterKeys(Market::isKorean).values
+            EtfExposureRegion.UNITED_STATES -> macro.marketHourlyReturns
+                .filterKeys(Market::isUnitedStates)
+                .values
+            EtfExposureRegion.GLOBAL -> macro.marketHourlyReturns.values
+            EtfExposureRegion.DEVELOPED_EX_US,
+            EtfExposureRegion.EMERGING_MARKETS,
+            -> macro.marketHourlyReturns.values
+        }
+        return candidates.takeIf { it.isNotEmpty() }?.average()
+            ?: macro.marketHourlyReturns[stock.market]
+            ?: 0.0
+    }
+
+    /**
+     * 상장시장이 닫힌 동안 ETF의 기초시장과 FX fair value만 누적한다. 추적오차 난수와
+     * 호가 미시구조는 실제 상장시장이 열릴 때만 생성한다.
+     */
+    fun referenceLogReturn(
+        stock: StockDefinition,
+        macro: MacroEnvironment,
+        referenceTradingFraction: Double,
+        fxTradingFraction: Double = 1.0,
+        eventImpulse: PriceImpulse = PriceImpulse(),
+    ): Double {
+        require(referenceTradingFraction in 0.0..1.0)
+        require(fxTradingFraction in 0.0..1.0)
+        val profile = stock.etfProfile ?: return 0.0
+        val leverage = profile.leverage
+        val behavior = stock.behavior
+        val factor = factorReturn(stock, macro)
+        val market = leverage * stock.beta * strategyParticipation(behavior, factor) *
+            factor * referenceTradingFraction
+        val sectorFactor = macro.sectorHourlyReturns[stock.sector] ?: 0.0
+        val sector = leverage * SECTOR_LOADING *
+            strategyParticipation(behavior, sectorFactor) * sectorFactor * referenceTradingFraction
+        val ratesAndInflation = leverage * instrumentRateReturn(stock, macro) * referenceTradingFraction
+        val growthAndSentiment = leverage * instrumentGrowthAndCreditReturn(stock, macro) *
+            referenceTradingFraction
+        val fx = structuredFxReturn(stock, macro, profile.legacyUsdKrwSensitivity) * fxTradingFraction
+        val event = leverage * strategyParticipation(behavior, eventImpulse.referenceReturnRate) *
+            ln(1.0 + eventImpulse.referenceReturnRate) * referenceTradingFraction +
+            ln(1.0 + eventImpulse.directProductReturnRate) * fxTradingFraction
+        // Expense and hedge-cost accrual belongs to the listing's regular-session NAV
+        // path. Including it here would charge a foreign-market ETF once while its
+        // reference trades and again while the listing trades.
+        return market + sector + ratesAndInflation + growthAndSentiment + fx + event
+    }
+
+    private fun structuredFxReturn(
+        stock: StockDefinition,
+        macro: MacroEnvironment,
+        legacySensitivity: Double,
+    ): Double {
+        val listingCurrency = when (stock.currency) {
+            Currency.KRW -> ReferenceCurrency.KRW
+            Currency.USD -> ReferenceCurrency.USD
+        }
+        val listingReturn = ln(
+            macro.rateToKrw(listingCurrency) / macro.rateToKrw(listingCurrency, previous = true),
+        )
+        val fxProfile = stock.etfProfile?.fxProfile
+        if (fxProfile == null) {
+            val referenceCurrency = stock.behavior.referenceCurrency
+            if (referenceCurrency != null) {
+                val referenceReturn = ln(
+                    macro.rateToKrw(referenceCurrency) /
+                        macro.rateToKrw(referenceCurrency, previous = true),
+                )
+                return stock.behavior.referenceCurrencySensitivity * (referenceReturn - listingReturn)
+            }
+            return ln(macro.usdKrw / macro.previousUsdKrw) * legacySensitivity
+        }
+        return fxProfile.legs.sumOf { leg ->
+            val legReturn = ln(
+                macro.rateToKrw(leg.currency) / macro.rateToKrw(leg.currency, previous = true),
+            )
+            leg.netNotional * (legReturn - listingReturn)
+        }
+    }
+
+    private fun strategyParticipation(
+        behavior: com.amond.kmpbook.domain.model.InstrumentBehaviorProfile,
+        factor: Double,
+    ): Double = if (factor >= 0.0) behavior.upsideParticipation else behavior.downsideParticipation
+
+    private fun instrumentRateReturn(stock: StockDefinition, macro: MacroEnvironment): Double {
+        val behavior = stock.behavior
+        if (behavior.durationYears != 0.0 || behavior.cashRateAccrual > 0.0) {
+            val nominalDurationMove = -behavior.durationYears * macro.policyRateChange
+            val inflationLinkedMove = if (behavior.strategy == InstrumentStrategy.INFLATION_LINKED_BOND) {
+                behavior.durationYears * macro.inflationSurprise * HOURLY_MACRO_SCALE * 0.32
+            } else {
+                0.0
+            }
+            val cashCarry = macro.policyRate * behavior.cashRateAccrual /
+                (TRADING_DAYS_PER_YEAR * TRADING_HOURS_PER_DAY)
+            return nominalDurationMove + inflationLinkedMove + cashCarry
+        }
+        return -rateSensitivity(stock.sector) * macro.policyRateChange -
+            inflationSensitivity(stock.sector) * macro.inflationSurprise * HOURLY_MACRO_SCALE
+    }
+
+    private fun instrumentGrowthAndCreditReturn(stock: StockDefinition, macro: MacroEnvironment): Double {
+        val behavior = stock.behavior
+        val ordinary = growthSensitivity(stock.sector) * macro.growthSurprise * HOURLY_MACRO_SCALE +
+            macro.riskSentiment * RISK_SENTIMENT_HOURLY_SCALE
+        val credit = behavior.creditSpreadSensitivity * (
+            macro.growthSurprise * CREDIT_GROWTH_SCALE +
+                macro.riskSentiment * CREDIT_SENTIMENT_SCALE
+            )
+        val commodityLoading = if (behavior.commodityFactorSensitivity != 0.0) {
+            behavior.commodityFactorSensitivity
+        } else if (behavior.strategy == InstrumentStrategy.COMMODITY_FUTURES) {
+            1.0
+        } else {
+            0.0
+        }
+        val cryptoLoading = if (behavior.cryptoFactorSensitivity != 0.0) {
+            behavior.cryptoFactorSensitivity
+        } else if (behavior.strategy == InstrumentStrategy.CRYPTO_FUTURES) {
+            1.0
+        } else {
+            0.0
+        }
+        val alternative = commodityLoading * macro.inflationSurprise * COMMODITY_INFLATION_SCALE +
+            cryptoLoading * macro.riskSentiment * CRYPTO_SENTIMENT_SCALE
+        return if (behavior.creditSpreadSensitivity > 0.0) credit + ordinary * 0.20
+        else ordinary + alternative
+    }
+
+    private fun dailyResetVolatilityDrag(stock: StockDefinition, hoursPerTradingYear: Double): Double {
+        val leverage = stock.etfProfile?.leverage ?: return 0.0
+        if (stock.behavior.strategy !in setOf(
+                InstrumentStrategy.DAILY_LEVERAGED,
+                InstrumentStrategy.DAILY_INVERSE,
+            )
+        ) {
+            return 0.0
+        }
+        val underlyingAnnualVolatility = stock.volatility / abs(leverage).coerceAtLeast(1.0)
+        return -0.5 * abs(leverage * (leverage - 1.0)) *
+            underlyingAnnualVolatility * underlyingAnnualVolatility / hoursPerTradingYear
     }
 
     private fun closedResult(input: PriceGenerationInput, endTime: Instant): PriceGenerationResult {
@@ -402,16 +638,6 @@ class PriceEngine(private val seed: Long) {
         return BoundedPrice(finalPrice, finalPrice != rawPrice)
     }
 
-    private fun usCircuitLevel(market: Market, marketDrawdown: Double): Int {
-        if (!market.isUnitedStates) return 0
-        return when {
-            marketDrawdown <= -0.20 -> 3
-            marketDrawdown <= -0.13 -> 2
-            marketDrawdown <= -0.07 -> 1
-            else -> 0
-        }
-    }
-
     private fun rateSensitivity(sector: Sector): Double = when (sector) {
         Sector.REAL_ESTATE, Sector.UTILITIES, Sector.INFORMATION_TECHNOLOGY,
         Sector.INTERNET_PLATFORM, Sector.BATTERY, Sector.ROBOTICS,
@@ -449,6 +675,10 @@ class PriceEngine(private val seed: Long) {
         private const val SECTOR_LOADING: Double = 0.55
         private const val HOURLY_MACRO_SCALE: Double = 0.0015
         private const val RISK_SENTIMENT_HOURLY_SCALE: Double = 0.0012
+        private const val CREDIT_GROWTH_SCALE: Double = 0.00045
+        private const val CREDIT_SENTIMENT_SCALE: Double = 0.00060
+        private const val COMMODITY_INFLATION_SCALE: Double = 0.00075
+        private const val CRYPTO_SENTIMENT_SCALE: Double = 0.0028
         private const val MAX_HOURLY_VOLATILITY: Double = 0.18
         private const val MAX_RAW_LOG_RETURN: Double = 1.5
         private val MAX_US_HOURLY_LOG_MOVE: Double = ln(1.35)
@@ -457,7 +687,9 @@ class PriceEngine(private val seed: Long) {
         private const val US_REOPENED_VOLUME_FACTOR: Double = 0.75
         private const val VOLUME_NOISE: Double = 0.38
         private const val TYPICAL_HOURLY_MOVE: Double = 0.008
-        private val ZERO_ATTRIBUTION = PriceAttribution(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        private val ZERO_ATTRIBUTION = PriceAttribution(
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        )
 
         internal fun stableHash64(value: String): Long {
             var hash = 0xCBF29CE484222325uL

@@ -6,7 +6,13 @@ import kotlin.math.floor
 
 enum class DividendTaxClass(val displayName: String) {
     KOREAN_ORDINARY_CASH("국내 일반 현금배당"),
+    KOREAN_ETF_DISTRIBUTION("국내 ETF 분배금"),
     US_ORDINARY_CORPORATION("미국 일반법인 현금배당"),
+    US_RIC_ETF_DISTRIBUTION("미국 RIC ETF 분배금"),
+    US_RIC_CLOSED_END_DISTRIBUTION("미국 RIC 폐쇄형펀드 분배금"),
+    US_REIT_DISTRIBUTION("미국 REIT 분배금"),
+    US_ETN_CONTINGENT_COUPON("미국 ETN 조건부 쿠폰"),
+    FOREIGN_ADR_DISTRIBUTION("해외기업 ADR 배당"),
 }
 
 data class DividendTaxRequest(
@@ -26,12 +32,27 @@ data class DividendTaxRequest(
         }
         require(otherFinancialIncomeGrossKrw >= 0L) { "Other financial income cannot be negative." }
         require(
-            (taxClass == DividendTaxClass.KOREAN_ORDINARY_CASH && grossAmount.currency == Currency.KRW) ||
-                (taxClass == DividendTaxClass.US_ORDINARY_CORPORATION && grossAmount.currency == Currency.USD),
+            (taxClass in KOREAN_DIVIDEND_CLASSES && grossAmount.currency == Currency.KRW) ||
+                (taxClass in US_DIVIDEND_CLASSES && grossAmount.currency == Currency.USD),
         ) { "The dividend currency does not match its tax class." }
         require(grossAmount.currency != Currency.KRW || taxExchangeRateToKrw == 1.0) {
             "KRW dividend income must use a 1.0 tax exchange rate."
         }
+    }
+
+    private companion object {
+        val KOREAN_DIVIDEND_CLASSES = setOf(
+            DividendTaxClass.KOREAN_ORDINARY_CASH,
+            DividendTaxClass.KOREAN_ETF_DISTRIBUTION,
+        )
+        val US_DIVIDEND_CLASSES = setOf(
+            DividendTaxClass.US_ORDINARY_CORPORATION,
+            DividendTaxClass.US_RIC_ETF_DISTRIBUTION,
+            DividendTaxClass.US_RIC_CLOSED_END_DISTRIBUTION,
+            DividendTaxClass.US_REIT_DISTRIBUTION,
+            DividendTaxClass.US_ETN_CONTINGENT_COUPON,
+            DividendTaxClass.FOREIGN_ADR_DISTRIBUTION,
+        )
     }
 }
 
@@ -58,8 +79,16 @@ class DividendTaxCalculator(
     fun calculate(request: DividendTaxRequest): DividendTaxResult {
         policy.requireSimulationDate(request.paidOn)
         val breakdown = when (request.taxClass) {
-            DividendTaxClass.KOREAN_ORDINARY_CASH -> calculateKorean(request)
-            DividendTaxClass.US_ORDINARY_CORPORATION -> calculateUnitedStates(request)
+            DividendTaxClass.KOREAN_ORDINARY_CASH,
+            DividendTaxClass.KOREAN_ETF_DISTRIBUTION,
+            -> calculateKorean(request)
+            DividendTaxClass.US_ORDINARY_CORPORATION,
+            DividendTaxClass.US_RIC_ETF_DISTRIBUTION,
+            DividendTaxClass.US_RIC_CLOSED_END_DISTRIBUTION,
+            DividendTaxClass.US_REIT_DISTRIBUTION,
+            DividendTaxClass.US_ETN_CONTINGENT_COUPON,
+            DividendTaxClass.FOREIGN_ADR_DISTRIBUTION,
+            -> calculateUnitedStates(request)
         }
         val netCash = request.grossAmount - breakdown.totalTax
         val grossIncomeKrw = floor(request.grossAmount.amount * request.taxExchangeRateToKrw).toLong()
@@ -97,7 +126,11 @@ class DividendTaxCalculator(
             items = listOf(
                 TaxLineItem(
                     id = "kr-dividend-withholding-national",
-                    label = "국내 배당소득세 원천징수",
+                    label = if (request.taxClass == DividendTaxClass.KOREAN_ETF_DISTRIBUTION) {
+                        "국내 ETF 분배금 배당소득세 원천징수"
+                    } else {
+                        "국내 배당소득세 원천징수"
+                    },
                     amount = national,
                     jurisdiction = TaxJurisdiction.KOREA_NATIONAL,
                     category = TaxCategory.DIVIDEND_WITHHOLDING,
@@ -106,7 +139,11 @@ class DividendTaxCalculator(
                 ),
                 TaxLineItem(
                     id = "kr-dividend-withholding-local",
-                    label = "국내 배당 지방소득세 원천징수",
+                    label = if (request.taxClass == DividendTaxClass.KOREAN_ETF_DISTRIBUTION) {
+                        "국내 ETF 분배금 지방소득세 원천징수"
+                    } else {
+                        "국내 배당 지방소득세 원천징수"
+                    },
                     amount = local,
                     jurisdiction = TaxJurisdiction.KOREA_LOCAL,
                     category = TaxCategory.DIVIDEND_WITHHOLDING,
@@ -142,7 +179,14 @@ class DividendTaxCalculator(
             TaxLineItem(
                 id = "us-dividend-withholding-federal",
                 label = if (request.w8BenValid) {
-                    "미국 배당 원천징수 (W-8BEN 조약세율)"
+                    when (request.taxClass) {
+                        DividendTaxClass.US_RIC_ETF_DISTRIBUTION -> "미국 ETF 분배금 원천징수 (W-8BEN 조약세율)"
+                        DividendTaxClass.US_RIC_CLOSED_END_DISTRIBUTION -> "미국 폐쇄형펀드 분배금 원천징수(게임 RIC 가정)"
+                        DividendTaxClass.US_REIT_DISTRIBUTION -> "미국 REIT 분배금 원천징수(게임 일반배당 가정)"
+                        DividendTaxClass.US_ETN_CONTINGENT_COUPON -> "ETN 조건부 쿠폰 원천징수(게임 보수적 가정)"
+                        DividendTaxClass.FOREIGN_ADR_DISTRIBUTION -> "ADR 배당 원천징수(본국 세율 단순화)"
+                        else -> "미국 배당 원천징수 (W-8BEN 조약세율)"
+                    }
                 } else {
                     "미국 배당 원천징수 (W-8BEN 미적용)"
                 },
@@ -180,7 +224,19 @@ class DividendTaxCalculator(
                 if (!request.w8BenValid) {
                     add("W-8BEN 미적용 시 일반적으로 30% 원천징수되므로 서류 상태를 확인해야 합니다.")
                 }
-                add("미국 ETF·REIT·PTP의 분배금 재분류는 이 일반법인 배당 계산에 포함되지 않습니다.")
+                if (request.taxClass in setOf(
+                        DividendTaxClass.US_RIC_ETF_DISTRIBUTION,
+                        DividendTaxClass.US_RIC_CLOSED_END_DISTRIBUTION,
+                    )
+                ) {
+                    add("게임은 미국 RIC ETF의 정기 현금분배를 일반 배당으로 분류합니다. 자본이득·원금환급 사후 재분류는 반영하지 않습니다.")
+                } else if (request.taxClass == DividendTaxClass.US_ETN_CONTINGENT_COUPON) {
+                    add("ETN 쿠폰의 실제 원천징수는 상품 약관·소득 성격에 따라 달라질 수 있어 15% 게임 가정으로 표시합니다.")
+                } else if (request.taxClass == DividendTaxClass.FOREIGN_ADR_DISTRIBUTION) {
+                    add("ADR 배당은 발행사 본국 조세조약·예탁수수료를 종목별로 확인해야 하며, 현재 게임은 15% 보수적 가정을 씁니다.")
+                } else {
+                    add("미국 ETF·REIT·PTP의 분배금 재분류는 이 일반법인 배당 계산에 포함되지 않습니다.")
+                }
             },
         )
     }

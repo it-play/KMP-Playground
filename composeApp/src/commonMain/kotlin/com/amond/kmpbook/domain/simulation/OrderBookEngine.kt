@@ -2,6 +2,7 @@ package com.amond.kmpbook.domain.simulation
 
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.MarketSession
+import com.amond.kmpbook.domain.model.MarketVenueProfiles
 import com.amond.kmpbook.domain.model.OrderBook
 import com.amond.kmpbook.domain.model.OrderBookLevel
 import com.amond.kmpbook.domain.model.Quote
@@ -167,12 +168,15 @@ class OrderBookEngine(private val seed: Long) {
         val tick = MarketMicrostructure.tickSize(market, reference)
         val sizeScale = normalizedSize(input.stock)
         val liquidityScale = ln(1.0 + input.averageDailyVolume.toDouble()).coerceAtLeast(1.0)
+        val venueProfile = MarketVenueProfiles.forMarket(market)
         val rawSpreadTicks = 1.0 +
             input.stock.volatility * VOLATILITY_SPREAD_TICKS +
             input.marketStress * STRESS_SPREAD_TICKS -
             sizeScale * SIZE_SPREAD_DISCOUNT -
             liquidityScale * LIQUIDITY_SPREAD_DISCOUNT
-        val spreadTicks = rawSpreadTicks.roundToInt().coerceIn(1, MAX_SPREAD_TICKS)
+        val spreadTicks = (rawSpreadTicks.coerceAtLeast(1.0) * venueProfile.spreadMultiplier)
+            .roundToInt()
+            .coerceIn(1, MAX_SPREAD_TICKS)
 
         var bestBid = MarketMicrostructure.roundDown(
             market,
@@ -240,7 +244,8 @@ class OrderBookEngine(private val seed: Long) {
         val dailyParticipation = input.averageDailyVolume.toDouble() * BOOK_PARTICIPATION_RATE
         val sizeSupport = sqrt(input.stock.sharesOutstanding.toDouble()) * SHARE_COUNT_SUPPORT
         val stressDepth = 1.0 - input.marketStress * STRESS_DEPTH_REDUCTION
-        return max(input.stock.quantityStep, (dailyParticipation + sizeSupport) * stressDepth)
+        val venueDepth = MarketVenueProfiles.forMarket(input.stock.market).depthMultiplier
+        return max(input.stock.quantityStep, (dailyParticipation + sizeSupport) * stressDepth * venueDepth)
     }
 
     private fun normalizedSize(stock: StockDefinition): Double {

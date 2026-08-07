@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.OutlinedTextField
@@ -36,7 +34,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
+import com.amond.kmpbook.ui.components.MarketButton
+import com.amond.kmpbook.ui.components.MarketButtonVariant
 import com.amond.kmpbook.ui.theme.MarketColors
+import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
 
 @Composable
@@ -67,7 +68,7 @@ fun NewGameScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(44.dp).background(MarketColors.Celadon, RoundedCornerShape(4.dp)),
+                    Modifier.size(44.dp).background(MarketColors.Celadon, RoundedCornerShape(MarketRadii.small)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text("40", style = MarketType.numberLarge.copy(fontSize = 17.sp), color = Color.White)
@@ -77,8 +78,8 @@ fun NewGameScreen(
                     Text("Market Ledger 2040", style = MarketType.heading.copy(fontSize = 20.sp), color = Color.White)
                     Text(
                         "TURN-BASED MARKET LEDGER",
-                        style = MarketType.label.copy(fontSize = 8.sp, letterSpacing = 1.1.sp),
-                        color = Color.White.copy(alpha = 0.45f),
+                        style = MarketType.caption.copy(letterSpacing = 0.3.sp),
+                        color = Color.White.copy(alpha = 0.68f),
                     )
                 }
             }
@@ -92,7 +93,7 @@ fun NewGameScreen(
             Spacer(Modifier.height(16.dp))
             Text(
                 "2026년 8월 7일부터 2040년 마지막 거래일까지.\n한국과 미국 시장을 한 시간씩 움직이며 나만의 투자 기록을 만드세요.",
-                style = MarketType.body.copy(fontSize = 14.sp, lineHeight = 22.sp),
+                style = MarketType.body,
                 color = Color.White.copy(alpha = 0.62f),
             )
 
@@ -116,8 +117,8 @@ fun NewGameScreen(
             Spacer(Modifier.height(18.dp))
             Text(
                 "실제 종목명은 사용하지만 모든 미래 가격·뉴스·실적은 재현 가능한 게임 데이터입니다.\n세금 계산은 2026-08-07 대한민국 세법을 동결한 교육용 추정치입니다.",
-                style = MarketType.label.copy(fontSize = 9.sp, lineHeight = 14.sp),
-                color = Color.White.copy(alpha = 0.38f),
+                style = MarketType.caption,
+                color = Color.White.copy(alpha = 0.68f),
             )
         }
 
@@ -189,7 +190,7 @@ fun NewGameScreen(
                             error.orEmpty(),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(MarketColors.RiseSoft, RoundedCornerShape(3.dp))
+                                .background(MarketColors.RiseSoft, RoundedCornerShape(MarketRadii.small))
                                 .padding(10.dp),
                             style = MarketType.label,
                             color = MarketColors.Rise,
@@ -197,7 +198,8 @@ fun NewGameScreen(
                         Spacer(Modifier.height(10.dp))
                     }
 
-                    Button(
+                    MarketButton(
+                        text = "2026년 시장 열기  →",
                         onClick = {
                             val capital = capitalText.toDoubleOrNull()
                             val seed = seedText.toLongOrNull()
@@ -211,28 +213,16 @@ fun NewGameScreen(
                                 }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().height(44.dp),
-                        shape = RoundedCornerShape(3.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MarketColors.Navy,
-                            contentColor = Color.White,
-                        ),
-                    ) {
-                        Text("2026년 시장 열기  →", style = MarketType.label.copy(fontWeight = FontWeight.Bold))
-                    }
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     if (hasSavedGame) {
                         Spacer(Modifier.height(7.dp))
-                        Button(
+                        MarketButton(
+                            text = "저장 장부 이어서 열기",
                             onClick = onLoadSavedGame,
-                            modifier = Modifier.fillMaxWidth().height(40.dp),
-                            shape = RoundedCornerShape(3.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MarketColors.CeladonSoft,
-                                contentColor = MarketColors.Navy,
-                            ),
-                        ) {
-                            Text("저장 장부 이어서 열기", style = MarketType.label.copy(fontWeight = FontWeight.Bold))
-                        }
+                            modifier = Modifier.fillMaxWidth(),
+                            variant = MarketButtonVariant.Weak,
+                        )
                     }
                     TextButton(
                         onClick = {
@@ -309,8 +299,8 @@ private fun TimelineLabel(
     alignEnd: Boolean = false,
 ) {
     Column(modifier, horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start) {
-        Text(year, style = MarketType.number.copy(fontSize = 10.sp), color = Color.White.copy(alpha = 0.82f))
-        Text(label, style = MarketType.label.copy(fontSize = 8.sp), color = Color.White.copy(alpha = 0.35f))
+        Text(year, style = MarketType.number, color = Color.White.copy(alpha = 0.88f))
+        Text(label, style = MarketType.caption, color = Color.White.copy(alpha = 0.62f))
     }
 }
 
@@ -318,13 +308,13 @@ private fun TimelineLabel(
 private fun MarketStamp(name: String, country: String) {
     Row(
         modifier = Modifier
-            .background(Color.White.copy(alpha = 0.07f), RoundedCornerShape(3.dp))
+            .background(Color.White.copy(alpha = 0.07f), RoundedCornerShape(MarketRadii.small))
             .padding(horizontal = 9.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Box(Modifier.size(5.dp).background(MarketColors.Celadon, RoundedCornerShape(50)))
-        Text(name, style = MarketType.number.copy(fontSize = 9.sp), color = Color.White.copy(alpha = 0.78f))
-        Text(country, style = MarketType.label.copy(fontSize = 8.sp), color = Color.White.copy(alpha = 0.30f))
+        Text(name, style = MarketType.number, color = Color.White.copy(alpha = 0.84f))
+        Text(country, style = MarketType.caption, color = Color.White.copy(alpha = 0.60f))
     }
 }

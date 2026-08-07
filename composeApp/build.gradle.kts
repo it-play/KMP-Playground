@@ -1,9 +1,26 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
+val appVersion = providers.gradleProperty("appVersion").get()
+val appVersionMatch = Regex("""^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$""").matchEntire(appVersion)
+    ?: error("appVersion must use the Windows MSI format MAJOR.MINOR.PATCH: $appVersion")
+val (appVersionMajor, appVersionMinor, appVersionBuild) = appVersionMatch.destructured
+require(appVersionMajor.toInt() <= 255 && appVersionMinor.toInt() <= 255 && appVersionBuild.toInt() <= 65_535) {
+    "appVersion exceeds Windows MSI limits (255.255.65535): $appVersion"
+}
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+}
+
+version = appVersion
+
+tasks.register("printAppVersion") {
+    group = "help"
+    description = "Prints the single source of truth used for the app and MSI version."
+    inputs.property("appVersion", appVersion)
+    doLast { println(inputs.properties.getValue("appVersion")) }
 }
 
 kotlin {
@@ -42,11 +59,11 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi)
             packageName = "MarketLedger2040"
-            packageVersion = "1.0.0"
             vendor = "Market Ledger 2040"
             description = "Turn-based Korean and U.S. stock market simulator"
 
             windows {
+                iconFile.set(project.file("src/desktopMain/resources/icons/market-ledger.ico"))
                 console = false
                 dirChooser = true
                 perUserInstall = true

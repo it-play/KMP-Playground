@@ -2,6 +2,7 @@ package com.amond.kmpbook.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,10 +27,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.amond.kmpbook.domain.model.Currency
 import com.amond.kmpbook.domain.model.Order
 import com.amond.kmpbook.domain.model.OrderSide
@@ -44,6 +46,9 @@ import com.amond.kmpbook.ui.format.formatMoney
 import com.amond.kmpbook.ui.format.formatPrice
 import com.amond.kmpbook.ui.format.formatQuantity
 import com.amond.kmpbook.ui.theme.MarketColors
+import com.amond.kmpbook.ui.theme.MarketComponentSize
+import com.amond.kmpbook.ui.theme.MarketLayout
+import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
 
 @Composable
@@ -67,10 +72,10 @@ fun OrdersScreen(
     }
 
     Column(
-        modifier.fillMaxSize().padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier.fillMaxSize().padding(MarketLayout.screenPadding),
+        verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
             SummaryTile("미체결 주문", "${openOrders}건", "정규장 진입 시 체결 검사", Modifier.weight(1f))
             SummaryTile("누적 체결", "${trades.size}건", formatMoney(grossTurnoverKrw, Currency.KRW, true), Modifier.weight(1f))
             SummaryTile("거래 비용", formatMoney(totalCostsKrw, Currency.KRW), "수수료·거래세 합계", Modifier.weight(1f))
@@ -99,7 +104,7 @@ fun OrdersScreen(
 
 @Composable
 private fun SummaryTile(label: String, value: String, detail: String, modifier: Modifier) {
-    LedgerPanel(modifier.height(88.dp)) {
+    LedgerPanel(modifier.height(108.dp)) {
         Metric(label, value, detail = detail)
     }
 }
@@ -108,11 +113,13 @@ private fun SummaryTile(label: String, value: String, detail: String, modifier: 
 private fun TabCell(text: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
-            .background(if (selected) MarketColors.Navy else MarketColors.PaperMuted, RoundedCornerShape(2.dp))
-            .clickable(onClick = onClick)
+            .background(if (selected) MarketColors.Primary else MarketColors.PrimaryWeak, RoundedCornerShape(MarketRadii.pill))
+            .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = MarketType.label, color = if (selected) Color.White else MarketColors.InkMuted)
+        Text(if (selected) "✓ $text" else text, style = MarketType.label, color = if (selected) Color.White else MarketColors.InkMuted)
     }
 }
 
@@ -211,8 +218,16 @@ private fun RowScope.Cell(
     Text(
         text,
         Modifier.weight(weight),
-        style = if (number) MarketType.number.copy(fontSize = if (small) 9.sp else 10.sp)
-        else MarketType.body.copy(fontSize = if (small) 10.sp else 12.sp),
+        style = if (number) {
+            MarketType.caption.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontFeatureSettings = "tnum",
+            )
+        } else if (small) {
+            MarketType.caption
+        } else {
+            MarketType.label
+        },
         color = color,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,

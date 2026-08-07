@@ -322,6 +322,16 @@ actual class GameSaveStorage actual constructor(
         if (state.annualTaxLedgers.any { (year, ledger) -> year != ledger.taxYear }) {
             return "연간 세금 원장의 연도 키가 일치하지 않습니다."
         }
+        val tradeIds = state.trades.map { it.id }.toSet()
+        if (state.taxExchangeRatesByTradeId.orEmpty().any { (tradeId, rate) ->
+                tradeId !in tradeIds || !rate.isFinite() || rate <= 0.0
+            }
+        ) {
+            return "체결별 세무 환율 원장이 유효하지 않습니다."
+        }
+        if (state.pendingTaxSettlementTradeIds.orEmpty().any { it !in tradeIds }) {
+            return "미결제 세무 환율 원장에 알 수 없는 체결이 있습니다."
+        }
         if (state.activeEvents.map { it.id }.distinct().size != state.activeEvents.size) {
             return "활성 이벤트 ID가 중복되었습니다."
         }

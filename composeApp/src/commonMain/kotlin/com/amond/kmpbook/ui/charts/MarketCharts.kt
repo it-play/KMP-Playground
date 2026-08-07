@@ -63,7 +63,8 @@ fun CandlestickVolumeChart(
 
             visibleBars.forEachIndexed { index, bar ->
                 val x = slot * index + slot / 2f
-                val color = if (bar.close >= bar.open) MarketColors.Rise else MarketColors.Fall
+                val rising = bar.close >= bar.open
+                val color = if (rising) MarketColors.Rise else MarketColors.Fall
                 val openY = priceY(bar.open)
                 val closeY = priceY(bar.close)
                 val highY = priceY(bar.high)
@@ -77,18 +78,36 @@ fun CandlestickVolumeChart(
                 )
                 val bodyTop = min(openY, closeY)
                 val bodyHeight = max(1.5f, kotlin.math.abs(closeY - openY))
-                drawRect(
-                    color = color,
-                    topLeft = Offset(x - bodyWidth / 2f, bodyTop),
-                    size = Size(bodyWidth, bodyHeight),
-                )
+                if (rising) {
+                    drawRect(
+                        color = color,
+                        topLeft = Offset(x - bodyWidth / 2f, bodyTop),
+                        size = Size(bodyWidth, bodyHeight),
+                        style = Stroke(width = max(1f, bodyWidth * 0.22f)),
+                    )
+                } else {
+                    drawRect(
+                        color = color,
+                        topLeft = Offset(x - bodyWidth / 2f, bodyTop),
+                        size = Size(bodyWidth, bodyHeight),
+                    )
+                }
 
                 val volumeHeight = ((bar.volume.toDouble() / maxVolume) * (size.height - volumeTop)).toFloat()
-                drawRect(
-                    color = color.copy(alpha = 0.32f),
-                    topLeft = Offset(x - bodyWidth / 2f, size.height - volumeHeight),
-                    size = Size(bodyWidth, volumeHeight),
-                )
+                if (rising) {
+                    drawRect(
+                        color = color.copy(alpha = 0.55f),
+                        topLeft = Offset(x - bodyWidth / 2f, size.height - volumeHeight),
+                        size = Size(bodyWidth, volumeHeight),
+                        style = Stroke(width = max(1f, bodyWidth * 0.18f)),
+                    )
+                } else {
+                    drawRect(
+                        color = color.copy(alpha = 0.32f),
+                        topLeft = Offset(x - bodyWidth / 2f, size.height - volumeHeight),
+                        size = Size(bodyWidth, volumeHeight),
+                    )
+                }
             }
 
             drawLine(
@@ -244,4 +263,3 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeries(
     }
     if (started) drawPath(path, color, style = Stroke(width = strokeWidth, cap = StrokeCap.Round))
 }
-

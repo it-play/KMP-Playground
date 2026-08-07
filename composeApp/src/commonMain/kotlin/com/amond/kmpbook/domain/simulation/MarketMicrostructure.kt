@@ -35,6 +35,9 @@ object MarketMicrostructure {
 
             Market.NASDAQ,
             Market.NYSE,
+            Market.NYSE_ARCA,
+            Market.CBOE_BZX,
+            Market.NYSE_AMERICAN,
             -> if (price < 1.0) 0.0001 else 0.01
         }
     }

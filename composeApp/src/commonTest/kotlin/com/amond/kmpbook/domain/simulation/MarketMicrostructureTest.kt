@@ -33,7 +33,9 @@ class MarketMicrostructureTest {
 
     @Test
     fun usQuotesUsePennyAndSubDollarUnits() {
-        assertEquals(0.01, MarketMicrostructure.tickSize(Market.NASDAQ, 150.0))
-        assertEquals(0.0001, MarketMicrostructure.tickSize(Market.NYSE, 0.75))
+        for (market in listOf(Market.NASDAQ, Market.NYSE, Market.NYSE_ARCA, Market.NYSE_AMERICAN)) {
+            assertEquals(0.01, MarketMicrostructure.tickSize(market, 150.0))
+            assertEquals(0.0001, MarketMicrostructure.tickSize(market, 0.75))
+        }
     }
 }

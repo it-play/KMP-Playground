@@ -68,6 +68,35 @@ class OrderBookEngineTest {
     }
 
     @Test
+    fun americanBookIsWiderAndShallowerThanArcaForEquivalentFixtures() {
+        val arca = testStock(
+            symbol = "VENUE",
+            market = Market.NYSE_ARCA,
+            initialPrice = 100.0,
+            volatility = 0.25,
+        )
+        val american = arca.copy(market = Market.NYSE_AMERICAN)
+        val common = OrderBookGenerationInput(
+            stock = arca,
+            timestamp = time,
+            lastPrice = 100.0,
+            dailyBasePrice = 100.0,
+            averageDailyVolume = 8_000_000L,
+            session = MarketSession.REGULAR,
+            marketStress = 0.0,
+        )
+        val engine = OrderBookEngine(20260807L)
+
+        val arcaBook = engine.generate(common)
+        val americanBook = engine.generate(common.copy(stock = american))
+
+        assertTrue(americanBook.spread!! > arcaBook.spread!!)
+        assertTrue(americanBook.totalBidQuantity < arcaBook.totalBidQuantity)
+        assertTrue(americanBook.totalAskQuantity < arcaBook.totalAskQuantity)
+        assertTrue((americanBook.bids + americanBook.asks).all { isOnTick(Market.NYSE_AMERICAN, it.price) })
+    }
+
+    @Test
     fun closedMarketHasNoExecutableDepth() {
         val stock = testStock()
         val book = OrderBookEngine(8L).generate(

@@ -6,6 +6,8 @@ import com.amond.kmpbook.domain.model.EventType
 import com.amond.kmpbook.domain.model.GameEvent
 import com.amond.kmpbook.domain.model.GameEventImpact
 import com.amond.kmpbook.domain.model.ImpactDirection
+import com.amond.kmpbook.domain.model.InstrumentStrategy
+import com.amond.kmpbook.domain.model.InstrumentType
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.Sector
 import com.amond.kmpbook.domain.model.StockDefinition
@@ -56,6 +58,9 @@ data class EventTemplate(
     val condition: EventCondition = EventCondition.ALWAYS,
     val eligibleMarkets: Set<Market> = emptySet(),
     val eligibleSectors: Set<Sector> = emptySet(),
+    val eligibleInstrumentTypes: Set<InstrumentType> = emptySet(),
+    /** 비어 있으면 모든 전략, 값이 있으면 실제 수익 구조가 일치하는 상품만 후보가 된다. */
+    val eligibleStrategies: Set<InstrumentStrategy> = emptySet(),
     val sourceLabel: String = "시뮬레이션 뉴스",
 ) {
     init {
@@ -218,7 +223,9 @@ class EventEngine(
     ): SelectedEventTarget? {
         val candidates = stocks.filter { stock ->
             (template.eligibleMarkets.isEmpty() || stock.market in template.eligibleMarkets) &&
-                (template.eligibleSectors.isEmpty() || stock.sector in template.eligibleSectors)
+                (template.eligibleSectors.isEmpty() || stock.sector in template.eligibleSectors) &&
+                (template.eligibleInstrumentTypes.isEmpty() || stock.instrumentType in template.eligibleInstrumentTypes) &&
+                (template.eligibleStrategies.isEmpty() || stock.behavior.strategy in template.eligibleStrategies)
         }
         if (candidates.isEmpty() && template.scope != EventScope.GLOBAL) return null
 
@@ -265,7 +272,9 @@ class EventEngine(
         if (template.scope == EventScope.GLOBAL) return true
         return stocks.any { stock ->
             (template.eligibleMarkets.isEmpty() || stock.market in template.eligibleMarkets) &&
-                (template.eligibleSectors.isEmpty() || stock.sector in template.eligibleSectors)
+                (template.eligibleSectors.isEmpty() || stock.sector in template.eligibleSectors) &&
+                (template.eligibleInstrumentTypes.isEmpty() || stock.instrumentType in template.eligibleInstrumentTypes) &&
+                (template.eligibleStrategies.isEmpty() || stock.behavior.strategy in template.eligibleStrategies)
         }
     }
 
@@ -362,19 +371,25 @@ object EventShockCalculator {
     ): PriceImpulse {
         require(to >= from)
         var returnFactor = 1.0
+        var directProductReturnFactor = 1.0
         var volatilityMultiplier = 1.0
         var volumeMultiplier = 1.0
         val sampleTime = if (to > from) to else from
 
         for (event in events) {
             if (!event.affects(stock)) continue
-            returnFactor *= 1.0 + returnBetween(event, from, to)
+            val eventReturn = returnBetween(event, from, to)
+            returnFactor *= 1.0 + eventReturn
+            if (event.scope == com.amond.kmpbook.domain.model.EventScope.STOCK && stock.id in event.affectedStockIds) {
+                directProductReturnFactor *= 1.0 + eventReturn
+            }
             val weight = effectWeightAt(event, sampleTime)
             volatilityMultiplier *= 1.0 + (event.impact.volatilityMultiplier - 1.0) * weight
             volumeMultiplier *= 1.0 + (event.impact.volumeMultiplier - 1.0) * weight
         }
         return PriceImpulse(
             returnRate = (returnFactor - 1.0).coerceIn(-0.90, 1.50),
+            directProductReturnRate = (directProductReturnFactor - 1.0).coerceIn(-0.90, 1.50),
             volatilityMultiplier = volatilityMultiplier.coerceIn(0.0, 20.0),
             volumeMultiplier = volumeMultiplier.coerceIn(0.0, 100.0),
         )

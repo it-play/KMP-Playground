@@ -3,9 +3,13 @@ package com.amond.kmpbook.domain.simulation
 import com.amond.kmpbook.domain.model.EventScope
 import com.amond.kmpbook.domain.model.EventSeverity
 import com.amond.kmpbook.domain.model.EventType
+import com.amond.kmpbook.domain.model.EtfAssetClass
+import com.amond.kmpbook.domain.model.EtfProfile
+import com.amond.kmpbook.domain.model.EtfTaxCategory
 import com.amond.kmpbook.domain.model.GameEvent
 import com.amond.kmpbook.domain.model.GameEventImpact
 import com.amond.kmpbook.domain.model.ImpactDirection
+import com.amond.kmpbook.domain.model.InstrumentType
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.Sector
 import kotlin.time.Duration.Companion.hours
@@ -35,7 +39,6 @@ class EventEngineTest {
             "krw_weakens",
             "growth_recession",
             "chip_shortage",
-            "earnings_beat",
             "guidance_cut",
             "product_recall",
             "contract_win",
@@ -44,13 +47,58 @@ class EventEngineTest {
             "military_conflict",
             "major_earthquake",
             "dividend_raise",
-            "stock_split",
             "rights_offering",
+            "etn_issuer_call_decision",
+            "etn_issuer_acceleration",
         ).all(ids::contains))
+        assertTrue("stock_split" !in ids)
+        assertTrue(ids.none { it == "earnings_beat" || it == "earnings_miss" })
         assertTrue(templates.map(EventTemplate::type).distinct().size >= 10)
         assertTrue(templates.map(EventTemplate::scope).toSet().containsAll(
             setOf(EventScope.GLOBAL, EventScope.COUNTRY, EventScope.MARKET, EventScope.SECTOR, EventScope.STOCK),
         ))
+    }
+
+    @Test
+    fun companyAndFundOperationRulesSelectOnlyTheirInstrumentType() {
+        val companyRules = DefaultEventTemplates.all.filter {
+            it.scope == EventScope.STOCK && it.type != EventType.FUND_OPERATION
+        }
+        val fundRules = DefaultEventTemplates.all.filter { it.type == EventType.FUND_OPERATION }
+
+        assertTrue(companyRules.isNotEmpty())
+        assertTrue(fundRules.isNotEmpty())
+        assertTrue(companyRules.all {
+            it.eligibleInstrumentTypes == setOf(InstrumentType.STOCK, InstrumentType.REIT, InstrumentType.ADR)
+        })
+        assertTrue(fundRules.all {
+            it.eligibleInstrumentTypes == setOf(
+                InstrumentType.ETF,
+                InstrumentType.CLOSED_END_FUND,
+                InstrumentType.ETN,
+            )
+        })
+
+        val stock = testStock(symbol = "STOCK")
+        val etf = testStock(symbol = "ETF").copy(
+            etfProfile = EtfProfile(
+                benchmark = "테스트 지수",
+                assetClass = EtfAssetClass.BROAD_EQUITY,
+                taxCategory = EtfTaxCategory.KOREAN_DOMESTIC_EQUITY,
+                annualExpenseRatio = 0.001,
+            ),
+        )
+        val fundEvent = EventEngine(
+            seed = 11L,
+            templates = listOf(fundRules.first().copy(probabilityPerDay = 1.0)),
+        ).generate(EventGenerationContext(time, listOf(stock, etf))).newEvents.single()
+        val companyEvent = EventEngine(
+            seed = 12L,
+            templates = listOf(companyRules.first().copy(probabilityPerDay = 1.0)),
+        ).generate(EventGenerationContext(time, listOf(stock, etf))).newEvents.single()
+
+        assertEquals(setOf(etf.id), fundEvent.affectedStockIds)
+        assertEquals(setOf(stock.id), companyEvent.affectedStockIds)
     }
 
     @Test

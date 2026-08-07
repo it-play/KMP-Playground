@@ -32,8 +32,9 @@ import com.amond.kmpbook.domain.model.GameEvent
 import com.amond.kmpbook.domain.model.Holding
 import com.amond.kmpbook.domain.model.ImpactDirection
 import com.amond.kmpbook.domain.model.Market
+import com.amond.kmpbook.domain.model.MarketIndexId
+import com.amond.kmpbook.domain.model.MarketIndexSnapshot
 import com.amond.kmpbook.domain.model.PortfolioSnapshot
-import com.amond.kmpbook.domain.model.Quote
 import com.amond.kmpbook.domain.model.StockDefinition
 import com.amond.kmpbook.ui.charts.AllocationDonut
 import com.amond.kmpbook.ui.charts.LineAreaChart
@@ -48,14 +49,17 @@ import com.amond.kmpbook.ui.format.formatPercent
 import com.amond.kmpbook.ui.format.formatPrice
 import com.amond.kmpbook.ui.format.formatQuantity
 import com.amond.kmpbook.ui.theme.MarketColors
+import com.amond.kmpbook.ui.theme.MarketLayout
 import com.amond.kmpbook.ui.theme.MarketType
+import com.amond.kmpbook.presentation.UsCircuitBreakerState
 
 @Composable
 fun HomeDashboardScreen(
     snapshot: PortfolioSnapshot,
     history: List<PortfolioSnapshot>,
     stocks: List<StockDefinition>,
-    quotes: Map<String, Quote>,
+    marketIndices: Map<MarketIndexId, MarketIndexSnapshot>,
+    usCircuitBreakerState: UsCircuitBreakerState,
     events: List<GameEvent>,
     estimatedTaxKrw: Double,
     usdKrw: Double,
@@ -71,15 +75,26 @@ fun HomeDashboardScreen(
         holding.marketValue * snapshot.rateToKrw(holding.currency)
     }
     Column(
-        modifier = modifier.fillMaxSize().padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = modifier.fillMaxSize().padding(MarketLayout.screenPadding),
+        verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
             HeroAssetPanel(snapshot, estimatedTaxKrw, Modifier.weight(1.3f).height(148.dp))
-            MarketPulsePanel(stocks, quotes, usdKrw, Modifier.weight(1f).height(148.dp))
+            MarketPulsePanel(
+                indices = marketIndices,
+                circuitBreakerState = usCircuitBreakerState,
+                usdKrw = usdKrw,
+                modifier = Modifier.weight(1f).height(148.dp),
+            )
         }
-        Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Column(Modifier.weight(1.42f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+        ) {
+            Column(
+                Modifier.weight(1.42f).fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+            ) {
                 EquityCurvePanel(
                     history = history,
                     currentAssets = totalAssets,
@@ -94,7 +109,10 @@ fun HomeDashboardScreen(
                     modifier = Modifier.fillMaxWidth().weight(0.9f),
                 )
             }
-            Column(Modifier.width(332.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                Modifier.width(332.dp).fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+            ) {
                 AllocationPanel(
                     holdings = holdings,
                     stockById = stockById,
@@ -102,7 +120,7 @@ fun HomeDashboardScreen(
                     modifier = Modifier.fillMaxWidth().height(220.dp),
                 )
                 NewsPanel(
-                    events = events.takeLast(8).reversed(),
+                    events = events.take(8),
                     onOpenEvents = onOpenEvents,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
@@ -123,8 +141,8 @@ private fun HeroAssetPanel(snapshot: PortfolioSnapshot, estimatedTaxKrw: Double,
             Column(Modifier.weight(1f)) {
                 Text(
                     "순자산",
-                    style = MarketType.label.copy(letterSpacing = 0.7.sp),
-                    color = Color.White.copy(alpha = 0.5f),
+                    style = MarketType.label.copy(letterSpacing = 0.2.sp),
+                    color = Color.White.copy(alpha = 0.72f),
                 )
                 Text(
                     formatMoney(snapshot.totalAssetValueKrw, Currency.KRW),
@@ -174,28 +192,47 @@ private fun HeroAssetPanel(snapshot: PortfolioSnapshot, estimatedTaxKrw: Double,
 
 @Composable
 private fun MarketPulsePanel(
-    stocks: List<StockDefinition>,
-    quotes: Map<String, Quote>,
+    indices: Map<MarketIndexId, MarketIndexSnapshot>,
+    circuitBreakerState: UsCircuitBreakerState,
     usdKrw: Double,
     modifier: Modifier,
 ) {
     LedgerPanel(modifier) {
         Column(Modifier.fillMaxSize()) {
-            SectionHeading("시장 온도", eyebrow = "MARKET PULSE")
+            SectionHeading("미국 대표 지수", eyebrow = "SIMULATION INDEX") {
+                val circuitText = when {
+                    circuitBreakerState.haltedForDay -> "MWCB L3"
+                    circuitBreakerState.triggeredLevels.isNotEmpty() ->
+                        "MWCB L${circuitBreakerState.triggeredLevels.max()} 이력"
+                    else -> "게임 프록시"
+                }
+                StatusLabel(
+                    circuitText,
+                    if (circuitBreakerState.triggeredLevels.isEmpty()) MarketColors.Celadon else MarketColors.Amber,
+                )
+            }
             Spacer(Modifier.height(10.dp))
-            val markets = listOf(Market.KOSPI, Market.KOSDAQ, Market.NASDAQ, Market.NYSE)
+            val indexIds = listOf(
+                MarketIndexId.SP_500,
+                MarketIndexId.NASDAQ_COMPOSITE,
+                MarketIndexId.DOW_JONES_INDUSTRIAL_AVERAGE,
+                MarketIndexId.VIX,
+            )
             Row(Modifier.fillMaxWidth()) {
-                markets.forEach { market ->
-                    val ids = stocks.filter { it.market == market }.map { it.id }.toSet()
-                    val changes = quotes.values.filter { it.stockId in ids }.map { it.changeRate }
-                    val average = changes.takeIf { it.isNotEmpty() }?.average() ?: 0.0
+                indexIds.forEach { id ->
+                    val index = indices[id]
                     Column(Modifier.weight(1f)) {
-                        Text(market.displayName, style = MarketType.label, color = MarketColors.InkMuted, maxLines = 1)
-                        Text(formatPercent(average), style = MarketType.number, color = deltaColor(average))
+                        Text(id.code, style = MarketType.label, color = MarketColors.InkMuted, maxLines = 1)
                         Text(
-                            "상승 ${changes.count { it > 0 }} · 하락 ${changes.count { it < 0 }}",
-                            style = MarketType.label.copy(fontSize = 8.sp),
-                            color = MarketColors.InkMuted,
+                            index?.let { "${formatPrice(it.value, Currency.USD, includeCurrency = false)} pt" } ?: "-",
+                            style = MarketType.number,
+                            color = MarketColors.Ink,
+                            maxLines = 1,
+                        )
+                        Text(
+                            index?.let { formatPercent(it.changeRate) } ?: "-",
+                            style = MarketType.caption,
+                            color = deltaColor(index?.changeRate ?: 0.0),
                         )
                     }
                 }
@@ -208,7 +245,7 @@ private fun MarketPulsePanel(
                 Spacer(Modifier.width(8.dp))
                 Text(formatPrice(usdKrw, Currency.KRW), style = MarketType.number, color = MarketColors.Ink)
                 Spacer(Modifier.weight(1f))
-                Text("환율도 매 시간 변동", style = MarketType.label.copy(fontSize = 9.sp), color = MarketColors.Celadon)
+                Text("지수 산식·통화 바스켓 매시간 갱신", style = MarketType.caption, color = MarketColors.Celadon)
             }
         }
     }
@@ -234,9 +271,9 @@ private fun EquityCurvePanel(
             )
             Spacer(Modifier.height(8.dp))
             Row {
-                Text("게임 시작", style = MarketType.label.copy(fontSize = 9.sp), color = MarketColors.InkMuted)
+                Text("게임 시작", style = MarketType.caption, color = MarketColors.InkMuted)
                 Spacer(Modifier.weight(1f))
-                Text("현재 · ${history.size}개 일별 기록", style = MarketType.label.copy(fontSize = 9.sp), color = MarketColors.InkMuted)
+                Text("현재 · ${history.size}개 일별 기록", style = MarketType.caption, color = MarketColors.InkMuted)
             }
         }
     }
@@ -275,20 +312,20 @@ private fun HoldingsPanel(
                         ) {
                             Column(Modifier.weight(1.5f)) {
                                 Text(stock.name, style = MarketType.body, color = MarketColors.Ink, maxLines = 1)
-                                Text(stock.symbol, style = MarketType.label.copy(fontSize = 9.sp), color = MarketColors.InkMuted)
+                                Text(stock.symbol, style = MarketType.caption, color = MarketColors.InkMuted)
                             }
-                            Text(formatQuantity(holding.quantity), Modifier.weight(0.7f), style = MarketType.number.copy(fontSize = 10.sp))
-                            Text(formatPrice(holding.averagePrice, stock.currency), Modifier.weight(1f), style = MarketType.number.copy(fontSize = 10.sp))
+                            Text(formatQuantity(holding.quantity), Modifier.weight(0.7f), style = MarketType.number)
+                            Text(formatPrice(holding.averagePrice, stock.currency), Modifier.weight(1f), style = MarketType.number)
                             Text(
                                 formatMoney(holding.marketValue * snapshot.rateToKrw(holding.currency), Currency.KRW, compact = true),
                                 Modifier.weight(1f),
-                                style = MarketType.number.copy(fontSize = 10.sp),
+                                style = MarketType.number,
                             )
                             Text(
-                                formatPercent(holding.returnRate),
+                                formatPercent(snapshot.holdingReturnRateKrw(holding)),
                                 Modifier.weight(0.8f),
-                                style = MarketType.number.copy(fontSize = 10.sp),
-                                color = deltaColor(holding.unrealizedProfit),
+                                style = MarketType.number,
+                                color = deltaColor(snapshot.holdingUnrealizedProfitKrw(holding)),
                             )
                         }
                     }
@@ -312,7 +349,7 @@ private fun AllocationPanel(
         "현금" to snapshot.cashValueKrw,
         "코스피" to (byMarket[Market.KOSPI] ?: 0.0),
         "코스닥" to (byMarket[Market.KOSDAQ] ?: 0.0),
-        "미국" to ((byMarket[Market.NASDAQ] ?: 0.0) + (byMarket[Market.NYSE] ?: 0.0)),
+        "미국" to byMarket.entries.filter { it.key?.isUnitedStates == true }.sumOf { it.value },
     )
     val colors = listOf(MarketColors.InkMuted, MarketColors.Celadon, MarketColors.Rise, MarketColors.Fall)
     LedgerPanel(modifier) {
@@ -326,7 +363,7 @@ private fun AllocationPanel(
                         modifier = Modifier.fillMaxSize(),
                     )
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("주식", style = MarketType.label, color = MarketColors.InkMuted)
+                        Text("투자", style = MarketType.label, color = MarketColors.InkMuted)
                         Text(formatPercent(snapshot.stockWeight, false), style = MarketType.number, color = MarketColors.Ink)
                     }
                 }
@@ -339,7 +376,7 @@ private fun AllocationPanel(
                             Text(label, Modifier.weight(1f), style = MarketType.label, color = MarketColors.InkMuted)
                             Text(
                                 formatPercent(if (snapshot.totalAssetValueKrw == 0.0) 0.0 else value / snapshot.totalAssetValueKrw, false),
-                                style = MarketType.number.copy(fontSize = 10.sp),
+                                style = MarketType.number,
                                 color = MarketColors.Ink,
                             )
                         }
@@ -401,14 +438,30 @@ private fun EventFeedRow(event: GameEvent) {
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
             Text(event.title, style = MarketType.body.copy(fontWeight = FontWeight.Medium), color = MarketColors.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                "${event.type.displayName} · ${event.severity.displayName} · ${event.durationHours}시간",
-                style = MarketType.label.copy(fontSize = 9.sp),
-                color = MarketColors.InkMuted,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    event.impact.direction.feedLabel,
+                    style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                    color = color,
+                )
+                Text(
+                    " · ${event.type.displayName} · ${event.severity.displayName} · ${event.durationHours}시간",
+                    style = MarketType.caption,
+                    color = MarketColors.InkMuted,
+                )
+            }
         }
     }
 }
+
+private val ImpactDirection.feedLabel: String
+    get() = when (this) {
+        ImpactDirection.POSITIVE -> "호재"
+        ImpactDirection.NEGATIVE -> "악재"
+        ImpactDirection.MIXED,
+        ImpactDirection.NEUTRAL,
+        -> "소식"
+    }
 
 @Composable
 private fun TaxReminderPanel(estimatedTaxKrw: Double, onClick: () -> Unit, modifier: Modifier) {
@@ -421,7 +474,7 @@ private fun TaxReminderPanel(estimatedTaxKrw: Double, onClick: () -> Unit, modif
             Column(Modifier.weight(1f)) {
                 Text("세금 센터", style = MarketType.label.copy(fontWeight = FontWeight.Bold), color = MarketColors.Amber)
                 Text(formatMoney(estimatedTaxKrw, Currency.KRW), style = MarketType.number, color = MarketColors.Ink)
-                Text("현재 연도 예상 납부액", style = MarketType.label.copy(fontSize = 9.sp), color = MarketColors.InkMuted)
+                Text("현재 연도 예상 납부액", style = MarketType.caption, color = MarketColors.InkMuted)
             }
             Text("→", style = MarketType.heading, color = MarketColors.Amber)
         }
@@ -438,4 +491,3 @@ private fun TableLabel(text: String, modifier: Modifier, alignment: Alignment.Ho
         Text(text, style = MarketType.label, color = MarketColors.InkMuted)
     }
 }
-

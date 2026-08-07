@@ -34,6 +34,8 @@ data class PortfolioSnapshot(
     val realizedProfitKrw: Double = 0.0,
     val cumulativeCommissionKrw: Double = 0.0,
     val cumulativeTaxKrw: Double = 0.0,
+    /** 취득일 환율과 매수 직접비용을 보존한 종목별 잔여 FIFO 원화원가. */
+    val holdingCostBasisKrw: Map<String, Double>? = null,
 ) {
     init {
         require(cashByCurrency.values.all { it >= 0.0 }) { "현금 잔액은 음수일 수 없습니다." }
@@ -42,6 +44,7 @@ data class PortfolioSnapshot(
         require(cumulativeCommissionKrw >= 0.0 && cumulativeTaxKrw >= 0.0) {
             "누적 수수료와 세금은 음수일 수 없습니다."
         }
+        require(holdingCostBasisKrw.orEmpty().values.all { it >= 0.0 && it.isFinite() })
         val usedForeignCurrencies = (cashByCurrency.keys + holdings.map { it.currency }) - Currency.KRW
         require(usedForeignCurrencies.all(exchangeRatesToKrw::containsKey)) {
             "보유 중인 외화의 원화 환율이 모두 필요합니다."
@@ -53,16 +56,31 @@ data class PortfolioSnapshot(
             "${currency.name} 환율이 없습니다."
         }
 
+    fun holdingMarketValueKrw(holding: Holding): Double =
+        holding.marketValue * rateToKrw(holding.currency)
+
+    fun holdingCostBasisKrw(holding: Holding): Double =
+        holdingCostBasisKrw?.get(holding.stockId)
+            ?: holding.costBasis * rateToKrw(holding.currency)
+
+    fun holdingUnrealizedProfitKrw(holding: Holding): Double =
+        holdingMarketValueKrw(holding) - holdingCostBasisKrw(holding)
+
+    fun holdingReturnRateKrw(holding: Holding): Double {
+        val cost = holdingCostBasisKrw(holding)
+        return if (cost == 0.0) 0.0 else holdingUnrealizedProfitKrw(holding) / cost
+    }
+
     val cashValueKrw: Double
         get() = cashByCurrency.entries.sumOf { (currency, amount) -> amount * rateToKrw(currency) }
 
     val stockValueKrw: Double
-        get() = holdings.sumOf { holding -> holding.marketValue * rateToKrw(holding.currency) }
+        get() = holdings.sumOf(::holdingMarketValueKrw)
 
     val totalAssetValueKrw: Double get() = cashValueKrw + stockValueKrw
 
     val unrealizedProfitKrw: Double
-        get() = holdings.sumOf { holding -> holding.unrealizedProfit * rateToKrw(holding.currency) }
+        get() = holdings.sumOf(::holdingUnrealizedProfitKrw)
 
     val totalProfitKrw: Double get() = totalAssetValueKrw - initialCapitalKrw
     val totalReturnRate: Double get() = if (initialCapitalKrw == 0.0) 0.0 else totalProfitKrw / initialCapitalKrw

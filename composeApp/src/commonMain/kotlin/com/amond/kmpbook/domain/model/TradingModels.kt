@@ -85,6 +85,8 @@ data class Trade(
     val executedAt: Instant,
     val commission: Double = 0.0,
     val tax: Double = 0.0,
+    /** 같은 시각의 체결·분배·기업행동을 저장 전과 동일한 순서로 재생하기 위한 전역 순번. */
+    val accountingSequence: Long? = null,
 ) {
     init {
         require(id.isNotBlank() && orderId.isNotBlank() && stockId.isNotBlank()) {
@@ -93,6 +95,9 @@ data class Trade(
         require(quantity > 0.0) { "체결 수량은 0보다 커야 합니다." }
         require(price > 0.0) { "체결 가격은 0보다 커야 합니다." }
         require(commission >= 0.0 && tax >= 0.0) { "수수료와 세금은 음수일 수 없습니다." }
+        require(accountingSequence == null || accountingSequence > 0L) {
+            "회계 순번은 양수여야 합니다."
+        }
     }
 
     val grossAmount: Double get() = quantity * price
