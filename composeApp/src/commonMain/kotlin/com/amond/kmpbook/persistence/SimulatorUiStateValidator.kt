@@ -4,6 +4,7 @@ import com.amond.kmpbook.domain.model.CorporateActionKind
 import com.amond.kmpbook.domain.model.CorporateActionNewsTransition
 import com.amond.kmpbook.domain.model.CorporateActionSource
 import com.amond.kmpbook.domain.model.CausalEconomicFactor
+import com.amond.kmpbook.domain.model.CausalMarketRegimeSnapshot
 import com.amond.kmpbook.domain.model.CausalSignalDirection
 import com.amond.kmpbook.domain.model.CausalTransmissionProfile
 import com.amond.kmpbook.domain.model.EventImpactCoveragePolicy
@@ -34,6 +35,7 @@ import com.amond.kmpbook.domain.model.MarketActionKind
 import com.amond.kmpbook.domain.model.MarketActionReference
 import com.amond.kmpbook.domain.model.MarketActionTransition
 import com.amond.kmpbook.domain.model.MarketIndexId
+import com.amond.kmpbook.domain.model.MIN_CAUSAL_SIGNAL_STRENGTH
 import com.amond.kmpbook.domain.model.OrderSide
 import com.amond.kmpbook.domain.model.ListingLifecycleLedgerEvent
 import com.amond.kmpbook.domain.model.ListingLifecycleEventKind
@@ -1176,6 +1178,29 @@ private fun validateGameEvent(
         return "${event.id}의 뉴스·실제 반영 기간은 양수여야 합니다."
     }
     if (event.sourceLabel.isBlank()) return "${event.id}의 출처 표시는 비어 있을 수 없습니다."
+    val marketRegimeSnapshot = event.marketRegimeSnapshot as CausalMarketRegimeSnapshot?
+        ?: return "${event.id}의 시장 국면 스냅샷이 없습니다."
+    val marketHourlyReturns: Map<*, *>? = marketRegimeSnapshot.marketHourlyReturns
+    if (marketHourlyReturns == null) return "${event.id}의 시장별 시간 수익률이 없습니다."
+    val marketChangeFromPreviousClose: Map<*, *>? = marketRegimeSnapshot.marketChangeFromPreviousClose
+    if (marketChangeFromPreviousClose == null) {
+        return "${event.id}의 시장별 전일 종가 대비 수익률이 없습니다."
+    }
+    if (!marketRegimeSnapshot.riskSentiment.isFinite() ||
+        marketRegimeSnapshot.riskSentiment !in -1.0..1.0 ||
+        !marketRegimeSnapshot.volatilityRegime.isFinite() ||
+        marketRegimeSnapshot.volatilityRegime !in 0.1..10.0 ||
+        !marketRegimeSnapshot.usdKrwChangeRate.isFinite() ||
+        marketRegimeSnapshot.usdKrwChangeRate !in -0.25..0.25 ||
+        marketHourlyReturns.any { (market, value) ->
+            market !is Market || market !in Market.entries || value !is Double || !value.isFinite()
+        } ||
+        marketChangeFromPreviousClose.any { (market, value) ->
+            market !is Market || market !in Market.entries || value !is Double || !value.isFinite()
+        }
+    ) {
+        return "${event.id}의 시장 국면 스냅샷 값이 유효하지 않습니다."
+    }
     if (coveragePolicy == EventImpactCoveragePolicy.EXPLICIT_PATHS_ONLY &&
         event.impactInsights.isEmpty() && event.causalSignals.isEmpty()
     ) {
@@ -1252,7 +1277,7 @@ private fun validateGameEvent(
         ) {
             return "${event.id} 인과 신호 $index enum이 유효하지 않습니다."
         }
-        if (!signal.strength.isFinite() || signal.strength <= 0.0 || signal.strength > 1.0 ||
+        if (!signal.strength.isFinite() || signal.strength !in MIN_CAUSAL_SIGNAL_STRENGTH..1.0 ||
             !signal.confidence.isFinite() || signal.confidence <= 0.0 || signal.confidence > 1.0
         ) {
             return "${event.id} 인과 신호 $index 강도·신뢰도가 유효하지 않습니다."
