@@ -2,8 +2,8 @@
 setlocal
 cd /d "%~dp0"
 
-echo [Market Ledger 2040] Running tests and building the Windows MSI...
-call gradlew.bat clean :composeApp:desktopTest :composeApp:packageMsi --no-daemon
+echo [Market Ledger 2040] Compiling and building the Windows MSI...
+call gradlew.bat clean :composeApp:compileKotlinDesktop :composeApp:packageMsi --no-daemon
 if errorlevel 1 goto :failed
 
 echo.

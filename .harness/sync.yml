@@ -3,7 +3,6 @@ groups: []
 overrides:
   claude/skills/systematic-debugging: true
   claude/skills/security-checklist: true
-  claude/skills/test: true
   claude/agents/contradiction-finder: true
   claude/agents/doc-polisher: true
   claude/agents/prompt-polisher: true
@@ -13,7 +12,6 @@ overrides:
   claude/hooks/command-guard: true
   codex/skills/systematic-debugging: true
   codex/skills/security-checklist: true
-  codex/skills/test: true
   codex/agents/contradiction-finder: true
   codex/agents/doc-polisher: true
   codex/agents/prompt-polisher: true
