@@ -305,7 +305,7 @@ private fun WatchlistRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (selected) MarketColors.CeladonSoft else Color.Transparent)
+            .background(if (selected) MarketColors.PrimaryWeak else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -313,7 +313,7 @@ private fun WatchlistRow(
         Box(
             Modifier
                 .size(width = 3.dp, height = 29.dp)
-                .background(if (selected) MarketColors.Celadon else Color.Transparent),
+                .background(if (selected) MarketColors.Primary else Color.Transparent),
         )
         Spacer(Modifier.width(7.dp))
         Box(
@@ -429,7 +429,7 @@ private fun StockChartPanel(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
-                    StatusLabel(stock.instrumentType.displayName, MarketColors.Celadon)
+                    StatusLabel(stock.instrumentType.displayName, MarketColors.Primary)
                     StatusLabel(stock.market.displayName, MarketColors.InkMuted)
                     StatusLabel(stock.behavior.strategy.displayName, MarketColors.Primary)
                 }
@@ -449,7 +449,7 @@ private fun StockChartPanel(
                     fxExposureLabel(stock)?.let { label ->
                         StatusLabel(
                             text = label,
-                            color = if ("헤지" in label) MarketColors.Celadon else MarketColors.Amber,
+                            color = if ("헤지" in label) MarketColors.Primary else MarketColors.Amber,
                         )
                     }
                     Spacer(Modifier.weight(1f))
@@ -517,7 +517,7 @@ private fun StockChartPanel(
                 Spacer(Modifier.width(8.dp))
                 LegendDot(MarketColors.Amber, "MA 5")
                 Spacer(Modifier.width(8.dp))
-                LegendDot(MarketColors.Celadon, "MA 20")
+                LegendDot(MarketColors.Primary, "MA 20")
                 Spacer(Modifier.weight(1f))
                 listOf("1일", "1주", "1개월", "3개월").forEach { item ->
                     FilterCell(item, item == range) { range = item }
@@ -647,7 +647,6 @@ private fun ProductInfoLine(label: String, value: String) {
 private fun fxExposureLabel(stock: StockDefinition): String? {
     val profile = stock.etfProfile ?: return null
     val fxProfile = profile.fxProfile
-        ?: return if (profile.usdKrwSensitivity != 0.0) "USD/KRW 환노출" else null
     val listingCurrency = if (stock.market.isUnitedStates) ReferenceCurrency.USD else ReferenceCurrency.KRW
     val foreignUnderlyingLegs = fxProfile.legs.filter {
         it.currency != listingCurrency && it.grossNotional >= 0.05

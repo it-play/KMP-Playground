@@ -25,11 +25,7 @@ import kmpbook.composeapp.generated.resources.pretendard_regular
 import kmpbook.composeapp.generated.resources.pretendard_semibold
 import org.jetbrains.compose.resources.Font
 
-/**
- * Market Ledger's own soft-finance palette. The public aliases are retained
- * because the simulator screens use them to express Korean market semantics:
- * red is rise and blue is fall.
- */
+/** Market Ledger's soft-finance palette with Korean red-up and blue-down semantics. */
 object MarketColors {
     val Grey50 = Color(0xFFF9FAFB)
     val Grey100 = Color(0xFFF2F4F6)
@@ -59,9 +55,6 @@ object MarketColors {
     val InkMuted = Grey600
     val Line = Grey200
 
-    // Compatibility names for the original ledger UI.
-    val Celadon = Primary
-    val CeladonSoft = PrimaryWeak
     val Scrim = Color(0x99191F28)
 }
 
@@ -111,10 +104,7 @@ val LocalMarketTypography = staticCompositionLocalOf {
     createMarketTypography(FontFamily.SansSerif)
 }
 
-/**
- * Compatibility facade used throughout the app. Values come from the active
- * theme so the desktop-installed family and bundled fallback behave alike.
- */
+/** Typography accessors backed by the active desktop-installed or bundled font family. */
 object MarketType {
     val display: TextStyle
         @Composable

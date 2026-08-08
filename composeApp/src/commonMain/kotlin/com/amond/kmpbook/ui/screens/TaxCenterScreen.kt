@@ -76,7 +76,7 @@ fun TaxCenterScreen(data: TaxCenterData, modifier: Modifier = Modifier) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
             TaxTopTile("즉시 납부 누계", current.securitiesTransactionTaxKrw + current.ruralSpecialTaxKrw + current.financialIncomeWithheldKrw, "거래세·ETF·분배금 원천징수", MarketColors.Ink, Modifier.weight(1f))
             TaxTopTile("신고 예정액", estimatedDue, "납부기한 ${data.nextDueDate}", MarketColors.Amber, Modifier.weight(1f))
-            TaxTopTile("증권사·규제 비용", data.brokerFeesKrw + data.secFinraFeesKrw, "세금과 분리한 필요경비", MarketColors.Celadon, Modifier.weight(1f))
+            TaxTopTile("증권사·규제 비용", data.brokerFeesKrw + data.secFinraFeesKrw, "세금과 분리한 필요경비", MarketColors.Primary, Modifier.weight(1f))
             TaxTopTile("금융소득", data.financialIncomeGrossKrw, "종합과세 기준 2,000만원", if (data.financialIncomeGrossKrw > 20_000_000.0) MarketColors.Rise else MarketColors.Ink, Modifier.weight(1f))
         }
         Row(
@@ -123,7 +123,7 @@ private fun CapitalGainsCalculation(year: TaxYearDisplay, modifier: Modifier) {
     LedgerPanel(modifier) {
         Column(Modifier.fillMaxSize()) {
             SectionHeading("주식 양도소득 계산", eyebrow = "${year.year} TAXABLE GAINS") {
-                StatusLabel("국내 과세주식 + 국외주식 손익통산", MarketColors.Celadon)
+                StatusLabel("국내 과세주식 + 국외주식 손익통산", MarketColors.Primary)
             }
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -131,7 +131,7 @@ private fun CapitalGainsCalculation(year: TaxYearDisplay, modifier: Modifier) {
                 FormulaSymbol("−")
                 TaxStep("통산손실", year.stockLossKrw, MarketColors.Fall, Modifier.weight(1f))
                 FormulaSymbol("−")
-                TaxStep("기본공제", year.basicDeductionKrw, MarketColors.Celadon, Modifier.weight(1f))
+                TaxStep("기본공제", year.basicDeductionKrw, MarketColors.Primary, Modifier.weight(1f))
                 FormulaSymbol("=")
                 TaxStep("과세표준", taxableBase, MarketColors.Ink, Modifier.weight(1f))
             }
@@ -190,7 +190,7 @@ private fun AnnualTaxLedger(years: List<TaxYearDisplay>, modifier: Modifier) {
                         TaxCell(formatMoney(year.financialIncomeGrossKrw, Currency.KRW, true), 1f)
                         TaxCell(formatMoney(year.financialIncomeWithheldKrw, Currency.KRW, true), 1f)
                         Box(Modifier.weight(0.7f)) {
-                            StatusLabel(if (year.paidKrw >= year.capitalGainsTaxKrw) "정산" else "예상", if (year.paidKrw >= year.capitalGainsTaxKrw) MarketColors.Celadon else MarketColors.Amber)
+                            StatusLabel(if (year.paidKrw >= year.capitalGainsTaxKrw) "정산" else "예상", if (year.paidKrw >= year.capitalGainsTaxKrw) MarketColors.Primary else MarketColors.Amber)
                         }
                     }
                 }
@@ -235,7 +235,7 @@ private fun TaxPolicyCards(data: TaxCenterData, modifier: Modifier) {
                         "국내상장 ETF",
                         "ETF 증권거래세 면제 · 국내주식형 매매차익 비과세",
                         "기타 ETF: 매매차익/과표증분 중 작은 금액에 15.4%",
-                        MarketColors.Celadon,
+                        MarketColors.Primary,
                     )
                 }
                 item {
@@ -251,7 +251,7 @@ private fun TaxPolicyCards(data: TaxCenterData, modifier: Modifier) {
                         "배당소득",
                         "국내 15.4% · 미국 W-8BEN 통상 15%",
                         "세전 금융소득 2천만원 초과 시 종합과세 추정",
-                        MarketColors.Celadon,
+                        MarketColors.Primary,
                     )
                 }
                 item {

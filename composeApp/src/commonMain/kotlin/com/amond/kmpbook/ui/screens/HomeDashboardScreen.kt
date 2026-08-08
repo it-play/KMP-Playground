@@ -196,7 +196,7 @@ private fun MarketPulsePanel(
     LedgerPanel(modifier) {
         Column(Modifier.fillMaxSize()) {
             SectionHeading("미국 대표 지수", eyebrow = "SIMULATION INDEX") {
-                StatusLabel("게임 지수", MarketColors.Celadon)
+                StatusLabel("게임 지수", MarketColors.Primary)
             }
             Spacer(Modifier.height(10.dp))
             val indexIds = listOf(
@@ -232,7 +232,7 @@ private fun MarketPulsePanel(
                 Spacer(Modifier.width(8.dp))
                 Text(formatPrice(usdKrw, Currency.KRW), style = MarketType.number, color = MarketColors.Ink)
                 Spacer(Modifier.weight(1f))
-                Text("지수 산식·통화 바스켓 매시간 갱신", style = MarketType.caption, color = MarketColors.Celadon)
+                Text("지수 산식·통화 바스켓 매시간 갱신", style = MarketType.caption, color = MarketColors.Primary)
             }
         }
     }
@@ -338,7 +338,7 @@ private fun AllocationPanel(
         "코스닥" to (byMarket[Market.KOSDAQ] ?: 0.0),
         "미국" to byMarket.entries.filter { it.key?.isUnitedStates == true }.sumOf { it.value },
     )
-    val colors = listOf(MarketColors.InkMuted, MarketColors.Celadon, MarketColors.Rise, MarketColors.Fall)
+    val colors = listOf(MarketColors.InkMuted, MarketColors.Primary, MarketColors.Rise, MarketColors.Fall)
     LedgerPanel(modifier) {
         Column(Modifier.fillMaxSize()) {
             SectionHeading("자산 배분", eyebrow = "ALLOCATION")
@@ -387,7 +387,7 @@ private fun NewsPanel(events: List<GameEvent>, onOpenEvents: () -> Unit, modifie
                         "전체 보기 →",
                         modifier = Modifier.clickable(onClick = onOpenEvents),
                         style = MarketType.label,
-                        color = MarketColors.Celadon,
+                        color = MarketColors.Primary,
                     )
                 },
             )

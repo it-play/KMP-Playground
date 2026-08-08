@@ -129,7 +129,7 @@ fun CandlestickVolumeChart(
                     values = movingAverage(visibleBars.map { it.close }, 20),
                     slot = slot,
                     y = ::priceY,
-                    color = MarketColors.Celadon,
+                    color = MarketColors.Primary,
                     strokeWidth = 1.4f,
                 )
             }
@@ -141,7 +141,7 @@ fun CandlestickVolumeChart(
 fun LineAreaChart(
     values: List<Double>,
     modifier: Modifier = Modifier,
-    color: Color = MarketColors.Celadon,
+    color: Color = MarketColors.Primary,
     baseline: Double? = null,
 ) {
     Canvas(modifier) {

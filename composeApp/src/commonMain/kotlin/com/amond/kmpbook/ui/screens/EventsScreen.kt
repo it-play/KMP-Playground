@@ -107,7 +107,7 @@ internal fun EventsScreen(
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MarketSpacing.md)) {
             EventMetric("영향 중", "${active}건", "현재 가격·변동성에 반영", MarketColors.Rise, Modifier.weight(1f))
-            EventMetric("내 뉴스", "${personal}건", "보유 또는 관심 종목과 연결", MarketColors.Celadon, Modifier.weight(1f))
+            EventMetric("내 뉴스", "${personal}건", "보유 또는 관심 종목과 연결", MarketColors.Primary, Modifier.weight(1f))
             EventMetric("내 악재", "${adverse}건", "보유·관심 종목 우선 확인", MarketColors.Amber, Modifier.weight(1f))
         }
         UpcomingSchedule(upcomingEvents)
@@ -346,7 +346,7 @@ private fun EventTimelineRow(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(MarketSpacing.xs)) {
                 if (entry.relevance.isHoldingRelated) StatusLabel("보유", MarketColors.Primary, strong = true)
-                if (entry.relevance.isWatchlistRelated) StatusLabel("관심", MarketColors.Celadon, strong = true)
+                if (entry.relevance.isWatchlistRelated) StatusLabel("관심", MarketColors.Primary, strong = true)
                 if (entry.relevance.isSectorRelated) StatusLabel("분야", MarketColors.InkMuted)
                 StatusLabel(if (marketProtection) "시장조치" else entry.personalDirection.displayName, color)
             }
@@ -396,7 +396,7 @@ private fun EventDetail(
             }
             if (entry.relevance.isWatchlistRelated) {
                 Spacer(Modifier.width(6.dp))
-                StatusLabel("관심 연관", MarketColors.Celadon, strong = true)
+                StatusLabel("관심 연관", MarketColors.Primary, strong = true)
             }
             Spacer(Modifier.weight(1f))
             Text(event.sourceLabel, style = MarketType.label, color = MarketColors.InkMuted)
@@ -430,7 +430,7 @@ private fun EventDetail(
                 ImpactMetric("원 이벤트 충격", formatPercent(event.impact.shockReturn), eventDirectionColor(event.impact.direction), Modifier.weight(1f))
                 ImpactMetric("시간 드리프트", formatPercent(event.impact.hourlyDrift), color, Modifier.weight(1f))
                 ImpactMetric("변동성", "×${event.impact.volatilityMultiplier}", MarketColors.Amber, Modifier.weight(1f))
-                ImpactMetric("거래량", "×${event.impact.volumeMultiplier}", MarketColors.Celadon, Modifier.weight(1f))
+                ImpactMetric("거래량", "×${event.impact.volumeMultiplier}", MarketColors.Primary, Modifier.weight(1f))
             }
         }
         Spacer(Modifier.height(MarketSpacing.lg))
@@ -524,7 +524,7 @@ private fun InstrumentImpactRow(
             Row(horizontalArrangement = Arrangement.spacedBy(MarketSpacing.xs)) {
                 Text(stock.name, style = MarketType.body.copy(fontWeight = FontWeight.SemiBold), color = MarketColors.Ink)
                 if (held) StatusLabel("보유", MarketColors.Primary, strong = true)
-                if (watched) StatusLabel("관심", MarketColors.Celadon, strong = true)
+                if (watched) StatusLabel("관심", MarketColors.Primary, strong = true)
             }
             Text(
                 "${stock.symbol} · ${stock.instrumentType.displayName} · ${stock.behavior.strategy.displayName} · ${stock.behavior.principalRisk.displayName}",
