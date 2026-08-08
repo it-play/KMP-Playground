@@ -4,7 +4,6 @@ import com.amond.kmpbook.presentation.SimulatorUiState
 import kotlin.time.Instant
 
 const val CURRENT_GAME_SAVE_SCHEMA_VERSION: Int = 3
-const val DEFAULT_MAX_GAME_SAVE_FILE_BYTES: Long = 64L * 1024L * 1024L
 const val GAME_SAVE_FORMAT_ID: String = "market-ledger-2040.game-save"
 
 data class GameSaveMetadata(
@@ -130,13 +129,9 @@ internal data class GameSaveEnvelope(
  * Manual save-game storage. Construction, [exists], and [load] never create a directory or file;
  * only [save] writes, while [delete] mutates only the resolved single save path.
  *
- * [savePathOverride] is intended for tests and portable builds. Null resolves to the platform's
- * canonical Market Ledger 2040 save location.
+ * The platform implementation owns the canonical Market Ledger 2040 save location and size limit.
  */
-expect class GameSaveStorage(
-    savePathOverride: String? = null,
-    maxFileSizeBytes: Long = DEFAULT_MAX_GAME_SAVE_FILE_BYTES,
-) {
+expect class GameSaveStorage() {
     val savePath: String
 
     suspend fun save(state: SimulatorUiState): GameSaveResult
