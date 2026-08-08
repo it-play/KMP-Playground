@@ -134,8 +134,10 @@ fun MarketTradingScreen(
                 modifier = Modifier.width(explorerWidth).fillMaxHeight(),
             )
             if (selectedStock != null && quote != null) {
-                val selectedNews = relatedNews.filter { story ->
-                    story.relatedStocks.any { it.stockId == selectedStock.id }
+                val selectedNews = remember(relatedNews, selectedStock.id) {
+                    relatedNews.filter { story ->
+                        story.relatedStocks.any { it.stockId == selectedStock.id }
+                    }
                 }
                 StockChartPanel(
                     stock = selectedStock,
@@ -229,7 +231,7 @@ private fun WatchlistPanel(
     LedgerPanel(modifier, padding = 0.dp) {
         Column(Modifier.fillMaxSize()) {
             Column(Modifier.padding(12.dp)) {
-                SectionHeading("종목 시세", eyebrow = "WATCHLIST")
+                SectionHeading("종목 탐색", eyebrow = "UNIVERSE")
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
                     value = query,
@@ -606,7 +608,9 @@ private fun MarketIntelligenceDeck(
     modifier: Modifier,
 ) {
     var selectedTab by remember(stock.id) { mutableStateOf(IntelligenceTab.IMPACT) }
-    val signals = relatedNews.mapNotNull { story -> story.signalFor(stock) }
+    val signals = remember(relatedNews, stock) {
+        relatedNews.mapNotNull { story -> story.signalFor(stock) }
+    }
 
     Column(modifier.background(MarketColors.Grey50)) {
         Row(
