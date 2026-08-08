@@ -1,5 +1,7 @@
 package com.amond.kmpbook.domain.model
 
+import com.amond.kmpbook.domain.simulation.CausalMarketEngine
+
 /** 뉴스 분석에서 영향 경로가 가리키는 대상의 정밀도다. */
 enum class EventImpactTargetKind(val displayName: String) {
     MARKET("시장"),
@@ -101,20 +103,42 @@ data class EventImpactInsight(
 /** [GameEvent.affects]와 가격 해석이 같은 커버리지 판정을 공유한다. */
 internal data class EventImpactCoverageMatch(
     val applicableInsights: List<EventImpactInsight>,
+    val causalImpact: CausalStockImpact?,
     val usesScopeFallback: Boolean,
 ) {
-    val isAffected: Boolean get() = applicableInsights.isNotEmpty() || usesScopeFallback
+    val isAffected: Boolean
+        get() = applicableInsights.isNotEmpty() || causalImpact != null || usesScopeFallback
 }
 
 internal fun GameEvent.impactCoverageFor(stock: StockDefinition): EventImpactCoverageMatch {
     val applicableInsights = impactInsights.filter { it.appliesTo(stock) }
-    val usesScopeFallback = applicableInsights.isEmpty() &&
+    val causalImpact = causalSignals
+        .takeIf {
+            applicableInsights.isEmpty() && it.isNotEmpty() && isCausalPropagationEligible(stock)
+        }
+        ?.let { signals -> CausalMarketEngine.impactFor(signals, stock) }
+    val usesScopeFallback = applicableInsights.isEmpty() && causalImpact == null &&
         impactCoveragePolicy == EventImpactCoveragePolicy.SCOPE_FALLBACK_WITH_OVERRIDES &&
         affectsByScope(stock)
     return EventImpactCoverageMatch(
         applicableInsights = applicableInsights,
+        causalImpact = causalImpact,
         usesScopeFallback = usesScopeFallback,
     )
+}
+
+/**
+ * 시장·국가·개별 종목 사건은 선언된 경계 밖으로 새지 않는다. 산업 사건만은 공급망의
+ * 본질상 다른 산업으로 전파할 수 있고, 글로벌 사건은 전 시장을 시작점으로 사용한다.
+ */
+private fun GameEvent.isCausalPropagationEligible(stock: StockDefinition): Boolean = when (scope) {
+    EventScope.GLOBAL,
+    EventScope.SECTOR,
+    -> true
+    EventScope.COUNTRY,
+    EventScope.MARKET,
+    EventScope.STOCK,
+    -> affectsByScope(stock)
 }
 
 /** 실제로 발표·보도된 수치만 뉴스에 싣기 위한 표시용 사실 데이터다. */

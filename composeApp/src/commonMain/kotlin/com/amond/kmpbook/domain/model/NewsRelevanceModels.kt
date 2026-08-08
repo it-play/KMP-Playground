@@ -26,6 +26,10 @@ fun GameEvent.relevanceTo(
             impactCoveragePolicy == EventImpactCoveragePolicy.SCOPE_FALLBACK_WITH_OVERRIDES
         if (includesScopeFallback) addAll(affectedSectors)
         addAll(impactInsights.mapNotNull(EventImpactInsight::sector))
+        stocks.filter { stock -> impactCoverageFor(stock).causalImpact != null }.forEach { stock ->
+            val exposure = stock.identityProfile?.exposedSectors.orEmpty()
+            if (exposure.isEmpty()) add(stock.sector) else addAll(exposure)
+        }
         val scopeStockIds = if (includesScopeFallback) affectedStockIds else emptySet()
         val directlyNamedStockIds = scopeStockIds + impactInsights.mapNotNull(EventImpactInsight::stockId)
         directlyNamedStockIds.mapNotNull(byId::get).forEach { stock ->
@@ -45,6 +49,8 @@ data class ResolvedEventImpact(
     val direction: ImpactDirection,
     val relativeSensitivity: Double,
     val insights: List<EventImpactInsight>,
+    val source: EventImpactResolutionSource,
+    val causalImpact: CausalStockImpact? = null,
 )
 
 fun GameEvent.resolvedImpactFor(stock: StockDefinition): ResolvedEventImpact {
@@ -55,6 +61,16 @@ fun GameEvent.resolvedImpactFor(stock: StockDefinition): ResolvedEventImpact {
             direction = ImpactDirection.NEUTRAL,
             relativeSensitivity = 0.0,
             insights = emptyList(),
+            source = EventImpactResolutionSource.NONE,
+        )
+    }
+    coverage.causalImpact?.let { causal ->
+        return ResolvedEventImpact(
+            direction = causal.direction,
+            relativeSensitivity = causal.relativeSensitivity,
+            insights = emptyList(),
+            source = EventImpactResolutionSource.CAUSAL_GRAPH,
+            causalImpact = causal,
         )
     }
     if (coverage.usesScopeFallback) {
@@ -62,6 +78,7 @@ fun GameEvent.resolvedImpactFor(stock: StockDefinition): ResolvedEventImpact {
             direction = impact.direction,
             relativeSensitivity = 1.0,
             insights = emptyList(),
+            source = EventImpactResolutionSource.SCOPE_FALLBACK,
         )
     }
     val maximumSpecificity = applicable.maxOf(EventImpactInsight::specificity)
@@ -90,6 +107,7 @@ fun GameEvent.resolvedImpactFor(stock: StockDefinition): ResolvedEventImpact {
         relativeSensitivity = signedSensitivity?.let { kotlin.math.abs(it) }
             ?: mostSpecific.map(EventImpactInsight::relativeSensitivity).average(),
         insights = mostSpecific,
+        source = EventImpactResolutionSource.EXPLICIT_PATH,
     )
 }
 
