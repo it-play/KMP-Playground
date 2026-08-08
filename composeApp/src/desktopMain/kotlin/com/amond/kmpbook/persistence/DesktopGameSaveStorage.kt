@@ -1,5 +1,29 @@
 package com.amond.kmpbook.persistence
 
+import com.amond.kmpbook.domain.model.CorporateActionKind
+import com.amond.kmpbook.domain.model.CorporateActionNewsTransition
+import com.amond.kmpbook.domain.model.CorporateActionSource
+import com.amond.kmpbook.domain.model.EventImpactCoveragePolicy
+import com.amond.kmpbook.domain.model.EventImpactHorizon
+import com.amond.kmpbook.domain.model.EventImpactTargetKind
+import com.amond.kmpbook.domain.model.EventRecordKind
+import com.amond.kmpbook.domain.model.EventTradingHaltKind
+import com.amond.kmpbook.domain.model.EventScope
+import com.amond.kmpbook.domain.model.EventSeverity
+import com.amond.kmpbook.domain.model.EventType
+import com.amond.kmpbook.domain.model.ImpactDirection
+import com.amond.kmpbook.domain.model.IndustrySegment
+import com.amond.kmpbook.domain.model.InvestmentAlertLevel
+import com.amond.kmpbook.domain.model.InstrumentTerminationKind
+import com.amond.kmpbook.domain.model.InstrumentTerminationValuationMethod
+import com.amond.kmpbook.domain.model.ListingLifecycleStatus
+import com.amond.kmpbook.domain.model.Market
+import com.amond.kmpbook.domain.model.MarketActionKind
+import com.amond.kmpbook.domain.model.MarketActionTransition
+import com.amond.kmpbook.domain.model.Sector
+import com.amond.kmpbook.domain.model.ScheduledEventKind
+import com.amond.kmpbook.domain.model.TradingHaltReason
+import com.amond.kmpbook.domain.model.TradingHaltStatus
 import com.amond.kmpbook.presentation.SimulatorUiState
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -310,6 +334,10 @@ actual class GameSaveStorage actual constructor() {
     }
 
     private fun validateCurrentStateJson(state: JsonObject) {
+        state.requiredArray("stocks").forEachIndexed { index, element ->
+            element.requireObject("state.stocks[$index]")
+                .requiredEnumArray<IndustrySegment>("industrySegments", "state.stocks[$index].industrySegments")
+        }
         state.requiredObject("macro").apply {
             requiredObject("fxRatesToKrw")
             requiredObject("previousFxRatesToKrw")
@@ -332,27 +360,271 @@ actual class GameSaveStorage actual constructor() {
                 required("accountingSequence")
             }
         }
+        state.requiredArray("pendingCorporateActions").forEachIndexed { index, element ->
+            element.requireObject("state.pendingCorporateActions[$index]").apply {
+                required("id")
+                required("stockId")
+                requiredEnum<CorporateActionKind>("kind", "state.pendingCorporateActions[$index].kind")
+                required("announcedAt")
+                required("effectiveNotBefore")
+                required("quantityMultiplier")
+                requiredEnum<CorporateActionSource>("source", "state.pendingCorporateActions[$index].source")
+                required("rationale")
+            }
+        }
         state.requiredArray("corporateActionLedger").forEachIndexed { index, element ->
-            element.requireObject("state.corporateActionLedger[$index]").required("accountingSequence")
+            element.requireObject("state.corporateActionLedger[$index]").apply {
+                required("id")
+                required("stockId")
+                requiredEnum<CorporateActionKind>("kind", "state.corporateActionLedger[$index].kind")
+                required("announcedAt")
+                required("effectiveNotBefore")
+                required("effectiveAt")
+                required("quantityMultiplier")
+                required("preActionPrice")
+                required("postActionPrice")
+                requiredEnum<CorporateActionSource>("source", "state.corporateActionLedger[$index].source")
+                required("rationale")
+                required("accountingSequence")
+            }
         }
 
         fun requireEventFields(array: com.google.gson.JsonArray, path: String) {
             array.forEachIndexed { index, element ->
                 element.requireObject("$path[$index]").apply {
+                    required("id")
+                    requireMember("generatorTemplateId")
+                    required("title")
+                    required("description")
+                    requiredEnum<EventScope>("scope", "$path[$index].scope")
+                    requiredEnum<EventType>("type", "$path[$index].type")
+                    requiredEnum<EventSeverity>("severity", "$path[$index].severity")
+                    requiredObject("impact").apply {
+                        requiredEnum<ImpactDirection>("direction", "$path[$index].impact.direction")
+                        required("shockReturn")
+                        required("hourlyDrift")
+                        required("volatilityMultiplier")
+                        required("volumeMultiplier")
+                        required("liquidityMultiplier")
+                        required("sentiment")
+                    }
+                    required("startsAt")
+                    required("durationHours")
+                    requiredEnum<EventRecordKind>("recordKind", "$path[$index].recordKind")
+                    requireMember("scheduledEventReference")
+                    get("scheduledEventReference").takeUnless(JsonElement::isJsonNull)?.let { referenceElement ->
+                        referenceElement.requireObject("$path[$index].scheduledEventReference").apply {
+                            required("occurrenceId")
+                            requiredEnum<ScheduledEventKind>(
+                                "kind",
+                                "$path[$index].scheduledEventReference.kind",
+                            )
+                        }
+                    }
+                    requireMember("corporateActionReference")
+                    get("corporateActionReference").takeUnless(JsonElement::isJsonNull)?.let { referenceElement ->
+                        referenceElement.requireObject("$path[$index].corporateActionReference").apply {
+                            required("occurrenceId")
+                            requiredEnum<CorporateActionNewsTransition>(
+                                "transition",
+                                "$path[$index].corporateActionReference.transition",
+                            )
+                            required("stockId")
+                            requiredEnum<CorporateActionKind>(
+                                "kind",
+                                "$path[$index].corporateActionReference.kind",
+                            )
+                            required("announcedAt")
+                            required("effectiveNotBefore")
+                            required("quantityMultiplier")
+                            requiredEnum<CorporateActionSource>(
+                                "source",
+                                "$path[$index].corporateActionReference.source",
+                            )
+                            required("rationale")
+                            requireMember("appliedAt")
+                            requireMember("accountingSequence")
+                            requireMember("cancelledAt")
+                            requireMember("cancellingListingEventId")
+                            requireMember("cancellingListingLedgerSequence")
+                            nullableEnum<ListingLifecycleStatus>(
+                                "cancellingListingStatus",
+                                "$path[$index].corporateActionReference.cancellingListingStatus",
+                            )
+                        }
+                    }
+                    requiredEnum<EventImpactCoveragePolicy>(
+                        "impactCoveragePolicy",
+                        "$path[$index].impactCoveragePolicy",
+                    )
+                    required("effectStartsAt")
+                    required("effectDurationHours")
+                    requiredEnumArray<Market>("affectedMarkets", "$path[$index].affectedMarkets")
+                    requiredEnumArray<Sector>("affectedSectors", "$path[$index].affectedSectors")
+                    requiredArray("affectedStockIds")
+                    required("sourceLabel")
                     required("listingRiskTags")
                     required("listingRecoveryConditions")
+                    requireMember("listingFinalDispositionHint")
+                    requiredArray("impactInsights").forEachIndexed { insightIndex, insightElement ->
+                        insightElement.requireObject("$path[$index].impactInsights[$insightIndex]").apply {
+                            requiredEnum<EventImpactTargetKind>(
+                                "targetKind",
+                                "$path[$index].impactInsights[$insightIndex].targetKind",
+                            )
+                            required("targetLabel")
+                            requiredEnum<ImpactDirection>(
+                                "direction",
+                                "$path[$index].impactInsights[$insightIndex].direction",
+                            )
+                            required("rationale")
+                            nullableEnum<Sector>("sector", "$path[$index].impactInsights[$insightIndex].sector")
+                            nullableEnum<IndustrySegment>(
+                                "industrySegment",
+                                "$path[$index].impactInsights[$insightIndex].industrySegment",
+                            )
+                            requiredEnumArray<Market>(
+                                "markets",
+                                "$path[$index].impactInsights[$insightIndex].markets",
+                            )
+                            requireMember("stockId")
+                            requiredEnum<EventImpactHorizon>(
+                                "horizon",
+                                "$path[$index].impactInsights[$insightIndex].horizon",
+                            )
+                            required("relativeSensitivity")
+                        }
+                    }
+                    requiredArray("reportedFacts").forEachIndexed { factIndex, factElement ->
+                        factElement.requireObject("$path[$index].reportedFacts[$factIndex]").apply {
+                            required("label")
+                            required("actual")
+                            requireMember("comparison")
+                        }
+                    }
+                    requireMember("marketAction")
+                    get("marketAction").takeUnless(JsonElement::isJsonNull)?.let { actionElement ->
+                        actionElement.requireObject("$path[$index].marketAction").apply {
+                            requiredEnum<MarketActionKind>("kind", "$path[$index].marketAction.kind")
+                            required("occurrenceId")
+                            requiredEnum<MarketActionTransition>(
+                                "transition",
+                                "$path[$index].marketAction.transition",
+                            )
+                            required("announcedAt")
+                            required("effectiveAt")
+                            requireMember("endsAt")
+                            requireMember("stockId")
+                            requiredEnumArray<Market>("markets", "$path[$index].marketAction.markets")
+                            requireMember("stage")
+                            requireMember("triggerSequence")
+                            nullableEnum<InvestmentAlertLevel>(
+                                "alertLevel",
+                                "$path[$index].marketAction.alertLevel",
+                            )
+                            requireMember("effectiveOn")
+                            requireMember("listingLedgerSequence")
+                            nullableEnum<ListingLifecycleStatus>(
+                                "listingStatus",
+                                "$path[$index].marketAction.listingStatus",
+                            )
+                        }
+                    }
+                    requireMember("instrumentTermination")
+                    get("instrumentTermination").takeUnless(JsonElement::isJsonNull)?.let { termsElement ->
+                        termsElement.requireObject("$path[$index].instrumentTermination").apply {
+                            requiredEnum<InstrumentTerminationKind>(
+                                "kind",
+                                "$path[$index].instrumentTermination.kind",
+                            )
+                            requireMember("contractualDate")
+                            requireMember("effectiveNotBefore")
+                            requiredEnum<InstrumentTerminationValuationMethod>(
+                                "valuationMethod",
+                                "$path[$index].instrumentTermination.valuationMethod",
+                            )
+                            requireMember("accelerationRecoveryRate")
+                        }
+                    }
+                    requireMember("tradingHaltDirective")
+                    get("tradingHaltDirective").takeUnless(JsonElement::isJsonNull)?.let { directiveElement ->
+                        directiveElement.requireObject("$path[$index].tradingHaltDirective").apply {
+                            requiredEnum<EventTradingHaltKind>(
+                                "kind",
+                                "$path[$index].tradingHaltDirective.kind",
+                            )
+                            requiredEnum<TradingHaltReason>(
+                                "reason",
+                                "$path[$index].tradingHaltDirective.reason",
+                            )
+                            requiredEnumArray<Market>(
+                                "eligibleMarkets",
+                                "$path[$index].tradingHaltDirective.eligibleMarkets",
+                            )
+                            required("durationMinutes")
+                            required("detail")
+                        }
+                    }
                 }
             }
         }
         requireEventFields(state.requiredArray("activeEvents"), "state.activeEvents")
         requireEventFields(state.requiredArray("newsEvents"), "state.newsEvents")
-        requireEventFields(
-            state.requiredObject("eventEngineSnapshot").requiredArray("activeEvents"),
-            "state.eventEngineSnapshot.activeEvents",
-        )
+        state.requiredObject("eventEngineSnapshot").apply {
+            required("randomState")
+            required("sequence")
+            requiredObject("lastTriggeredEpochSeconds")
+            requireEventFields(
+                requiredArray("activeEvents"),
+                "state.eventEngineSnapshot.activeEvents",
+            )
+        }
+
+        state.requiredObject("listingLifecycleStates").entrySet().forEach { (stockId, element) ->
+            element.requireObject("state.listingLifecycleStates[$stockId]").apply {
+                requireMember("controllingTerminationOccurrenceId")
+                requireMember("controllingTerminationNoticePriority")
+                requireMember("controllingTerminationRawEffectiveOn")
+            }
+        }
+        state.requiredArray("listingLifecycleLedger").forEachIndexed { index, element ->
+            element.requireObject("state.listingLifecycleLedger[$index]").apply {
+                requireMember("controllingTerminationOccurrenceId")
+                requireMember("controllingTerminationNoticePriority")
+                requireMember("controllingTerminationRawEffectiveOn")
+            }
+        }
 
         state.requiredObject("tradingProtectionSnapshot").apply {
-            requiredObject("scheduledInstrumentTradingHalts")
+            fun JsonElement.requireInstrumentHaltFields(path: String) {
+                requireObject(path).apply {
+                    required("occurrenceId")
+                    required("stockId")
+                    requiredEnum<TradingHaltReason>("reason", "$path.reason")
+                    required("detail")
+                    required("startedAt")
+                    requiredObject("policy").apply {
+                        required("acceptsNewOrders")
+                        required("allowsCancellation")
+                        required("allowsExecution")
+                        required("allowsContinuousTrading")
+                    }
+                    requireMember("scheduledReleaseAt")
+                    requiredEnum<TradingHaltStatus>("status", "$path.status")
+                    requireMember("releasedAt")
+                    requireMember("releaseNote")
+                }
+            }
+            requiredObject("instrumentTradingHalts").entrySet().forEach { (stockId, element) ->
+                element.requireInstrumentHaltFields(
+                    "state.tradingProtectionSnapshot.instrumentTradingHalts[$stockId]",
+                )
+            }
+            requiredObject("scheduledInstrumentTradingHalts").entrySet().forEach { (scheduleId, element) ->
+                element.requireInstrumentHaltFields(
+                    "state.tradingProtectionSnapshot.scheduledInstrumentTradingHalts[$scheduleId]",
+                )
+            }
             requiredObject("investmentAlerts").entrySet().forEach { (stockId, element) ->
                 element.requireObject("state.tradingProtectionSnapshot.investmentAlerts[$stockId]")
                     .required("releaseRule")
@@ -551,6 +823,43 @@ private fun JsonObject.requiredString(name: String): String = try {
     required(name).asString
 } catch (error: RuntimeException) {
     throw JsonParseException("필드 '$name'은 문자열이어야 합니다.", error)
+}
+
+private inline fun <reified E : Enum<E>> JsonObject.requiredEnum(name: String, path: String): E {
+    val element = required(name)
+    val primitive = element.takeIf(JsonElement::isJsonPrimitive)?.asJsonPrimitive
+    if (primitive?.isString != true) {
+        throw JsonParseException("필드 '$path'은 문자열 enum이어야 합니다.")
+    }
+    val value = primitive.asString
+    return enumValues<E>().firstOrNull { it.name == value }
+        ?: throw JsonParseException("필드 '$path'의 enum 값 '$value'이 유효하지 않습니다.")
+}
+
+private inline fun <reified E : Enum<E>> JsonObject.nullableEnum(name: String, path: String): E? {
+    requireMember(name)
+    val element = get(name)
+    if (element.isJsonNull) return null
+    val primitive = element.takeIf(JsonElement::isJsonPrimitive)?.asJsonPrimitive
+    if (primitive?.isString != true) {
+        throw JsonParseException("필드 '$path'은 null 또는 문자열 enum이어야 합니다.")
+    }
+    val value = primitive.asString
+    return enumValues<E>().firstOrNull { it.name == value }
+        ?: throw JsonParseException("필드 '$path'의 enum 값 '$value'이 유효하지 않습니다.")
+}
+
+private inline fun <reified E : Enum<E>> JsonObject.requiredEnumArray(
+    name: String,
+    path: String,
+): List<E> = requiredArray(name).mapIndexed { index, element ->
+    val primitive = element.takeIf(JsonElement::isJsonPrimitive)?.asJsonPrimitive
+    if (primitive?.isString != true) {
+        throw JsonParseException("필드 '$path[$index]'은 문자열 enum이어야 합니다.")
+    }
+    val value = primitive.asString
+    enumValues<E>().firstOrNull { it.name == value }
+        ?: throw JsonParseException("필드 '$path[$index]'의 enum 값 '$value'이 유효하지 않습니다.")
 }
 
 private fun JsonObject.requiredInt(name: String): Int = try {
