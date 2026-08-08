@@ -11,6 +11,7 @@ import com.amond.kmpbook.domain.model.InstrumentBehaviorProfile
 import com.amond.kmpbook.domain.model.InstrumentIdentityProfile
 import com.amond.kmpbook.domain.model.InstrumentStrategy
 import com.amond.kmpbook.domain.model.InstrumentType
+import com.amond.kmpbook.domain.model.IndustrySegment
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.PrincipalRisk
 import com.amond.kmpbook.domain.model.ReferenceCurrency
@@ -68,6 +69,7 @@ object RequestedUsInstrumentCatalog {
         val supportingSourceUrls: Set<String> = emptySet(),
         val aliases: Set<String> = emptySet(),
         val eventRiskTags: Set<String> = emptySet(),
+        val industrySegments: Set<IndustrySegment> = emptySet(),
         val maturityDate: String? = null,
         val callable: Boolean = false,
         val durationYears: Double? = null,
@@ -128,6 +130,7 @@ object RequestedUsInstrumentCatalog {
                 etfProfile = profile,
                 instrumentTypeOverride = instrumentType,
                 behaviorProfile = behaviorProfile(),
+                industrySegments = industrySegments,
                 identityProfile = InstrumentIdentityProfile(
                     legalName = legalName,
                     aliases = aliases + koreanName,
@@ -1236,6 +1239,7 @@ object RequestedUsInstrumentCatalog {
             officialSourceUrl = "https://www.flexshares.com/us/en/individual/funds/gunr",
             aliases = setOf("플렉스셰어즈 천연자원 ETF"),
             eventRiskTags = setOf("commodity_cycle", "currency_exposure", "sector_concentration"),
+            industrySegments = setOf(IndustrySegment.CRITICAL_MINERALS),
             fxProfileOverride = fxProfile(
                 ReferenceCurrency.USD to 0.45,
                 ReferenceCurrency.CAD to 0.20,
@@ -1682,6 +1686,7 @@ object RequestedUsInstrumentCatalog {
                 "defined_risk_options",
                 "weekly_distribution_not_guaranteed",
             ),
+            industrySegments = setOf(IndustrySegment.CRITICAL_MINERALS),
         ),
         Seed(
             symbol = "OILK",
@@ -2184,6 +2189,7 @@ object RequestedUsInstrumentCatalog {
                 "drug_pricing_policy",
                 "acquisition_integration",
             ),
+            industrySegments = setOf(IndustrySegment.VACCINES_DIAGNOSTICS),
         ),
         Seed(
             symbol = "TSM",

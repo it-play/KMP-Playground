@@ -121,26 +121,59 @@ data class ListingFinalDisposition(
     val entitledCostBasis: Double? = null,
 ) {
     init {
-        require(cashPerUnit == null || cashPerUnit >= 0.0 && cashPerUnit.isFinite()) {
-            "청산 단가는 유한한 0 이상 값이어야 합니다."
+        semanticInvariantViolation()?.let { throw IllegalArgumentException(it) }
+    }
+
+    /**
+     * Gson처럼 생성자를 거치지 않는 저장 경계에서도 같은 처분 규칙을 적용한다.
+     * 현금 청산의 0원 회수와 무보유 계좌의 0 권리 수량·원가는 유효한 런타임 상태다.
+     * 권리 수량과 원가를 언제 확정해야 하는지는 상태·원장 검증기가 판단한다.
+     */
+    fun semanticInvariantViolation(): String? {
+        val dispositionType = type as ListingFinalDispositionType?
+            ?: return "잔고 처분 유형이 필요합니다."
+        if (dispositionType !in ListingFinalDispositionType.entries) {
+            return "잔고 처분 유형이 유효하지 않습니다."
         }
-        require(type == ListingFinalDispositionType.CASH_LIQUIDATION || settlementDueOn == null) {
-            "현금 청산 외 처분에는 지급 예정일을 둘 수 없습니다."
+        val dispositionEffectiveOn = effectiveOn as LocalDate?
+            ?: return "잔고 처분 효력일이 필요합니다."
+        if (cashPerUnit?.let { !it.isFinite() || it < 0.0 } == true) {
+            return "청산 단가는 유한한 0 이상 값이어야 합니다."
         }
-        require(type == ListingFinalDispositionType.CASH_LIQUIDATION || cashPerUnit == null || cashPerUnit == 0.0) {
-            "시장 매도·장외 이전에는 청산 단가를 둘 수 없습니다."
+        if (entitledQuantity?.let { !it.isFinite() || it < 0.0 } == true) {
+            return "확정 권리 수량은 유한한 0 이상 값이어야 합니다."
         }
-        if (type == ListingFinalDispositionType.CASH_LIQUIDATION) {
-            require(settlementDueOn != null && cashPerUnit != null) {
-                "현금 청산에는 지급일과 확정 단가가 필요합니다."
+        if (entitledCostBasis?.let { !it.isFinite() || it < 0.0 } == true) {
+            return "확정 취득원가는 유한한 0 이상 값이어야 합니다."
+        }
+        if ((entitledQuantity == null) != (entitledCostBasis == null)) {
+            return "확정 권리 수량과 취득원가는 함께 있거나 함께 없어야 합니다."
+        }
+
+        return when (dispositionType) {
+            ListingFinalDispositionType.CASH_LIQUIDATION -> when {
+                settlementDueOn == null || cashPerUnit == null ->
+                    "현금 청산에는 지급일과 확정 단가가 필요합니다."
+                settlementDueOn < dispositionEffectiveOn ->
+                    "청산금 지급일은 처분 효력일보다 빠를 수 없습니다."
+                else -> null
             }
-        }
-        require(entitledQuantity == null || entitledQuantity >= 0.0 && entitledQuantity.isFinite())
-        require(entitledCostBasis == null || entitledCostBasis >= 0.0 && entitledCostBasis.isFinite())
-        require(type == ListingFinalDispositionType.CASH_LIQUIDATION ||
-            entitledQuantity == null && entitledCostBasis == null)
-        require(settlementDueOn == null || settlementDueOn >= effectiveOn) {
-            "청산금 지급일은 처분 효력일보다 빠를 수 없습니다."
+
+            ListingFinalDispositionType.WORTHLESS_DISPOSITION -> when {
+                settlementDueOn != null -> "무가치 처분에는 지급 예정일을 둘 수 없습니다."
+                cashPerUnit != 0.0 -> "무가치 처분의 회수 단가는 0이어야 합니다."
+                entitledQuantity != null -> "무가치 처분에는 현금 청산 권리를 둘 수 없습니다."
+                else -> null
+            }
+
+            ListingFinalDispositionType.MARKET_SALE,
+            ListingFinalDispositionType.OTC_TRANSFER,
+            -> when {
+                settlementDueOn != null -> "시장 매도·장외 이전에는 지급 예정일을 둘 수 없습니다."
+                cashPerUnit != null -> "시장 매도·장외 이전에는 청산 단가를 둘 수 없습니다."
+                entitledQuantity != null -> "시장 매도·장외 이전에는 현금 청산 권리를 둘 수 없습니다."
+                else -> null
+            }
         }
     }
 }
@@ -180,6 +213,12 @@ data class ListingLifecycleLedgerEvent(
     val summary: String,
     val deadline: LocalDate? = null,
     val disposition: ListingFinalDisposition? = null,
+    /** ETF/ETN orderly termination state를 만든 exact GameEvent.id. */
+    val controllingTerminationOccurrenceId: String? = null,
+    /** 동일 효력일 공시의 계약 우선순위. 낮을수록 우선한다. */
+    val controllingTerminationNoticePriority: Int? = null,
+    /** 거래일/현재일 clamp 전 계약상 또는 공시상 원래 효력 거래일. */
+    val controllingTerminationRawEffectiveOn: LocalDate? = null,
     val sourceUrls: List<String> = emptyList(),
 ) {
     init {
@@ -188,6 +227,15 @@ data class ListingLifecycleLedgerEvent(
         require(title.isNotBlank() && summary.isNotBlank())
         require(sourceUrls.distinct().size == sourceUrls.size)
         require(sourceUrls.all { it.startsWith("https://") })
+        require(controllingTerminationOccurrenceId?.isNotBlank() != false)
+        require(controllingTerminationNoticePriority == null || controllingTerminationNoticePriority >= 0)
+        val orderlyTerminationStage =
+            reason in ORDERLY_PRODUCT_TERMINATION_REASONS && toStatus in ORDERLY_PRODUCT_TERMINATION_STATUSES
+        require((controllingTerminationOccurrenceId != null) == orderlyTerminationStage) {
+            "상품 종료 원장 단계에는 이를 지배하는 정확한 종료 공시 ID가 필요합니다."
+        }
+        require((controllingTerminationNoticePriority != null) == orderlyTerminationStage)
+        require((controllingTerminationRawEffectiveOn != null) == orderlyTerminationStage)
     }
 }
 
@@ -204,7 +252,8 @@ data class DailyListingSurveillanceInput(
     /** 0.01은 하루 유통주식의 1%가 거래됐다는 뜻이다. */
     val turnoverRate: Double? = null,
     val riskTags: Set<ListingRiskTag> = emptySet(),
-    val riskSeverity: ListingRiskSeverity = ListingRiskSeverity.NONE,
+    /** 서로 다른 공시가 겹칠 때 한 사건의 중요도가 다른 사유를 잘못 승격하지 않게 태그별로 보존한다. */
+    val riskSeverityByTag: Map<ListingRiskTag, ListingRiskSeverity> = emptyMap(),
     val recoveryConditions: Set<ListingRecoveryCondition> = emptySet(),
     /** 실제 공시 일정이 있는 캠페인 이벤트가 정책 기본 일정을 덮어쓸 때 사용한다. */
     val scheduledDelistingOn: LocalDate? = null,
@@ -212,6 +261,10 @@ data class DailyListingSurveillanceInput(
     val finalDispositionHint: ListingFinalDispositionType? = null,
     val otcTransferAvailable: Boolean = false,
     val liquidationCashPerUnit: Double? = null,
+    /** 이 입력의 종료일·평가 조건을 공급한 exact GameEvent.id. */
+    val controllingTerminationOccurrenceId: String? = null,
+    val controllingTerminationNoticePriority: Int? = null,
+    val controllingTerminationRawEffectiveOn: LocalDate? = null,
 ) {
     init {
         require(stockId.isNotBlank())
@@ -222,6 +275,18 @@ data class DailyListingSurveillanceInput(
         require(scheduledDelistingOn == null || scheduledDelistingOn >= tradingDate)
         require(scheduledSettlementOn == null || scheduledSettlementOn >= tradingDate)
         require(liquidationCashPerUnit == null || liquidationCashPerUnit >= 0.0 && liquidationCashPerUnit.isFinite())
+        require(riskSeverityByTag.keys.all(riskTags::contains)) {
+            "위험 중요도는 현재 입력에 포함된 위험 태그에만 지정할 수 있습니다."
+        }
+        require(controllingTerminationOccurrenceId?.isNotBlank() != false)
+        require(controllingTerminationNoticePriority == null || controllingTerminationNoticePriority >= 0)
+        val hasOrderlyTerminationSignal = riskTags.any(ORDERLY_PRODUCT_TERMINATION_TAGS::contains)
+        require((controllingTerminationOccurrenceId != null) == hasOrderlyTerminationSignal) {
+            "상품 종료 감시 입력에는 종료 조건을 공급한 정확한 공시 ID가 필요합니다."
+        }
+        require((controllingTerminationNoticePriority != null) == hasOrderlyTerminationSignal)
+        require((controllingTerminationRawEffectiveOn != null) == hasOrderlyTerminationSignal)
+        require(controllingTerminationOccurrenceId == null || scheduledDelistingOn != null)
     }
 }
 
@@ -238,6 +303,10 @@ data class ListingLifecycleState(
     val reviewDeadline: LocalDate? = null,
     val scheduledDelistingOn: LocalDate? = null,
     val settlementDueOn: LocalDate? = null,
+    /** 현재 ETF/ETN orderly termination 절차를 지배하는 exact GameEvent.id. */
+    val controllingTerminationOccurrenceId: String? = null,
+    val controllingTerminationNoticePriority: Int? = null,
+    val controllingTerminationRawEffectiveOn: LocalDate? = null,
     /** 공시 후 매매 가능한 정리 기간인지, 기존 정지가 계속되는지를 구분한다. */
     val tradingAllowedUntilDelisting: Boolean = true,
     val consecutiveLowBidTradingDays: Int = 0,
@@ -266,6 +335,15 @@ data class ListingLifecycleState(
         ) { "진행 중인 상장 조치에는 사유가 필요합니다." }
         require(status != ListingLifecycleStatus.DELISTING_SCHEDULED || scheduledDelistingOn != null)
         require(status != ListingLifecycleStatus.LIQUIDATION_PENDING || settlementDueOn != null)
+        require(controllingTerminationOccurrenceId?.isNotBlank() != false)
+        require(controllingTerminationNoticePriority == null || controllingTerminationNoticePriority >= 0)
+        val orderlyTerminationStage =
+            activeReason in ORDERLY_PRODUCT_TERMINATION_REASONS && status in ORDERLY_PRODUCT_TERMINATION_STATUSES
+        require((controllingTerminationOccurrenceId != null) == orderlyTerminationStage) {
+            "상품 종료 상태에는 이를 지배하는 정확한 종료 공시 ID가 필요합니다."
+        }
+        require((controllingTerminationNoticePriority != null) == orderlyTerminationStage)
+        require((controllingTerminationRawEffectiveOn != null) == orderlyTerminationStage)
         require(
             status !in setOf(ListingLifecycleStatus.DELISTED, ListingLifecycleStatus.TERMINATED) ||
                 finalDisposition != null,
@@ -317,3 +395,48 @@ data class ListingLifecycleReplayResult(
     val state: ListingLifecycleState,
     val ledgerEvents: List<ListingLifecycleLedgerEvent>,
 )
+
+private val ORDERLY_PRODUCT_TERMINATION_REASONS: Set<ListingLifecycleReason> = setOf(
+    ListingLifecycleReason.ETF_VOLUNTARY_LIQUIDATION,
+    ListingLifecycleReason.ETN_MATURITY_OR_EARLY_REDEMPTION,
+)
+
+private val ORDERLY_PRODUCT_TERMINATION_STATUSES: Set<ListingLifecycleStatus> = setOf(
+    ListingLifecycleStatus.DELISTING_SCHEDULED,
+    ListingLifecycleStatus.LIQUIDATION_PENDING,
+    ListingLifecycleStatus.TERMINATED,
+)
+
+private val ORDERLY_PRODUCT_TERMINATION_TAGS: Set<ListingRiskTag> = setOf(
+    ListingRiskTag.ETF_LIQUIDATION_APPROVED,
+    ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION,
+)
+
+/**
+ * 계약상 만기·자진 청산보다 먼저 거래소의 강제 심사·정지 절차를 유지해야 하는 사유다.
+ * 이 상태가 해제되기 전에는 새로운 orderly termination 공시가 기존 강제 절차를 덮지 않는다.
+ */
+internal fun ListingLifecycleReason.blocksOrderlyProductTermination(): Boolean = this in setOf(
+    ListingLifecycleReason.BANKRUPTCY_OR_INSOLVENCY,
+    ListingLifecycleReason.ISSUER_ELIGIBILITY_FAILURE,
+    ListingLifecycleReason.UNDERLYING_INDEX_UNAVAILABLE,
+    ListingLifecycleReason.LIQUIDITY_PROVIDER_FAILURE,
+    ListingLifecycleReason.AUDIT_OR_DISCLOSURE_FAILURE,
+    ListingLifecycleReason.SERIOUS_COMPLIANCE_EVENT,
+    ListingLifecycleReason.CORE_BUSINESS_SUSPENSION,
+)
+
+/** 현재 관측된 공시 중요도까지 반영해 orderly termination보다 먼저 새 강제 절차를 시작할지 판정한다. */
+internal fun ListingLifecycleReason.preemptsOrderlyProductTermination(
+    severity: ListingRiskSeverity,
+): Boolean = when (this) {
+    ListingLifecycleReason.BANKRUPTCY_OR_INSOLVENCY -> true
+    ListingLifecycleReason.ISSUER_ELIGIBILITY_FAILURE,
+    ListingLifecycleReason.UNDERLYING_INDEX_UNAVAILABLE,
+    ListingLifecycleReason.AUDIT_OR_DISCLOSURE_FAILURE,
+    ListingLifecycleReason.SERIOUS_COMPLIANCE_EVENT,
+    ListingLifecycleReason.CORE_BUSINESS_SUSPENSION,
+    -> severity.level >= ListingRiskSeverity.HIGH.level
+    ListingLifecycleReason.LIQUIDITY_PROVIDER_FAILURE -> severity == ListingRiskSeverity.CRITICAL
+    else -> false
+}

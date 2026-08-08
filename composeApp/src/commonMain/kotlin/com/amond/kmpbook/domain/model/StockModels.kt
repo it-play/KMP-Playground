@@ -166,6 +166,8 @@ data class StockDefinition(
     val behaviorProfile: InstrumentBehaviorProfile? = null,
     /** 운용사·법적 명칭·검증 출처·이벤트 태그. 사용자 종목팩은 생략할 수 있다. */
     val identityProfile: InstrumentIdentityProfile? = null,
+    /** 뉴스의 세부 산업 전달 경로에 쓰는 명시적 노출. 종목 추가 시 필요한 항목만 선언한다. */
+    val industrySegments: Set<IndustrySegment> = emptySet(),
 ) {
     init {
         require(symbol.isNotBlank()) { "종목 코드는 비어 있을 수 없습니다." }

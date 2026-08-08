@@ -11,6 +11,7 @@ import com.amond.kmpbook.domain.model.InstrumentBehaviorProfile
 import com.amond.kmpbook.domain.model.InstrumentIdentityProfile
 import com.amond.kmpbook.domain.model.InstrumentStrategy
 import com.amond.kmpbook.domain.model.InstrumentType
+import com.amond.kmpbook.domain.model.IndustrySegment
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.PrincipalRisk
 import com.amond.kmpbook.domain.model.ReferenceCurrency
@@ -122,6 +123,7 @@ object RequestedKoreanInstrumentCatalog {
             keyword in instrument.symbol.lowercase() ||
                 keyword in instrument.name.lowercase() ||
                 keyword in instrument.englishName.lowercase() ||
+                instrument.industrySegments.any { keyword in it.displayName.lowercase() } ||
                 instrument.identityProfile?.let { identity ->
                     keyword in identity.legalName.lowercase() ||
                         identity.aliases.any { keyword in it.lowercase() } ||
@@ -154,6 +156,7 @@ object RequestedKoreanInstrumentCatalog {
         val gameDistributionEnabled: Boolean = true,
         val underlyingInstrumentIds: Set<String> = emptySet(),
         val exposedSectors: Set<Sector> = emptySet(),
+        val industrySegments: Set<IndustrySegment> = emptySet(),
     ) {
         init {
             if (instrumentType == InstrumentType.ETF) {
@@ -208,6 +211,7 @@ object RequestedKoreanInstrumentCatalog {
                 etfProfile = profile,
                 instrumentTypeOverride = instrumentType,
                 behaviorProfile = behaviorProfile(this),
+                industrySegments = industrySegments,
                 identityProfile = InstrumentIdentityProfile(
                     legalName = name,
                     aliases = aliases,

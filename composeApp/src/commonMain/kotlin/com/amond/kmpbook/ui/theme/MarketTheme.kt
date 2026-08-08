@@ -37,14 +37,19 @@ object MarketColors {
 
     val Primary = Color(0xFF3182F6)
     val PrimaryWeak = Color(0xFFE8F3FF)
+    /** 흰색·옅은 배경 위 작은 상태 텍스트용 WCAG 대비 색상. */
+    val PrimaryText = Color(0xFF1B64DA)
     val Rise = Color(0xFFF04452)
     val RiseSoft = Color(0xFFFFECEE)
+    val RiseText = Color(0xFFC92B3A)
     val Fall = Color(0xFF3182F6)
     val FallSoft = Color(0xFFE8F3FF)
+    val FallText = PrimaryText
     val Positive = Color(0xFF00A980)
     val PositiveSoft = Color(0xFFE8F8F3)
     val Amber = Color(0xFFF08C00)
     val AmberSoft = Color(0xFFFFF4E5)
+    val AmberText = Color(0xFF9A5700)
 
     val Ledger = Grey100
     val Paper = Color.White

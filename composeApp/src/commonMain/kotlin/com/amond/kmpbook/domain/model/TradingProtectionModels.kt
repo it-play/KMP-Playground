@@ -300,6 +300,8 @@ data class TradingHaltOrderPolicy(
 enum class TradingHaltStatus { ACTIVE, RELEASED }
 
 data class InstrumentTradingHalt(
+    /** 발동·예정·해제 뉴스를 같은 규제 조치에 연결하는 영속 발생 ID다. */
+    val occurrenceId: String,
     val stockId: String,
     val reason: TradingHaltReason,
     val detail: String,
@@ -311,6 +313,7 @@ data class InstrumentTradingHalt(
     val releaseNote: String? = null,
 ) {
     init {
+        require(occurrenceId.isNotBlank())
         require(stockId.isNotBlank())
         require(detail.isNotBlank())
         require(scheduledReleaseAt == null || scheduledReleaseAt >= startedAt)

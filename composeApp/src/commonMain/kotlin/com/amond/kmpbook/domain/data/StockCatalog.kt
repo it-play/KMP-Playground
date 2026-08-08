@@ -2,6 +2,7 @@ package com.amond.kmpbook.domain.data
 
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.InstrumentType
+import com.amond.kmpbook.domain.model.IndustrySegment
 import com.amond.kmpbook.domain.model.Sector
 import com.amond.kmpbook.domain.model.StockDefinition
 
@@ -19,7 +20,7 @@ object StockCatalog {
 
     val stockDefinitions: List<StockDefinition> = listOf(
         // KOSPI
-        stock("005930", "삼성전자", "Samsung Electronics", Market.KOSPI, Sector.SEMICONDUCTOR, 98_000.0, 0.28, 0.015, 585_000_000_000_000.0, 5_969_782_550L, 1.02, "메모리·파운드리와 모바일 기기를 아우르는 대한민국 대표 전자기업"),
+        stock("005930", "삼성전자", "Samsung Electronics", Market.KOSPI, Sector.SEMICONDUCTOR, 98_000.0, 0.28, 0.015, 585_000_000_000_000.0, 5_969_782_550L, 1.02, "메모리·파운드리와 모바일 기기를 아우르는 대한민국 대표 전자기업", setOf(IndustrySegment.COMPUTER_HARDWARE)),
         stock("000660", "SK하이닉스", "SK hynix", Market.KOSPI, Sector.SEMICONDUCTOR, 310_000.0, 0.36, 0.005, 225_000_000_000_000.0, 728_002_365L, 1.22, "HBM과 메모리 반도체를 중심으로 성장하는 글로벌 반도체 기업"),
         stock("373220", "LG에너지솔루션", "LG Energy Solution", Market.KOSPI, Sector.BATTERY, 390_000.0, 0.34, 0.0, 91_000_000_000_000.0, 234_000_000L, 1.18, "전기차와 에너지저장장치용 배터리를 생산하는 글로벌 배터리 기업"),
         stock("207940", "삼성바이오로직스", "Samsung Biologics", Market.KOSPI, Sector.HEALTHCARE_BIO, 1_200_000.0, 0.27, 0.001, 85_000_000_000_000.0, 71_174_000L, 0.84, "바이오의약품 위탁개발생산을 제공하는 대형 CDMO 기업"),
@@ -27,7 +28,7 @@ object StockCatalog {
         stock("105560", "KB금융", "KB Financial Group", Market.KOSPI, Sector.FINANCIALS, 110_000.0, 0.25, 0.032, 43_000_000_000_000.0, 393_528_423L, 0.88, "은행·증권·보험·카드를 보유한 대한민국 종합금융그룹"),
         stock("035420", "NAVER", "NAVER", Market.KOSPI, Sector.INTERNET_PLATFORM, 280_000.0, 0.33, 0.004, 44_000_000_000_000.0, 164_049_085L, 1.11, "검색·커머스·핀테크·콘텐츠와 AI 서비스를 운영하는 플랫폼 기업"),
         stock("068270", "셀트리온", "Celltrion", Market.KOSPI, Sector.HEALTHCARE_BIO, 195_000.0, 0.35, 0.004, 42_000_000_000_000.0, 216_993_223L, 0.91, "바이오시밀러 개발과 생산·판매를 영위하는 바이오제약 기업"),
-        stock("005490", "POSCO홀딩스", "POSCO Holdings", Market.KOSPI, Sector.MATERIALS_CHEMICALS, 320_000.0, 0.31, 0.031, 27_000_000_000_000.0, 84_571_230L, 1.09, "철강을 기반으로 이차전지 소재와 친환경 인프라 사업을 확장하는 지주회사"),
+        stock("005490", "POSCO홀딩스", "POSCO Holdings", Market.KOSPI, Sector.MATERIALS_CHEMICALS, 320_000.0, 0.31, 0.031, 27_000_000_000_000.0, 84_571_230L, 1.09, "철강을 기반으로 이차전지 소재와 친환경 인프라 사업을 확장하는 지주회사", setOf(IndustrySegment.CRITICAL_MINERALS)),
         stock("012450", "한화에어로스페이스", "Hanwha Aerospace", Market.KOSPI, Sector.AEROSPACE_DEFENSE, 1_100_000.0, 0.42, 0.003, 55_000_000_000_000.0, 50_630_000L, 1.34, "항공엔진·지상방산·우주 발사체 사업을 수행하는 방산기업"),
 
         // KOSDAQ
@@ -35,12 +36,12 @@ object StockCatalog {
         stock("247540", "에코프로비엠", "EcoPro BM", Market.KOSDAQ, Sector.BATTERY, 130_000.0, 0.46, 0.0, 13_000_000_000_000.0, 97_801_344L, 1.51, "전기차 배터리용 하이니켈 양극재를 생산하는 소재기업"),
         stock("028300", "HLB", "HLB", Market.KOSDAQ, Sector.HEALTHCARE_BIO, 45_000.0, 0.58, 0.0, 6_000_000_000_000.0, 131_418_242L, 1.43, "항암 신약 개발과 바이오 사업을 수행하는 연구개발 중심 기업"),
         stock("277810", "레인보우로보틱스", "Rainbow Robotics", Market.KOSDAQ, Sector.ROBOTICS, 330_000.0, 0.52, 0.0, 6_500_000_000_000.0, 19_399_858L, 1.47, "협동로봇·휴머노이드·천문 마운트 기술을 개발하는 로봇기업"),
-        stock("293490", "카카오게임즈", "Kakao Games", Market.KOSDAQ, Sector.GAMING, 18_000.0, 0.41, 0.0, 1_500_000_000_000.0, 82_750_000L, 1.29, "PC·모바일 게임 퍼블리싱과 개발 사업을 운영하는 게임기업"),
+        stock("293490", "카카오게임즈", "Kakao Games", Market.KOSDAQ, Sector.GAMING, 18_000.0, 0.41, 0.0, 1_500_000_000_000.0, 82_750_000L, 1.29, "PC·모바일 게임 퍼블리싱과 개발 사업을 운영하는 게임기업", setOf(IndustrySegment.GAME_SOFTWARE)),
         stock("035900", "JYP Ent.", "JYP Entertainment", Market.KOSDAQ, Sector.ENTERTAINMENT, 85_000.0, 0.39, 0.006, 3_000_000_000_000.0, 35_497_492L, 1.17, "음악 제작·공연·아티스트 매니지먼트를 영위하는 엔터테인먼트 기업"),
 
         // NASDAQ
-        stock("AAPL", "애플", "Apple", Market.NASDAQ, Sector.INFORMATION_TECHNOLOGY, 245.0, 0.27, 0.004, 3_700_000_000_000.0, 15_100_000_000L, 1.18, "아이폰·맥·웨어러블과 서비스 생태계를 운영하는 소비자 기술기업"),
-        stock("MSFT", "마이크로소프트", "Microsoft", Market.NASDAQ, Sector.INFORMATION_TECHNOLOGY, 565.0, 0.25, 0.007, 4_200_000_000_000.0, 7_430_000_000L, 0.96, "클라우드·업무 소프트웨어·AI 플랫폼을 제공하는 글로벌 소프트웨어 기업"),
+        stock("AAPL", "애플", "Apple", Market.NASDAQ, Sector.INFORMATION_TECHNOLOGY, 245.0, 0.27, 0.004, 3_700_000_000_000.0, 15_100_000_000L, 1.18, "아이폰·맥·웨어러블과 서비스 생태계를 운영하는 소비자 기술기업", setOf(IndustrySegment.COMPUTER_HARDWARE)),
+        stock("MSFT", "마이크로소프트", "Microsoft", Market.NASDAQ, Sector.INFORMATION_TECHNOLOGY, 565.0, 0.25, 0.007, 4_200_000_000_000.0, 7_430_000_000L, 0.96, "클라우드·업무 소프트웨어·AI 플랫폼을 제공하는 글로벌 소프트웨어 기업", setOf(IndustrySegment.COMPUTER_HARDWARE, IndustrySegment.GAME_SOFTWARE)),
         stock("NVDA", "엔비디아", "NVIDIA", Market.NASDAQ, Sector.SEMICONDUCTOR, 185.0, 0.48, 0.001, 4_500_000_000_000.0, 24_300_000_000L, 1.68, "AI 가속기와 GPU 컴퓨팅 플랫폼을 설계하는 팹리스 반도체 기업"),
         stock("AMZN", "아마존", "Amazon", Market.NASDAQ, Sector.RETAIL_ECOMMERCE, 240.0, 0.32, 0.0, 2_550_000_000_000.0, 10_600_000_000L, 1.31, "전자상거래·클라우드·광고·물류 사업을 운영하는 글로벌 플랫폼 기업"),
         stock("GOOGL", "알파벳 A", "Alphabet Class A", Market.NASDAQ, Sector.COMMUNICATION_SERVICES, 210.0, 0.29, 0.004, 2_560_000_000_000.0, 12_200_000_000L, 1.04, "검색·광고·유튜브·클라우드와 AI 연구를 운영하는 기술 지주회사"),
@@ -116,6 +117,7 @@ object StockCatalog {
                 keyword in stock.name.lowercase() ||
                 keyword in stock.englishName.lowercase() ||
                 keyword in stock.sector.displayName.lowercase() ||
+                stock.industrySegments.any { keyword in it.displayName.lowercase() } ||
                 stock.etfProfile?.let { keyword in it.benchmark.lowercase() || keyword in it.assetClass.displayName.lowercase() } == true ||
                 stock.identityProfile?.let { identity ->
                     keyword in identity.legalName.lowercase() ||
@@ -156,6 +158,7 @@ object StockCatalog {
         sharesOutstanding: Long,
         beta: Double,
         description: String,
+        industrySegments: Set<IndustrySegment> = emptySet(),
     ): StockDefinition = StockDefinition(
         symbol = symbol,
         name = name,
@@ -169,5 +172,6 @@ object StockCatalog {
         sharesOutstanding = sharesOutstanding,
         description = description,
         beta = beta,
+        industrySegments = industrySegments,
     )
 }

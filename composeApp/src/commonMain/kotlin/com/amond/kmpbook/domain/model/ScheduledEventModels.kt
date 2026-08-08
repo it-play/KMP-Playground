@@ -44,6 +44,28 @@ enum class ScheduledEventKind(
 }
 
 /**
+ * 저장된 뉴스가 장기 일정의 어느 발표에서 생성됐는지 가리키는 구조화 참조다.
+ *
+ * [occurrenceId]를 해석해 종류나 날짜를 추론하지 않는다. 카탈로그에서 ID와 [kind]가
+ * 모두 일치하는 [ScheduledEventOccurrence]를 찾아야만 유효한 참조다.
+ */
+data class ScheduledEventReference(
+    val occurrenceId: String,
+    val kind: ScheduledEventKind,
+) {
+    init {
+        require(occurrenceId.isNotBlank()) { "정기 발표 발생 ID는 비어 있을 수 없습니다." }
+    }
+
+    companion object {
+        fun from(occurrence: ScheduledEventOccurrence): ScheduledEventReference = ScheduledEventReference(
+            occurrenceId = occurrence.id,
+            kind = occurrence.kind,
+        )
+    }
+}
+
+/**
  * A seed-independent item on the game calendar. [scheduledAt] is the public release time,
  * not necessarily the time its shock can first reach a regular trading session.
  */
@@ -82,8 +104,6 @@ data class ScheduledEventOccurrence(
 
     companion object {
         const val ID_PREFIX: String = "scheduled:"
-
-        fun isScheduledId(id: String): Boolean = id.startsWith(ID_PREFIX)
     }
 }
 
@@ -128,9 +148,12 @@ data class ScheduledEventEmission(
     val impactEvent: GameEvent,
 ) {
     init {
+        val reference = ScheduledEventReference.from(occurrence)
         require(newsEvent.id == occurrence.id && impactEvent.id == occurrence.id)
         require(newsEvent.startsAt == occurrence.scheduledAt)
         require(impactEvent.startsAt >= occurrence.scheduledAt)
+        require(newsEvent.scheduledEventReference == reference)
+        require(impactEvent.scheduledEventReference == reference)
     }
 
     val impactStartsAt: Instant get() = impactEvent.startsAt

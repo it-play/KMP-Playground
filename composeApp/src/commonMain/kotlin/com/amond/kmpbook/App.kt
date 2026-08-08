@@ -46,6 +46,7 @@ import com.amond.kmpbook.presentation.NewGameOptions
 import com.amond.kmpbook.presentation.ProtectionUiProjection
 import com.amond.kmpbook.presentation.SimulatorUiState
 import com.amond.kmpbook.presentation.SimulatorViewModel
+import com.amond.kmpbook.presentation.buildNewsUiProjection
 import com.amond.kmpbook.presentation.buildProtectionUiProjection
 import com.amond.kmpbook.domain.simulation.TradingProtectionEngine
 import com.amond.kmpbook.ui.components.MarketProtectionDetailSurface
@@ -58,6 +59,7 @@ import com.amond.kmpbook.ui.screens.GameSettingsDisplay
 import com.amond.kmpbook.ui.screens.HomeDashboardScreen
 import com.amond.kmpbook.ui.screens.MarketTradingScreen
 import com.amond.kmpbook.ui.screens.NewGameScreen
+import com.amond.kmpbook.ui.screens.NewsBrowseTab
 import com.amond.kmpbook.ui.screens.OrdersScreen
 import com.amond.kmpbook.ui.screens.PortfolioScreen
 import com.amond.kmpbook.ui.screens.SettingsScreen
@@ -228,7 +230,6 @@ private fun RunningGame(
                     unreadEvents = state.unreadEvents,
                 ),
                 onSelect = { screen ->
-                    if (screen == Screen.EVENTS) viewModel.markAllEventsRead()
                     viewModel.selectScreen(screen)
                 },
             )
@@ -312,6 +313,35 @@ private fun ScreenContent(
     var eventNewsFilterState by remember { mutableStateOf(EventNewsFilterState()) }
     val portfolioHistory = state.portfolioSnapshots.ifEmpty { listOf(state.currentPortfolio) }
     val estimatedTax = state.annualTaxSummary?.totalPayableKrw?.toDouble() ?: 0.0
+    val newsProjection = remember(
+        state.currentTime,
+        state.newsEvents,
+        state.activeEvents,
+        state.readEventIds,
+        state.stocks,
+        state.holdings.keys,
+        state.watchlist,
+        state.listingLifecycleStates,
+        state.listingLifecycleLedger,
+        state.pendingCorporateActions,
+        state.corporateActionLedger,
+        state.tradingProtectionSnapshot,
+    ) {
+        buildNewsUiProjection(
+            currentTime = state.currentTime,
+            events = state.newsEvents,
+            activeEventIds = state.activeEvents.mapTo(linkedSetOf()) { it.id },
+            readEventIds = state.readEventIds,
+            stocks = state.stocks,
+            holdingIds = state.holdings.keys,
+            watchlistIds = state.watchlist,
+            listingStates = state.listingLifecycleStates,
+            listingLifecycleLedger = state.listingLifecycleLedger,
+            pendingCorporateActions = state.pendingCorporateActions,
+            corporateActionLedger = state.corporateActionLedger,
+            tradingProtectionSnapshot = state.tradingProtectionSnapshot,
+        )
+    }
     val openStock: (String) -> Unit = { stockId ->
         viewModel.selectStock(stockId)
         viewModel.selectScreen(Screen.MARKET)
@@ -323,13 +353,17 @@ private fun ScreenContent(
             history = portfolioHistory,
             stocks = state.stocks,
             marketIndices = state.marketIndices,
-            events = state.newsEvents,
+            news = newsProjection,
             estimatedTaxKrw = estimatedTax,
             usdKrw = state.macro.usdKrw,
             maxDrawdown = state.maximumDrawdown,
             onOpenStock = openStock,
-            onOpenEvents = {
-                viewModel.markAllEventsRead()
+            onOpenEvents = { eventId ->
+                eventNewsFilterState = eventNewsFilterState.copy(
+                    tab = NewsBrowseTab.BRIEFING,
+                    groupKey = "all",
+                    selectedEventId = eventId,
+                )
                 viewModel.selectScreen(Screen.EVENTS)
             },
             onOpenTax = { viewModel.selectScreen(Screen.TAX_REPORT) },
@@ -380,13 +414,10 @@ private fun ScreenContent(
         )
 
         Screen.EVENTS -> EventsScreen(
-            currentTime = state.currentTime,
-            events = state.newsEvents,
+            projection = newsProjection,
             upcomingEvents = state.upcomingScheduledEvents,
-            stocks = state.stocks,
-            holdingIds = state.holdings.keys,
-            watchlistIds = state.watchlist,
             onOpenStock = openStock,
+            onEventViewed = viewModel::markEventRead,
             filterState = eventNewsFilterState,
             onFilterStateChange = { eventNewsFilterState = it },
         )
