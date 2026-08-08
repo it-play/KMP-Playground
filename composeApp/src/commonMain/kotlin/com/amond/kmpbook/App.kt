@@ -344,7 +344,15 @@ private fun ScreenContent(
     }
     val openStock: (String) -> Unit = { stockId ->
         viewModel.selectStock(stockId)
-        viewModel.selectScreen(Screen.MARKET)
+        viewModel.selectScreen(Screen.STOCK_DETAIL)
+    }
+    val openNews: (String?) -> Unit = { eventId ->
+        eventNewsFilterState = eventNewsFilterState.copy(
+            tab = NewsBrowseTab.BRIEFING,
+            groupKey = "all",
+            selectedEventId = eventId,
+        )
+        viewModel.selectScreen(Screen.EVENTS)
     }
 
     when (state.screen) {
@@ -358,14 +366,7 @@ private fun ScreenContent(
             usdKrw = state.macro.usdKrw,
             maxDrawdown = state.maximumDrawdown,
             onOpenStock = openStock,
-            onOpenEvents = { eventId ->
-                eventNewsFilterState = eventNewsFilterState.copy(
-                    tab = NewsBrowseTab.BRIEFING,
-                    groupKey = "all",
-                    selectedEventId = eventId,
-                )
-                viewModel.selectScreen(Screen.EVENTS)
-            },
+            onOpenEvents = openNews,
             onOpenTax = { viewModel.selectScreen(Screen.TAX_REPORT) },
         )
 
@@ -393,6 +394,8 @@ private fun ScreenContent(
             orderUnavailableReason = { stockId, orderType ->
                 state.orderSubmissionBlockReason(stockId, orderType)
             },
+            relatedNews = newsProjection.stories,
+            onOpenEvent = { eventId -> openNews(eventId) },
         )
 
         Screen.ORDER -> OrdersScreen(
