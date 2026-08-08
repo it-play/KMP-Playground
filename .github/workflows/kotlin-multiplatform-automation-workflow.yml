@@ -1,4 +1,4 @@
-name: Windows MSI
+name: Kotlin Multiplatform Automation Workflow
 
 on:
   workflow_dispatch:
