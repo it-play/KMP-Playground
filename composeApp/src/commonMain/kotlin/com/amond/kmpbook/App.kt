@@ -207,8 +207,8 @@ private fun RunningGame(
         state.currentTime,
     ) {
         buildProtectionUiProjection(
-            snapshot = state.tradingProtectionSnapshot.orEmptyProtectionSnapshot(),
-            listingStates = state.listingLifecycleStates.orEmpty(),
+            snapshot = state.tradingProtectionSnapshot,
+            listingStates = state.listingLifecycleStates,
             selectedStockId = state.selectedStockId,
             selectedMarket = selectedMarket,
             at = state.currentTime,
@@ -322,7 +322,7 @@ private fun ScreenContent(
             snapshot = state.currentPortfolio,
             history = portfolioHistory,
             stocks = state.stocks,
-            marketIndices = state.marketIndices.orEmpty(),
+            marketIndices = state.marketIndices,
             events = state.newsEvents,
             estimatedTaxKrw = estimatedTax,
             usdKrw = state.macro.usdKrw,
@@ -433,12 +433,9 @@ private fun ScreenContent(
     }
 }
 
-private fun com.amond.kmpbook.domain.model.TradingProtectionSnapshot?.orEmptyProtectionSnapshot() =
-    this ?: com.amond.kmpbook.domain.model.TradingProtectionSnapshot()
-
 private fun SimulatorUiState.orderSubmissionBlockReason(stockId: String, orderType: OrderType): String? {
     val stock = stocks.firstOrNull { it.id == stockId } ?: return "존재하지 않는 종목이에요."
-    val listing = listingLifecycleStates.orEmpty()[stockId]
+    val listing = listingLifecycleStates[stockId]
     if (listing != null && !listing.isOrderAllowed) {
         return when {
             listing.isTerminal -> "거래가 종료된 종목이에요."
@@ -446,7 +443,7 @@ private fun SimulatorUiState.orderSubmissionBlockReason(stockId: String, orderTy
             else -> "상장 유지 심사 또는 상장폐지 절차로 거래가 멈췄어요."
         }
     }
-    val snapshot = tradingProtectionSnapshot ?: return null
+    val snapshot = tradingProtectionSnapshot
     val decision = TradingProtectionEngine.permission(
         snapshot,
         TradingProtectionRequest(
@@ -461,13 +458,13 @@ private fun SimulatorUiState.orderSubmissionBlockReason(stockId: String, orderTy
 }
 
 private fun SimulatorUiState.orderProtectionPendingLabels(): Map<String, String> {
-    val snapshot = tradingProtectionSnapshot ?: return emptyMap()
+    val snapshot = tradingProtectionSnapshot
     val stocksById = stocks.associateBy { it.id }
     return orders.asSequence()
         .filter { it.isOpen }
         .mapNotNull { order ->
             val stock = stocksById[order.stockId] ?: return@mapNotNull null
-            val listing = listingLifecycleStates.orEmpty()[order.stockId]
+            val listing = listingLifecycleStates[order.stockId]
             val listingLabel = if (listing != null && !listing.isTradable) "상장절차 대기" else null
             val decision = TradingProtectionEngine.permission(
                 snapshot,

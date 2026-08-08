@@ -40,10 +40,6 @@ object GameCalendar {
     val START_LOCAL_DATE_TIME: LocalDateTime = LocalDateTime(2026, 8, 7, 9, 0)
     val CAMPAIGN_END_DATE: LocalDate = LocalDate(2040, 12, 31)
     private val END_NEW_YORK_DATE_TIME: LocalDateTime = LocalDateTime(CAMPAIGN_END_DATE, LocalTime(16, 0))
-    /** v1 saves ended at KST 23:00 before the last U.S. session; restore migration resumes them. */
-    internal val LEGACY_END_INSTANT: Instant =
-        LocalDateTime(CAMPAIGN_END_DATE, LocalTime(23, 0)).toInstant(KOREA_TIME_ZONE)
-
     val startInstant: Instant = START_LOCAL_DATE_TIME.toInstant(KOREA_TIME_ZONE)
     /** 모든 지원 거래소의 2040-12-31 정규장이 끝나는 뉴욕장 마감 시각. */
     val endInstant: Instant = END_NEW_YORK_DATE_TIME.toInstant(NEW_YORK_TIME_ZONE)

@@ -50,7 +50,7 @@ class SimulatorProtectionIntegrationTest {
         val original = source.currentState
         val stock = original.stocks.first { it.market == Market.KOSPI && it.hasCorporateEarnings }
         val date = original.currentDate
-        val listing = original.listingLifecycleStates.orEmpty().getValue(stock.id).copy(
+        val listing = original.listingLifecycleStates.getValue(stock.id).copy(
             status = ListingLifecycleStatus.DEFICIENCY_NOTICE,
             activeReason = ListingLifecycleReason.KRX_LISTING_MAINTENANCE,
             designatedOn = date,
@@ -80,8 +80,8 @@ class SimulatorProtectionIntegrationTest {
             scheduledReleaseAt = original.currentTime + 30.minutes,
             policy = queuedOrderPolicy,
         )
-        val listingStates = original.listingLifecycleStates.orEmpty() + (stock.id to listing)
-        val protection = requireNotNull(original.tradingProtectionSnapshot).copy(
+        val listingStates = original.listingLifecycleStates + (stock.id to listing)
+        val protection = original.tradingProtectionSnapshot.copy(
             instrumentTradingHalts = original.tradingProtectionSnapshot.instrumentTradingHalts +
                 (stock.id to halt),
         )
@@ -111,7 +111,7 @@ class SimulatorProtectionIntegrationTest {
         val stock = original.stocks.first {
             it.market == Market.NASDAQ && it.hasCorporateEarnings
         }
-        val suspended = original.listingLifecycleStates.orEmpty().getValue(stock.id).copy(
+        val suspended = original.listingLifecycleStates.getValue(stock.id).copy(
             status = ListingLifecycleStatus.TRADING_SUSPENDED,
             activeReason = ListingLifecycleReason.SERIOUS_COMPLIANCE_EVENT,
             designatedOn = original.currentDate,
@@ -120,7 +120,7 @@ class SimulatorProtectionIntegrationTest {
         assertTrue(
             viewModel.restoreGame(
                 original.copy(
-                    listingLifecycleStates = original.listingLifecycleStates.orEmpty() +
+                    listingLifecycleStates = original.listingLifecycleStates +
                         (stock.id to suspended),
                 ),
             ),
@@ -141,11 +141,11 @@ class SimulatorProtectionIntegrationTest {
         }
         assertEquals(
             expectedSp500Constituents,
-            after.marketIndices.orEmpty().getValue(MarketIndexId.SP_500).constituentCount,
+            after.marketIndices.getValue(MarketIndexId.SP_500).constituentCount,
         )
         assertEquals(
             expectedNasdaqConstituents,
-            after.marketIndices.orEmpty().getValue(MarketIndexId.NASDAQ_COMPOSITE).constituentCount,
+            after.marketIndices.getValue(MarketIndexId.NASDAQ_COMPOSITE).constituentCount,
         )
     }
 
@@ -154,7 +154,7 @@ class SimulatorProtectionIntegrationTest {
         val marketBlocked = playingViewModel(seed = 61_003L)
         val blockedState = marketBlocked.currentState
         val stock = blockedState.stocks.first { it.market == Market.KOSPI && it.hasCorporateEarnings }
-        val protection = requireNotNull(blockedState.tradingProtectionSnapshot)
+        val protection = blockedState.tradingProtectionSnapshot
         val initialCircuitBreaker = protection.krxCircuitBreakers.getValue(Market.KOSPI)
         val haltedCircuitBreaker = initialCircuitBreaker.copy(
             phase = KrxCircuitBreakerPhase.HALTED,
@@ -183,7 +183,7 @@ class SimulatorProtectionIntegrationTest {
         val instrumentQueued = playingViewModel(seed = 61_004L)
         val queuedState = instrumentQueued.currentState
         val queuedStock = queuedState.stocks.first { it.market == Market.KOSPI && it.hasCorporateEarnings }
-        val queuedProtection = requireNotNull(queuedState.tradingProtectionSnapshot)
+        val queuedProtection = queuedState.tradingProtectionSnapshot
         val halt = InstrumentTradingHalt(
             stockId = queuedStock.id,
             reason = TradingHaltReason.MATERIAL_DISCLOSURE,
@@ -215,7 +215,7 @@ class SimulatorProtectionIntegrationTest {
         val viQueued = playingViewModel(seed = 61_005L)
         val viState = viQueued.currentState
         val viStock = viState.stocks.first { it.market == Market.KOSDAQ && it.hasCorporateEarnings }
-        val viProtection = requireNotNull(viState.tradingProtectionSnapshot)
+        val viProtection = viState.tradingProtectionSnapshot
         val quote = viState.quotes.getValue(viStock.id)
         val activeVi = viProtection.krxVolatilityInterruptions.getValue(viStock.id).copy(
             phase = KrxViPhase.CALL_AUCTION,
@@ -282,7 +282,7 @@ class SimulatorProtectionIntegrationTest {
         viewModel.advance(TurnStep.ONE_HOUR)
 
         val afterClosedHour = viewModel.currentState
-        val carriedLogReturn = afterClosedHour.pendingClosedEventLogReturns.orEmpty().getValue(stock.id)
+        val carriedLogReturn = afterClosedHour.pendingClosedEventLogReturns.getValue(stock.id)
         assertTrue(carriedLogReturn > 0.0)
         assertEquals(priceBeforeClosedHour, afterClosedHour.quotes.getValue(stock.id).price)
 
@@ -299,7 +299,7 @@ class SimulatorProtectionIntegrationTest {
             priceBeforeOpening * exp(carriedLogReturn),
         )
         assertEquals(expectedOpeningPrice, openingBar.open)
-        assertFalse(stock.id in afterOpening.pendingClosedEventLogReturns.orEmpty())
+        assertFalse(stock.id in afterOpening.pendingClosedEventLogReturns)
     }
 
     @Test
@@ -356,9 +356,9 @@ class SimulatorProtectionIntegrationTest {
         }
         assertTrue(viewModel.placeOrder(stock.id, OrderSide.BUY, OrderType.MARKET, 1.0))
         val bought = viewModel.currentState
-        assertNotNull(bought.holdings[stock.id])
+        val holding = assertNotNull(bought.holdings[stock.id])
         val date = LocalDate(2026, 8, 14)
-        val pending = bought.listingLifecycleStates.orEmpty().getValue(stock.id).copy(
+        val pending = bought.listingLifecycleStates.getValue(stock.id).copy(
             status = ListingLifecycleStatus.LIQUIDATION_PENDING,
             activeReason = ListingLifecycleReason.ETF_VOLUNTARY_LIQUIDATION,
             designatedOn = date,
@@ -370,12 +370,14 @@ class SimulatorProtectionIntegrationTest {
                 effectiveOn = date,
                 settlementDueOn = date,
                 cashPerUnit = 0.0,
+                entitledQuantity = holding.quantity,
+                entitledCostBasis = holding.costBasis,
             ),
         )
         assertTrue(
             viewModel.restoreGame(
                 bought.copy(
-                    listingLifecycleStates = bought.listingLifecycleStates.orEmpty() +
+                    listingLifecycleStates = bought.listingLifecycleStates +
                         (stock.id to pending),
                 ),
             ),
@@ -395,7 +397,7 @@ class SimulatorProtectionIntegrationTest {
         assertEquals(date, paid.realizedGains.last().settlementDate)
         assertEquals(cashBefore, paid.cashByCurrency.getValue(stock.currency))
         assertFalse(stock.id in paid.holdings)
-        assertFalse(dispositionTrade.id in paid.pendingTaxSettlementTradeIds.orEmpty())
+        assertFalse(dispositionTrade.id in paid.pendingTaxSettlementTradeIds)
 
         val restored = SimulatorViewModel()
         assertTrue(restored.restoreGame(paid))
@@ -420,14 +422,14 @@ class SimulatorProtectionIntegrationTest {
             startedAt = session.opensAt,
             scheduledReleaseAt = session.closesAt,
         )
-        val protection = requireNotNull(original.tradingProtectionSnapshot).copy(
+        val protection = original.tradingProtectionSnapshot.copy(
             scheduledInstrumentTradingHalts = mapOf("danger-halt" to scheduled),
         )
         assertTrue(viewModel.restoreGame(original.copy(tradingProtectionSnapshot = protection)))
 
         val beforeOpenProjection = buildProtectionUiProjection(
-            snapshot = requireNotNull(viewModel.currentState.tradingProtectionSnapshot),
-            listingStates = viewModel.currentState.listingLifecycleStates.orEmpty(),
+            snapshot = viewModel.currentState.tradingProtectionSnapshot,
+            listingStates = viewModel.currentState.listingLifecycleStates,
             selectedStockId = stock.id,
             selectedMarket = stock.market,
         )
@@ -436,10 +438,10 @@ class SimulatorProtectionIntegrationTest {
         viewModel.advance(TurnStep.ONE_HOUR)
 
         val atOpen = viewModel.currentState
-        assertTrue(requireNotNull(atOpen.tradingProtectionSnapshot).scheduledInstrumentTradingHalts.orEmpty().isEmpty())
+        assertTrue(atOpen.tradingProtectionSnapshot.scheduledInstrumentTradingHalts.isEmpty())
         assertTrue(
             TradingProtectionEngine.isInstrumentHaltActive(
-                requireNotNull(atOpen.tradingProtectionSnapshot).instrumentTradingHalts.getValue(stock.id),
+                atOpen.tradingProtectionSnapshot.instrumentTradingHalts.getValue(stock.id),
                 atOpen.currentTime,
             ),
         )
@@ -463,15 +465,15 @@ class SimulatorProtectionIntegrationTest {
             startedAt = session.opensAt,
             scheduledReleaseAt = session.closesAt,
         )
-        val protection = requireNotNull(original.tradingProtectionSnapshot).copy(
+        val protection = original.tradingProtectionSnapshot.copy(
             scheduledInstrumentTradingHalts = mapOf("danger-halt" to scheduled),
         )
 
         assertTrue(viewModel.restoreGame(original.copy(tradingProtectionSnapshot = protection)))
         assertFalse(viewModel.placeOrder(stock.id, OrderSide.BUY, OrderType.MARKET, 1.0))
         val projection = buildProtectionUiProjection(
-            snapshot = requireNotNull(viewModel.currentState.tradingProtectionSnapshot),
-            listingStates = viewModel.currentState.listingLifecycleStates.orEmpty(),
+            snapshot = viewModel.currentState.tradingProtectionSnapshot,
+            listingStates = viewModel.currentState.listingLifecycleStates,
             selectedStockId = stock.id,
             selectedMarket = stock.market,
             at = viewModel.currentState.currentTime,
@@ -503,7 +505,7 @@ class SimulatorProtectionIntegrationTest {
             startedAt = session.opensAt,
             scheduledReleaseAt = session.closesAt,
         )
-        val protection = requireNotNull(original.tradingProtectionSnapshot).copy(
+        val protection = original.tradingProtectionSnapshot.copy(
             instrumentTradingHalts = original.tradingProtectionSnapshot.instrumentTradingHalts +
                 (stock.id to disclosure),
             scheduledInstrumentTradingHalts = mapOf("full-day-alert" to fullDay),
@@ -514,7 +516,7 @@ class SimulatorProtectionIntegrationTest {
 
         val after = viewModel.currentState
         assertEquals(0L, after.priceHistory.getValue(stock.id).last().volume)
-        val controlling = requireNotNull(after.tradingProtectionSnapshot)
+        val controlling = after.tradingProtectionSnapshot
             .instrumentTradingHalts.getValue(stock.id)
         assertEquals("최초 투자위험 지정", controlling.detail)
         assertTrue(TradingProtectionEngine.isInstrumentHaltActive(controlling, after.currentTime))

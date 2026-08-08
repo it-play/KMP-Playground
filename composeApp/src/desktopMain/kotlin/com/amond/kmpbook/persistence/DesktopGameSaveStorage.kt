@@ -2,6 +2,7 @@ package com.amond.kmpbook.persistence
 
 import com.amond.kmpbook.domain.model.ListingLifecycleStatus
 import com.amond.kmpbook.domain.model.Market
+import com.amond.kmpbook.domain.model.MarketIndexId
 import com.amond.kmpbook.presentation.SimulatorUiState
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -292,21 +293,80 @@ actual class GameSaveStorage actual constructor(
             throw JsonParseException("알 수 없는 저장 포맷 '$format'입니다.")
         }
         val schemaVersion = objectValue.requiredInt("schemaVersion")
-        if (schemaVersion !in OLDEST_SUPPORTED_GAME_SAVE_SCHEMA_VERSION..CURRENT_GAME_SAVE_SCHEMA_VERSION) {
+        if (schemaVersion != CURRENT_GAME_SAVE_SCHEMA_VERSION) {
             throw UnsupportedSchemaException(schemaVersion)
         }
         val savedAt = gson.fromJson(objectValue.required("savedAt"), Instant::class.java)
             ?: throw JsonParseException("savedAt을 복원할 수 없습니다.")
-        val state = gson.fromJson(objectValue.required("state"), SimulatorUiState::class.java)
+        val stateJson = objectValue.requiredObject("state")
+        CURRENT_STATE_FIELDS.forEach(stateJson::requireMember)
+        val unexpectedStateFields = stateJson.keySet() - CURRENT_STATE_FIELDS
+        if (unexpectedStateFields.isNotEmpty()) {
+            throw JsonParseException("현재 스키마에 없는 상태 필드입니다: ${unexpectedStateFields.sorted()}")
+        }
+        CURRENT_STATE_FIELDS
+            .filterNot(CURRENT_NULLABLE_STATE_FIELDS::contains)
+            .forEach(stateJson::required)
+        validateCurrentStateJson(stateJson)
+        val state = gson.fromJson(stateJson, SimulatorUiState::class.java)
             ?: throw JsonParseException("state를 복원할 수 없습니다.")
         return GameSaveEnvelope(
             format = format,
-            // v1 predates the nullable listing/protection fields. Gson restores absent nullable
-            // fields as null, so its only migration is normalizing the on-disk envelope version.
-            schemaVersion = CURRENT_GAME_SAVE_SCHEMA_VERSION,
+            schemaVersion = schemaVersion,
             savedAt = savedAt,
             state = state,
         )
+    }
+
+    private fun validateCurrentStateJson(state: JsonObject) {
+        state.requiredObject("macro").apply {
+            requiredObject("fxRatesToKrw")
+            requiredObject("previousFxRatesToKrw")
+        }
+        state.requiredArray("portfolioSnapshots").forEachIndexed { index, element ->
+            element.requireObject("state.portfolioSnapshots[$index]")
+                .requiredObject("holdingCostBasisKrw")
+        }
+        state.requiredArray("trades").forEachIndexed { index, element ->
+            element.requireObject("state.trades[$index]").apply {
+                required("settlementKind")
+                required("accountingSequence")
+            }
+        }
+        state.requiredArray("dividendLedger").forEachIndexed { index, element ->
+            element.requireObject("state.dividendLedger[$index]").apply {
+                required("taxableIncomeAmount")
+                required("returnOfCapitalAmount")
+                required("excessReturnOfCapitalGainKrw")
+                required("accountingSequence")
+            }
+        }
+        state.requiredArray("corporateActionLedger").forEachIndexed { index, element ->
+            element.requireObject("state.corporateActionLedger[$index]").required("accountingSequence")
+        }
+
+        fun requireEventFields(array: com.google.gson.JsonArray, path: String) {
+            array.forEachIndexed { index, element ->
+                element.requireObject("$path[$index]").apply {
+                    required("listingRiskTags")
+                    required("listingRecoveryConditions")
+                }
+            }
+        }
+        requireEventFields(state.requiredArray("activeEvents"), "state.activeEvents")
+        requireEventFields(state.requiredArray("newsEvents"), "state.newsEvents")
+        requireEventFields(
+            state.requiredObject("eventEngineSnapshot").requiredArray("activeEvents"),
+            "state.eventEngineSnapshot.activeEvents",
+        )
+
+        state.requiredObject("tradingProtectionSnapshot").apply {
+            requiredObject("scheduledInstrumentTradingHalts")
+            requiredObject("investmentAlerts").entrySet().forEach { (stockId, element) ->
+                element.requireObject("state.tradingProtectionSnapshot.investmentAlerts[$stockId]")
+                    .required("releaseRule")
+            }
+        }
     }
 
     private fun validateState(state: SimulatorUiState): String? {
@@ -325,18 +385,83 @@ actual class GameSaveStorage actual constructor(
         if (state.priceHistory.any { (id, bars) -> bars.any { it.stockId != id } }) {
             return "가격 히스토리 종목 키가 일치하지 않습니다."
         }
+        if (state.portfolioSnapshots.any { snapshot ->
+                snapshot.holdingCostBasisKrw.keys != snapshot.holdings.mapTo(linkedSetOf()) { it.stockId } ||
+                    snapshot.holdingCostBasisKrw.values.any { !it.isFinite() || it < 0.0 }
+            }
+        ) {
+            return "포트폴리오 스냅샷에 모든 보유 종목의 FIFO 원가가 필요합니다."
+        }
+        if (state.pendingEtfReferenceReturns.any { (stockId, returnRate) ->
+                stockId !in stockIds || !returnRate.isFinite()
+            }
+        ) {
+            return "ETF 기초시장 이월 수익률이 유효하지 않습니다."
+        }
+        if (state.pendingClosedEventLogReturns.any { (stockId, logReturn) ->
+                stockId !in stockIds || !logReturn.isFinite()
+            }
+        ) {
+            return "폐장 중 이벤트 이월 수익률이 유효하지 않습니다."
+        }
+        val requiredIndexIds = MarketIndexId.entries.toSet()
+        if (state.marketIndices.keys != requiredIndexIds ||
+            state.marketIndices.any { (id, snapshot) -> id != snapshot.id }
+        ) {
+            return "대표 지수 현재값에 필수 지수가 없거나 맵 키와 지수 ID가 일치하지 않습니다."
+        }
+        if (state.marketIndexHistory.keys != requiredIndexIds ||
+            state.marketIndexHistory.any { (id, values) ->
+                values.isEmpty() || values.any { it.id != id || it.timestamp > state.currentTime } ||
+                    values.zipWithNext().any { (previous, next) -> previous.timestamp >= next.timestamp }
+            }
+        ) {
+            return "대표 지수 이력에 필수 지수가 없거나 시간·ID 순서가 올바르지 않습니다."
+        }
         if (state.annualTaxLedgers.any { (year, ledger) -> year != ledger.taxYear }) {
             return "연간 세금 원장의 연도 키가 일치하지 않습니다."
         }
         val tradeIds = state.trades.map { it.id }.toSet()
-        if (state.taxExchangeRatesByTradeId.orEmpty().any { (tradeId, rate) ->
-                tradeId !in tradeIds || !rate.isFinite() || rate <= 0.0
+        if (tradeIds.size != state.trades.size) return "체결 ID가 중복되었습니다."
+        if (state.taxExchangeRatesByTradeId.keys != tradeIds ||
+            state.taxExchangeRatesByTradeId.any { (_, rate) -> !rate.isFinite() || rate <= 0.0 }
+        ) {
+            return "체결별 세무 환율 원장에 모든 체결의 유효한 환율이 필요합니다."
+        }
+        if (state.pendingTaxSettlementTradeIds.any { it !in tradeIds }) {
+            return "미결제 세무 환율 원장에 알 수 없는 체결이 있습니다."
+        }
+        if (state.watchlistedStockIds.any { it !in stockIds }) {
+            return "관심 종목에 알 수 없는 종목 ID가 있습니다."
+        }
+        if (state.pendingCorporateActions.map { it.id }.distinct().size != state.pendingCorporateActions.size ||
+            state.pendingCorporateActions.any { it.stockId !in stockIds }
+        ) {
+            return "대기 기업행동 원장의 ID 또는 종목이 유효하지 않습니다."
+        }
+        if (state.corporateActionLedger.map { it.id }.distinct().size != state.corporateActionLedger.size ||
+            state.corporateActionLedger.any { it.stockId !in stockIds }
+        ) {
+            return "적용 기업행동 원장의 ID 또는 종목이 유효하지 않습니다."
+        }
+        if (state.dividendLedger.map { it.id }.distinct().size != state.dividendLedger.size ||
+            state.dividendLedger.any { entry ->
+                entry.stockId !in stockIds || !entry.taxableIncomeAmount.isFinite() ||
+                    !entry.returnOfCapitalAmount.isFinite() || entry.taxableIncomeAmount < 0.0 ||
+                    entry.returnOfCapitalAmount < 0.0 || entry.excessReturnOfCapitalGainKrw < 0L
             }
         ) {
-            return "체결별 세무 환율 원장이 유효하지 않습니다."
+            return "분배 원장의 ID·종목·과세소득·원금환급 금액이 유효하지 않습니다."
         }
-        if (state.pendingTaxSettlementTradeIds.orEmpty().any { it !in tradeIds }) {
-            return "미결제 세무 환율 원장에 알 수 없는 체결이 있습니다."
+        val accountingSequences = buildList {
+            state.trades.mapTo(this) { it.accountingSequence }
+            state.dividendLedger.mapTo(this) { it.accountingSequence }
+            state.corporateActionLedger.mapTo(this) { it.accountingSequence }
+        }
+        if (accountingSequences.any { it <= 0L || it >= state.nextSequence } ||
+            accountingSequences.distinct().size != accountingSequences.size
+        ) {
+            return "회계 원장 시퀀스가 양수가 아니거나 중복되었거나 다음 시퀀스보다 작지 않습니다."
         }
         if (state.activeEvents.map { it.id }.distinct().size != state.activeEvents.size) {
             return "활성 이벤트 ID가 중복되었습니다."
@@ -345,140 +470,126 @@ actual class GameSaveStorage actual constructor(
             return "뉴스 이벤트 ID가 중복되었습니다."
         }
 
-        state.terminatedInstrumentIds?.let { terminatedIds ->
-            if (terminatedIds.any { it !in stockIds }) return "거래 종료 종목에 알 수 없는 종목 ID가 있습니다."
-        }
-
-        state.listingLifecycleStates?.let { listings ->
-            if (listings.any { (stockId, listing) -> stockId != listing.stockId }) {
-                return "상장 생명주기 맵 키와 상태 종목 ID가 일치하지 않습니다."
-            }
-            if (listings.any { (stockId, listing) ->
-                    val stock = stocksById[stockId]
-                    stock == null || stock.market != listing.market || stock.instrumentType != listing.instrumentType
-                }
-            ) {
-                return "상장 생명주기 상태가 종목 시장·상품 유형과 일치하지 않습니다."
-            }
-            if (listings.values.any { listing ->
-                    listing.lastEvaluatedTradingDate?.let { it > state.currentDate } == true
-                }
-            ) {
-                return "상장 생명주기 최종 평가일이 현재 게임 날짜보다 미래입니다."
-            }
-            if (listings.values.any { listing ->
-                    listing.status in TERMINAL_LISTING_STATUSES && listing.finalDisposition == null
-                }
-            ) {
-                return "최종 상장 상태에 잔고 처분 방식이 없습니다."
-            }
-        }
-
-        state.listingLifecycleLedger?.let { ledger ->
-            if (ledger.any { it.stockId !in stockIds }) {
-                return "상장 생명주기 원장에 알 수 없는 종목 ID가 있습니다."
-            }
-            if (ledger.any { it.sequence <= 0L }) return "상장 생명주기 원장 시퀀스가 양수가 아닙니다."
-            if (ledger.map { it.id }.distinct().size != ledger.size) {
-                return "상장 생명주기 원장 이벤트 ID가 중복되었습니다."
-            }
-            val ledgerByStock = ledger.groupBy { it.stockId }
-            if (ledgerByStock.values.any { events ->
-                    events.map { it.sequence }.distinct().size != events.size ||
-                        events.zipWithNext().any { (previous, next) -> previous.sequence >= next.sequence }
-                }
-            ) {
-                return "상장 생명주기 원장 시퀀스가 종목별로 중복되었거나 순서가 잘못되었습니다."
-            }
-            state.listingLifecycleStates?.let { listings ->
-                if (ledgerByStock.keys.any { it !in listings }) {
-                    return "상장 생명주기 원장 종목의 현재 상태가 없습니다."
-                }
-                if (listings.any { (stockId, listing) ->
-                        val lastLedgerSequence = ledgerByStock[stockId]?.lastOrNull()?.sequence ?: 0L
-                        listing.ledgerSequence != lastLedgerSequence
-                    }
-                ) {
-                    return "상장 생명주기 상태와 원장의 마지막 시퀀스가 일치하지 않습니다."
-                }
-            }
-        }
-
-        val terminatedIds = state.terminatedInstrumentIds
         val listings = state.listingLifecycleStates
-        if (terminatedIds != null && listings != null) {
-            val terminalListingIds = listings
-                .filterValues { it.status in TERMINAL_LISTING_STATUSES }
-                .keys
-            if (terminatedIds != terminalListingIds) {
-                return "최종 상장 상태와 거래 종료 종목 집합이 서로 일치하지 않습니다."
+        if (listings.keys != stockIds) {
+            return "모든 종목의 현재 상장 생명주기 상태가 필요합니다."
+        }
+        if (listings.any { (stockId, listing) -> stockId != listing.stockId }) {
+            return "상장 생명주기 맵 키와 상태 종목 ID가 일치하지 않습니다."
+        }
+        if (listings.any { (stockId, listing) ->
+                val stock = stocksById[stockId]
+                stock == null || stock.market != listing.market || stock.instrumentType != listing.instrumentType
             }
+        ) {
+            return "상장 생명주기 상태가 종목 시장·상품 유형과 일치하지 않습니다."
+        }
+        if (listings.values.any { listing ->
+                listing.lastEvaluatedTradingDate?.let { it > state.currentDate } == true
+            }
+        ) {
+            return "상장 생명주기 최종 평가일이 현재 게임 날짜보다 미래입니다."
+        }
+        if (listings.values.any { listing ->
+                listing.status in TERMINAL_LISTING_STATUSES && listing.finalDisposition == null
+            }
+        ) {
+            return "최종 상장 상태에 잔고 처분 방식이 없습니다."
         }
 
-        state.tradingProtectionSnapshot?.let { protection ->
-            if (protection.krxCircuitBreakers.any { (market, protectionState) ->
-                    !market.isKorean || market != protectionState.market
-                }
-            ) {
-                return "KRX 서킷브레이커 맵 키와 시장 상태가 일치하지 않습니다."
+        val lifecycleLedger = state.listingLifecycleLedger
+        if (lifecycleLedger.any { it.stockId !in stockIds }) {
+            return "상장 생명주기 원장에 알 수 없는 종목 ID가 있습니다."
+        }
+        if (lifecycleLedger.any { it.sequence <= 0L }) return "상장 생명주기 원장 시퀀스가 양수가 아닙니다."
+        if (lifecycleLedger.map { it.id }.distinct().size != lifecycleLedger.size) {
+            return "상장 생명주기 원장 이벤트 ID가 중복되었습니다."
+        }
+        val ledgerByStock = lifecycleLedger.groupBy { it.stockId }
+        if (ledgerByStock.values.any { events ->
+                events.map { it.sequence }.distinct().size != events.size ||
+                    events.zipWithNext().any { (previous, next) -> previous.sequence >= next.sequence }
             }
-            if (protection.krxSidecars.any { (market, protectionState) ->
-                    !market.isKorean || market != protectionState.market
-                }
-            ) {
-                return "KRX 사이드카 맵 키와 시장 상태가 일치하지 않습니다."
+        ) {
+            return "상장 생명주기 원장 시퀀스가 종목별로 중복되었거나 순서가 잘못되었습니다."
+        }
+        if (listings.any { (stockId, listing) ->
+                val lastLedgerEvent = ledgerByStock[stockId]?.lastOrNull()
+                listing.ledgerSequence != (lastLedgerEvent?.sequence ?: 0L) ||
+                    lastLedgerEvent != null && listing.status != lastLedgerEvent.toStatus
             }
-            if (protection.krxVolatilityInterruptions.any { (stockId, protectionState) ->
-                    val stock = stocksById[stockId]
-                    stockId != protectionState.stockId || stock == null ||
-                        stock.market != protectionState.market || !protectionState.market.isKorean
-                }
-            ) {
-                return "KRX VI 맵 키·종목·시장이 일치하지 않습니다."
-            }
-            if (protection.instrumentTradingHalts.any { (stockId, protectionState) ->
-                    stockId != protectionState.stockId || stockId !in stockIds
-                }
-            ) {
-                return "종목 거래정지 맵 키와 종목 ID가 일치하지 않습니다."
-            }
-            if (protection.scheduledInstrumentTradingHalts.orEmpty().any { (scheduleId, protectionState) ->
-                    scheduleId.isBlank() || protectionState.stockId !in stockIds ||
-                        protectionState.scheduledReleaseAt == null
-                }
-            ) {
-                return "예정 종목 거래정지의 ID·종목·해제 시각이 올바르지 않습니다."
-            }
-            if (protection.investmentAlerts.any { (stockId, protectionState) ->
-                    stockId != protectionState.stockId || stocksById[stockId]?.market?.isKorean != true
-                }
-            ) {
-                return "투자경보 맵 키와 KRX 종목 ID가 일치하지 않습니다."
-            }
-            if (protection.usLuldStates.any { (stockId, protectionState) ->
-                    val stock = stocksById[stockId]
-                    stockId != protectionState.stockId || stock == null ||
-                        stock.market != protectionState.primaryMarket || !protectionState.primaryMarket.isUnitedStates
-                }
-            ) {
-                return "미국 LULD 맵 키·종목·주 상장시장이 일치하지 않습니다."
-            }
-            protection.usMarketWideCircuitBreaker?.let { mwcb ->
-                val requiredVenues = Market.entries.filter(Market::isUnitedStates).toSet()
-                if (mwcb.venueStatuses.keys != requiredVenues) {
-                    return "미국 MWCB 상태에 필수 주 상장시장이 모두 포함되지 않았습니다."
-                }
-                if (mwcb.venueStatuses.any { (market, venue) ->
-                        market != venue.market || !market.isUnitedStates
-                    }
-                ) {
-                    return "미국 MWCB 거래소 맵 키와 내부 시장이 일치하지 않습니다."
-                }
-            }
+        ) {
+            return "상장 생명주기 상태와 원장의 마지막 시퀀스·상태가 일치하지 않습니다."
         }
 
-        if (state.dailyTradingSurveillance.orEmpty().any { (stockId, points) ->
-                stockId !in stockIds ||
+        val protection = state.tradingProtectionSnapshot
+        val krxMarkets = Market.entries.filter(Market::isKorean).toSet()
+        val krxStockIds = stocksById.filterValues { it.market.isKorean }.keys
+        val usStockIds = stocksById.filterValues { it.market.isUnitedStates }.keys
+        if (protection.krxCircuitBreakers.keys != krxMarkets ||
+            protection.krxCircuitBreakers.any { (market, protectionState) ->
+                market != protectionState.market
+            }
+        ) {
+            return "KRX 서킷브레이커에 필수 시장 상태가 없거나 맵 키가 일치하지 않습니다."
+        }
+        if (protection.krxSidecars.keys != krxMarkets ||
+            protection.krxSidecars.any { (market, protectionState) ->
+                market != protectionState.market
+            }
+        ) {
+            return "KRX 사이드카에 필수 시장 상태가 없거나 맵 키가 일치하지 않습니다."
+        }
+        if (protection.krxVolatilityInterruptions.keys != krxStockIds ||
+            protection.krxVolatilityInterruptions.any { (stockId, protectionState) ->
+                val stock = stocksById[stockId]
+                stockId != protectionState.stockId || stock == null || stock.market != protectionState.market
+            }
+        ) {
+            return "KRX VI에 필수 종목 상태가 없거나 맵 키·종목·시장이 일치하지 않습니다."
+        }
+        if (protection.instrumentTradingHalts.any { (stockId, protectionState) ->
+                stockId != protectionState.stockId || stockId !in stockIds
+            }
+        ) {
+            return "종목 거래정지 맵 키와 종목 ID가 일치하지 않습니다."
+        }
+        if (protection.scheduledInstrumentTradingHalts.any { (scheduleId, protectionState) ->
+                scheduleId.isBlank() || protectionState.stockId !in stockIds ||
+                    protectionState.scheduledReleaseAt == null
+            }
+        ) {
+            return "예정 종목 거래정지의 ID·종목·해제 시각이 올바르지 않습니다."
+        }
+        if (protection.investmentAlerts.any { (stockId, protectionState) ->
+                stockId != protectionState.stockId || stocksById[stockId]?.market?.isKorean != true
+            }
+        ) {
+            return "투자경보 맵 키와 KRX 종목 ID가 일치하지 않습니다."
+        }
+        if (protection.usLuldStates.keys != usStockIds ||
+            protection.usLuldStates.any { (stockId, protectionState) ->
+                val stock = stocksById[stockId]
+                stockId != protectionState.stockId || stock == null || stock.market != protectionState.primaryMarket
+            }
+        ) {
+            return "미국 LULD에 필수 종목 상태가 없거나 맵 키·종목·주 상장시장이 일치하지 않습니다."
+        }
+        val mwcb = protection.usMarketWideCircuitBreaker
+            ?: return "미국 MWCB 상태가 없습니다."
+        val requiredVenues = Market.entries.filter(Market::isUnitedStates).toSet()
+        if (mwcb.venueStatuses.keys != requiredVenues) {
+            return "미국 MWCB 상태에 필수 주 상장시장이 모두 포함되지 않았습니다."
+        }
+        if (mwcb.venueStatuses.any { (market, venue) ->
+                market != venue.market || !market.isUnitedStates
+            }
+        ) {
+            return "미국 MWCB 거래소 맵 키와 내부 시장이 일치하지 않습니다."
+        }
+
+        if (state.dailyTradingSurveillance.keys != stockIds ||
+            state.dailyTradingSurveillance.any { (_, points) ->
                     points.zipWithNext().any { (previous, next) -> previous.date >= next.date } ||
                     points.any { it.date > state.currentDate }
             }
@@ -537,14 +648,71 @@ actual class GameSaveStorage actual constructor(
     }
 
     private class UnsupportedSchemaException(version: Int) : IllegalStateException(
-        "저장 스키마 ${version}은 지원 범위 " +
-            "${OLDEST_SUPPORTED_GAME_SAVE_SCHEMA_VERSION}..${CURRENT_GAME_SAVE_SCHEMA_VERSION} 밖입니다.",
+        "저장 스키마 ${version}은 지원하지 않습니다. " +
+            "현재 스키마 ${CURRENT_GAME_SAVE_SCHEMA_VERSION}만 사용할 수 있습니다.",
     )
 
     private class SaveFileTooLargeException(val actualSize: Long) : IOException()
 
     private companion object {
-        const val OLDEST_SUPPORTED_GAME_SAVE_SCHEMA_VERSION: Int = 1
+        val CURRENT_STATE_FIELDS: Set<String> = setOf(
+            "options",
+            "phase",
+            "screen",
+            "currentTime",
+            "turn",
+            "selectedTurnStep",
+            "stocks",
+            "selectedStockId",
+            "quotes",
+            "priceHistory",
+            "cashByCurrency",
+            "holdings",
+            "orders",
+            "trades",
+            "selectedOrderBook",
+            "marketSessions",
+            "macro",
+            "activeEvents",
+            "newsEvents",
+            "readEventIds",
+            "portfolioSnapshots",
+            "dailyStatistics",
+            "benchmarkHistory",
+            "transactionCosts",
+            "realizedGains",
+            "fifoCostBasisBook",
+            "dividendLedger",
+            "foreignExchangeLedger",
+            "annualTaxLedgers",
+            "taxPaymentNotices",
+            "peakAssetsKrw",
+            "maximumDrawdown",
+            "rngState",
+            "eventEngineSnapshot",
+            "nextSequence",
+            "isAdvancing",
+            "lastMessage",
+            "pendingEtfReferenceReturns",
+            "pendingClosedEventLogReturns",
+            "marketIndices",
+            "marketIndexHistory",
+            "taxExchangeRatesByTradeId",
+            "pendingTaxSettlementTradeIds",
+            "watchlistedStockIds",
+            "pendingCorporateActions",
+            "corporateActionLedger",
+            "listingLifecycleStates",
+            "listingLifecycleLedger",
+            "tradingProtectionSnapshot",
+            "dailyTradingSurveillance",
+        )
+
+        val CURRENT_NULLABLE_STATE_FIELDS: Set<String> = setOf(
+            "selectedStockId",
+            "selectedOrderBook",
+            "lastMessage",
+        )
 
         val TERMINAL_LISTING_STATUSES: Set<ListingLifecycleStatus> = setOf(
             ListingLifecycleStatus.DELISTED,
@@ -619,6 +787,24 @@ private class LocalDateTypeAdapter : TypeAdapter<LocalDate>() {
 private fun JsonObject.required(name: String): JsonElement = get(name)
     ?.takeUnless(JsonElement::isJsonNull)
     ?: throw JsonParseException("필수 필드 '$name'이 없습니다.")
+
+private fun JsonObject.requireMember(name: String) {
+    if (!has(name)) throw JsonParseException("필수 필드 '$name'이 없습니다.")
+}
+
+private fun JsonObject.requiredObject(name: String): JsonObject = required(name)
+    .takeIf(JsonElement::isJsonObject)
+    ?.asJsonObject
+    ?: throw JsonParseException("필드 '$name'은 객체여야 합니다.")
+
+private fun JsonObject.requiredArray(name: String): com.google.gson.JsonArray = required(name)
+    .takeIf(JsonElement::isJsonArray)
+    ?.asJsonArray
+    ?: throw JsonParseException("필드 '$name'은 배열이어야 합니다.")
+
+private fun JsonElement.requireObject(path: String): JsonObject = takeIf(JsonElement::isJsonObject)
+    ?.asJsonObject
+    ?: throw JsonParseException("필드 '$path'은 객체여야 합니다.")
 
 private fun JsonObject.requiredString(name: String): String = try {
     required(name).asString

@@ -647,7 +647,7 @@ private fun ProductInfoLine(label: String, value: String) {
 private fun fxExposureLabel(stock: StockDefinition): String? {
     val profile = stock.etfProfile ?: return null
     val fxProfile = profile.fxProfile
-        ?: return if (profile.legacyUsdKrwSensitivity != 0.0) "USD/KRW 환노출" else null
+        ?: return if (profile.usdKrwSensitivity != 0.0) "USD/KRW 환노출" else null
     val listingCurrency = if (stock.market.isUnitedStates) ReferenceCurrency.USD else ReferenceCurrency.KRW
     val foreignUnderlyingLegs = fxProfile.legs.filter {
         it.currency != listingCurrency && it.grossNotional >= 0.05

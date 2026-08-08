@@ -38,7 +38,6 @@ import com.amond.kmpbook.domain.tax.TaxLiabilityStatus
 import com.amond.kmpbook.domain.tax.StockGainTaxTreatment
 import com.amond.kmpbook.domain.time.GameCalendar
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.LocalTime
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.round
 import kotlin.time.Instant
@@ -148,21 +147,20 @@ data class DividendLedgerEntry(
     val netAmount: Double,
     val exchangeRateToKrw: Double,
     val taxBreakdown: TaxBreakdown? = null,
-    /** null은 구형 저장으로 grossAmount 전체가 금융소득이다. */
-    val taxableIncomeAmount: Double? = null,
+    val taxableIncomeAmount: Double,
     /** 미국 펀드의 사후 원금환급 구조를 게임 시점에 분리한 금액. */
-    val returnOfCapitalAmount: Double? = null,
+    val returnOfCapitalAmount: Double,
     /** ROC가 남은 원가를 초과해 국외주식 양도이득으로 전환된 원화 금액. */
-    val excessReturnOfCapitalGainKrw: Long? = null,
+    val excessReturnOfCapitalGainKrw: Long,
     /** 같은 시각의 체결·기업행동과 저장 전 순서를 보존하는 전역 회계 순번. */
-    val accountingSequence: Long? = null,
+    val accountingSequence: Long,
 ) {
     val grossAmountKrw: Double get() = grossAmount * exchangeRateToKrw
     val withholdingTaxKrw: Double get() = withholdingTax * exchangeRateToKrw
     val netAmountKrw: Double get() = netAmount * exchangeRateToKrw
-    val financialIncomeAmount: Double get() = taxableIncomeAmount ?: grossAmount
+    val financialIncomeAmount: Double get() = taxableIncomeAmount
     val financialIncomeAmountKrw: Double get() = financialIncomeAmount * exchangeRateToKrw
-    val rocAmount: Double get() = returnOfCapitalAmount ?: 0.0
+    val rocAmount: Double get() = returnOfCapitalAmount
 }
 
 data class TaxPaymentNotice(
@@ -197,7 +195,7 @@ data class DailyTradingSurveillancePoint(
     val close: Double,
     val volume: Long,
     val turnoverRate: Double,
-    /** 같은 거래일 KOSPI/KOSDAQ 유동시가총액 프록시. 구형 저장은 null이다. */
+    /** 같은 거래일 KOSPI/KOSDAQ 유동시가총액 프록시. 미국 종목은 null이다. */
     val marketProxyClose: Double? = null,
     /** 같은 거래일 종가 기준 KOSPI·KOSDAQ 보통주 합산 시가총액 순위. */
     val krxMarketCapRank: Int? = null,
@@ -208,74 +206,6 @@ data class DailyTradingSurveillancePoint(
         require(turnoverRate >= 0.0 && turnoverRate.isFinite())
         require(marketProxyClose == null || marketProxyClose > 0.0 && marketProxyClose.isFinite())
         require(krxMarketCapRank == null || krxMarketCapRank > 0)
-    }
-}
-
-/** 한 시간 턴에서 15분 정지를 0.25 거래비율 감소로 근사하는 미국 공통 MWCB 상태. */
-data class UsCircuitBreakerState(
-    val tradingDate: LocalDate? = null,
-    val triggeredLevels: Set<Int> = emptySet(),
-    val haltedForDay: Boolean = false,
-) {
-    init {
-        require(triggeredLevels.all { it in 1..3 })
-        require(!haltedForDay || 3 in triggeredLevels)
-    }
-}
-
-data class UsCircuitBreakerDecision(
-    val state: UsCircuitBreakerState,
-    val levelThisHour: Int,
-) {
-    init {
-        require(levelThisHour in 0..3)
-    }
-
-    val tradingFractionMultiplier: Double
-        get() = when (levelThisHour) {
-            1, 2 -> 0.75
-            3 -> 0.0
-            else -> 1.0
-        }
-}
-
-/** NYSE Rule 7.12의 S&P 500 7/13/20% 문턱을 한 시간 턴에 맞게 결정론적으로 적용한다. */
-object UsCircuitBreakerPolicy {
-    fun evaluate(
-        previous: UsCircuitBreakerState,
-        tradingDate: LocalDate,
-        localTime: LocalTime,
-        sp500SessionDate: LocalDate?,
-        sp500ChangeRate: Double,
-        hasCoreTrading: Boolean,
-    ): UsCircuitBreakerDecision {
-        val normalized = if (previous.tradingDate == tradingDate) {
-            previous
-        } else {
-            UsCircuitBreakerState(tradingDate = tradingDate)
-        }
-        if (!hasCoreTrading || sp500SessionDate != tradingDate) {
-            return UsCircuitBreakerDecision(normalized, 0)
-        }
-        if (normalized.haltedForDay) return UsCircuitBreakerDecision(normalized, 3)
-        val beforeLevelOneTwoCutoff = localTime < LocalTime(15, 25)
-        val candidate = when {
-            sp500ChangeRate <= -0.20 -> 3
-            // A one-hour observation can cross 7% and 13% at once. Preserve the legal
-            // sequence instead of recording L2 first and incorrectly firing L1 later.
-            beforeLevelOneTwoCutoff && sp500ChangeRate <= -0.07 && 1 !in normalized.triggeredLevels -> 1
-            beforeLevelOneTwoCutoff && sp500ChangeRate <= -0.13 && 2 !in normalized.triggeredLevels -> 2
-            else -> 0
-        }
-        if (candidate == 0 || candidate in normalized.triggeredLevels) {
-            return UsCircuitBreakerDecision(normalized, 0)
-        }
-        val state = UsCircuitBreakerState(
-            tradingDate = tradingDate,
-            triggeredLevels = normalized.triggeredLevels + candidate,
-            haltedForDay = candidate == 3,
-        )
-        return UsCircuitBreakerDecision(state, candidate)
     }
 }
 
@@ -323,33 +253,30 @@ data class SimulatorUiState(
     val nextSequence: Long,
     val isAdvancing: Boolean = false,
     val lastMessage: String? = null,
-    /** 해외 기초시장이 상장시장과 어긋나는 ETF의 다음 개장 갭. v1 저장은 null이다. */
-    val pendingEtfReferenceReturns: Map<String, Double>? = null,
-    /** 상장시장 폐장 중 발생한 뉴스 충격의 다음 개장 갭. 구형 저장은 null이다. */
-    val pendingClosedEventLogReturns: Map<String, Double>? = null,
-    /** 대표 미국 지수 현재값과 최근 시간봉. v1 저장은 null이며 복원 시 현재 시각에 시드한다. */
-    val marketIndices: Map<MarketIndexId, MarketIndexSnapshot>? = null,
-    val marketIndexHistory: Map<MarketIndexId, List<MarketIndexSnapshot>>? = null,
-    val usCircuitBreakerState: UsCircuitBreakerState? = null,
+    /** 해외 기초시장이 상장시장과 어긋나는 ETF의 다음 개장 갭. */
+    val pendingEtfReferenceReturns: Map<String, Double>,
+    /** 상장시장 폐장 중 발생한 뉴스 충격의 다음 개장 갭. */
+    val pendingClosedEventLogReturns: Map<String, Double>,
+    /** 대표 미국 지수 현재값과 최근 시간봉. */
+    val marketIndices: Map<MarketIndexId, MarketIndexSnapshot>,
+    val marketIndexHistory: Map<MarketIndexId, List<MarketIndexSnapshot>>,
     /** 체결별 세무 원화환산율. 미결제 거래는 임시 체결환율, 결제 후에는 결제일 환율이다. */
-    val taxExchangeRatesByTradeId: Map<String, Double>? = null,
-    /** 결제일 환율 확정을 기다리는 해외 거래 ID. v1 구형 저장의 null은 모두 확정된 것으로 본다. */
-    val pendingTaxSettlementTradeIds: Set<String>? = null,
-    /** 사용자가 별표로 지정한 종목. 구형 저장의 null은 빈 집합으로 복원한다. */
-    val watchlistedStockIds: Set<String>? = null,
+    val taxExchangeRatesByTradeId: Map<String, Double>,
+    /** 결제일 환율 확정을 기다리는 해외 거래 ID. */
+    val pendingTaxSettlementTradeIds: Set<String>,
+    /** 사용자가 별표로 지정한 종목. */
+    val watchlistedStockIds: Set<String>,
     /** 공시되었지만 효력일이 도래하지 않은 분할·병합. */
-    val pendingCorporateActions: List<PendingCorporateAction>? = null,
+    val pendingCorporateActions: List<PendingCorporateAction>,
     /** 이미 적용된 기업행동 원장. */
-    val corporateActionLedger: List<CorporateActionRecord>? = null,
-    /** 만기·조기상환·발행사 가속상환으로 거래가 종료된 상품 ID. */
-    val terminatedInstrumentIds: Set<String>? = null,
-    /** 거래소 상장 유지 심사·정리매매·상장폐지·청산 상태. 구형 저장은 null이다. */
-    val listingLifecycleStates: Map<String, ListingLifecycleState>? = null,
-    val listingLifecycleLedger: List<ListingLifecycleLedgerEvent>? = null,
+    val corporateActionLedger: List<CorporateActionRecord>,
+    /** 거래소 상장 유지 심사·정리매매·상장폐지·청산 상태. */
+    val listingLifecycleStates: Map<String, ListingLifecycleState>,
+    val listingLifecycleLedger: List<ListingLifecycleLedgerEvent>,
     /** KRX/US market-wide and single-security protection state. */
-    val tradingProtectionSnapshot: TradingProtectionSnapshot? = null,
+    val tradingProtectionSnapshot: TradingProtectionSnapshot,
     /** 100-day alert/listing checks outlive the bounded intraday chart history. */
-    val dailyTradingSurveillance: Map<String, List<DailyTradingSurveillancePoint>>? = null,
+    val dailyTradingSurveillance: Map<String, List<DailyTradingSurveillancePoint>>,
 ) {
     val seed: Long get() = options.seed
     val initialCapitalKrw: Double get() = options.initialCapitalKrw
@@ -367,7 +294,7 @@ data class SimulatorUiState(
     val holdingList: List<Holding> get() = holdings.values.toList()
     val openOrders: List<Order> get() = orders.filter(Order::isOpen)
     val unreadEvents: Int get() = newsEvents.count { it.id !in readEventIds }
-    val watchlist: Set<String> get() = watchlistedStockIds.orEmpty()
+    val watchlist: Set<String> get() = watchlistedStockIds
     /** Pure calendar projection: intentionally not a constructor field or save-schema member. */
     val upcomingScheduledEvents: List<ScheduledEventOccurrence>
         get() = ScheduledEventEngine(

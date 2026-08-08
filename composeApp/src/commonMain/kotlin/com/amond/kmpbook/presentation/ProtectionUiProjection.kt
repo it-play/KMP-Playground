@@ -148,7 +148,7 @@ fun buildProtectionUiProjection(
         addAll(lifecycleByStockId.keys)
         addAll(snapshot.krxVolatilityInterruptions.keys)
         addAll(snapshot.instrumentTradingHalts.keys)
-        addAll(snapshot.scheduledInstrumentTradingHalts.orEmpty().values.map(InstrumentTradingHalt::stockId))
+        addAll(snapshot.scheduledInstrumentTradingHalts.values.map(InstrumentTradingHalt::stockId))
         addAll(snapshot.investmentAlerts.keys)
         addAll(snapshot.usLuldStates.keys)
     }
@@ -211,7 +211,7 @@ private fun TradingProtectionSnapshot.instrumentStatuses(
     buildList {
         instrumentTradingHalts[stockId]?.let(::add)
         if (at != null) {
-            scheduledInstrumentTradingHalts.orEmpty().values
+            scheduledInstrumentTradingHalts.values
                 .filterTo(this) { it.stockId == stockId }
         }
     }.distinct()

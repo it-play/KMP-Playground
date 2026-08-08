@@ -10,6 +10,7 @@ import com.amond.kmpbook.domain.model.InstrumentTradingHalt
 import com.amond.kmpbook.domain.model.ListingLifecycleEventKind
 import com.amond.kmpbook.domain.model.ListingLifecycleLedgerEvent
 import com.amond.kmpbook.domain.model.ListingLifecycleStatus
+import com.amond.kmpbook.domain.model.ListingRiskTag
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.MarketIndexId
 import com.amond.kmpbook.domain.model.OrderSide
@@ -106,7 +107,7 @@ class SimulatorRuntimeTimingBoundaryTest {
             scheduledReleaseAt = eightKst + 120.minutes,
             policy = queuedOrderPolicy,
         )
-        val protection = requireNotNull(original.tradingProtectionSnapshot)
+        val protection = original.tradingProtectionSnapshot
         assertTrue(
             viewModel.restoreGame(
                 original.copy(
@@ -142,7 +143,7 @@ class SimulatorRuntimeTimingBoundaryTest {
             scheduledReleaseAt = eightKst + 180.minutes,
             policy = queuedOrderPolicy,
         )
-        val protection = requireNotNull(original.tradingProtectionSnapshot)
+        val protection = original.tradingProtectionSnapshot
         assertTrue(
             viewModel.restoreGame(
                 original.copy(
@@ -168,7 +169,7 @@ class SimulatorRuntimeTimingBoundaryTest {
         val viewModel = playingViewModel(72_005L)
         viewModel.setTimeForTesting(Instant.parse("2026-08-07T14:00:00Z")) // 10:00 EDT.
         val original = viewModel.currentState
-        val indices = original.marketIndices.orEmpty()
+        val indices = original.marketIndices
         val sp500 = indices.getValue(MarketIndexId.SP_500)
         val poisonedDailyLow = sp500.copy(
             timestamp = original.currentTime,
@@ -181,7 +182,7 @@ class SimulatorRuntimeTimingBoundaryTest {
             viewModel.restoreGame(
                 original.copy(
                     marketIndices = indices + (MarketIndexId.SP_500 to poisonedDailyLow),
-                    marketIndexHistory = original.marketIndexHistory.orEmpty() +
+                    marketIndexHistory = original.marketIndexHistory +
                         (MarketIndexId.SP_500 to listOf(poisonedDailyLow)),
                 ),
             ),
@@ -189,7 +190,7 @@ class SimulatorRuntimeTimingBoundaryTest {
 
         viewModel.advance(TurnStep.ONE_HOUR)
 
-        val mwcb = requireNotNull(viewModel.currentState.tradingProtectionSnapshot)
+        val mwcb = viewModel.currentState.tradingProtectionSnapshot
             .usMarketWideCircuitBreaker
         assertEquals(UsMwcbPhase.NORMAL, requireNotNull(mwcb).phase)
         assertTrue(mwcb.triggeredLevels.isEmpty())
@@ -214,13 +215,14 @@ class SimulatorRuntimeTimingBoundaryTest {
             durationHours = 24,
             affectedMarkets = setOf(stock.market),
             affectedStockIds = setOf(stock.id),
+            listingRiskTags = setOf(ListingRiskTag.LISTING_MAINTENANCE_DEFICIENCY),
         )
         assertTrue(viewModel.restoreGame(original.copy(newsEvents = original.newsEvents + event)))
 
         viewModel.advance(TurnStep.ONE_HOUR)
 
         assertTrue(
-            viewModel.currentState.listingLifecycleStates.orEmpty().getValue(stock.id).status !=
+            viewModel.currentState.listingLifecycleStates.getValue(stock.id).status !=
                 ListingLifecycleStatus.LISTED,
         )
     }
@@ -265,30 +267,30 @@ class SimulatorRuntimeTimingBoundaryTest {
         viewModel.advance(TurnStep.ONE_HOUR)
 
         val duringFinalSession = viewModel.currentState
-        assertTrue(etn.id !in duringFinalSession.terminatedInstrumentIds.orEmpty())
+        assertFalse(duringFinalSession.listingLifecycleStates.getValue(etn.id).isTerminal)
         assertEquals(
             ListingLifecycleStatus.LISTED,
-            duringFinalSession.listingLifecycleStates.orEmpty().getValue(etn.id).status,
+            duringFinalSession.listingLifecycleStates.getValue(etn.id).status,
         )
 
         repeat(15) {
-            if (viewModel.currentState.listingLifecycleStates.orEmpty().getValue(etn.id).isTerminal) {
+            if (viewModel.currentState.listingLifecycleStates.getValue(etn.id).isTerminal) {
                 return@repeat
             }
             viewModel.advance(TurnStep.ONE_DAY)
         }
 
         val state = viewModel.currentState
-        assertTrue(etn.id in state.terminatedInstrumentIds.orEmpty())
+        assertTrue(state.listingLifecycleStates.getValue(etn.id).isTerminal)
         assertEquals(
             ListingLifecycleStatus.TERMINATED,
-            state.listingLifecycleStates.orEmpty().getValue(etn.id).status,
+            state.listingLifecycleStates.getValue(etn.id).status,
         )
         assertEquals(
             ListingLifecycleEventKind.TERMINATED,
-            state.listingLifecycleLedger.orEmpty().last { it.stockId == etn.id }.kind,
+            state.listingLifecycleLedger.last { it.stockId == etn.id }.kind,
         )
-        val kinds = state.listingLifecycleLedger.orEmpty()
+        val kinds = state.listingLifecycleLedger
             .filter { it.stockId == etn.id }
             .map(ListingLifecycleLedgerEvent::kind)
         assertTrue(ListingLifecycleEventKind.DELISTING_SCHEDULED in kinds)

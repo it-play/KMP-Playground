@@ -93,7 +93,7 @@ data class InstrumentBehaviorProfile(
     }
 
     companion object {
-        /** 사용자 종목팩과 구형 저장을 위한 보수적 fallback. */
+        /** 메타데이터가 생략된 사용자 종목팩을 위한 보수적 fallback. */
         fun infer(stock: StockDefinition): InstrumentBehaviorProfile {
             val name = "${stock.symbol} ${stock.name} ${stock.englishName} ${stock.etfProfile?.benchmark.orEmpty()}".lowercase()
             val profile = stock.etfProfile

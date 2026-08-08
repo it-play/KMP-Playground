@@ -131,9 +131,6 @@ data class EtfProfile(
         require(usdKrwSensitivity in -2.0..2.0) { "ETF 환율 민감도는 -2 이상 2 이하여야 합니다." }
     }
 
-    /** 구형 USD 단일 노출 상품팩이 사용할 fallback. 레버리지와는 별도다. */
-    val legacyUsdKrwSensitivity: Double get() = usdKrwSensitivity
-
     fun isExposedTo(market: Market): Boolean = when (exposureRegion) {
         EtfExposureRegion.KOREA -> market.isKorean
         EtfExposureRegion.UNITED_STATES -> market.isUnitedStates
@@ -170,7 +167,7 @@ data class StockDefinition(
     val instrumentTypeOverride: InstrumentType? = null,
     /** 자산군·전략별 가격·분배·원금잠식 규칙. null은 종목 메타데이터에서 결정론적으로 추론한다. */
     val behaviorProfile: InstrumentBehaviorProfile? = null,
-    /** 운용사·법적 명칭·검증 출처·이벤트 태그. 구형 저장은 null이다. */
+    /** 운용사·법적 명칭·검증 출처·이벤트 태그. 사용자 종목팩은 생략할 수 있다. */
     val identityProfile: InstrumentIdentityProfile? = null,
 ) {
     init {

@@ -19,7 +19,7 @@ import kotlin.time.Instant
  *
  * [barsByStockId]는 `StockDefinition.id`를 키로 하는 해당 시간의 봉이다.
  * [previousCloseByStockId]는 같은 구성종목의 직전 종가로, 시가 갭을 지수에 이어
- * 붙이는 기준이다. 구형 저장 등으로 특정 종목의 값이 없을 때만 해당 봉의
+ * 붙이는 기준이다. 특정 종목의 입력 값이 없을 때만 해당 봉의
  * 시가를 기준으로 사용해 갭이 없는 봉으로 처리한다.
  * [usTradingFraction]은 미국 정규장이 해당 벽시간에 차지하는 비율로, 폐장 0·일반 1을
  * 사용한다. 입력이 동일하면 결과도 항상 동일하다.

@@ -354,8 +354,7 @@ data class InvestmentAlertDesignation(
     val designatedOn: LocalDate,
     val releaseReviewWindow: TradingDayWindow,
     val redesignationWindow: TradingDayWindow? = null,
-    /** 구형 저장의 null은 level/reasonCodes에서 보수적으로 복원한다. */
-    val releaseRule: InvestmentAlertReleaseRule? = null,
+    val releaseRule: InvestmentAlertReleaseRule,
     /** 투자경고 재지정 판단에 쓰는 최초 투자경고 지정 전일 종가. */
     val preDesignationClose: Double? = null,
     /** 투자경고 재지정 판단에 쓰는 투자경고 해제 전일 종가. */
@@ -591,8 +590,8 @@ data class TradingProtectionSnapshot(
     val krxSidecars: Map<Market, KrxSidecarState> = emptyMap(),
     val krxVolatilityInterruptions: Map<String, KrxViState> = emptyMap(),
     val instrumentTradingHalts: Map<String, InstrumentTradingHalt> = emptyMap(),
-    /** 다음 정규장에 효력이 생기는 KRX 전일 공시 정지. 구형 v2 저장의 null은 빈 맵이다. */
-    val scheduledInstrumentTradingHalts: Map<String, InstrumentTradingHalt>? = emptyMap(),
+    /** 다음 정규장에 효력이 생기는 KRX 전일 공시 정지. */
+    val scheduledInstrumentTradingHalts: Map<String, InstrumentTradingHalt> = emptyMap(),
     val investmentAlerts: Map<String, InvestmentAlertDesignation> = emptyMap(),
     val usMarketWideCircuitBreaker: UsMwcbState? = null,
     val usLuldStates: Map<String, UsLuldState> = emptyMap(),

@@ -311,18 +311,7 @@ internal fun krxInvestmentAlertReleaseCriteriaCleared(
 
 internal fun krxInvestmentAlertReleaseRule(
     designation: InvestmentAlertDesignation,
-): InvestmentAlertReleaseRule = designation.releaseRule ?: when (designation.level) {
-        InvestmentAlertLevel.CAUTION -> InvestmentAlertReleaseRule.CAUTION_PRICE_VOLUME
-        InvestmentAlertLevel.WARNING -> if (designation.reasonCodes.all { reason ->
-                reason.startsWith("WARNING_PRICE_INDEX_") || reason == "DANGER_RELEASE_DOWNGRADE"
-            }
-        ) {
-            InvestmentAlertReleaseRule.WARNING_60_100
-        } else {
-            InvestmentAlertReleaseRule.WARNING_45_75
-        }
-        InvestmentAlertLevel.DANGER -> InvestmentAlertReleaseRule.DANGER_60_100
-    }
+): InvestmentAlertReleaseRule = designation.releaseRule
 
 internal fun krxRelativeMarketRiseMultipleSatisfied(
     points: List<DailyTradingSurveillancePoint>,
@@ -571,7 +560,6 @@ internal class SimulatorRuntime(
     private val watchlistedStockIds = linkedSetOf<String>()
     private val pendingCorporateActions = mutableListOf<PendingCorporateAction>()
     private val corporateActionLedger = mutableListOf<CorporateActionRecord>()
-    private val terminatedInstrumentIds = linkedSetOf<String>()
     private val listingLifecycleStates = linkedMapOf<String, ListingLifecycleState>()
     private val listingLifecycleLedger = mutableListOf<ListingLifecycleLedgerEvent>()
     private var tradingProtectionSnapshot = TradingProtectionSnapshot()
@@ -592,7 +580,6 @@ internal class SimulatorRuntime(
     private var peakAssetsKrw = options.initialCapitalKrw
     private var maximumDrawdown = 0.0
     private var nextSequence = 1L
-    private var usCircuitBreakerState = UsCircuitBreakerState()
 
     private val random = DeterministicRandom(
         DeterministicRandom.mixSeed(options.seed, MACRO_STREAM_ID),
@@ -915,13 +902,11 @@ internal class SimulatorRuntime(
             pendingClosedEventLogReturns = pendingClosedEventLogReturns.toMap(),
             marketIndices = marketIndices.toMap(),
             marketIndexHistory = marketIndexHistory.mapValues { (_, values) -> values.toList() },
-            usCircuitBreakerState = usCircuitBreakerState,
             taxExchangeRatesByTradeId = taxExchangeRatesByTradeId.toMap(),
             pendingTaxSettlementTradeIds = pendingTaxSettlementTradeIds.toSet(),
             watchlistedStockIds = watchlistedStockIds.toSet(),
             pendingCorporateActions = pendingCorporateActions.toList(),
             corporateActionLedger = corporateActionLedger.toList(),
-            terminatedInstrumentIds = terminatedInstrumentIds.toSet(),
             listingLifecycleStates = listingLifecycleStates.toMap(),
             listingLifecycleLedger = listingLifecycleLedger.toList(),
             tradingProtectionSnapshot = tradingProtectionSnapshot,
@@ -934,8 +919,8 @@ internal class SimulatorRuntime(
         require(state.turn == GameCalendar.turnAt(state.currentTime)) { "저장 턴과 시각이 일치하지 않습니다." }
         val ids = stockById.keys
         val savedIds = state.stocks.map(StockDefinition::id)
-        require(savedIds.distinct().size == savedIds.size && savedIds.all(ids::contains)) {
-            "저장 종목 카탈로그에 현재 버전이 알 수 없는 상품이 있습니다."
+        require(savedIds.distinct().size == savedIds.size && savedIds.toSet() == ids) {
+            "저장 종목 카탈로그가 현재 버전과 일치하지 않습니다."
         }
         require(state.quotes.keys == savedIds.toSet() && state.priceHistory.keys == savedIds.toSet()) {
             "저장된 모든 상품의 시세와 차트 기록이 필요합니다."
@@ -946,72 +931,71 @@ internal class SimulatorRuntime(
         require(state.orders.all { it.stockId in ids } && state.trades.all { it.stockId in ids }) {
             "주문·체결 원장에 알 수 없는 종목이 있습니다."
         }
-        require(state.pendingEtfReferenceReturns.orEmpty().all { (stockId, value) ->
+        require(state.pendingEtfReferenceReturns.all { (stockId, value) ->
             stockById[stockId]?.isFundLike == true && value.isFinite()
         }) { "ETF 개장 갭 상태가 올바르지 않습니다." }
-        require(state.pendingClosedEventLogReturns.orEmpty().all { (stockId, value) ->
+        require(state.pendingClosedEventLogReturns.all { (stockId, value) ->
             stockId in stockById && value.isFinite()
         }) { "폐장 중 이벤트 개장 갭 상태가 올바르지 않습니다." }
-        require(state.watchlistedStockIds.orEmpty().all(ids::contains)) {
+        require(state.watchlistedStockIds.all(ids::contains)) {
             "관심 종목에 현재 카탈로그가 알 수 없는 ID가 있습니다."
         }
-        require(state.pendingCorporateActions.orEmpty().all { it.stockId in ids }) {
+        require(state.pendingCorporateActions.all { it.stockId in ids }) {
             "예정 기업행동에 알 수 없는 종목이 있습니다."
         }
-        require(state.corporateActionLedger.orEmpty().all { it.stockId in ids }) {
+        require(state.corporateActionLedger.all { it.stockId in ids }) {
             "기업행동 원장에 알 수 없는 종목이 있습니다."
         }
         validateCorporateActionState(
-            pending = state.pendingCorporateActions.orEmpty(),
-            applied = state.corporateActionLedger.orEmpty(),
+            pending = state.pendingCorporateActions,
+            applied = state.corporateActionLedger,
             validStockIds = ids,
         )
-        require(state.terminatedInstrumentIds.orEmpty().all(ids::contains)) {
-            "거래종료 원장에 현재 카탈로그가 알 수 없는 ID가 있습니다."
-        }
-        require(state.listingLifecycleStates.orEmpty().all { (stockId, listing) ->
+        require(state.listingLifecycleStates.keys == ids && state.listingLifecycleStates.all { (stockId, listing) ->
             stockId in ids && listing.stockId == stockId && stockById[stockId]?.market == listing.market
         }) { "상장 생명주기 상태가 현재 종목 카탈로그와 일치하지 않습니다." }
-        require(state.listingLifecycleLedger.orEmpty().all { it.stockId in ids }) {
+        require(state.listingLifecycleLedger.all { it.stockId in ids }) {
             "상장 생명주기 원장에 현재 카탈로그가 알 수 없는 ID가 있습니다."
         }
-        require(state.tradingProtectionSnapshot?.let { protection ->
-            protection.krxCircuitBreakers.keys.all { it.isKorean } &&
-                protection.krxSidecars.keys.all { it.isKorean } &&
-                protection.krxVolatilityInterruptions.keys.all(ids::contains) &&
+        val krxMarkets = setOf(Market.KOSPI, Market.KOSDAQ)
+        val krxStockIds = stocks.filter { it.market.isKorean }.mapTo(linkedSetOf(), StockDefinition::id)
+        val usStockIds = stocks.filter { it.market.isUnitedStates }.mapTo(linkedSetOf(), StockDefinition::id)
+        require(state.tradingProtectionSnapshot.let { protection ->
+            protection.krxCircuitBreakers.keys == krxMarkets &&
+                protection.krxSidecars.keys == krxMarkets &&
+                protection.krxVolatilityInterruptions.keys == krxStockIds &&
                 protection.instrumentTradingHalts.keys.all(ids::contains) &&
-                protection.scheduledInstrumentTradingHalts.orEmpty().values.all { it.stockId in ids } &&
+                protection.scheduledInstrumentTradingHalts.values.all { it.stockId in ids } &&
                 protection.investmentAlerts.keys.all(ids::contains) &&
-                protection.usLuldStates.keys.all(ids::contains)
-        } != false) { "시장 보호장치 저장 상태가 현재 종목 카탈로그와 일치하지 않습니다." }
-        require(state.dailyTradingSurveillance.orEmpty().all { (stockId, values) ->
+                protection.usLuldStates.keys == usStockIds &&
+                protection.usMarketWideCircuitBreaker?.venueStatuses?.keys ==
+                Market.entries.filter(Market::isUnitedStates).toSet()
+        }) { "시장 보호장치 저장 상태가 현재 종목 카탈로그와 일치하지 않습니다." }
+        require(state.dailyTradingSurveillance.keys == ids && state.dailyTradingSurveillance.all { (stockId, values) ->
             stockId in ids && values.zipWithNext().all { (left, right) -> left.date < right.date }
         }) { "일별 시장감시 이력이 올바르지 않습니다." }
-        val savedIndices = state.marketIndices.orEmpty()
-        require(savedIndices.isEmpty() || savedIndices.keys == MarketIndexId.entries.toSet()) {
+        val savedIndices = state.marketIndices
+        require(savedIndices.keys == MarketIndexId.entries.toSet()) {
             "대표 지수 현재값 4종이 모두 필요합니다."
         }
-        require(state.marketIndexHistory.orEmpty().all { (id, values) ->
+        require(state.marketIndexHistory.keys == MarketIndexId.entries.toSet() && state.marketIndexHistory.all { (id, values) ->
             id in MarketIndexId.entries && values.all { it.id == id } &&
                 values.zipWithNext().all { (left, right) -> left.timestamp <= right.timestamp }
         }) { "대표 지수 이력이 올바르지 않습니다." }
 
-        val resumesLegacyFinalUsSession = state.currentTime == GameCalendar.LEGACY_END_INSTANT &&
-            state.phase in setOf(GamePhase.SETTLEMENT, GamePhase.FINISHED)
         options = state.options
-        phase = if (resumesLegacyFinalUsSession) GamePhase.PLAYING else state.phase
-        screen = if (resumesLegacyFinalUsSession) Screen.HOME else state.screen
+        phase = state.phase
+        screen = state.screen
         currentTime = state.currentTime
         turn = state.turn
         selectedTurnStep = state.selectedTurnStep
         selectedStockId = state.selectedStockId?.also { require(it in ids) }
         isAdvancing = false
-        lastMessage = if (resumesLegacyFinalUsSession) {
-            "이전 버전 저장을 불러왔습니다. 2040년 마지막 미국장까지 이어서 진행합니다."
-        } else {
-            "저장 게임을 불러왔습니다."
+        lastMessage = "저장 게임을 불러왔습니다."
+        require(state.macro.fxRatesToKrw != null && state.macro.previousFxRatesToKrw != null) {
+            "현재 저장 스키마에는 통화별 환율 상태가 필요합니다."
         }
-        macro = normalizeFxState(state.macro)
+        macro = state.macro
         macroDate = gameDate(currentTime)
         benchmarkValue = state.benchmarkHistory.lastOrNull()?.value ?: BENCHMARK_START
         peakAssetsKrw = state.peakAssetsKrw
@@ -1019,15 +1003,15 @@ internal class SimulatorRuntime(
         nextSequence = state.nextSequence
         require(nextSequence > 0L) { "저장 시퀀스가 올바르지 않습니다." }
         val accountingSequences = buildList {
-            state.trades.mapNotNullTo(this) { it.accountingSequence }
-            state.dividendLedger.mapNotNullTo(this) { it.accountingSequence }
-            state.corporateActionLedger.orEmpty().mapNotNullTo(this) { it.accountingSequence }
+            state.trades.mapTo(this) { it.accountingSequence }
+            state.dividendLedger.mapTo(this) { it.accountingSequence }
+            state.corporateActionLedger.mapTo(this) { it.accountingSequence }
         }
         require(accountingSequences.all { it in 1 until nextSequence } &&
             accountingSequences.distinct().size == accountingSequences.size
         ) { "체결·분배·기업행동의 전역 회계 순번이 올바르지 않습니다." }
         require(state.dividendLedger.map(DividendLedgerEntry::id).distinct().size == state.dividendLedger.size &&
-            state.dividendLedger.all { it.stockId in ids && (it.accountingSequence == null || it.accountingSequence > 0L) }
+            state.dividendLedger.all { it.stockId in ids && it.accountingSequence > 0L }
         ) { "분배 원장 ID·종목·회계 순번이 올바르지 않습니다." }
 
         random.restore(state.rngState)
@@ -1039,28 +1023,20 @@ internal class SimulatorRuntime(
             require(bars.isNotEmpty()) { "차트 기록이 비어 있습니다." }
             history[stockId] = ArrayDeque(bars.takeLast(MAX_RECENT_BARS))
         }
-        for (stock in stocks) {
-            if (stock.id !in quotes) initializeInstrumentMarketData(stock, currentTime)
-        }
         pendingEtfReferenceReturns.clear()
-        pendingEtfReferenceReturns.putAll(state.pendingEtfReferenceReturns.orEmpty())
+        pendingEtfReferenceReturns.putAll(state.pendingEtfReferenceReturns)
         pendingClosedEventLogReturns.clear()
-        pendingClosedEventLogReturns.putAll(state.pendingClosedEventLogReturns.orEmpty())
+        pendingClosedEventLogReturns.putAll(state.pendingClosedEventLogReturns)
         marketIndices.clear()
         marketIndexHistory.clear()
-        if (savedIndices.isEmpty()) {
-            initializeMarketIndices(currentTime)
-        } else {
-            marketIndices.putAll(savedIndices)
-            for (id in MarketIndexId.entries) {
-                val values = state.marketIndexHistory.orEmpty()[id].orEmpty()
-                    .takeLast(MAX_INDEX_BARS)
-                marketIndexHistory[id] = ArrayDeque<MarketIndexSnapshot>().apply {
-                    if (values.isEmpty()) addLast(savedIndices.getValue(id)) else addAll(values)
-                }
+        marketIndices.putAll(savedIndices)
+        for (id in MarketIndexId.entries) {
+            val values = state.marketIndexHistory.getValue(id).takeLast(MAX_INDEX_BARS)
+            require(values.isNotEmpty()) { "대표 지수 이력이 비어 있습니다." }
+            marketIndexHistory[id] = ArrayDeque<MarketIndexSnapshot>().apply {
+                addAll(values)
             }
         }
-        usCircuitBreakerState = state.usCircuitBreakerState ?: UsCircuitBreakerState()
         cash.clear()
         cash.putAll(state.cashByCurrency)
         holdings.clear()
@@ -1076,70 +1052,32 @@ internal class SimulatorRuntime(
         dividends.clear()
         dividends += state.dividendLedger
         corporateActionLedger.clear()
-        corporateActionLedger += state.corporateActionLedger.orEmpty()
+        corporateActionLedger += state.corporateActionLedger
         rebuildDynamicStockDefinitions(corporateActionLedger)
         val savedStocksById = state.stocks.associateBy(StockDefinition::id)
         require(state.stocks.all { saved ->
             stockById[saved.id]?.sharesOutstanding == saved.sharesOutstanding
         }) { "저장된 유통주식수가 기업행동 원장과 일치하지 않습니다." }
-        terminatedInstrumentIds.clear()
-        terminatedInstrumentIds += state.terminatedInstrumentIds.orEmpty()
         listingLifecycleStates.clear()
-        listingLifecycleStates.putAll(
-            stocks.associate { stock ->
-                val restored = state.listingLifecycleStates.orEmpty()[stock.id]
-                    ?: listingLifecycleEngine.initialState(stock)
-                val disposition = restored.finalDisposition
-                val holding = holdings[stock.id]
-                val normalized = if (restored.status == ListingLifecycleStatus.LIQUIDATION_PENDING &&
-                    disposition?.type == ListingFinalDispositionType.CASH_LIQUIDATION &&
-                    (disposition.entitledQuantity == null || disposition.entitledCostBasis == null)
-                ) {
-                    restored.copy(
-                        finalDisposition = disposition.copy(
-                            entitledQuantity = holding?.quantity ?: 0.0,
-                            entitledCostBasis = holding?.costBasis ?: 0.0,
-                        ),
-                    )
-                } else {
-                    restored
-                }
-                stock.id to normalized
-            },
-        )
+        listingLifecycleStates.putAll(state.listingLifecycleStates)
+        require(listingLifecycleStates.values.all { lifecycle ->
+            lifecycle.status != ListingLifecycleStatus.LIQUIDATION_PENDING ||
+                lifecycle.finalDisposition?.type != ListingFinalDispositionType.CASH_LIQUIDATION ||
+                lifecycle.finalDisposition.entitledQuantity != null &&
+                lifecycle.finalDisposition.entitledCostBasis != null
+        }) { "청산 대기 상태에는 확정된 수량과 원가가 필요합니다." }
         updateHoldingPrices()
         listingLifecycleLedger.clear()
-        listingLifecycleLedger += state.listingLifecycleLedger.orEmpty()
-        if (state.tradingProtectionSnapshot == null) {
-            initializeTradingProtections(currentTime)
-            val migrated = migrateLegacyUsMwcb(state)
-            tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
-                usMarketWideCircuitBreaker = migrated,
+        listingLifecycleLedger += state.listingLifecycleLedger
+        tradingProtectionSnapshot = state.tradingProtectionSnapshot
+        dailyTradingSurveillance.clear()
+        stocks.forEach { stock ->
+            dailyTradingSurveillance[stock.id] = ArrayDeque(
+                state.dailyTradingSurveillance.getValue(stock.id)
+                    .takeLast(MAX_DAILY_SURVEILLANCE_POINTS),
             )
-        } else {
-            tradingProtectionSnapshot = state.tradingProtectionSnapshot
-            dailyTradingSurveillance.clear()
-            stocks.forEach { stock ->
-                dailyTradingSurveillance[stock.id] = ArrayDeque(
-                    state.dailyTradingSurveillance.orEmpty()[stock.id].orEmpty()
-                        .takeLast(MAX_DAILY_SURVEILLANCE_POINTS),
-                )
-            }
-        }
-        tradingProtectionSnapshot.usMarketWideCircuitBreaker?.let(::syncLegacyUsCircuitBreaker)
-        // 구형 저장은 거래종료 집합이 없으므로 만기일과 기존 만기 뉴스를 함께 복원 근거로 쓴다.
-        if (state.terminatedInstrumentIds == null) {
-            stocks.filter { stock ->
-                instrumentMaturityDate(stock)?.let { marketDate(stock.market, currentTime) >= it } == true &&
-                    state.newsEvents.any { it.id.startsWith("instrument-maturity-redemption:${stock.id}:") }
-            }.mapTo(terminatedInstrumentIds, StockDefinition::id)
         }
         restoreTaxExchangeRateLedger(state)
-        // Older builds clamped late-2040 legal settlement dates into 2040. Preserve the saved
-        // gain years before replay so years that become empty (usually 2040 -> 2041) are also
-        // recalculated and their stale liabilities/notices are removed.
-        val savedRealizedGainTaxYears = state.realizedGains
-            .mapTo(linkedSetOf()) { it.settlementDate.year }
         val replayedTaxYears = replayTaxAccountingLedger()
         require(fifoCostBasisBook.lots.all { it.stockId in ids } && fifoBookMatchesHoldings()) {
             "FIFO 세무원장과 보유 수량이 일치하지 않습니다."
@@ -1153,9 +1091,9 @@ internal class SimulatorRuntime(
         readEventIds.clear()
         readEventIds += state.readEventIds
         watchlistedStockIds.clear()
-        watchlistedStockIds += state.watchlistedStockIds.orEmpty()
+        watchlistedStockIds += state.watchlistedStockIds
         pendingCorporateActions.clear()
-        pendingCorporateActions += state.pendingCorporateActions.orEmpty()
+        pendingCorporateActions += state.pendingCorporateActions
         portfolioSnapshots.clear()
         portfolioSnapshots += state.portfolioSnapshots
         dailyStatistics.clear()
@@ -1166,7 +1104,7 @@ internal class SimulatorRuntime(
         annualTaxLedgers.putAll(state.annualTaxLedgers)
         taxPaymentNotices.clear()
         taxPaymentNotices += state.taxPaymentNotices
-        (savedRealizedGainTaxYears + replayedTaxYears).forEach(::recalculateAnnualTax)
+        replayedTaxYears.forEach(::recalculateAnnualTax)
 
         dailyTrackers.clear()
         for (stock in stocks) {
@@ -1243,56 +1181,6 @@ internal class SimulatorRuntime(
         )
         dailyTradingSurveillance.clear()
         stocks.forEach { stock -> dailyTradingSurveillance[stock.id] = ArrayDeque() }
-    }
-
-    /** v1 stored only a completed-hour summary, so never invent intrahour halt timestamps. */
-    private fun migrateLegacyUsMwcb(saved: SimulatorUiState): UsMwcbState {
-        val tradingDate = marketDate(Market.NYSE, currentTime)
-        val initial = TradingProtectionEngine.initialUsMwcb(tradingDate, currentTime)
-        val legacy = saved.usCircuitBreakerState
-        val levelNumbers: Set<Int>
-        val closedForDay: Boolean
-        when {
-            legacy != null && legacy.tradingDate == tradingDate -> {
-                levelNumbers = legacy.triggeredLevels
-                closedForDay = legacy.haltedForDay
-            }
-            legacy != null -> {
-                // A dated legacy state from another session is stale. The transient macro field
-                // must not resurrect yesterday's close-for-day state.
-                levelNumbers = emptySet()
-                closedForDay = false
-            }
-            else -> {
-                levelNumbers = when (saved.macro.usCircuitBreakerLevel) {
-                    1 -> setOf(1)
-                    2 -> setOf(1, 2)
-                    3 -> setOf(3)
-                    else -> emptySet()
-                }
-                closedForDay = saved.macro.usCircuitBreakerLevel == 3
-            }
-        }
-        val normalizedNumbers = if (2 in levelNumbers) levelNumbers + 1 else levelNumbers
-        val levels = normalizedNumbers.mapTo(linkedSetOf()) { number ->
-            when (number) {
-                1 -> UsMwcbLevel.LEVEL_1
-                2 -> UsMwcbLevel.LEVEL_2
-                3 -> UsMwcbLevel.LEVEL_3
-                else -> error("지원하지 않는 구형 MWCB 단계입니다.")
-            }
-        }
-        if (!closedForDay) return initial.copy(triggeredLevels = levels)
-        return initial.copy(
-            phase = UsMwcbPhase.CLOSED_FOR_DAY,
-            triggeredLevels = levels + UsMwcbLevel.LEVEL_3,
-            activeLevel = UsMwcbLevel.LEVEL_3,
-            triggeredAt = currentTime,
-            haltEndsAt = null,
-            venueStatuses = initial.venueStatuses.mapValues { (market, _) ->
-                UsMwcbVenueStatus(market, UsMwcbVenuePhase.CLOSED, currentTime)
-            },
-        )
     }
 
     private fun usLuldTier(stock: StockDefinition): UsLuldTier = when {
@@ -1740,7 +1628,7 @@ internal class SimulatorRuntime(
     private fun applyDueCorporateActions(from: Instant, to: Instant) {
         val due = pendingCorporateActions.filter { action ->
             action.effectiveNotBefore <= from &&
-                action.stockId !in terminatedInstrumentIds &&
+                listingLifecycleStates[action.stockId]?.isTerminal != true &&
                 listingLifecycleStates[action.stockId]?.isSettlementPending != true &&
                 stockById[action.stockId]?.let { regularTradingFraction(it.market, from, to) > 0.0 } == true
         }
@@ -1755,7 +1643,7 @@ internal class SimulatorRuntime(
         val next = at + 1.hours
         val due = pendingCorporateActions.filter { action ->
             action.effectiveNotBefore <= at &&
-                action.stockId !in terminatedInstrumentIds &&
+                listingLifecycleStates[action.stockId]?.isTerminal != true &&
                 listingLifecycleStates[action.stockId]?.isSettlementPending != true &&
                 stockById[action.stockId]?.let { regularTradingFraction(it.market, at, next) > 0.0 } == true
         }
@@ -1977,7 +1865,6 @@ internal class SimulatorRuntime(
         }
     }
 
-    /** Adds v1-save fallbacks without letting an ETF inherit the listing status of an underlying. */
     private fun listingRiskTagsFor(event: GameEvent, stockId: String): Set<ListingRiskTag> {
         if (stockId !in event.affectedStockIds) return emptySet()
         if (event.id.startsWith(ETN_CALL_EVENT_PREFIX) &&
@@ -1985,33 +1872,7 @@ internal class SimulatorRuntime(
         ) {
             return emptySet()
         }
-        val structured = event.directListingRiskTags(stockId)
-        if (structured.isNotEmpty()) return structured
-        return when {
-            event.id.startsWith("delisting_warning:") ->
-                setOf(ListingRiskTag.LISTING_MAINTENANCE_DEFICIENCY)
-            event.id.startsWith("accounting_issue:") -> setOf(ListingRiskTag.AUDIT_OPINION_FAILURE)
-            event.id.startsWith("fund_liquidity_warning:") -> setOf(ListingRiskTag.LOW_TRADING_LIQUIDITY)
-            event.id.startsWith("serious_compliance_breach:") ->
-                setOf(ListingRiskTag.SERIOUS_COMPLIANCE_EVENT)
-            event.id.startsWith("core_business_suspension:") ->
-                setOf(ListingRiskTag.CORE_BUSINESS_SUSPENSION)
-            event.id.startsWith("bankruptcy_filing:") ->
-                setOf(ListingRiskTag.BANKRUPTCY_OR_INSOLVENCY)
-            event.id.startsWith("etf_liquidation_approved:") ->
-                setOf(ListingRiskTag.ETF_LIQUIDATION_APPROVED)
-            event.id.startsWith("issuer_eligibility_failure:") ->
-                setOf(ListingRiskTag.ISSUER_ELIGIBILITY_FAILURE)
-            event.id.startsWith("underlying_index_unavailable:") ->
-                setOf(ListingRiskTag.UNDERLYING_INDEX_UNAVAILABLE)
-            event.id.startsWith("liquidity_provider_failure:") ->
-                setOf(ListingRiskTag.LIQUIDITY_PROVIDER_FAILURE)
-            event.id.startsWith(ETN_CALL_EVENT_PREFIX) ||
-                event.id.startsWith(ETN_ACCELERATION_EVENT_PREFIX) ||
-                event.id.startsWith(ETN_MATURITY_EVENT_PREFIX) ->
-                setOf(ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION)
-            else -> emptySet()
-        }
+        return event.directListingRiskTags(stockId)
     }
 
     private fun listingFinalDispositionHintFor(
@@ -2024,14 +1885,7 @@ internal class SimulatorRuntime(
         ) {
             return null
         }
-        return event.directListingFinalDispositionHint(stockId) ?: when {
-            event.id.startsWith("etf_liquidation_approved:") ||
-                event.id.startsWith(ETN_CALL_EVENT_PREFIX) ||
-                event.id.startsWith(ETN_ACCELERATION_EVENT_PREFIX) ||
-                event.id.startsWith(ETN_MATURITY_EVENT_PREFIX) ->
-                ListingFinalDispositionType.CASH_LIQUIDATION
-            else -> null
-        }
+        return event.directListingFinalDispositionHint(stockId)
     }
 
     private fun listingLiquidationUnitPrice(
@@ -2138,7 +1992,7 @@ internal class SimulatorRuntime(
                 affectedSectors = setOf(stock.sector),
                 affectedStockIds = setOf(stock.id),
                 sourceLabel = "거래소 공개 규칙 · 게임 개선심사",
-                listingRecoveryConditions = decision.recoveryCondition?.let(::setOf),
+                listingRecoveryConditions = decision.recoveryCondition?.let(::setOf).orEmpty(),
             )
         }
         return decision.recoveryCondition
@@ -2587,7 +2441,7 @@ internal class SimulatorRuntime(
         )
         tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
             scheduledInstrumentTradingHalts =
-                tradingProtectionSnapshot.scheduledInstrumentTradingHalts.orEmpty() + (eventKey to halt),
+                tradingProtectionSnapshot.scheduledInstrumentTradingHalts + (eventKey to halt),
         )
         addProtectionNews(
             id = eventKey,
@@ -2635,7 +2489,7 @@ internal class SimulatorRuntime(
         at: Instant,
     ) {
         val halts = tradingProtectionSnapshot.instrumentTradingHalts.toMutableMap()
-        val scheduledHalts = tradingProtectionSnapshot.scheduledInstrumentTradingHalts.orEmpty().toMutableMap()
+        val scheduledHalts = tradingProtectionSnapshot.scheduledInstrumentTradingHalts.toMutableMap()
         val existing = halts[stock.id]
         val existingIsListingHalt = existing?.reason in LISTING_TRADING_HALT_REASONS
         val desiredListingHaltReason = if (current.status == ListingLifecycleStatus.DELISTING_SCHEDULED) {
@@ -2686,7 +2540,7 @@ internal class SimulatorRuntime(
         }
         if (newDisclosureEvents.isEmpty()) return
         val halts = tradingProtectionSnapshot.instrumentTradingHalts.toMutableMap()
-        val scheduledHalts = tradingProtectionSnapshot.scheduledInstrumentTradingHalts.orEmpty().toMutableMap()
+        val scheduledHalts = tradingProtectionSnapshot.scheduledInstrumentTradingHalts.toMutableMap()
         for (event in newDisclosureEvents) {
             for (stockId in event.affectedStockIds) {
                 val stock = stockById[stockId] ?: continue
@@ -2729,7 +2583,6 @@ internal class SimulatorRuntime(
         at: Instant,
     ) {
         val disposition = state.finalDisposition ?: return
-        terminatedInstrumentIds += stock.id
         pendingCorporateActions.removeAll { it.stockId == stock.id }
         pendingEtfReferenceReturns.remove(stock.id)
         pendingClosedEventLogReturns.remove(stock.id)
@@ -3061,7 +2914,7 @@ internal class SimulatorRuntime(
     /** ETN처럼 계약상 만기가 있는 상품은 사전 알림과 실제 상환을 캠페인 원장에 남긴다. */
     private fun processInstrumentLifecycle(at: Instant) {
         for (stock in stocks) {
-            if (stock.id in terminatedInstrumentIds) continue
+            if (listingLifecycleStates.getValue(stock.id).isTerminal) continue
             val maturity = instrumentMaturityDate(stock) ?: continue
             val localDate = marketDate(stock.market, at)
             val effectiveMaturityDate = nextTradingDateOnOrAfter(stock.market, maturity)
@@ -3132,179 +2985,6 @@ internal class SimulatorRuntime(
         )
     }
 
-    private fun redeemMaturedInstrument(
-        stock: StockDefinition,
-        maturity: LocalDate,
-        at: Instant,
-        earlyTerminationEvent: GameEvent? = null,
-    ) {
-        val isAcceleration = earlyTerminationEvent?.id?.startsWith(ETN_ACCELERATION_EVENT_PREFIX) == true
-        val isIssuerCall = earlyTerminationEvent?.id?.startsWith(ETN_CALL_EVENT_PREFIX) == true
-        val reasonLabel = when {
-            isAcceleration -> "발행사 가속상환"
-            isIssuerCall -> "발행사 선택적 가속상환"
-            else -> "계약상 만기상환"
-        }
-        val eventId = if (earlyTerminationEvent == null) {
-            "instrument-maturity-redemption:${stock.id}:$maturity"
-        } else {
-            "instrument-early-redemption:${stock.id}:${earlyTerminationEvent.id}"
-        }
-        if (newsEvents.any { it.id == eventId }) return
-
-        terminatedInstrumentIds += stock.id
-        pendingCorporateActions.removeAll { it.stockId == stock.id }
-        pendingEtfReferenceReturns.remove(stock.id)
-        pendingClosedEventLogReturns.remove(stock.id)
-
-        for (index in orders.indices) {
-            val order = orders[index]
-            if (order.stockId == stock.id && order.isOpen) {
-                orders[index] = order.copy(
-                    status = OrderStatus.CANCELLED,
-                    updatedAt = at,
-                    rejectionReason = "$reasonLabel 처리로 미체결 주문을 취소했습니다.",
-                )
-            }
-        }
-
-        val marketPrice = quotes.getValue(stock.id).price
-        val indicativeValueProxy = history.getValue(stock.id)
-            .filter { it.volume > 0L }
-            .groupBy { marketDate(stock.market, it.endTime) }
-            .toSortedMap()
-            .values
-            .map { it.last().close }
-            .takeLast(5)
-            .takeIf { it.isNotEmpty() }
-            ?.average()
-            ?: marketPrice
-        val redemptionFactor = when {
-            isAcceleration -> {
-                val recoveryBucket = (PriceEngine.stableHash64(earlyTerminationEvent.id) and Long.MAX_VALUE) % 41L
-                0.40 + recoveryBucket.toDouble() / 100.0
-            }
-            isIssuerCall -> 1.0
-            else -> 1.0
-        }
-        val redemptionPrice = MarketMicrostructure.roundNearest(
-            stock,
-            (indicativeValueProxy * redemptionFactor)
-                .coerceAtLeast(MarketMicrostructure.minimumPrice(stock.market)),
-        )
-        val holding = holdings[stock.id]
-        if (holding != null) {
-            settleListingCashDisposition(
-                stock = stock,
-                at = at,
-                disposition = ListingFinalDisposition(
-                    type = ListingFinalDispositionType.CASH_LIQUIDATION,
-                    effectiveOn = marketDate(stock.market, at),
-                    settlementDueOn = marketDate(stock.market, at),
-                    cashPerUnit = redemptionPrice,
-                    entitledQuantity = holding.quantity,
-                    entitledCostBasis = holding.costBasis,
-                ),
-                reason = reasonLabel,
-            )
-        }
-
-        synchronizeTerminatedListingLifecycle(stock, at, redemptionPrice, reasonLabel)
-
-        newsEvents += GameEvent(
-            id = eventId,
-            title = "${stock.name} $reasonLabel 완료",
-            description = if (holding == null) {
-                if (earlyTerminationEvent == null) {
-                    "$maturity 계약상 만기가 도래해 거래를 종료했습니다. 보유 잔고는 없었습니다."
-                } else {
-                    "캠페인 $reasonLabel 조건이 충족돼 거래를 종료했습니다. 보유 잔고는 없었습니다."
-                }
-            } else {
-                if (earlyTerminationEvent == null) {
-                    "$maturity 계약상 만기가 도래해 ${holding.quantity}${stock.quantityUnit}를 마지막 게임 지표가치로 자동상환하고 양도손익 원장에 반영했습니다."
-                } else {
-                    "캠페인 $reasonLabel 시나리오에 따라 ${holding.quantity}${stock.quantityUnit}를 지표가치 대용 상환가격으로 처분하고 양도손익 원장에 반영했습니다. 실제 발행조건의 확정 상환액을 예측하는 값은 아닙니다."
-                }
-            },
-            scope = EventScope.STOCK,
-            type = EventType.FUND_OPERATION,
-            severity = EventSeverity.MAJOR,
-            impact = GameEventImpact(direction = ImpactDirection.NEUTRAL),
-            startsAt = at,
-            durationHours = 720,
-            affectedMarkets = setOf(stock.market),
-            affectedSectors = setOf(stock.sector),
-            affectedStockIds = setOf(stock.id),
-            sourceLabel = if (earlyTerminationEvent == null) {
-                "공식 상품조건 기반 캠페인 일정"
-            } else {
-                "공식 위험공시 기반 캠페인 시나리오"
-            },
-        )
-    }
-
-    private fun synchronizeTerminatedListingLifecycle(
-        stock: StockDefinition,
-        at: Instant,
-        redemptionPrice: Double,
-        reasonLabel: String,
-    ) {
-        val previous = listingLifecycleStates.getValue(stock.id)
-        if (previous.status == ListingLifecycleStatus.TERMINATED) return
-        val tradingDate = marketDate(stock.market, at)
-        val disposition = ListingFinalDisposition(
-            type = ListingFinalDispositionType.CASH_LIQUIDATION,
-            effectiveOn = tradingDate,
-            settlementDueOn = tradingDate,
-            cashPerUnit = redemptionPrice,
-        )
-        val sequence = previous.ledgerSequence + 1L
-        val next = previous.copy(
-            status = ListingLifecycleStatus.TERMINATED,
-            activeReason = ListingLifecycleReason.ETN_MATURITY_OR_EARLY_REDEMPTION,
-            designatedOn = previous.designatedOn ?: tradingDate,
-            cureDeadline = null,
-            reviewDeadline = null,
-            scheduledDelistingOn = tradingDate,
-            settlementDueOn = tradingDate,
-            tradingAllowedUntilDelisting = false,
-            finalDisposition = disposition,
-            lastEvaluatedTradingDate = tradingDate,
-            ledgerSequence = sequence,
-        )
-        val ledgerEvent = ListingLifecycleLedgerEvent(
-            id = "${stock.id}:$tradingDate:$sequence:${ListingLifecycleEventKind.TERMINATED.name}",
-            sequence = sequence,
-            stockId = stock.id,
-            tradingDate = tradingDate,
-            kind = ListingLifecycleEventKind.TERMINATED,
-            fromStatus = previous.status,
-            toStatus = ListingLifecycleStatus.TERMINATED,
-            reason = ListingLifecycleReason.ETN_MATURITY_OR_EARLY_REDEMPTION,
-            level = ListingNoticeLevel.INFO,
-            title = "상품 종료",
-            summary = "$reasonLabel 처리가 끝나 상장 상품 생명주기를 종료했습니다.",
-            disposition = disposition,
-        )
-        listingLifecycleStates[stock.id] = next
-        listingLifecycleLedger += ledgerEvent
-
-        val existingHalt = tradingProtectionSnapshot.instrumentTradingHalts[stock.id]
-        if (existingHalt?.status == TradingHaltStatus.ACTIVE) {
-            tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
-                instrumentTradingHalts = tradingProtectionSnapshot.instrumentTradingHalts +
-                    (
-                        stock.id to TradingProtectionEngine.releaseInstrumentTradingHalt(
-                            existingHalt,
-                            at,
-                            "$reasonLabel 처리로 상장 상품이 종료됐습니다.",
-                        )
-                        ),
-            )
-        }
-    }
-
     private fun instrumentMaturityDate(stock: StockDefinition): LocalDate? =
         stock.identityProfile?.maturityDate?.let(LocalDate::parse)
 
@@ -3316,8 +2996,8 @@ internal class SimulatorRuntime(
         return result
     }
 
-    private fun isInstrumentMatured(stock: StockDefinition, at: Instant): Boolean =
-        stock.id in terminatedInstrumentIds || listingLifecycleStates[stock.id]?.isTerminal == true
+    private fun isInstrumentMatured(stock: StockDefinition, _at: Instant): Boolean =
+        listingLifecycleStates[stock.id]?.isTerminal == true
 
     private fun validateCorporateActionState(
         pending: List<PendingCorporateAction>,
@@ -3343,7 +3023,7 @@ internal class SimulatorRuntime(
                 maxOf(0.02, action.postActionPrice * 0.02) &&
                 ((action.kind == CorporateActionKind.FORWARD_SPLIT && action.quantityMultiplier > 1.0) ||
                     (action.kind == CorporateActionKind.REVERSE_SPLIT && action.quantityMultiplier in 0.0..<1.0)) &&
-                (action.accountingSequence == null || action.accountingSequence > 0L)
+                action.accountingSequence > 0L
         }) { "적용 기업행동 값 또는 시간 순서가 올바르지 않습니다." }
         require(applied.zipWithNext().all { (left, right) -> left.effectiveAt <= right.effectiveAt }) {
             "기업행동 원장의 시간 순서가 올바르지 않습니다."
@@ -4552,7 +4232,7 @@ internal class SimulatorRuntime(
                 runtimeTradingBlock(halt.startedAt, halt.scheduledReleaseAt ?: to, from, to)?.let(blocks::add)
             }
         }
-        tradingProtectionSnapshot.scheduledInstrumentTradingHalts.orEmpty().values
+        tradingProtectionSnapshot.scheduledInstrumentTradingHalts.values
             .asSequence()
             .filter { halt -> halt.stockId == stock.id && halt.status == TradingHaltStatus.ACTIVE }
             .forEach { halt ->
@@ -4699,7 +4379,7 @@ internal class SimulatorRuntime(
         }
 
         val halts = tradingProtectionSnapshot.instrumentTradingHalts.toMutableMap()
-        val scheduledHalts = tradingProtectionSnapshot.scheduledInstrumentTradingHalts.orEmpty().toMutableMap()
+        val scheduledHalts = tradingProtectionSnapshot.scheduledInstrumentTradingHalts.toMutableMap()
         val releasedStockIds = linkedSetOf<String>()
         for ((stockId, halt) in halts.toMap()) {
             if (halt.status == TradingHaltStatus.ACTIVE &&
@@ -4809,21 +4489,6 @@ internal class SimulatorRuntime(
             scheduledInstrumentTradingHalts = scheduledHalts,
             usMarketWideCircuitBreaker = usMwcb,
             usLuldStates = luldStates,
-        )
-        syncLegacyUsCircuitBreaker(usMwcb)
-    }
-
-    private fun syncLegacyUsCircuitBreaker(state: com.amond.kmpbook.domain.model.UsMwcbState) {
-        usCircuitBreakerState = UsCircuitBreakerState(
-            tradingDate = state.tradingDate,
-            triggeredLevels = state.triggeredLevels.mapTo(linkedSetOf()) {
-                when (it) {
-                    UsMwcbLevel.LEVEL_1 -> 1
-                    UsMwcbLevel.LEVEL_2 -> 2
-                    UsMwcbLevel.LEVEL_3 -> 3
-                }
-            },
-            haltedForDay = state.phase == UsMwcbPhase.CLOSED_FOR_DAY,
         )
     }
 
@@ -5235,7 +4900,6 @@ internal class SimulatorRuntime(
             }
         }
         tradingProtectionSnapshot = tradingProtectionSnapshot.copy(usMarketWideCircuitBreaker = state)
-        syncLegacyUsCircuitBreaker(state)
     }
 
     private fun evaluateUsLuldProtections(
@@ -5680,24 +5344,6 @@ internal class SimulatorRuntime(
         )
     }
 
-    private fun prepareUsCircuitBreaker(time: Instant) {
-        val local = GameCalendar.marketLocalDateTime(Market.NYSE, time)
-        val hasCoreTrading = Market.entries.filter(Market::isUnitedStates).any {
-            regularTradingFraction(it, time, time + 1.hours) > 0.0
-        }
-        val sp500 = marketIndices[MarketIndexId.SP_500]
-        val decision = UsCircuitBreakerPolicy.evaluate(
-            previous = usCircuitBreakerState,
-            tradingDate = local.date,
-            localTime = local.time,
-            sp500SessionDate = sp500?.sessionDate,
-            sp500ChangeRate = sp500?.changeRate ?: 0.0,
-            hasCoreTrading = hasCoreTrading,
-        )
-        usCircuitBreakerState = decision.state
-        macro = macro.copy(usCircuitBreakerLevel = decision.levelThisHour)
-    }
-
     private fun updateBenchmark(
         bars: Map<String, PriceBar>,
         fractions: Map<Market, Double>,
@@ -5856,25 +5502,12 @@ internal class SimulatorRuntime(
         taxExchangeRatesByTradeId.clear()
         pendingTaxSettlementTradeIds.clear()
         val savedRates = state.taxExchangeRatesByTradeId
-        if (savedRates == null) {
-            require(state.pendingTaxSettlementTradeIds.isNullOrEmpty()) {
-                "구형 저장에는 미결제 세무 환율 ID가 있을 수 없습니다."
-            }
-            for (trade in trades) {
-                taxExchangeRatesByTradeId[trade.id] = if (trade.currency == Currency.KRW) {
-                    1.0
-                } else {
-                    costsByTrade.getValue(trade.id).exchangeRateToKrw
-                }
-            }
-        } else {
-            require(savedRates.keys == tradeIds.toSet()) { "모든 체결의 세무 환율이 필요합니다." }
-            require(savedRates.values.all { it.isFinite() && it > 0.0 }) {
-                "세무 환율은 유한한 양수여야 합니다."
-            }
-            taxExchangeRatesByTradeId.putAll(savedRates)
-            pendingTaxSettlementTradeIds += state.pendingTaxSettlementTradeIds.orEmpty()
+        require(savedRates.keys == tradeIds.toSet()) { "모든 체결의 세무 환율이 필요합니다." }
+        require(savedRates.values.all { it.isFinite() && it > 0.0 }) {
+            "세무 환율은 유한한 양수여야 합니다."
         }
+        taxExchangeRatesByTradeId.putAll(savedRates)
+        pendingTaxSettlementTradeIds += state.pendingTaxSettlementTradeIds
 
         val tradesById = trades.associateBy(Trade::id)
         require(pendingTaxSettlementTradeIds.all { tradeId ->
@@ -5899,10 +5532,8 @@ internal class SimulatorRuntime(
         var rebuiltBook = FifoCostBasisBook()
         val rebuiltGains = mutableListOf<RealizedGainRecord>()
         data class ReplayEntry(
-            val at: Instant,
             val priority: Int,
-            val fallbackSequence: Int,
-            val accountingSequence: Long?,
+            val accountingSequence: Long,
             val id: String,
         )
         val actionsById = corporateActionLedger.associateBy(CorporateActionRecord::id)
@@ -5910,50 +5541,34 @@ internal class SimulatorRuntime(
         val rocById = dividends.filter { it.rocAmount > 0.0 }.associateBy(DividendLedgerEntry::id)
         val dividendIndexById = dividends.mapIndexed { index, dividend -> dividend.id to index }.toMap()
         val replayEntries = buildList {
-            corporateActionLedger.forEachIndexed { index, action ->
+            corporateActionLedger.forEach { action ->
                 add(
                     ReplayEntry(
-                        action.effectiveAt,
                         priority = 0,
-                        fallbackSequence = index,
                         accountingSequence = action.accountingSequence,
                         id = action.id,
                     ),
                 )
             }
-            trades.forEachIndexed { index, trade ->
+            trades.forEach { trade ->
                 add(
                     ReplayEntry(
-                        trade.executedAt,
                         priority = 1,
-                        fallbackSequence = index,
                         accountingSequence = trade.accountingSequence,
                         id = trade.id,
                     ),
                 )
             }
-            dividends.filter { it.rocAmount > 0.0 }.forEachIndexed { index, dividend ->
+            dividends.filter { it.rocAmount > 0.0 }.forEach { dividend ->
                 add(
                     ReplayEntry(
-                        dividend.paidAt,
                         priority = 2,
-                        fallbackSequence = index,
                         accountingSequence = dividend.accountingSequence,
                         id = dividend.id,
                     ),
                 )
             }
-        }.sortedWith { left, right ->
-            val timeOrder = left.at.compareTo(right.at)
-            if (timeOrder != 0) {
-                timeOrder
-            } else if (left.accountingSequence != null && right.accountingSequence != null) {
-                left.accountingSequence.compareTo(right.accountingSequence)
-            } else {
-                val typeOrder = left.priority.compareTo(right.priority)
-                if (typeOrder != 0) typeOrder else left.fallbackSequence.compareTo(right.fallbackSequence)
-            }
-        }
+        }.sortedBy(ReplayEntry::accountingSequence)
 
         for (entry in replayEntries) {
             when (entry.priority) {
@@ -6068,7 +5683,7 @@ internal class SimulatorRuntime(
         }
         val yearDividends = dividends.filter { gameDate(it.paidAt).year == year }
         val rocGains = yearDividends.mapNotNull { entry ->
-            val gain = entry.excessReturnOfCapitalGainKrw ?: 0L
+            val gain = entry.excessReturnOfCapitalGainKrw
             if (gain <= 0L) return@mapNotNull null
             val stock = stockById[entry.stockId] ?: return@mapNotNull null
             RealizedStockGain(
@@ -6273,14 +5888,6 @@ internal class SimulatorRuntime(
         GameCalendar.marketLocalDateTime(market, time).date
 
     private fun gameDate(time: Instant): LocalDate = GameCalendar.campaignDate(time)
-
-    private fun normalizeFxState(value: MacroEnvironment): MacroEnvironment {
-        if (value.fxRatesToKrw != null && value.previousFxRatesToKrw != null) return value
-        return value.copy(
-            fxRatesToKrw = value.fxRatesToKrw ?: initialFxRates(value.usdKrw),
-            previousFxRatesToKrw = value.previousFxRatesToKrw ?: initialFxRates(value.previousUsdKrw),
-        )
-    }
 
     private fun money(amount: Double, currency: Currency): MoneyAmount =
         MoneyRoundingPolicy.MINOR_UNIT_HALF_UP.fromMajorUnits(amount.coerceAtLeast(0.0), currency)

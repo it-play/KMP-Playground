@@ -30,7 +30,7 @@ data class MacroEnvironment(
     val growthSurprise: Double = 0.0,
     val usdKrw: Double = 1_350.0,
     val previousUsdKrw: Double = usdKrw,
-    /** 다중통화 ETF NAV용 원화 환율. 구형 저장은 null이며 USD 필드로 안전하게 fallback한다. */
+    /** 다중통화 ETF NAV용 원화 환율. 생략한 순수 엔진 입력은 USD 필드로 fallback한다. */
     val fxRatesToKrw: Map<ReferenceCurrency, Double>? = null,
     val previousFxRatesToKrw: Map<ReferenceCurrency, Double>? = null,
     val riskSentiment: Double = 0.0,
@@ -66,8 +66,8 @@ data class MacroEnvironment(
         return rates?.get(currency) ?: if (currency == ReferenceCurrency.USD) {
             if (previous) previousUsdKrw else usdKrw
         } else {
-            // A v1 save has no non-USD basket. Holding the missing cross-rate flat avoids
-            // inventing a restore-time jump until the runtime seeds the current FX state.
+            // A standalone engine input may omit a non-USD basket. Hold the missing cross-rate
+            // flat instead of inventing currency P&L.
             1.0
         }
     }
@@ -162,7 +162,7 @@ data class PriceGenerationInput(
 
         fun defaultFxSensitivity(stock: StockDefinition): Double = when {
             stock.etfProfile?.fxProfile != null -> 0.0
-            stock.etfProfile != null -> stock.etfProfile.legacyUsdKrwSensitivity
+            stock.etfProfile != null -> stock.etfProfile.usdKrwSensitivity
             stock.market.isUnitedStates -> -0.10
             stock.sector in EXPORT_HEAVY_SECTORS -> 0.25
             stock.sector in IMPORT_HEAVY_SECTORS -> -0.15
@@ -434,7 +434,7 @@ class PriceEngine(private val seed: Long) {
         val ratesAndInflation = leverage * instrumentRateReturn(stock, macro) * referenceTradingFraction
         val growthAndSentiment = leverage * instrumentGrowthAndCreditReturn(stock, macro) *
             referenceTradingFraction
-        val fx = structuredFxReturn(stock, macro, profile.legacyUsdKrwSensitivity) * fxTradingFraction
+        val fx = structuredFxReturn(stock, macro, profile.usdKrwSensitivity) * fxTradingFraction
         val event = eventLogReturn(stock, eventImpulse, referenceTradingFraction, fxTradingFraction)
         // Expense and hedge-cost accrual belongs to the listing's regular-session NAV
         // path. Including it here would charge a foreign-market ETF once while its
@@ -464,7 +464,7 @@ class PriceEngine(private val seed: Long) {
     private fun structuredFxReturn(
         stock: StockDefinition,
         macro: MacroEnvironment,
-        legacySensitivity: Double,
+        fallbackUsdKrwSensitivity: Double,
     ): Double {
         val listingCurrency = when (stock.currency) {
             Currency.KRW -> ReferenceCurrency.KRW
@@ -483,7 +483,7 @@ class PriceEngine(private val seed: Long) {
                 )
                 return stock.behavior.referenceCurrencySensitivity * (referenceReturn - listingReturn)
             }
-            return ln(macro.usdKrw / macro.previousUsdKrw) * legacySensitivity
+            return ln(macro.usdKrw / macro.previousUsdKrw) * fallbackUsdKrwSensitivity
         }
         return fxProfile.legs.sumOf { leg ->
             val legReturn = ln(

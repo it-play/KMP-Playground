@@ -4,6 +4,7 @@ import com.amond.kmpbook.domain.model.InstrumentTradingHalt
 import com.amond.kmpbook.domain.model.InstrumentType
 import com.amond.kmpbook.domain.model.InvestmentAlertDesignation
 import com.amond.kmpbook.domain.model.InvestmentAlertLevel
+import com.amond.kmpbook.domain.model.InvestmentAlertReleaseRule
 import com.amond.kmpbook.domain.model.InvestmentAlertStatus
 import com.amond.kmpbook.domain.model.KrxCircuitBreakerLevel
 import com.amond.kmpbook.domain.model.KrxCircuitBreakerPhase
@@ -147,6 +148,7 @@ class ProtectionUiProjectionTest {
             designatedAt = now,
             designatedOn = date,
             releaseReviewWindow = TradingDayWindow(date, LocalDate(2026, 8, 14)),
+            releaseRule = InvestmentAlertReleaseRule.DANGER_60_100,
         )
 
         val projection = buildProtectionUiProjection(
@@ -180,6 +182,7 @@ class ProtectionUiProjectionTest {
                 LocalDate(2026, 8, 11),
                 LocalDate(2026, 9, 30),
             ),
+            releaseRule = InvestmentAlertReleaseRule.DANGER_60_100,
             priorLevelUntilEffective = InvestmentAlertLevel.WARNING,
         )
 
@@ -224,6 +227,7 @@ class ProtectionUiProjectionTest {
                 LocalDate(2026, 8, 11),
                 LocalDate(2026, 9, 30),
             ),
+            releaseRule = InvestmentAlertReleaseRule.WARNING_60_100,
         )
 
         val beforeEffective = buildProtectionUiProjection(
@@ -264,6 +268,7 @@ class ProtectionUiProjectionTest {
             designatedAt = Instant.parse("2026-08-01T00:00:00Z"),
             designatedOn = LocalDate(2026, 8, 3),
             releaseReviewWindow = TradingDayWindow(date, LocalDate(2026, 9, 30)),
+            releaseRule = InvestmentAlertReleaseRule.WARNING_60_100,
             status = InvestmentAlertStatus.RELEASED,
             releasedAt = now,
             releasedOn = date,
@@ -310,6 +315,7 @@ class ProtectionUiProjectionTest {
             designatedAt = Instant.parse("2026-08-09T06:00:00Z"),
             designatedOn = date,
             releaseReviewWindow = TradingDayWindow(date, LocalDate(2026, 9, 30)),
+            releaseRule = InvestmentAlertReleaseRule.WARNING_60_100,
         )
 
         val projection = buildProtectionUiProjection(
@@ -471,6 +477,7 @@ class ProtectionUiProjectionTest {
             designatedAt = now - 30.minutes,
             designatedOn = date,
             releaseReviewWindow = TradingDayWindow(date, LocalDate(2026, 9, 30)),
+            releaseRule = InvestmentAlertReleaseRule.DANGER_60_100,
         )
         val staleLuld = UsLuldState(
             stockId = stockId,

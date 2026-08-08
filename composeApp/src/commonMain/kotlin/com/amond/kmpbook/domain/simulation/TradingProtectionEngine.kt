@@ -925,7 +925,7 @@ object TradingProtectionEngine {
         if (stockId != null) {
             val effectiveHalts = buildList {
                 snapshot.instrumentTradingHalts[stockId]?.let(::add)
-                snapshot.scheduledInstrumentTradingHalts.orEmpty().values
+                snapshot.scheduledInstrumentTradingHalts.values
                     .filterTo(this) { it.stockId == stockId }
             }.distinct().filter { isInstrumentHaltActive(it, at) }
             for (halt in effectiveHalts) {

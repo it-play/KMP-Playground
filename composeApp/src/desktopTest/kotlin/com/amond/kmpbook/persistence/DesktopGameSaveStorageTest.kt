@@ -5,6 +5,7 @@ import com.amond.kmpbook.domain.model.Currency
 import com.amond.kmpbook.domain.model.EventScope
 import com.amond.kmpbook.domain.model.EventSeverity
 import com.amond.kmpbook.domain.model.EventType
+import com.amond.kmpbook.domain.model.EtfExposureRegion
 import com.amond.kmpbook.domain.model.GameEvent
 import com.amond.kmpbook.domain.model.GameEventImpact
 import com.amond.kmpbook.domain.model.GamePhase
@@ -13,6 +14,7 @@ import com.amond.kmpbook.domain.model.ImpactDirection
 import com.amond.kmpbook.domain.model.InstrumentTradingHalt
 import com.amond.kmpbook.domain.model.InvestmentAlertDesignation
 import com.amond.kmpbook.domain.model.InvestmentAlertLevel
+import com.amond.kmpbook.domain.model.InvestmentAlertReleaseRule
 import com.amond.kmpbook.domain.model.KrxCircuitBreakerState
 import com.amond.kmpbook.domain.model.KrxSidecarState
 import com.amond.kmpbook.domain.model.KrxViState
@@ -32,6 +34,7 @@ import com.amond.kmpbook.domain.model.OrderType
 import com.amond.kmpbook.domain.model.PortfolioSnapshot
 import com.amond.kmpbook.domain.model.PriceBar
 import com.amond.kmpbook.domain.model.Quote
+import com.amond.kmpbook.domain.model.ReferenceCurrency
 import com.amond.kmpbook.domain.model.Screen
 import com.amond.kmpbook.domain.model.Sector
 import com.amond.kmpbook.domain.model.StockDefinition
@@ -46,6 +49,7 @@ import com.amond.kmpbook.domain.model.UsLuldTier
 import com.amond.kmpbook.domain.simulation.EventEngineSnapshot
 import com.amond.kmpbook.domain.simulation.ListingLifecycleEngine
 import com.amond.kmpbook.domain.simulation.MacroEnvironment
+import com.amond.kmpbook.domain.simulation.MarketIndexEngine
 import com.amond.kmpbook.domain.simulation.OrderBookSnapshot
 import com.amond.kmpbook.domain.simulation.TradingProtectionEngine
 import com.amond.kmpbook.domain.tax.AnnualStockTaxCalculator
@@ -74,6 +78,7 @@ import com.amond.kmpbook.presentation.SimulatorUiState
 import com.amond.kmpbook.presentation.SimulatorViewModel
 import com.amond.kmpbook.presentation.TaxPaymentNotice
 import com.amond.kmpbook.presentation.TransactionCostRecord
+import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.LocalDate
@@ -92,8 +97,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
 
 class DesktopGameSaveStorageTest {
@@ -184,7 +189,6 @@ class DesktopGameSaveStorageTest {
         assertEquals(original.macro.sectorHourlyReturns, loaded.state.macro.sectorHourlyReturns)
         assertEquals(original.listingLifecycleStates, loaded.state.listingLifecycleStates)
         assertEquals(original.listingLifecycleLedger, loaded.state.listingLifecycleLedger)
-        assertEquals(original.terminatedInstrumentIds, loaded.state.terminatedInstrumentIds)
         assertEquals(original.tradingProtectionSnapshot, loaded.state.tradingProtectionSnapshot)
         assertEquals(original.dailyTradingSurveillance, loaded.state.dailyTradingSurveillance)
 
@@ -195,30 +199,64 @@ class DesktopGameSaveStorageTest {
     }
 
     @Test
-    fun versionOneEnvelopeMigratesToCurrentSchemaWithAbsentNullableState(): Unit = runBlocking {
-        val file = temporaryDirectory.resolve("v1-savegame.json")
+    fun versionOneAndTwoEnvelopesAreRejectedAsUnsupported(): Unit = runBlocking {
+        val file = temporaryDirectory.resolve("old-savegame.json")
         val storage = GameSaveStorage(file.toString())
         assertIs<GameSaveResult.Success>(storage.save(richState()))
+        val currentJson = file.readText(StandardCharsets.UTF_8)
 
-        val root = JsonParser.parseString(file.readText(StandardCharsets.UTF_8)).asJsonObject
-        root.addProperty("schemaVersion", 1)
-        val state = root.getAsJsonObject("state")
+        listOf(1, 2).forEach { version ->
+            val root = JsonParser.parseString(currentJson).asJsonObject
+            root.addProperty("schemaVersion", version)
+            file.writeText(root.toString(), StandardCharsets.UTF_8)
+
+            val failure = assertIs<GameLoadResult.Failure>(storage.load())
+            assertEquals(GameSaveErrorCode.UNSUPPORTED_SCHEMA, failure.error.code)
+            assertTrue(failure.error.message.contains(version.toString()))
+        }
+    }
+
+    @Test
+    fun currentSchemaRejectsMissingRequiredStateFields(): Unit = runBlocking {
+        val file = temporaryDirectory.resolve("incomplete-current-savegame.json")
+        val storage = GameSaveStorage(file.toString())
+        assertIs<GameSaveResult.Success>(storage.save(richState()))
+        val currentJson = file.readText(StandardCharsets.UTF_8)
+
         listOf(
-            "terminatedInstrumentIds",
+            "options",
+            "pendingEtfReferenceReturns",
+            "marketIndices",
+            "taxExchangeRatesByTradeId",
             "listingLifecycleStates",
-            "listingLifecycleLedger",
             "tradingProtectionSnapshot",
-            "dailyTradingSurveillance",
-        ).forEach(state::remove)
-        file.writeText(root.toString(), StandardCharsets.UTF_8)
+        ).forEach { field ->
+            val root = JsonParser.parseString(currentJson).asJsonObject
+            root.getAsJsonObject("state").remove(field)
+            file.writeText(root.toString(), StandardCharsets.UTF_8)
 
-        val loaded = assertIs<GameLoadResult.Success>(storage.load())
-        assertEquals(CURRENT_GAME_SAVE_SCHEMA_VERSION, loaded.metadata.schemaVersion)
-        assertNull(loaded.state.terminatedInstrumentIds)
-        assertNull(loaded.state.listingLifecycleStates)
-        assertNull(loaded.state.listingLifecycleLedger)
-        assertNull(loaded.state.tradingProtectionSnapshot)
-        assertNull(loaded.state.dailyTradingSurveillance)
+            val failure = assertIs<GameLoadResult.Failure>(storage.load())
+            assertEquals(GameSaveErrorCode.CORRUPTED_FILE, failure.error.code)
+            assertTrue(failure.error.message.contains(field))
+        }
+    }
+
+    @Test
+    fun currentSchemaRejectsRemovedLegacyStateFields(): Unit = runBlocking {
+        val file = temporaryDirectory.resolve("legacy-fields-current-savegame.json")
+        val storage = GameSaveStorage(file.toString())
+        assertIs<GameSaveResult.Success>(storage.save(richState()))
+        val currentJson = file.readText(StandardCharsets.UTF_8)
+
+        listOf("usCircuitBreakerState", "terminatedInstrumentIds").forEach { field ->
+            val root = JsonParser.parseString(currentJson).asJsonObject
+            root.getAsJsonObject("state").add(field, JsonObject())
+            file.writeText(root.toString(), StandardCharsets.UTF_8)
+
+            val failure = assertIs<GameLoadResult.Failure>(storage.load())
+            assertEquals(GameSaveErrorCode.CORRUPTED_FILE, failure.error.code)
+            assertTrue(failure.error.message.contains(field))
+        }
     }
 
     @Test
@@ -254,7 +292,7 @@ class DesktopGameSaveStorageTest {
     }
 
     @Test
-    fun zeroNegativeAndFutureSchemasAreRejectedAsUnsupported(): Unit = runBlocking {
+    fun otherNonCurrentSchemasAreRejectedAsUnsupported(): Unit = runBlocking {
         val file = temporaryDirectory.resolve("savegame.json")
         val storage = GameSaveStorage(file.toString())
         assertIs<GameSaveResult.Success>(storage.save(richState()))
@@ -278,21 +316,20 @@ class DesktopGameSaveStorageTest {
         val file = temporaryDirectory.resolve("invalid-listing-savegame.json")
         val storage = GameSaveStorage(file.toString())
         val valid = richStateWithLifecycleAndProtection()
-        val stockId = valid.listingLifecycleStates.orEmpty().keys.first()
-        val listing = valid.listingLifecycleStates.orEmpty().getValue(stockId)
-        val event = valid.listingLifecycleLedger.orEmpty().single()
+        val stockId = valid.listingLifecycleStates.keys.first()
+        val listing = valid.listingLifecycleStates.getValue(stockId)
+        val event = valid.listingLifecycleLedger.single()
         val malformedStates = listOf(
             valid.copy(
-                listingLifecycleStates = valid.listingLifecycleStates.orEmpty() - stockId +
+                listingLifecycleStates = valid.listingLifecycleStates - stockId +
                     ("NASDAQ:WRONG" to listing),
             ),
             valid.copy(
-                listingLifecycleStates = valid.listingLifecycleStates.orEmpty() +
+                listingLifecycleStates = valid.listingLifecycleStates +
                     (stockId to listing.copy(lastEvaluatedTradingDate = LocalDate(2041, 1, 1))),
             ),
-            valid.copy(terminatedInstrumentIds = setOf(stockId)),
             valid.copy(
-                listingLifecycleStates = valid.listingLifecycleStates.orEmpty() +
+                listingLifecycleStates = valid.listingLifecycleStates +
                     (stockId to listing.copy(
                         status = ListingLifecycleStatus.DELISTED,
                         finalDisposition = ListingFinalDisposition(
@@ -318,7 +355,7 @@ class DesktopGameSaveStorageTest {
         val file = temporaryDirectory.resolve("invalid-protection-savegame.json")
         val storage = GameSaveStorage(file.toString())
         val valid = richStateWithLifecycleAndProtection()
-        val protection = requireNotNull(valid.tradingProtectionSnapshot)
+        val protection = valid.tradingProtectionSnapshot
         val krxCircuitBreaker = protection.krxCircuitBreakers.getValue(Market.KOSPI)
         val luldEntry = protection.usLuldStates.entries.single()
         val mwcb = requireNotNull(protection.usMarketWideCircuitBreaker)
@@ -392,8 +429,13 @@ class DesktopGameSaveStorageTest {
             priceHistory = initial.priceHistory.mapValues { (_, bars) ->
                 List(SimulatorRuntime.MAX_RECENT_BARS) { bars.single() }
             },
-            marketIndexHistory = initial.marketIndexHistory?.mapValues { (_, values) ->
-                List(SimulatorRuntime.MAX_INDEX_BARS) { values.single() }
+            marketIndexHistory = initial.marketIndexHistory.mapValues { (_, values) ->
+                List(SimulatorRuntime.MAX_INDEX_BARS) { index ->
+                    values.single().copy(
+                        timestamp = initial.currentTime -
+                            (SimulatorRuntime.MAX_INDEX_BARS - index - 1).hours,
+                    )
+                }
             },
         )
 
@@ -402,7 +444,7 @@ class DesktopGameSaveStorageTest {
         val loaded = assertIs<GameLoadResult.Success>(storage.load()).state
         assertEquals(StockCatalog.all.size, loaded.stocks.size)
         assertTrue(loaded.priceHistory.values.all { it.size == SimulatorRuntime.MAX_RECENT_BARS })
-        assertTrue(loaded.marketIndexHistory.orEmpty().values.all { it.size == SimulatorRuntime.MAX_INDEX_BARS })
+        assertTrue(loaded.marketIndexHistory.values.all { it.size == SimulatorRuntime.MAX_INDEX_BARS })
     }
 
     private fun richState(): SimulatorUiState {
@@ -509,6 +551,7 @@ class DesktopGameSaveStorageTest {
             realizedProfitKrw = 150_000.0,
             cumulativeCommissionKrw = 12_000.0,
             cumulativeTaxKrw = 30_000.0,
+            holdingCostBasisKrw = mapOf(usStock.id to holding.costBasis * 1_350.0),
         )
         val annualLedger = AnnualStockTaxCalculator().calculate(
             AnnualStockTaxRequest(
@@ -549,6 +592,43 @@ class DesktopGameSaveStorageTest {
                 w8BenValid = true,
             ),
         )
+        val marketIndices = MarketIndexEngine().initialSnapshots(now)
+        val listingLifecycleStates = listOf(usStock, krStock).associate { stock ->
+            stock.id to ListingLifecycleEngine().initialState(stock)
+        }
+        val krxMarkets = listOf(Market.KOSPI, Market.KOSDAQ)
+        val usDate = LocalDate(2026, 8, 6)
+        val currentProtection = TradingProtectionSnapshot(
+            krxCircuitBreakers = krxMarkets.associateWith { market ->
+                TradingProtectionEngine.initialKrxCircuitBreaker(market, LocalDate(2026, 8, 7))
+            },
+            krxSidecars = krxMarkets.associateWith { market ->
+                TradingProtectionEngine.initialKrxSidecar(market, LocalDate(2026, 8, 7))
+            },
+            krxVolatilityInterruptions = mapOf(
+                krStock.id to TradingProtectionEngine.initialKrxVi(krStock.id, krStock.market),
+            ),
+            usMarketWideCircuitBreaker = TradingProtectionEngine.initialUsMwcb(usDate, now),
+            usLuldStates = mapOf(
+                usStock.id to TradingProtectionEngine.initialUsLuld(
+                    stockId = usStock.id,
+                    primaryMarket = usStock.market,
+                    tradingDate = usDate,
+                    tier = UsLuldTier.TIER_1,
+                    previousClose = quote.previousClose,
+                    referencePrice = quote.price,
+                    referencePriceEffectiveAt = now,
+                    easternTime = LocalTime(10, 0),
+                ),
+            ),
+        )
+        val fxRates = ReferenceCurrency.entries.associateWith { currency ->
+            when (currency) {
+                ReferenceCurrency.KRW -> 1.0
+                ReferenceCurrency.USD -> 1_350.0
+                else -> 1_000.0
+            }
+        }
 
         return SimulatorUiState(
             options = NewGameOptions(
@@ -594,6 +674,7 @@ class DesktopGameSaveStorageTest {
                     currency = Currency.USD,
                     executedAt = now,
                     commission = 0.25,
+                    accountingSequence = 1L,
                 ),
             ),
             selectedOrderBook = OrderBookSnapshot(
@@ -620,6 +701,9 @@ class DesktopGameSaveStorageTest {
                 volatilityRegime = 1.1,
                 marketHourlyReturns = mapOf(Market.NASDAQ to 0.004, Market.KOSPI to 0.001),
                 sectorHourlyReturns = mapOf(Sector.INFORMATION_TECHNOLOGY to 0.006),
+                fxRatesToKrw = fxRates,
+                previousFxRatesToKrw = fxRates,
+                regionalEtfHourlyReturns = EtfExposureRegion.entries.associateWith { 0.0 },
                 marketChangeFromPreviousClose = mapOf(Market.NASDAQ to 0.02),
             ),
             activeEvents = listOf(event),
@@ -682,6 +766,10 @@ class DesktopGameSaveStorageTest {
                     netAmount = 85.0,
                     exchangeRateToKrw = 1_350.0,
                     taxBreakdown = dividendTax.breakdown,
+                    taxableIncomeAmount = 100.0,
+                    returnOfCapitalAmount = 0.0,
+                    excessReturnOfCapitalGainKrw = 0L,
+                    accountingSequence = 2L,
                 ),
             ),
             foreignExchangeLedger = listOf(
@@ -720,6 +808,19 @@ class DesktopGameSaveStorageTest {
             nextSequence = 88L,
             isAdvancing = false,
             lastMessage = "수동 저장 테스트",
+            pendingEtfReferenceReturns = emptyMap(),
+            pendingClosedEventLogReturns = emptyMap(),
+            marketIndices = marketIndices,
+            marketIndexHistory = marketIndices.mapValues { (_, snapshot) -> listOf(snapshot) },
+            taxExchangeRatesByTradeId = mapOf("trade:1" to 1_350.0),
+            pendingTaxSettlementTradeIds = setOf("trade:1"),
+            watchlistedStockIds = setOf(usStock.id),
+            pendingCorporateActions = emptyList(),
+            corporateActionLedger = emptyList(),
+            listingLifecycleStates = listingLifecycleStates,
+            listingLifecycleLedger = emptyList(),
+            tradingProtectionSnapshot = currentProtection,
+            dailyTradingSurveillance = mapOf(usStock.id to emptyList(), krStock.id to emptyList()),
         )
     }
 
@@ -773,14 +874,13 @@ class DesktopGameSaveStorageTest {
             designatedAt = base.currentTime,
             designatedOn = krDate,
             releaseReviewWindow = TradingDayWindow(krDate, krDate),
+            releaseRule = InvestmentAlertReleaseRule.CAUTION_PRICE_VOLUME,
         )
-        val protection = TradingProtectionSnapshot(
-            krxCircuitBreakers = mapOf(
-                Market.KOSPI to KrxCircuitBreakerState(Market.KOSPI, krDate),
-            ),
-            krxSidecars = mapOf(
-                Market.KOSPI to KrxSidecarState(Market.KOSPI, krDate),
-            ),
+        val protection = base.tradingProtectionSnapshot.copy(
+            krxCircuitBreakers = base.tradingProtectionSnapshot.krxCircuitBreakers +
+                (Market.KOSPI to KrxCircuitBreakerState(Market.KOSPI, krDate)),
+            krxSidecars = base.tradingProtectionSnapshot.krxSidecars +
+                (Market.KOSPI to KrxSidecarState(Market.KOSPI, krDate)),
             krxVolatilityInterruptions = mapOf(
                 krStock.id to KrxViState(krStock.id, krStock.market),
             ),
@@ -801,7 +901,6 @@ class DesktopGameSaveStorageTest {
             ),
         )
         return base.copy(
-            terminatedInstrumentIds = emptySet(),
             listingLifecycleStates = mapOf(
                 usStock.id to usListing,
                 krStock.id to krListing,
@@ -817,6 +916,7 @@ class DesktopGameSaveStorageTest {
                         turnoverRate = 0.000123456,
                     ),
                 ),
+                krStock.id to emptyList(),
             ),
         )
     }

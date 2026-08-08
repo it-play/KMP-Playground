@@ -52,7 +52,7 @@ class ListingSettlementRuntimeInvariantTest {
 
         viewModel.setTimeForTesting(effectiveSession.closesAt - 1.hours)
         val beforeLiquidation = viewModel.currentState
-        val scheduled = beforeLiquidation.listingLifecycleStates.orEmpty().getValue(stock.id).copy(
+        val scheduled = beforeLiquidation.listingLifecycleStates.getValue(stock.id).copy(
             status = ListingLifecycleStatus.DELISTING_SCHEDULED,
             activeReason = ListingLifecycleReason.ETF_VOLUNTARY_LIQUIDATION,
             designatedOn = LocalDate(2026, 8, 12),
@@ -80,7 +80,7 @@ class ListingSettlementRuntimeInvariantTest {
         assertTrue(
             viewModel.restoreGame(
                 beforeLiquidation.copy(
-                    listingLifecycleStates = beforeLiquidation.listingLifecycleStates.orEmpty() +
+                    listingLifecycleStates = beforeLiquidation.listingLifecycleStates +
                         (stock.id to scheduled),
                     newsEvents = beforeLiquidation.newsEvents + liquidationNotice,
                 ),
@@ -90,7 +90,7 @@ class ListingSettlementRuntimeInvariantTest {
         viewModel.advance(TurnStep.ONE_HOUR)
 
         val enteredPending = viewModel.currentState
-        val pendingState = enteredPending.listingLifecycleStates.orEmpty().getValue(stock.id)
+        val pendingState = enteredPending.listingLifecycleStates.getValue(stock.id)
         assertEquals(ListingLifecycleStatus.LIQUIDATION_PENDING, pendingState.status)
         val frozen = assertNotNull(pendingState.finalDisposition)
         assertEquals(purchasedHolding.quantity, frozen.entitledQuantity)
@@ -128,7 +128,7 @@ class ListingSettlementRuntimeInvariantTest {
                 rationale = "청산 권리 확정 뒤 병합 회귀 테스트",
             ),
         )
-        val adjustedLedger = enteredPending.listingLifecycleLedger.orEmpty().map { event ->
+        val adjustedLedger = enteredPending.listingLifecycleLedger.map { event ->
             if (event.stockId == stock.id && event.kind == ListingLifecycleEventKind.LIQUIDATION_STARTED) {
                 event.copy(deadline = weekendDueOn, disposition = weekendDisposition)
             } else {
@@ -138,10 +138,10 @@ class ListingSettlementRuntimeInvariantTest {
         assertTrue(
             viewModel.restoreGame(
                 enteredPending.copy(
-                    listingLifecycleStates = enteredPending.listingLifecycleStates.orEmpty() +
+                    listingLifecycleStates = enteredPending.listingLifecycleStates +
                         (stock.id to weekendPendingState),
                     listingLifecycleLedger = adjustedLedger,
-                    pendingCorporateActions = enteredPending.pendingCorporateActions.orEmpty() + actions,
+                    pendingCorporateActions = enteredPending.pendingCorporateActions + actions,
                 ),
             ),
         )
@@ -155,7 +155,7 @@ class ListingSettlementRuntimeInvariantTest {
         val fridayClose = viewModel.currentState
         val holdingAfterFriday = assertNotNull(fridayClose.holdings[stock.id])
         val entitlementAfterFriday = assertNotNull(
-            fridayClose.listingLifecycleStates.orEmpty().getValue(stock.id).finalDisposition,
+            fridayClose.listingLifecycleStates.getValue(stock.id).finalDisposition,
         )
         assertEquals(purchasedHolding.quantity, holdingAfterFriday.quantity)
         assertEquals(purchasedHolding.averagePrice, holdingAfterFriday.averagePrice)
@@ -167,8 +167,8 @@ class ListingSettlementRuntimeInvariantTest {
             fifoQuantityBeforeFriday,
             fridayClose.fifoCostBasisBook.lots.filter { it.stockId == stock.id }.sumOf { it.remainingQuantity },
         )
-        assertTrue(fridayClose.pendingCorporateActions.orEmpty().map { it.id }.containsAll(actionIds))
-        assertFalse(fridayClose.corporateActionLedger.orEmpty().any { it.id in actionIds })
+        assertTrue(fridayClose.pendingCorporateActions.map { it.id }.containsAll(actionIds))
+        assertFalse(fridayClose.corporateActionLedger.any { it.id in actionIds })
 
         val restored = SimulatorViewModel()
         assertTrue(restored.restoreGame(fridayClose))
@@ -176,7 +176,7 @@ class ListingSettlementRuntimeInvariantTest {
         assertEquals(holdingAfterFriday, restoredPending.holdings[stock.id])
         assertEquals(
             entitlementAfterFriday,
-            restoredPending.listingLifecycleStates.orEmpty().getValue(stock.id).finalDisposition,
+            restoredPending.listingLifecycleStates.getValue(stock.id).finalDisposition,
         )
         assertEquals(
             fridayClose.fifoCostBasisBook.lots.filter { it.stockId == stock.id },
@@ -187,7 +187,7 @@ class ListingSettlementRuntimeInvariantTest {
         restored.advance(TurnStep.ONE_DAY)
         assertEquals(
             ListingLifecycleStatus.LIQUIDATION_PENDING,
-            restored.currentState.listingLifecycleStates.orEmpty().getValue(stock.id).status,
+            restored.currentState.listingLifecycleStates.getValue(stock.id).status,
         )
         assertTrue(restored.currentState.trades.none { trade ->
             trade.stockId == stock.id && trade.settlementKind == TradeSettlementKind.CONTRACTUAL_CASH_SETTLEMENT
@@ -200,7 +200,7 @@ class ListingSettlementRuntimeInvariantTest {
         assertEquals(mondaySession.closesAt - 1.hours, restored.currentState.currentTime)
         assertEquals(
             ListingLifecycleStatus.LIQUIDATION_PENDING,
-            restored.currentState.listingLifecycleStates.orEmpty().getValue(stock.id).status,
+            restored.currentState.listingLifecycleStates.getValue(stock.id).status,
         )
         val cashBeforePayment = restored.currentState.cashByCurrency.getValue(stock.currency)
 
@@ -210,7 +210,7 @@ class ListingSettlementRuntimeInvariantTest {
         assertEquals(mondaySession.closesAt, paid.currentTime)
         assertEquals(
             ListingLifecycleStatus.TERMINATED,
-            paid.listingLifecycleStates.orEmpty().getValue(stock.id).status,
+            paid.listingLifecycleStates.getValue(stock.id).status,
         )
         assertTrue(stock.id !in paid.holdings)
         val settlements = paid.trades.filter { trade ->
@@ -225,8 +225,8 @@ class ListingSettlementRuntimeInvariantTest {
             paid.cashByCurrency.getValue(stock.currency),
             0.01,
         )
-        assertFalse(paid.corporateActionLedger.orEmpty().any { it.id in actionIds })
-        assertTrue(paid.pendingCorporateActions.orEmpty().none { it.id in actionIds })
+        assertFalse(paid.corporateActionLedger.any { it.id in actionIds })
+        assertTrue(paid.pendingCorporateActions.none { it.id in actionIds })
 
         val cashAfterFirstPayment = paid.cashByCurrency.getValue(stock.currency)
         restored.advance(TurnStep.ONE_DAY)
@@ -267,7 +267,7 @@ class ListingSettlementRuntimeInvariantTest {
             entitledQuantity = purchased.quantity,
             entitledCostBasis = purchased.costBasis,
         )
-        val pending = beforeInjection.listingLifecycleStates.orEmpty().getValue(stock.id).copy(
+        val pending = beforeInjection.listingLifecycleStates.getValue(stock.id).copy(
             status = ListingLifecycleStatus.LIQUIDATION_PENDING,
             activeReason = ListingLifecycleReason.ETF_VOLUNTARY_LIQUIDATION,
             designatedOn = effectiveOn,
@@ -282,7 +282,7 @@ class ListingSettlementRuntimeInvariantTest {
             viewModel.restoreGame(
                 beforeInjection.copy(
                     holdings = beforeInjection.holdings + (stock.id to staleHolding),
-                    listingLifecycleStates = beforeInjection.listingLifecycleStates.orEmpty() +
+                    listingLifecycleStates = beforeInjection.listingLifecycleStates +
                         (stock.id to pending),
                 ),
             ),
@@ -298,18 +298,18 @@ class ListingSettlementRuntimeInvariantTest {
         assertEquals(GamePhase.SETTLEMENT, ended.phase)
         assertEquals(
             ListingLifecycleStatus.LIQUIDATION_PENDING,
-            ended.listingLifecycleStates.orEmpty().getValue(stock.id).status,
+            ended.listingLifecycleStates.getValue(stock.id).status,
         )
         val holdingAtEnd = assertNotNull(ended.holdings[stock.id])
         val dispositionAtEnd = assertNotNull(
-            ended.listingLifecycleStates.orEmpty().getValue(stock.id).finalDisposition,
+            ended.listingLifecycleStates.getValue(stock.id).finalDisposition,
         )
         assertEquals(purchased.quantity, holdingAtEnd.quantity)
         assertEquals(cashPerUnit, holdingAtEnd.currentPrice)
         assertEquals(purchased.quantity, dispositionAtEnd.entitledQuantity)
         assertEquals(purchased.costBasis, dispositionAtEnd.entitledCostBasis)
         assertEquals(settlementDueOn, dispositionAtEnd.settlementDueOn)
-        assertTrue(stock.id !in ended.terminatedInstrumentIds.orEmpty())
+        assertFalse(ended.listingLifecycleStates.getValue(stock.id).isTerminal)
         assertEquals(
             sellTradesBeforeEnd,
             ended.trades.count { it.side == OrderSide.SELL },
@@ -338,7 +338,7 @@ class ListingSettlementRuntimeInvariantTest {
         assertEquals(cashPerUnit, reloadedState.holdings.getValue(stock.id).currentPrice)
         assertEquals(
             ListingLifecycleStatus.LIQUIDATION_PENDING,
-            reloadedState.listingLifecycleStates.orEmpty().getValue(stock.id).status,
+            reloadedState.listingLifecycleStates.getValue(stock.id).status,
         )
         assertEquals(expectedReceivableValueKrw, reloadedState.currentPortfolio.stockValueKrw, 0.01)
         assertEquals(sellTradesBeforeEnd, reloadedState.trades.count { it.side == OrderSide.SELL })

@@ -3,7 +3,7 @@ package com.amond.kmpbook.persistence
 import com.amond.kmpbook.presentation.SimulatorUiState
 import kotlin.time.Instant
 
-const val CURRENT_GAME_SAVE_SCHEMA_VERSION: Int = 2
+const val CURRENT_GAME_SAVE_SCHEMA_VERSION: Int = 3
 const val DEFAULT_MAX_GAME_SAVE_FILE_BYTES: Long = 64L * 1024L * 1024L
 const val GAME_SAVE_FORMAT_ID: String = "market-ledger-2040.game-save"
 
@@ -110,7 +110,7 @@ sealed interface GameSaveDeleteResult {
     ) : GameSaveDeleteResult
 }
 
-/** Versioned on-disk envelope. Migration belongs between envelope parsing and state validation. */
+/** Versioned on-disk envelope. Only the exact current schema is accepted. */
 internal data class GameSaveEnvelope(
     val format: String,
     val schemaVersion: Int,

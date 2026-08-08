@@ -100,12 +100,12 @@ class KrxCorporateActionAlertAdjustmentTest {
         assertTrue(
             viewModel.restoreGame(
                 before.copy(
-                    dailyTradingSurveillance = before.dailyTradingSurveillance.orEmpty() +
+                    dailyTradingSurveillance = before.dailyTradingSurveillance +
                         (stock.id to points),
                     tradingProtectionSnapshot = protection.copy(
                         investmentAlerts = protection.investmentAlerts + (stock.id to designation),
                     ),
-                    pendingCorporateActions = before.pendingCorporateActions.orEmpty() + action,
+                    pendingCorporateActions = before.pendingCorporateActions + action,
                 ),
             ),
         )
@@ -114,10 +114,10 @@ class KrxCorporateActionAlertAdjustmentTest {
 
         val saved = viewModel.currentState
         assertEquals(opening, saved.currentTime)
-        assertTrue(saved.pendingCorporateActions.orEmpty().none { it.id == action.id })
-        assertEquals(action.id, saved.corporateActionLedger.orEmpty().last().id)
-        val adjustedPoints = saved.dailyTradingSurveillance.orEmpty().getValue(stock.id)
-        val adjustedDesignation = saved.tradingProtectionSnapshot?.investmentAlerts?.get(stock.id)
+        assertTrue(saved.pendingCorporateActions.none { it.id == action.id })
+        assertEquals(action.id, saved.corporateActionLedger.last().id)
+        val adjustedPoints = saved.dailyTradingSurveillance.getValue(stock.id)
+        val adjustedDesignation = saved.tradingProtectionSnapshot.investmentAlerts[stock.id]
         assertNotNull(adjustedDesignation)
 
         points.zip(adjustedPoints).forEach { (original, adjusted) ->
@@ -156,11 +156,11 @@ class KrxCorporateActionAlertAdjustmentTest {
         assertTrue(restored.restoreGame(saved))
         assertEquals(
             adjustedPoints,
-            restored.currentState.dailyTradingSurveillance.orEmpty().getValue(stock.id),
+            restored.currentState.dailyTradingSurveillance.getValue(stock.id),
         )
         assertEquals(
             adjustedDesignation,
-            restored.currentState.tradingProtectionSnapshot?.investmentAlerts?.get(stock.id),
+            restored.currentState.tradingProtectionSnapshot.investmentAlerts[stock.id],
         )
     }
 

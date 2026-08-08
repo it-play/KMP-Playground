@@ -2,6 +2,7 @@ package com.amond.kmpbook.domain.simulation
 
 import com.amond.kmpbook.domain.model.InvestmentAlertDesignation
 import com.amond.kmpbook.domain.model.InvestmentAlertLevel
+import com.amond.kmpbook.domain.model.InvestmentAlertReleaseRule
 import com.amond.kmpbook.domain.model.InvestmentAlertStatus
 import com.amond.kmpbook.domain.model.KrxCircuitBreakerEvent
 import com.amond.kmpbook.domain.model.KrxCircuitBreakerLevel
@@ -1015,6 +1016,7 @@ class TradingProtectionEngineTest {
         designatedOn = designatedOn,
         releaseReviewWindow = releaseWindow,
         redesignationWindow = redesignationWindow,
+        releaseRule = InvestmentAlertReleaseRule.WARNING_60_100,
     )
 
     private fun assertDenied(

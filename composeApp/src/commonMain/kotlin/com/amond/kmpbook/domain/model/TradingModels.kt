@@ -95,12 +95,11 @@ data class Trade(
     val executedAt: Instant,
     val commission: Double = 0.0,
     val tax: Double = 0.0,
-    /** 구형 저장의 null은 일반 거래소 체결로 해석한다. */
-    val settlementKind: TradeSettlementKind? = TradeSettlementKind.EXCHANGE_TRADE,
+    val settlementKind: TradeSettlementKind = TradeSettlementKind.EXCHANGE_TRADE,
     /** 계약상 지급은 이미 지급일에 기록되므로 T+ 결제일을 다시 계산하지 않는다. */
     val settlementDateOverride: kotlinx.datetime.LocalDate? = null,
     /** 같은 시각의 체결·분배·기업행동을 저장 전과 동일한 순서로 재생하기 위한 전역 순번. */
-    val accountingSequence: Long? = null,
+    val accountingSequence: Long,
 ) {
     init {
         require(id.isNotBlank() && orderId.isNotBlank() && stockId.isNotBlank()) {
@@ -117,7 +116,7 @@ data class Trade(
         require(
             settlementKind != TradeSettlementKind.CONTRACTUAL_CASH_SETTLEMENT || settlementDateOverride != null,
         ) { "계약상 현금정산에는 실제 지급일이 필요합니다." }
-        require(accountingSequence == null || accountingSequence > 0L) {
+        require(accountingSequence > 0L) {
             "회계 순번은 양수여야 합니다."
         }
     }

@@ -11,7 +11,9 @@ import com.amond.kmpbook.domain.model.GameEventImpact
 import com.amond.kmpbook.domain.model.ImpactDirection
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.MarketIndexId
+import com.amond.kmpbook.domain.model.ListingFinalDispositionType
 import com.amond.kmpbook.domain.model.ListingLifecycleStatus
+import com.amond.kmpbook.domain.model.ListingRiskTag
 import com.amond.kmpbook.domain.model.EtfExposureRegion
 import com.amond.kmpbook.domain.model.OrderSide
 import com.amond.kmpbook.domain.model.OrderStatus
@@ -21,11 +23,16 @@ import com.amond.kmpbook.domain.model.CorporateActionKind
 import com.amond.kmpbook.domain.model.CorporateActionSource
 import com.amond.kmpbook.domain.model.Screen
 import com.amond.kmpbook.domain.model.TimeInForce
+import com.amond.kmpbook.domain.model.TradingProtectionSnapshot
 import com.amond.kmpbook.domain.model.TurnStep
+import com.amond.kmpbook.domain.model.UsMwcbLevel
+import com.amond.kmpbook.domain.model.UsMwcbPhase
+import com.amond.kmpbook.domain.model.UsMwcbVenuePhase
 import com.amond.kmpbook.domain.simulation.DeterministicRandom
 import com.amond.kmpbook.domain.simulation.PriceEngine
 import com.amond.kmpbook.domain.simulation.MarketMicrostructure
 import com.amond.kmpbook.domain.simulation.ScheduledEventEngine
+import com.amond.kmpbook.domain.simulation.TradingProtectionEngine
 import com.amond.kmpbook.domain.tax.TaxLiability
 import com.amond.kmpbook.domain.tax.TaxLiabilityStatus
 import com.amond.kmpbook.domain.time.GameCalendar
@@ -257,7 +264,7 @@ class SimulatorViewModelTest {
         assertEquals(setOf(buyTrade.id, sellTrade.id), pending.pendingTaxSettlementTradeIds)
         assertEquals(
             pending.transactionCosts.first().exchangeRateToKrw,
-            pending.taxExchangeRatesByTradeId?.getValue(buyTrade.id),
+            pending.taxExchangeRatesByTradeId.getValue(buyTrade.id),
         )
 
         // Midnight in New York starts the T+1 settlement date (Monday after a Friday trade).
@@ -265,9 +272,9 @@ class SimulatorViewModelTest {
         viewModel.advance(TurnStep.ONE_HOUR)
 
         val settled = viewModel.currentState
-        val lockedBuyRate = settled.taxExchangeRatesByTradeId?.getValue(buyTrade.id)
-        val lockedSellRate = settled.taxExchangeRatesByTradeId?.getValue(sellTrade.id)
-        assertTrue(settled.pendingTaxSettlementTradeIds.isNullOrEmpty())
+        val lockedBuyRate = settled.taxExchangeRatesByTradeId.getValue(buyTrade.id)
+        val lockedSellRate = settled.taxExchangeRatesByTradeId.getValue(sellTrade.id)
+        assertTrue(settled.pendingTaxSettlementTradeIds.isEmpty())
         assertEquals(settled.macro.usdKrw, lockedBuyRate)
         assertEquals(lockedBuyRate, lockedSellRate)
         val gain = settled.realizedGains.single()
@@ -298,14 +305,14 @@ class SimulatorViewModelTest {
 
         val settled = viewModel.currentState
         val gain = settled.realizedGains.single()
-        assertTrue(settled.pendingTaxSettlementTradeIds.isNullOrEmpty())
+        assertTrue(settled.pendingTaxSettlementTradeIds.isEmpty())
         assertEquals(settled.macro.usdKrw, gain.exchangeRateToKrw)
         assertEquals(gain.taxGainKrw, settled.annualTaxLedgers.getValue(2027).foreignGainKrw)
         assertEquals(0L, settled.annualTaxLedgers.getValue(2026).foreignGainKrw)
     }
 
     @Test
-    fun pendingTaxFxLedgerSurvivesRestoreAndLegacyNullMigratesAsFinal() {
+    fun pendingTaxFxLedgerSurvivesRestore() {
         val source = playingViewModel(seed = 706L)
         source.setTimeForTesting(Instant.parse("2026-08-07T15:00:00Z"))
         val stock = source.currentState.stocks.first { it.market == Market.NASDAQ }
@@ -327,21 +334,6 @@ class SimulatorViewModelTest {
         assertEquals(source.currentState.fifoCostBasisBook, restored.currentState.fifoCostBasisBook)
         assertEquals(source.currentState.realizedGains, restored.currentState.realizedGains)
         assertEquals(source.currentState.annualTaxLedgers, restored.currentState.annualTaxLedgers)
-
-        val legacy = SimulatorViewModel()
-        assertTrue(
-            legacy.restoreGame(
-                saved.copy(
-                    taxExchangeRatesByTradeId = null,
-                    pendingTaxSettlementTradeIds = null,
-                ),
-            ),
-        )
-        assertTrue(legacy.currentState.pendingTaxSettlementTradeIds.isNullOrEmpty())
-        assertEquals(
-            saved.transactionCosts.associate { it.tradeId to it.exchangeRateToKrw },
-            legacy.currentState.taxExchangeRatesByTradeId,
-        )
     }
 
     @Test
@@ -382,44 +374,7 @@ class SimulatorViewModelTest {
         assertTrue(us.placeOrder(usStock.id, OrderSide.SELL, OrderType.MARKET, 1.0))
         val usSell = us.currentState.trades.last()
         assertEquals(LocalDate(2041, 1, 2), us.currentState.realizedGains.single().settlementDate)
-        assertTrue(usSell.id in us.currentState.pendingTaxSettlementTradeIds.orEmpty())
-
-        val staleLiability = TaxLiability(
-            id = "legacy-clamped-2040-tax",
-            label = "구버전 조기 귀속 세금",
-            taxYear = 2040,
-            assessedTaxKrw = 550_000L,
-            dueDate = LocalDate(2041, 5, 31),
-            status = TaxLiabilityStatus.DUE,
-        )
-        val staleLedger = us.currentState.annualTaxLedgers.values.first().copy(
-            taxYear = 2040,
-            foreignGainKrw = 3_000_000L,
-            currentYearNetStockGainKrw = 3_000_000L,
-            sharedStockBasicDeductionKrw = 2_500_000L,
-            stockTaxableBaseKrw = 500_000L,
-            liabilities = listOf(staleLiability),
-        )
-        val staleNotice = TaxPaymentNotice(
-            id = staleLiability.id,
-            taxYear = 2040,
-            dueDate = requireNotNull(staleLiability.dueDate),
-            amountKrw = staleLiability.payableKrw,
-            status = TaxLiabilityStatus.DUE,
-            message = "구버전 납부 예정",
-        )
-        val legacyTaxState = us.currentState.copy(
-            realizedGains = listOf(
-                us.currentState.realizedGains.single().copy(settlementDate = LocalDate(2040, 12, 31)),
-            ),
-            annualTaxLedgers = us.currentState.annualTaxLedgers + (2040 to staleLedger),
-            taxPaymentNotices = us.currentState.taxPaymentNotices + staleNotice,
-        )
-        val migratedTax = SimulatorViewModel()
-        assertTrue(migratedTax.restoreGame(legacyTaxState))
-        assertEquals(LocalDate(2041, 1, 2), migratedTax.currentState.realizedGains.single().settlementDate)
-        assertEquals(0L, migratedTax.currentState.annualTaxLedgers.getValue(2040).foreignGainKrw)
-        assertTrue(migratedTax.currentState.taxPaymentNotices.none { it.taxYear == 2040 })
+        assertTrue(usSell.id in us.currentState.pendingTaxSettlementTradeIds)
 
         us.advance(TurnStep.TWELVE_HOURS)
 
@@ -427,7 +382,7 @@ class SimulatorViewModelTest {
         assertEquals(GameCalendar.endInstant, ended.currentTime)
         assertEquals(LocalDate(2040, 12, 31), ended.currentDate)
         assertEquals(GamePhase.SETTLEMENT, ended.phase)
-        assertTrue(usSell.id in ended.pendingTaxSettlementTradeIds.orEmpty())
+        assertTrue(usSell.id in ended.pendingTaxSettlementTradeIds)
         assertEquals(0L, ended.annualTaxLedgers.getValue(2040).foreignGainKrw)
 
         val krx = playingViewModel(seed = 7_041L)
@@ -441,41 +396,16 @@ class SimulatorViewModelTest {
     }
 
     @Test
-    fun legacyCompletedSaveResumesAndSafelyTraversesTheFinalUsSessionTail() {
-        val source = playingViewModel(seed = 7_042L)
-        source.setTimeForTesting(GameCalendar.LEGACY_END_INSTANT)
-        val legacyCompleted = source.currentState.copy(
-            phase = GamePhase.FINISHED,
-            screen = Screen.ENDING,
-        )
-
-        val restored = SimulatorViewModel()
-        assertTrue(restored.restoreGame(legacyCompleted))
-        assertEquals(GamePhase.PLAYING, restored.currentState.phase)
-        assertEquals(Screen.HOME, restored.currentState.screen)
-        assertTrue(restored.currentState.lastMessage.orEmpty().contains("마지막 미국장"))
-
-        restored.advance(TurnStep.ONE_WEEK)
-
-        assertEquals(GameCalendar.endInstant, restored.currentState.currentTime)
-        assertEquals(LocalDate(2040, 12, 31), restored.currentState.currentDate)
-        assertEquals(GamePhase.SETTLEMENT, restored.currentState.phase)
-    }
-
-    @Test
     fun levelThreeCircuitBreakerBlocksQuotesAndImmediateExecution() {
         val viewModel = playingViewModel(seed = 704L)
         viewModel.setTimeForTesting(Instant.parse("2026-08-07T15:00:00Z"))
         val beforeHalt = viewModel.currentState
         val halted = beforeHalt.copy(
             macro = beforeHalt.macro.copy(usCircuitBreakerLevel = 3),
-            usCircuitBreakerState = UsCircuitBreakerState(
-                tradingDate = LocalDate(2026, 8, 7),
-                triggeredLevels = setOf(3),
-                haltedForDay = true,
+            tradingProtectionSnapshot = closedForDayProtection(
+                beforeHalt,
+                LocalDate(2026, 8, 7),
             ),
-            // v1 persisted only the legacy breaker fields; v2's canonical snapshot wins when set.
-            tradingProtectionSnapshot = null,
         )
         assertTrue(viewModel.restoreGame(halted))
         val stock = viewModel.currentState.stocks.first { it.market == Market.NASDAQ }
@@ -544,7 +474,7 @@ class SimulatorViewModelTest {
         assertTrue(kotlin.math.abs(expectedClosedHalf) > 1e-12)
         assertEquals(
             expectedClosedHalf,
-            state.pendingEtfReferenceReturns.orEmpty().getValue(stock.id),
+            state.pendingEtfReferenceReturns.getValue(stock.id),
             1e-12,
         )
     }
@@ -567,7 +497,7 @@ class SimulatorViewModelTest {
         val openingBar = state.priceHistory.getValue(stock.id).last()
         assertTrue(openingBar.open != previousPrice)
         assertEquals(openingBar.open, state.quotes.getValue(stock.id).open)
-        assertFalse(stock.id in state.pendingEtfReferenceReturns.orEmpty())
+        assertFalse(stock.id in state.pendingEtfReferenceReturns)
     }
 
     @Test
@@ -576,7 +506,7 @@ class SimulatorViewModelTest {
         viewModel.setTimeForTesting(Instant.parse("2026-08-07T14:00:00Z")) // 10:00 EDT
         val state = viewModel.currentState
         val tradingDate = LocalDate(2026, 8, 7)
-        val alignedIndices = state.marketIndices.orEmpty().mapValues { (id, snapshot) ->
+        val alignedIndices = state.marketIndices.mapValues { (id, snapshot) ->
             if (id == MarketIndexId.SP_500) {
                 val crashedValue = snapshot.previousClose * 0.92
                 snapshot.copy(
@@ -599,7 +529,6 @@ class SimulatorViewModelTest {
                 state.copy(
                     pendingEtfReferenceReturns = emptyMap(),
                     marketIndices = alignedIndices,
-                    usCircuitBreakerState = UsCircuitBreakerState(tradingDate = tradingDate),
                 ),
             ),
         )
@@ -608,7 +537,7 @@ class SimulatorViewModelTest {
 
         val after = viewModel.currentState
         assertEquals(1, after.macro.usCircuitBreakerLevel)
-        assertFalse(stock.id in after.pendingEtfReferenceReturns.orEmpty())
+        assertFalse(stock.id in after.pendingEtfReferenceReturns)
     }
 
     @Test
@@ -617,7 +546,7 @@ class SimulatorViewModelTest {
         viewModel.setTimeForTesting(Instant.parse("2026-08-07T15:00:00Z"))
         val state = viewModel.currentState
         val tradingDate = LocalDate(2026, 8, 7)
-        val alignedIndices = state.marketIndices.orEmpty().mapValues { (id, snapshot) ->
+        val alignedIndices = state.marketIndices.mapValues { (id, snapshot) ->
             if (id == MarketIndexId.SP_500) snapshot.copy(sessionDate = tradingDate) else snapshot
         }
         val stock = state.stocks.first {
@@ -630,12 +559,7 @@ class SimulatorViewModelTest {
                 state.copy(
                     pendingEtfReferenceReturns = emptyMap(),
                     marketIndices = alignedIndices,
-                    usCircuitBreakerState = UsCircuitBreakerState(
-                        tradingDate = tradingDate,
-                        triggeredLevels = setOf(3),
-                        haltedForDay = true,
-                    ),
-                    tradingProtectionSnapshot = null,
+                    tradingProtectionSnapshot = closedForDayProtection(state, tradingDate),
                 ),
             ),
         )
@@ -659,7 +583,7 @@ class SimulatorViewModelTest {
         assertTrue(kotlin.math.abs(fxOnly - phantomUnderlying) > 1e-12)
         assertEquals(
             fxOnly,
-            after.pendingEtfReferenceReturns.orEmpty().getValue(stock.id),
+            after.pendingEtfReferenceReturns.getValue(stock.id),
             1e-12,
         )
     }
@@ -794,6 +718,8 @@ class SimulatorViewModelTest {
             affectedMarkets = setOf(etn.market),
             affectedSectors = setOf(etn.sector),
             affectedStockIds = setOf(etn.id),
+            listingRiskTags = setOf(ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION),
+            listingFinalDispositionHint = ListingFinalDispositionType.CASH_LIQUIDATION,
         )
         assertTrue(viewModel.restoreGame(saved.copy(newsEvents = saved.newsEvents + callEvent)))
 
@@ -801,10 +727,10 @@ class SimulatorViewModelTest {
 
         val pending = viewModel.currentState
         assertTrue(etn.id in pending.holdings)
-        assertFalse(etn.id in pending.terminatedInstrumentIds.orEmpty())
+        assertFalse(pending.listingLifecycleStates.getValue(etn.id).isTerminal)
         assertEquals(
             ListingLifecycleStatus.LIQUIDATION_PENDING,
-            pending.listingLifecycleStates.orEmpty().getValue(etn.id).status,
+            pending.listingLifecycleStates.getValue(etn.id).status,
         )
 
         // US ETN game profile pays the frozen contractual receivable after seven calendar days,
@@ -813,7 +739,7 @@ class SimulatorViewModelTest {
 
         val after = viewModel.currentState
         assertFalse(etn.id in after.holdings)
-        assertTrue(etn.id in after.terminatedInstrumentIds.orEmpty())
+        assertTrue(after.listingLifecycleStates.getValue(etn.id).isTerminal)
         assertEquals(OrderSide.SELL, after.trades.last().side)
         assertTrue(after.newsEvents.any {
             it.id.startsWith("listing-lifecycle:${etn.id}:") && "상품 종료" in it.title
@@ -841,6 +767,8 @@ class SimulatorViewModelTest {
             affectedMarkets = setOf(etn.market),
             affectedSectors = setOf(etn.sector),
             affectedStockIds = setOf(etn.id),
+            listingRiskTags = setOf(ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION),
+            listingFinalDispositionHint = ListingFinalDispositionType.CASH_LIQUIDATION,
         )
         val acceleration = GameEvent(
             id = "${SimulatorRuntime.ETN_ACCELERATION_EVENT_PREFIX}overlap-acceleration",
@@ -855,20 +783,22 @@ class SimulatorViewModelTest {
             affectedMarkets = setOf(etn.market),
             affectedSectors = setOf(etn.sector),
             affectedStockIds = setOf(etn.id),
+            listingRiskTags = setOf(ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION),
+            listingFinalDispositionHint = ListingFinalDispositionType.CASH_LIQUIDATION,
         )
         assertTrue(viewModel.restoreGame(saved.copy(newsEvents = saved.newsEvents + call + acceleration)))
 
         viewModel.advance(TurnStep.TWELVE_HOURS)
         assertEquals(
             LocalDate(2026, 9, 9),
-            viewModel.currentState.listingLifecycleStates.orEmpty().getValue(etn.id).scheduledDelistingOn,
+            viewModel.currentState.listingLifecycleStates.getValue(etn.id).scheduledDelistingOn,
         )
 
         viewModel.advance(TurnStep.ONE_DAY)
         val preempted = viewModel.currentState
         assertEquals(
             LocalDate(2026, 8, 18),
-            preempted.listingLifecycleStates.orEmpty().getValue(etn.id).scheduledDelistingOn,
+            preempted.listingLifecycleStates.getValue(etn.id).scheduledDelistingOn,
         )
         val restored = SimulatorViewModel()
         assertTrue(restored.restoreGame(preempted))
@@ -878,9 +808,9 @@ class SimulatorViewModelTest {
 
         val pending = viewModel.currentState
         val disposition = requireNotNull(
-            pending.listingLifecycleStates.orEmpty().getValue(etn.id).finalDisposition,
+            pending.listingLifecycleStates.getValue(etn.id).finalDisposition,
         )
-        assertEquals(ListingLifecycleStatus.LIQUIDATION_PENDING, pending.listingLifecycleStates.orEmpty().getValue(etn.id).status)
+        assertEquals(ListingLifecycleStatus.LIQUIDATION_PENDING, pending.listingLifecycleStates.getValue(etn.id).status)
         val dailyCloses = pending.priceHistory.getValue(etn.id)
             .filter { it.volume > 0L }
             .groupBy { GameCalendar.marketLocalDateTime(etn.market, it.endTime).date }
@@ -893,7 +823,7 @@ class SimulatorViewModelTest {
         assertEquals(expectedCashPerUnit, disposition.cashPerUnit ?: -1.0, 0.000001)
         assertEquals(
             disposition,
-            restored.currentState.listingLifecycleStates.orEmpty().getValue(etn.id).finalDisposition,
+            restored.currentState.listingLifecycleStates.getValue(etn.id).finalDisposition,
         )
     }
 
@@ -916,12 +846,14 @@ class SimulatorViewModelTest {
             affectedMarkets = setOf(etn.market),
             affectedSectors = setOf(etn.sector),
             affectedStockIds = setOf(etn.id),
+            listingRiskTags = setOf(ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION),
+            listingFinalDispositionHint = ListingFinalDispositionType.CASH_LIQUIDATION,
         )
         assertTrue(viewModel.restoreGame(saved.copy(newsEvents = saved.newsEvents + laterCall)))
 
         viewModel.advance(TurnStep.TWELVE_HOURS)
 
-        val lifecycle = viewModel.currentState.listingLifecycleStates.orEmpty().getValue(etn.id)
+        val lifecycle = viewModel.currentState.listingLifecycleStates.getValue(etn.id)
         assertEquals(LocalDate(2033, 4, 21), lifecycle.scheduledDelistingOn)
         assertEquals(ListingLifecycleStatus.LIQUIDATION_PENDING, lifecycle.status)
         assertTrue(viewModel.currentState.newsEvents.any {
@@ -954,8 +886,8 @@ class SimulatorViewModelTest {
         viewModel.advance(TurnStep.ONE_HOUR)
 
         val after = viewModel.currentState
-        assertTrue(after.pendingCorporateActions.isNullOrEmpty())
-        assertEquals(1, after.corporateActionLedger.orEmpty().size)
+        assertTrue(after.pendingCorporateActions.isEmpty())
+        assertEquals(1, after.corporateActionLedger.size)
         assertEquals(
             round(stock.sharesOutstanding * action.quantityMultiplier).toLong(),
             after.stocks.single { it.id == stock.id }.sharesOutstanding,
@@ -982,6 +914,26 @@ class SimulatorViewModelTest {
 
     private fun playingViewModel(seed: Long): SimulatorViewModel = SimulatorViewModel().apply {
         newGame(NewGameOptions(seed = seed))
+    }
+
+    private fun closedForDayProtection(
+        state: SimulatorUiState,
+        tradingDate: LocalDate,
+    ): TradingProtectionSnapshot {
+        val initial = TradingProtectionEngine.initialUsMwcb(tradingDate, state.currentTime)
+        val closed = initial.copy(
+            phase = UsMwcbPhase.CLOSED_FOR_DAY,
+            triggeredLevels = setOf(UsMwcbLevel.LEVEL_3),
+            activeLevel = UsMwcbLevel.LEVEL_3,
+            triggeredAt = state.currentTime,
+            venueStatuses = initial.venueStatuses.mapValues { (_, venue) ->
+                venue.copy(
+                    phase = UsMwcbVenuePhase.CLOSED,
+                    phaseStartedAt = state.currentTime,
+                )
+            },
+        )
+        return state.tradingProtectionSnapshot.copy(usMarketWideCircuitBreaker = closed)
     }
 
     private fun assertEquivalent(expected: SimulatorUiState, actual: SimulatorUiState) {

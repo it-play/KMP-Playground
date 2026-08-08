@@ -82,12 +82,9 @@ data class GameEvent(
     val affectedSectors: Set<Sector> = emptySet(),
     val affectedStockIds: Set<String> = emptySet(),
     val sourceLabel: String = "게임 뉴스",
-    /**
-     * 가격 충격과 별개로 거래소 상장 감시가 소비하는 구조화된 신호다.
-     * nullable인 이유는 이 필드가 없던 v1 저장 파일도 명시적으로 마이그레이션하기 위해서다.
-     */
-    val listingRiskTags: Set<ListingRiskTag>? = null,
-    val listingRecoveryConditions: Set<ListingRecoveryCondition>? = null,
+    /** 가격 충격과 별개로 거래소 상장 감시가 소비하는 구조화된 신호다. */
+    val listingRiskTags: Set<ListingRiskTag> = emptySet(),
+    val listingRecoveryConditions: Set<ListingRecoveryCondition> = emptySet(),
     val listingFinalDispositionHint: ListingFinalDispositionType? = null,
 ) {
     init {
@@ -115,10 +112,10 @@ data class GameEvent(
      * 종목에만 적용한다. 이 분리를 지키지 않으면 구성종목 파산이 ETF 자체 상폐가 된다.
      */
     fun directListingRiskTags(stockId: String): Set<ListingRiskTag> =
-        if (stockId in affectedStockIds) listingRiskTags.orEmpty() else emptySet()
+        if (stockId in affectedStockIds) listingRiskTags else emptySet()
 
     fun directListingRecoveryConditions(stockId: String): Set<ListingRecoveryCondition> =
-        if (stockId in affectedStockIds) listingRecoveryConditions.orEmpty() else emptySet()
+        if (stockId in affectedStockIds) listingRecoveryConditions else emptySet()
 
     fun directListingFinalDispositionHint(stockId: String): ListingFinalDispositionType? =
         listingFinalDispositionHint.takeIf { stockId in affectedStockIds }

@@ -35,7 +35,7 @@ data class PortfolioSnapshot(
     val cumulativeCommissionKrw: Double = 0.0,
     val cumulativeTaxKrw: Double = 0.0,
     /** 취득일 환율과 매수 직접비용을 보존한 종목별 잔여 FIFO 원화원가. */
-    val holdingCostBasisKrw: Map<String, Double>? = null,
+    val holdingCostBasisKrw: Map<String, Double>,
 ) {
     init {
         require(cashByCurrency.values.all { it >= 0.0 }) { "현금 잔액은 음수일 수 없습니다." }
@@ -44,7 +44,7 @@ data class PortfolioSnapshot(
         require(cumulativeCommissionKrw >= 0.0 && cumulativeTaxKrw >= 0.0) {
             "누적 수수료와 세금은 음수일 수 없습니다."
         }
-        require(holdingCostBasisKrw.orEmpty().values.all { it >= 0.0 && it.isFinite() })
+        require(holdingCostBasisKrw.values.all { it >= 0.0 && it.isFinite() })
         val usedForeignCurrencies = (cashByCurrency.keys + holdings.map { it.currency }) - Currency.KRW
         require(usedForeignCurrencies.all(exchangeRatesToKrw::containsKey)) {
             "보유 중인 외화의 원화 환율이 모두 필요합니다."
@@ -60,8 +60,7 @@ data class PortfolioSnapshot(
         holding.marketValue * rateToKrw(holding.currency)
 
     fun holdingCostBasisKrw(holding: Holding): Double =
-        holdingCostBasisKrw?.get(holding.stockId)
-            ?: holding.costBasis * rateToKrw(holding.currency)
+        holdingCostBasisKrw.getValue(holding.stockId)
 
     fun holdingUnrealizedProfitKrw(holding: Holding): Double =
         holdingMarketValueKrw(holding) - holdingCostBasisKrw(holding)

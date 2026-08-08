@@ -85,22 +85,19 @@ class KrxInvestmentAlertRuntimePolicyTest {
     }
 
     @Test
-    fun legacyMixedWarningGroundUsesTheStricterReleaseRule() {
+    fun mixedWarningGroundUsesThePersistedReleaseRule() {
         val standard = designation(
             InvestmentAlertLevel.WARNING,
-            reasonCodes = setOf("WARNING_PRICE_INDEX_5D_60", "DANGER_RELEASE_DOWNGRADE"),
+            reasonCodes = setOf("WARNING_PRICE_INDEX_5D_60", "ACCOUNT_CONCENTRATION_5D_45"),
+            releaseRule = InvestmentAlertReleaseRule.WARNING_60_100,
         )
         val strict = designation(
             InvestmentAlertLevel.WARNING,
-            reasonCodes = setOf("ACCOUNT_CONCENTRATION_5D_45"),
-        )
-        val mixed = designation(
-            InvestmentAlertLevel.WARNING,
             reasonCodes = setOf("WARNING_PRICE_INDEX_5D_60", "ACCOUNT_CONCENTRATION_5D_45"),
+            releaseRule = InvestmentAlertReleaseRule.WARNING_45_75,
         )
         assertEquals(InvestmentAlertReleaseRule.WARNING_60_100, krxInvestmentAlertReleaseRule(standard))
         assertEquals(InvestmentAlertReleaseRule.WARNING_45_75, krxInvestmentAlertReleaseRule(strict))
-        assertEquals(InvestmentAlertReleaseRule.WARNING_45_75, krxInvestmentAlertReleaseRule(mixed))
     }
 
     @Test
@@ -287,7 +284,11 @@ class KrxInvestmentAlertRuntimePolicyTest {
 
     private fun designation(
         level: InvestmentAlertLevel,
-        releaseRule: InvestmentAlertReleaseRule? = null,
+        releaseRule: InvestmentAlertReleaseRule = when (level) {
+            InvestmentAlertLevel.CAUTION -> InvestmentAlertReleaseRule.CAUTION_PRICE_VOLUME
+            InvestmentAlertLevel.WARNING -> InvestmentAlertReleaseRule.WARNING_60_100
+            InvestmentAlertLevel.DANGER -> InvestmentAlertReleaseRule.DANGER_60_100
+        },
         reasonCodes: Set<String> = setOf("TEST"),
         preDesignationClose: Double? = null,
         preReleaseClose: Double? = null,

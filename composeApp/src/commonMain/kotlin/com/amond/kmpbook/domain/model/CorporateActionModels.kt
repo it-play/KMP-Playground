@@ -51,14 +51,14 @@ data class CorporateActionRecord(
     val source: CorporateActionSource,
     val rationale: String,
     /** 같은 시각의 체결·분배와 저장 전 순서를 보존하는 전역 회계 순번. */
-    val accountingSequence: Long? = null,
+    val accountingSequence: Long,
 ) {
     init {
         require(id.isNotBlank() && stockId.isNotBlank() && rationale.isNotBlank())
         require(effectiveAt >= announcedAt)
         require(quantityMultiplier > 0.0 && quantityMultiplier.isFinite())
         require(preActionPrice > 0.0 && postActionPrice > 0.0)
-        require(accountingSequence == null || accountingSequence > 0L)
+        require(accountingSequence > 0L)
         require(abs(preActionPrice / quantityMultiplier - postActionPrice) <= maxOf(0.02, postActionPrice * 0.02)) {
             "기업행동 전후 가격이 비율과 일치하지 않습니다."
         }
