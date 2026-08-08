@@ -125,12 +125,23 @@ fun GameEvent.directionFor(stock: StockDefinition): ImpactDirection {
     }
 }
 
-/** 종목 자체의 운용·발행사 뉴스는 기초자산 배율과 분리해 한 번만 반영한다. */
-internal fun GameEvent.isDirectProductImpactFor(stock: StockDefinition): Boolean =
-    (
+/** 종목 고유 사건과 ETF 상장 미시구조 충격은 기초자산 배율과 분리해 한 번만 반영한다. */
+internal fun GameEvent.isDirectProductImpactFor(stock: StockDefinition): Boolean {
+    val isExplicitProductEvent = (
         impactCoveragePolicy == EventImpactCoveragePolicy.SCOPE_FALLBACK_WITH_OVERRIDES &&
             scope == EventScope.STOCK && stock.id in affectedStockIds
     ) ||
         impactInsights.any { insight ->
             insight.targetKind == EventImpactTargetKind.STOCK && insight.stockId == stock.id
         }
+    if (isExplicitProductEvent) return true
+    if (!stock.isFundLike || scope != EventScope.MARKET) return false
+
+    val coverage = impactCoverageFor(stock)
+    val isStructuredListingDislocation = causalSignals.any { signal ->
+        signal.transmissionProfile == CausalTransmissionProfile.LOCAL_MICROSTRUCTURE
+    } && coverage.causalImpact != null
+    val isUnseededListingFallback = causalSignals.isEmpty() &&
+        stock.market in affectedMarkets && coverage.usesScopeFallback
+    return isStructuredListingDislocation || isUnseededListingFallback
+}
