@@ -50,8 +50,8 @@ data class NewGameOptions(
     val initialUsdKrw: Double = 1_350.0,
 ) {
     init {
-        require(initialCapitalKrw > 0.0 && initialCapitalKrw.isFinite()) {
-            "초기 자금은 0보다 커야 합니다."
+        require(initialCapitalKrw >= MIN_INITIAL_CAPITAL_KRW && initialCapitalKrw.isFinite()) {
+            "초기 자금은 100만원 이상이어야 합니다."
         }
         require(initialUsdKrw > 0.0 && initialUsdKrw.isFinite()) {
             "초기 원·달러 환율은 0보다 커야 합니다."
@@ -59,6 +59,7 @@ data class NewGameOptions(
     }
 
     companion object {
+        const val MIN_INITIAL_CAPITAL_KRW: Double = 1_000_000.0
         const val DEFAULT_SEED: Long = 20_260_807L
     }
 }
@@ -332,6 +333,15 @@ data class SimulatorUiState(
     val realizedProfitKrw: Double get() = realizedGains.sumOf(RealizedGainRecord::gainKrw)
     val totalCommissionKrw: Double get() = transactionCosts.sumOf(TransactionCostRecord::commissionKrw)
     val totalSaleTaxKrw: Double get() = transactionCosts.sumOf(TransactionCostRecord::saleTaxKrw)
+    val grossTradeTurnoverKrw: Double
+        get() {
+            val costsByTradeId = transactionCosts.associateBy(TransactionCostRecord::tradeId)
+            return trades.sumOf { trade ->
+                trade.grossAmount * costsByTradeId.getValue(trade.id).exchangeRateToKrw
+            }
+        }
+    val totalTransactionCostKrw: Double
+        get() = transactionCosts.sumOf { it.commissionKrw + it.saleTaxKrw }
     val totalDividendKrw: Double get() = dividendLedger.sumOf(DividendLedgerEntry::netAmountKrw)
     val paidAnnualTaxKrw: Double
         get() = taxPaymentNotices

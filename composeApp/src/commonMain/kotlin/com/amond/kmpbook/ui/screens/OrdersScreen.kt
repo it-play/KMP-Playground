@@ -56,6 +56,8 @@ fun OrdersScreen(
     orders: List<Order>,
     trades: List<Trade>,
     stocks: List<StockDefinition>,
+    grossTurnoverKrw: Double,
+    totalCostsKrw: Double,
     protectionPendingLabels: Map<String, String> = emptyMap(),
     onCancelOrder: (String) -> Unit,
     onOpenStock: (String) -> Unit,
@@ -65,14 +67,6 @@ fun OrdersScreen(
     val stockById = stocks.associateBy { it.id }
     val openOrders = orders.count { it.isOpen }
     val protectedOpenOrders = orders.count { it.isOpen && it.id in protectionPendingLabels }
-    val grossTurnoverKrw = trades.sumOf { trade ->
-        val stock = stockById[trade.stockId]
-        trade.grossAmount * if (stock?.currency == Currency.USD) 1_350.0 else 1.0
-    }
-    val totalCostsKrw = trades.sumOf { trade ->
-        (trade.commission + trade.tax) * if (trade.currency == Currency.USD) 1_350.0 else 1.0
-    }
-
     Column(
         modifier.fillMaxSize().padding(MarketLayout.screenPadding),
         verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
@@ -164,7 +158,7 @@ private fun OrderTable(
                         when {
                             protectionLabel != null -> MarketColors.Amber
                             order.status.isTerminal -> MarketColors.InkMuted
-                            else -> MarketColors.Celadon
+                            else -> MarketColors.Primary
                         },
                     )
                 }

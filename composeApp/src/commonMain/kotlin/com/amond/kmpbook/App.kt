@@ -365,6 +365,8 @@ private fun ScreenContent(
             orders = state.orders,
             trades = state.trades,
             stocks = state.stocks,
+            grossTurnoverKrw = state.grossTradeTurnoverKrw,
+            totalCostsKrw = state.totalTransactionCostKrw,
             protectionPendingLabels = state.orderProtectionPendingLabels(),
             onCancelOrder = { viewModel.cancelOrder(it) },
             onOpenStock = openStock,
@@ -394,6 +396,8 @@ private fun ScreenContent(
             history = portfolioHistory,
             trades = state.trades,
             stocks = state.stocks,
+            grossTurnoverKrw = state.grossTradeTurnoverKrw,
+            totalCostsKrw = state.totalTransactionCostKrw,
             maxDrawdown = state.maximumDrawdown,
         )
 

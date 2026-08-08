@@ -79,7 +79,7 @@ fun PortfolioScreen(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
             PortfolioTile("총자산", formatMoney(snapshot.totalAssetValueKrw, Currency.KRW), formatPercent(snapshot.totalReturnRate), deltaColor(snapshot.totalProfitKrw), Modifier.weight(1f))
             PortfolioTile("투자상품 평가액", formatMoney(snapshot.stockValueKrw, Currency.KRW), "${holdings.size}개 상품", MarketColors.Ink, Modifier.weight(1f))
-            PortfolioTile("현금", formatMoney(snapshot.cashValueKrw, Currency.KRW), "비중 ${formatPercent(snapshot.cashWeight, false)}", MarketColors.Celadon, Modifier.weight(1f))
+            PortfolioTile("현금", formatMoney(snapshot.cashValueKrw, Currency.KRW), "비중 ${formatPercent(snapshot.cashWeight, false)}", MarketColors.Primary, Modifier.weight(1f))
             PortfolioTile("미실현손익", formatMoney(snapshot.unrealizedProfitKrw, Currency.KRW), "현재가 기준", deltaColor(snapshot.unrealizedProfitKrw), Modifier.weight(1f))
         }
         Row(
@@ -134,6 +134,8 @@ fun AnalyticsScreen(
     history: List<PortfolioSnapshot>,
     trades: List<Trade>,
     stocks: List<StockDefinition>,
+    grossTurnoverKrw: Double,
+    totalCostsKrw: Double,
     maxDrawdown: Double,
     modifier: Modifier = Modifier,
 ) {
@@ -145,8 +147,6 @@ fun AnalyticsScreen(
     val volatility = sqrt(variance) * sqrt(252.0)
     val sharpe = if (volatility == 0.0) 0.0 else (average * 252.0 - 0.03) / volatility
     val sellTrades = trades.filter { it.side == OrderSide.SELL }
-    val turnover = trades.sumOf { it.grossAmount * if (it.currency == Currency.USD) 1_350.0 else 1.0 }
-    val costs = trades.sumOf { (it.commission + it.tax) * if (it.currency == Currency.USD) 1_350.0 else 1.0 }
     val marketValues = snapshot.holdings.mapNotNull { holding ->
         stocks.firstOrNull { it.id == holding.stockId }
             ?.let { stock -> stock to snapshot.holdingReturnRateKrw(holding) }
@@ -161,7 +161,7 @@ fun AnalyticsScreen(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
             AnalyticsTile("누적 수익률", formatPercent(snapshot.totalReturnRate), "초기자본 대비", deltaColor(snapshot.totalReturnRate), Modifier.weight(1f))
             AnalyticsTile("연환산 변동성", formatPercent(volatility, false), "일별 수익률 기준", MarketColors.Amber, Modifier.weight(1f))
-            AnalyticsTile("샤프 지수", formatNumber(sharpe), "무위험수익률 3% 가정", if (sharpe >= 1.0) MarketColors.Celadon else MarketColors.Ink, Modifier.weight(1f))
+            AnalyticsTile("샤프 지수", formatNumber(sharpe), "무위험수익률 3% 가정", if (sharpe >= 1.0) MarketColors.Primary else MarketColors.Ink, Modifier.weight(1f))
             AnalyticsTile("최대 낙폭", formatPercent(maxDrawdown, false), "고점 대비 저점", MarketColors.Fall, Modifier.weight(1f))
         }
         Row(
@@ -175,7 +175,7 @@ fun AnalyticsScreen(
                 LedgerPanel(Modifier.fillMaxWidth().weight(1.1f)) {
                     Column(Modifier.fillMaxSize()) {
                         SectionHeading("수익률·낙폭", eyebrow = "PERFORMANCE PATH") {
-                            StatusLabel("${history.size} 거래일", MarketColors.Celadon)
+                            StatusLabel("${history.size} 거래일", MarketColors.Primary)
                         }
                         Spacer(Modifier.height(12.dp))
                         LineAreaChart(
@@ -199,8 +199,8 @@ fun AnalyticsScreen(
                         SectionHeading("운용 효율", eyebrow = "EFFICIENCY")
                         Spacer(Modifier.height(12.dp))
                         Row {
-                            Metric("총 회전금액", formatMoney(turnover, Currency.KRW, true), Modifier.weight(1f))
-                            Metric("총 거래비용", formatMoney(costs, Currency.KRW, true), Modifier.weight(1f), MarketColors.Amber)
+                            Metric("총 회전금액", formatMoney(grossTurnoverKrw, Currency.KRW, true), Modifier.weight(1f))
+                            Metric("총 거래비용", formatMoney(totalCostsKrw, Currency.KRW, true), Modifier.weight(1f), MarketColors.Amber)
                         }
                         Spacer(Modifier.height(12.dp))
                         Row {
@@ -209,7 +209,7 @@ fun AnalyticsScreen(
                         }
                         Spacer(Modifier.height(9.dp))
                         Text(
-                            "비용/회전율 ${formatPercent(if (turnover == 0.0) 0.0 else costs / turnover, false)}",
+                            "비용/회전율 ${formatPercent(if (grossTurnoverKrw == 0.0) 0.0 else totalCostsKrw / grossTurnoverKrw, false)}",
                             style = MarketType.label,
                             color = MarketColors.InkMuted,
                         )
@@ -296,7 +296,7 @@ private fun RowScope.PositionCell(text: String, weight: Float, color: Color = Ma
 
 @Composable
 private fun AssetAllocationPanel(values: List<Pair<String, Double>>, total: Double, modifier: Modifier) {
-    val palette = listOf(MarketColors.Celadon, MarketColors.Rise, MarketColors.Fall, MarketColors.Amber, MarketColors.InkMuted)
+    val palette = listOf(MarketColors.Primary, MarketColors.Rise, MarketColors.Fall, MarketColors.Amber, MarketColors.InkMuted)
     LedgerPanel(modifier) {
         Column(Modifier.fillMaxSize()) {
             SectionHeading("자산군·섹터 배분", eyebrow = "ASSET EXPOSURE")
