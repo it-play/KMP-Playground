@@ -2,7 +2,9 @@ package com.amond.kmpbook.domain.data
 
 import com.amond.kmpbook.domain.model.CausalEconomicFactor
 import com.amond.kmpbook.domain.model.CausalTraceNodeKind
+import com.amond.kmpbook.domain.model.EtfAssetClass
 import com.amond.kmpbook.domain.model.IndustrySegment
+import com.amond.kmpbook.domain.model.InstrumentStrategy
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.Sector
 import com.amond.kmpbook.domain.model.StockDefinition
@@ -235,15 +237,41 @@ object CausalExposureCatalog {
             )
         }
 
-        // 시장 심리는 개별주 베타만큼만 노출한다. ETF 레버리지는 PriceEngine에서 한 번 적용된다.
-        val riskWeight = (0.30 + stock.beta * 0.36).coerceIn(0.25, 0.95)
+        // ETF 레버리지는 PriceEngine에서 한 번만 적용한다. 채권·현금성 자산은 안전자산 부호를 보존한다.
+        val equityRiskWeight = (0.30 + stock.beta * 0.36).coerceIn(0.25, 0.95)
+        val isGoldSafeHaven = stock.hasGoldSafeHavenExposure()
+        val riskWeight = when {
+            isGoldSafeHaven -> -0.32
+            else -> when (stock.behavior.strategy) {
+                InstrumentStrategy.MONEY_MARKET -> -0.04
+                InstrumentStrategy.TREASURY ->
+                    (-0.18 - stock.behavior.durationYears * 0.025).coerceIn(-0.85, -0.08)
+                InstrumentStrategy.INFLATION_LINKED_BOND ->
+                    (-0.12 - stock.behavior.durationYears * 0.018).coerceIn(-0.70, -0.06)
+                InstrumentStrategy.INVESTMENT_GRADE_BOND -> (
+                    0.08 + stock.behavior.creditSpreadSensitivity * 0.10 - stock.behavior.durationYears * 0.006
+                    ).coerceIn(-0.30, 0.45)
+                InstrumentStrategy.FLOATING_RATE ->
+                    (0.12 + stock.behavior.creditSpreadSensitivity * 0.08).coerceIn(0.08, 0.55)
+                InstrumentStrategy.HIGH_YIELD_BOND,
+                InstrumentStrategy.CLO,
+                -> (0.28 + stock.behavior.creditSpreadSensitivity * 0.14).coerceIn(0.25, 0.85)
+                else -> equityRiskWeight
+            }
+        }
         add(
             CausalStockExposure(
                 factor = CausalEconomicFactor.RISK_APPETITE,
                 weight = riskWeight,
                 targetKind = CausalTraceNodeKind.STOCK,
                 targetLabel = stock.name,
-                rationale = "시장 위험선호 변화가 종목 베타와 자금 수급을 통해 가격 기대에 연결됩니다.",
+                rationale = if (isGoldSafeHaven) {
+                    "금 가격 노출은 위험회피 자금의 안전자산 수요를 반영해 주식 위험선호와 반대로 연결됩니다."
+                } else if (riskWeight < 0.0) {
+                    "위험회피 자금이 듀레이션·현금성 안전자산으로 이동해 주식 위험선호와 반대로 연결됩니다."
+                } else {
+                    "시장 위험선호 변화가 종목 베타·신용 민감도와 자금 수급을 통해 가격 기대에 연결됩니다."
+                },
             ),
         )
     }
@@ -257,6 +285,22 @@ object CausalExposureCatalog {
                 sector == target
             else -> false
         }
+    }
+
+    /** 금광주가 아니라 금 현물·신탁·선물 가격을 직접 참조하는 상품만 안전자산으로 분류한다. */
+    private fun StockDefinition.hasGoldSafeHavenExposure(): Boolean {
+        if (identityProfile?.eventRiskTags?.contains("gold_price") == true) return true
+        if (etfProfile?.assetClass != EtfAssetClass.COMMODITY) return false
+        val descriptor = "$name $englishName ${etfProfile.benchmark}".lowercase()
+        if (listOf("gold miner", "gold mining", "금광").any(descriptor::contains)) return false
+        return listOf(
+            "gold shares",
+            "gold trust",
+            "physical gold",
+            "gold futures",
+            "금현물",
+            "금 선물",
+        ).any(descriptor::contains)
     }
 
     private fun companyOverrideRationale(
