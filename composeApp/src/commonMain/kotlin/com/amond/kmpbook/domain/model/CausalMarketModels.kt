@@ -1,5 +1,11 @@
 package com.amond.kmpbook.domain.model
 
+/** 연결확률과 분리된 도착/출발 반응비의 전역 안정성 상한이다. */
+const val MAX_CAUSAL_MARKET_RESPONSE_INTENSITY: Double = 1.5
+
+/** 부동소수점 언더플로와 의미 없는 경로를 막는 저장 seed의 최소 유효 강도다. */
+const val MIN_CAUSAL_SIGNAL_STRENGTH: Double = 1e-6
+
 /**
  * 사건이 처음 바꾸는 경제 변수와 인과 그래프의 중간 변수다.
  *
@@ -47,6 +53,26 @@ enum class CausalTransmissionProfile(val displayName: String) {
     GLOBAL_REFERENCE_PRICE("글로벌 기준가격"),
 }
 
+/**
+ * 사건이 발생한 순간의 시장 취약도 입력이다. 이벤트에 고정해 가격 엔진과 과거 뉴스가
+ * 같은 비선형 반응을 재현하도록 한다.
+ */
+data class CausalMarketRegimeSnapshot(
+    val riskSentiment: Double = 0.0,
+    val volatilityRegime: Double = 1.0,
+    val usdKrwChangeRate: Double = 0.0,
+    val marketHourlyReturns: Map<Market, Double> = emptyMap(),
+    val marketChangeFromPreviousClose: Map<Market, Double> = emptyMap(),
+) {
+    init {
+        require(riskSentiment.isFinite() && riskSentiment in -1.0..1.0)
+        require(volatilityRegime.isFinite() && volatilityRegime in 0.1..10.0)
+        require(usdKrwChangeRate.isFinite() && usdKrwChangeRate in -0.25..0.25)
+        require(marketHourlyReturns.values.all(Double::isFinite))
+        require(marketChangeFromPreviousClose.values.all(Double::isFinite))
+    }
+}
+
 /** 저장되는 사건 payload의 구조화된 인과 시작점이다. */
 data class CausalSignalSeed(
     val factor: CausalEconomicFactor,
@@ -79,32 +105,77 @@ enum class CausalTraceNodeKind {
     STOCK,
 }
 
+/** 경제 요인이 종목 가치로 바뀌는 마지막 사업 메커니즘이다. 문장과 부호를 산업명 추측에서 분리한다. */
+enum class CausalExposureMechanism {
+    REFERENCE_PRICE_REVENUE,
+    REFERENCE_PRICE_LINK,
+    VARIABLE_INPUT_COST,
+    DEMAND_VOLUME,
+    CREDIT_INTERMEDIATION,
+    CAPITAL_EXPENDITURE_DEMAND,
+    RISK_ASSET_FLOW,
+    SAFE_HAVEN_FLOW,
+}
+
 data class CausalTraceNode(
     val kind: CausalTraceNodeKind,
     val label: String,
     val factor: CausalEconomicFactor? = null,
+    /** 경제 요인이 이 경로에서 실제로 움직인 방향. 전파 엔진이 signed edge를 반영해 고정한다. */
+    val factorDirection: CausalSignalDirection? = null,
     val sector: Sector? = null,
     val industrySegment: IndustrySegment? = null,
     val stockId: String? = null,
+    /** 일반 시장 노출이 아니라 회사별 사업구성 override에서 만들어진 종착점인지 표시한다. */
+    val companySpecificExposure: Boolean = false,
 ) {
     init {
         require(label.isNotBlank()) { "인과 경로 노드 이름은 비어 있을 수 없습니다." }
         when (kind) {
             CausalTraceNodeKind.ECONOMIC_FACTOR -> require(
-                factor != null && sector == null && industrySegment == null && stockId == null,
-            ) { "경제 요인 경로 노드에는 경제 요인만 필요합니다." }
+                factor != null && factorDirection != null &&
+                    sector == null && industrySegment == null && stockId == null && !companySpecificExposure,
+            ) { "경제 요인 경로 노드에는 경제 요인과 실제 방향만 필요합니다." }
             CausalTraceNodeKind.INDUSTRY -> require(
-                factor == null && sector != null && industrySegment == null && stockId == null,
+                factor == null && factorDirection == null &&
+                    sector != null && industrySegment == null && stockId == null && !companySpecificExposure,
             ) { "산업 경로 노드에는 산업만 필요합니다." }
             CausalTraceNodeKind.INDUSTRY_SEGMENT -> require(
-                factor == null && sector != null && industrySegment?.parentSector == sector && stockId == null,
+                factor == null && factorDirection == null &&
+                    sector != null && industrySegment?.parentSector == sector && stockId == null &&
+                    !companySpecificExposure,
             ) { "세부 산업 경로 노드에는 일치하는 상위 산업이 필요합니다." }
             CausalTraceNodeKind.STOCK -> require(
-                factor == null && sector == null && industrySegment == null && !stockId.isNullOrBlank(),
+                factor == null && factorDirection == null &&
+                    sector == null && industrySegment == null && !stockId.isNullOrBlank(),
             ) { "종목 경로 노드에는 종목 ID가 필요합니다." }
         }
     }
+
+    val displayLabel: String
+        get() = if (kind == CausalTraceNodeKind.ECONOMIC_FACTOR) {
+            "$label ${requireNotNull(factor).movementLabel(requireNotNull(factorDirection))}"
+        } else {
+            label
+        }
 }
+
+private fun CausalEconomicFactor.movementLabel(direction: CausalSignalDirection): String = when (this) {
+    CausalEconomicFactor.HOUSEHOLD_ENERGY_BURDEN -> direction.choose("증가", "감소")
+    CausalEconomicFactor.CONSUMER_DEMAND,
+    CausalEconomicFactor.GAME_SOFTWARE_DEMAND,
+    CausalEconomicFactor.HIGH_END_PC_DEMAND,
+    CausalEconomicFactor.COMPUTING_HARDWARE_DEMAND,
+    CausalEconomicFactor.SEMICONDUCTOR_DEMAND,
+    -> direction.choose("증가", "감소")
+    CausalEconomicFactor.CREDIT_AVAILABILITY -> direction.choose("확대", "축소")
+    CausalEconomicFactor.BUSINESS_INVESTMENT -> direction.choose("확대", "축소")
+    CausalEconomicFactor.RISK_APPETITE -> direction.choose("강화", "약화")
+    else -> direction.choose("상승", "하락")
+}
+
+private fun CausalSignalDirection.choose(increase: String, decrease: String): String =
+    if (this == CausalSignalDirection.INCREASE) increase else decrease
 
 /**
  * 경제 요인 그래프에 들어오기 전에 신호가 거래소 사이를 이동한 대표 경로다.
@@ -116,6 +187,8 @@ data class CausalMarketTransmissionTrace(
     val markets: List<Market>,
     val reach: Double,
     val dominantPathContribution: Double,
+    /** 도착시장 취약도를 반영한 반응강도. 확률이 아니므로 1을 넘을 수 있다. */
+    val responseIntensity: Double = reach,
 ) {
     init {
         require(markets.isNotEmpty()) { "시장 전염 경로에는 시장이 하나 이상 필요합니다." }
@@ -130,10 +203,18 @@ data class CausalMarketTransmissionTrace(
                 dominantPathContribution > 0.0 &&
                 dominantPathContribution <= reach,
         ) { "대표 시장 경로 기여도는 0보다 크고 전체 전염도 이하여야 합니다." }
+        require(
+            responseIntensity.isFinite() &&
+                responseIntensity > 0.0 &&
+                responseIntensity <= MAX_CAUSAL_MARKET_RESPONSE_INTENSITY,
+        ) {
+            "시장 반응강도는 0보다 크고 1.5 이하여야 합니다."
+        }
     }
 
     val isCrossMarket: Boolean get() = markets.size > 1
     val labels: List<String> get() = markets.map(Market::displayName)
+    val responseGain: Double get() = responseIntensity / reach
 }
 
 /** 하나의 단순 경로가 특정 종목에 기여한 결과다. */
@@ -142,6 +223,7 @@ data class CausalImpactTrace(
     val confidence: Double,
     val nodes: List<CausalTraceNode>,
     val rationale: String,
+    val exposureMechanism: CausalExposureMechanism,
     val marketTransmission: CausalMarketTransmissionTrace? = null,
 ) {
     init {
@@ -152,7 +234,7 @@ data class CausalImpactTrace(
     }
 
     val labels: List<String>
-        get() = marketTransmission?.labels.orEmpty() + nodes.map(CausalTraceNode::label)
+        get() = marketTransmission?.labels.orEmpty() + nodes.map(CausalTraceNode::displayLabel)
 }
 
 /** 한 종목에 도착한 모든 경로를 합성한 순수 전파 결과다. */
