@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -595,6 +596,9 @@ private data class StockNewsSignal(
     val relation: NewsRelatedStockUi,
     val pathNodes: List<String>,
 ) {
+    val hasCausalTrace: Boolean
+        get() = pathNodes.size >= 2
+
     val causalPath: String
         get() = pathNodes.joinToString(" → ")
 }
@@ -610,6 +614,18 @@ private fun MarketIntelligenceDeck(
     var selectedTab by remember(stock.id) { mutableStateOf(IntelligenceTab.IMPACT) }
     val signals = remember(relatedNews, stock) {
         relatedNews.mapNotNull { story -> story.signalFor(stock) }
+    }
+    val tracedSignals = remember(signals) { signals.filter(StockNewsSignal::hasCausalTrace) }
+    val availableTabs = remember(signals.isNotEmpty(), tracedSignals.isNotEmpty()) {
+        buildList {
+            if (tracedSignals.isNotEmpty()) add(IntelligenceTab.IMPACT)
+            if (signals.isNotEmpty()) add(IntelligenceTab.NEWS)
+            add(IntelligenceTab.STRUCTURE)
+        }
+    }
+    val activeTab = selectedTab.takeIf(availableTabs::contains) ?: availableTabs.first()
+    LaunchedEffect(stock.id, availableTabs) {
+        if (selectedTab != activeTab) selectedTab = activeTab
     }
 
     Column(modifier.background(MarketColors.Grey50)) {
@@ -631,23 +647,23 @@ private fun MarketIntelligenceDeck(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            IntelligenceTab.entries.forEach { tab ->
+            availableTabs.forEach { tab ->
                 IntelligenceTabButton(
                     text = if (tab == IntelligenceTab.NEWS && signals.isNotEmpty()) {
                         "${tab.label} ${signals.size}"
                     } else {
                         tab.label
                     },
-                    selected = selectedTab == tab,
+                    selected = activeTab == tab,
                     onClick = { selectedTab = tab },
                 )
             }
         }
         LedgerDivider()
-        when (selectedTab) {
+        when (activeTab) {
             IntelligenceTab.IMPACT -> ImpactPathPanel(
                 stock = stock,
-                signals = signals,
+                signals = tracedSignals,
                 onOpenEvent = onOpenEvent,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -728,7 +744,7 @@ private fun ImpactPathPanel(
             )
             Text(
                 "${featured.story.status.label} · ${impactDirectionLabel(featured.relation.direction)} · " +
-                    relationTierLabel(featured.relation),
+                    relationTierLabel(featured.relation, featured.hasCausalTrace),
                 style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
                 color = directionColor,
                 maxLines = 1,
@@ -737,10 +753,10 @@ private fun ImpactPathPanel(
         }
         ImpactPathRibbon(featured, onOpenEvent)
         Text(
-            "핵심 근거 · ${featured.relation.reason}",
+            "종목 영향 · ${featured.relation.reason}",
             style = MarketType.caption,
             color = MarketColors.InkMuted,
-            maxLines = 2,
+            maxLines = 3,
             overflow = TextOverflow.Ellipsis,
         )
     }
@@ -751,7 +767,7 @@ private fun ImpactPathRibbon(
     signal: StockNewsSignal,
     onOpenEvent: (String) -> Unit,
 ) {
-    val pathParts = if (signal.pathNodes.size <= 4) {
+    val pathParts = if (signal.pathNodes.size <= 3) {
         signal.pathNodes
     } else {
         listOf(
@@ -851,7 +867,7 @@ private fun RelatedNewsRow(signal: StockNewsSignal, onClick: () -> Unit) {
                 color = directionColor,
             )
             Text(
-                relationTierLabel(signal.relation),
+                relationTierLabel(signal.relation, signal.hasCausalTrace),
                 modifier = Modifier.weight(1f),
                 style = MarketType.caption,
                 color = MarketColors.InkMuted,
@@ -868,19 +884,21 @@ private fun RelatedNewsRow(signal: StockNewsSignal, onClick: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            "핵심 근거 · ${signal.relation.reason}",
+            "종목 영향 · ${signal.relation.reason}",
             style = MarketType.caption,
             color = MarketColors.InkMuted,
-            maxLines = 2,
+            maxLines = 5,
             overflow = TextOverflow.Ellipsis,
         )
-        Text(
-            signal.causalPath,
-            style = MarketType.caption.copy(fontWeight = FontWeight.Medium),
-            color = MarketColors.Signal,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (signal.hasCausalTrace) {
+            Text(
+                signal.causalPath,
+                style = MarketType.caption.copy(fontWeight = FontWeight.Medium),
+                color = MarketColors.Signal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -908,56 +926,27 @@ private fun ConnectedNewsEmptyState(stockName: String, modifier: Modifier) {
 /** 새 인과 필드가 추가돼도 덱의 표시 구조와 분리해 이 변환만 확장한다. */
 private fun NewsStoryUi.signalFor(stock: StockDefinition): StockNewsSignal? {
     val relation = relatedStocks.firstOrNull { it.stockId == stock.id } ?: return null
-    val path = when (relation.relationKind) {
-        NewsStockRelationKind.DIRECT_TARGET -> impactPaths.firstOrNull { it.stockId == stock.id }
-        NewsStockRelationKind.UNDERLYING_EXPOSURE -> {
-            val underlyingIds = stock.identityProfile?.underlyingInstrumentIds.orEmpty()
-            impactPaths.firstOrNull { path -> path.stockId?.let(underlyingIds::contains) == true }
-        }
-        NewsStockRelationKind.CAUSAL_CHAIN -> impactPaths.firstOrNull { it.stockId == stock.id }
-        NewsStockRelationKind.INDUSTRY_SEGMENT -> impactPaths.firstOrNull { path ->
-            path.industrySegment?.let(stock.industrySegments::contains) == true
-        }
-        NewsStockRelationKind.INDUSTRY -> {
-            val exposedSectors = stock.identityProfile?.exposedSectors.orEmpty().ifEmpty { setOf(stock.sector) }
-            impactPaths.firstOrNull { path -> path.sector?.let(exposedSectors::contains) == true }
-        }
-        NewsStockRelationKind.MARKET_CONTEXT -> {
-            val marketPaths = impactPaths.filter { path ->
-                path.stockId == null && path.sector == null && path.industrySegment == null
-            }
-            marketPaths.firstOrNull { path ->
-                stock.market.displayName in path.label || stock.market.countryName in path.label
-            } ?: marketPaths.singleOrNull()
-        }
-    }
     val traceLabels = relation.causalTraceLabels
         .filter(String::isNotBlank)
         .fold(emptyList<String>()) { labels, label ->
             if (labels.lastOrNull() == label) labels else labels + label
         }
-    val fallbackRoute = path?.label
-        ?.takeUnless { it == relation.name || it == relation.symbol }
-        ?: relation.relationKind.displayName
-    val causalNodes = when {
-        traceLabels.isEmpty() -> listOf(event.title, fallbackRoute, relation.name)
-        traceLabels.last() == relation.name -> traceLabels
-        else -> traceLabels + relation.name
-    }
     return StockNewsSignal(
         story = this,
         relation = relation,
-        pathNodes = causalNodes,
+        pathNodes = traceLabels,
     )
 }
 
-private fun relationTierLabel(relation: NewsRelatedStockUi): String = when (relation.relationKind) {
+private fun relationTierLabel(relation: NewsRelatedStockUi, hasCausalTrace: Boolean): String = when (relation.relationKind) {
     NewsStockRelationKind.DIRECT_TARGET -> "직접 관계"
     NewsStockRelationKind.UNDERLYING_EXPOSURE -> "직접 관계 · 기초자산"
     NewsStockRelationKind.CAUSAL_CHAIN -> when (relation.specificity) {
-        4 -> "직접 관계 · 인과 경로"
-        2, 3 -> "산업 관계 · 인과 경로"
-        else -> "시장 관계 · 인과 경로"
+        4 -> "직접 관계"
+        2, 3 -> "산업 관계"
+        else -> "시장 관계"
+    }.let { tier ->
+        if (hasCausalTrace) "$tier · 인과 경로" else tier
     }
     NewsStockRelationKind.INDUSTRY_SEGMENT,
     NewsStockRelationKind.INDUSTRY,

@@ -518,15 +518,17 @@ private fun NewsDetailPanel(
                 ProductTerminationTermsSection(terms)
             }
 
-            LedgerDivider()
-            Column(verticalArrangement = Arrangement.spacedBy(MarketSpacing.sm)) {
-                Text("이 뉴스가 연결되는 곳", style = MarketType.heading, color = MarketColors.Ink)
-                Text(
-                    "같은 사건도 비용 구조와 수익 모델에 따라 방향이 달라질 수 있어요.",
-                    style = MarketType.label,
-                    color = MarketColors.InkMuted,
-                )
-                ImpactAnalysisMap(story.event.title, story.impactPaths)
+            if (story.impactPaths.isNotEmpty()) {
+                LedgerDivider()
+                Column(verticalArrangement = Arrangement.spacedBy(MarketSpacing.sm)) {
+                    Text("이 뉴스가 연결되는 곳", style = MarketType.heading, color = MarketColors.Ink)
+                    Text(
+                        "같은 사건도 비용 구조와 수익 모델에 따라 방향이 달라질 수 있어요.",
+                        style = MarketType.label,
+                        color = MarketColors.InkMuted,
+                    )
+                    ImpactAnalysisMap(story.event.title, story.impactPaths)
+                }
             }
 
             if (story.relatedStocks.isNotEmpty()) {
@@ -553,7 +555,7 @@ private fun NewsDetailPanel(
                                     "${stock.symbol} · ${stock.reason}",
                                     style = MarketType.caption,
                                     color = MarketColors.InkMuted,
-                                    maxLines = 2,
+                                    maxLines = 5,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
