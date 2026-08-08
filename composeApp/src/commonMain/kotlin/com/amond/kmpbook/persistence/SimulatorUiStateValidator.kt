@@ -5,6 +5,7 @@ import com.amond.kmpbook.domain.model.CorporateActionNewsTransition
 import com.amond.kmpbook.domain.model.CorporateActionSource
 import com.amond.kmpbook.domain.model.CausalEconomicFactor
 import com.amond.kmpbook.domain.model.CausalSignalDirection
+import com.amond.kmpbook.domain.model.CausalTransmissionProfile
 import com.amond.kmpbook.domain.model.EventImpactCoveragePolicy
 import com.amond.kmpbook.domain.model.EventImpactHorizon
 import com.amond.kmpbook.domain.model.EventImpactTargetKind
@@ -1242,7 +1243,13 @@ private fun validateGameEvent(
             ?: return "${event.id} 인과 신호 $index 경제 요인 enum이 유효하지 않습니다."
         val signalDirection = signal.direction as CausalSignalDirection?
             ?: return "${event.id} 인과 신호 $index 방향 enum이 유효하지 않습니다."
-        if (factor !in CausalEconomicFactor.entries || signalDirection !in CausalSignalDirection.entries) {
+        val transmissionProfile = signal.transmissionProfile as CausalTransmissionProfile?
+            ?: return "${event.id} 인과 신호 $index 전염 프로필 enum이 유효하지 않습니다."
+        if (
+            factor !in CausalEconomicFactor.entries ||
+            signalDirection !in CausalSignalDirection.entries ||
+            transmissionProfile !in CausalTransmissionProfile.entries
+        ) {
             return "${event.id} 인과 신호 $index enum이 유효하지 않습니다."
         }
         if (!signal.strength.isFinite() || signal.strength <= 0.0 || signal.strength > 1.0 ||
@@ -1250,6 +1257,12 @@ private fun validateGameEvent(
         ) {
             return "${event.id} 인과 신호 $index 강도·신뢰도가 유효하지 않습니다."
         }
+    }
+    if (
+        event.scope in setOf(EventScope.COUNTRY, EventScope.MARKET) &&
+        event.causalSignals.map { it.transmissionProfile }.distinct().size > 1
+    ) {
+        return "${event.id} 국가·시장 이벤트에 서로 다른 전염 프로필이 혼합되었습니다."
     }
     if (event.reportedFacts.any { fact ->
             fact.label.isBlank() || fact.actual.isBlank() || fact.comparison?.isBlank() == true

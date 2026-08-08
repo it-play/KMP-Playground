@@ -5,6 +5,7 @@ import com.amond.kmpbook.domain.model.CorporateActionNewsTransition
 import com.amond.kmpbook.domain.model.CorporateActionSource
 import com.amond.kmpbook.domain.model.CausalEconomicFactor
 import com.amond.kmpbook.domain.model.CausalSignalDirection
+import com.amond.kmpbook.domain.model.CausalTransmissionProfile
 import com.amond.kmpbook.domain.model.EventImpactCoveragePolicy
 import com.amond.kmpbook.domain.model.EventImpactHorizon
 import com.amond.kmpbook.domain.model.EventImpactTargetKind
@@ -476,6 +477,10 @@ actual class GameSaveStorage actual constructor() {
                             requiredEnum<CausalSignalDirection>("direction", "$signalPath.direction")
                             requiredFiniteDouble("strength", "$signalPath.strength")
                             requiredFiniteDouble("confidence", "$signalPath.confidence")
+                            requiredEnum<CausalTransmissionProfile>(
+                                "transmissionProfile",
+                                "$signalPath.transmissionProfile",
+                            )
                         }
                     }
                     required("listingRiskTags")
@@ -767,6 +772,7 @@ actual class GameSaveStorage actual constructor() {
             "direction",
             "strength",
             "confidence",
+            "transmissionProfile",
         )
 
         fun createSaveGson(): Gson = GsonBuilder()
