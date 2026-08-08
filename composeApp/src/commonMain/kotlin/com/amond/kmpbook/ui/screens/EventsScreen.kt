@@ -316,7 +316,8 @@ private fun EventTimelineRow(
     onClick: () -> Unit,
 ) {
     val event = entry.event
-    val color = eventDirectionColor(entry.personalDirection)
+    val marketProtection = event.isMarketProtectionEvent
+    val color = if (marketProtection) MarketColors.Amber else eventDirectionColor(entry.personalDirection)
     Row(
         Modifier
             .fillMaxWidth()
@@ -347,10 +348,11 @@ private fun EventTimelineRow(
                 if (entry.relevance.isHoldingRelated) StatusLabel("보유", MarketColors.Primary, strong = true)
                 if (entry.relevance.isWatchlistRelated) StatusLabel("관심", MarketColors.Celadon, strong = true)
                 if (entry.relevance.isSectorRelated) StatusLabel("분야", MarketColors.InkMuted)
-                StatusLabel(entry.personalDirection.displayName, color)
+                StatusLabel(if (marketProtection) "시장조치" else entry.personalDirection.displayName, color)
             }
             Text(
-                "${formatDateTimeKst(event.startsAt)} · ${event.type.displayName} · ${event.scope.displayName}",
+                "${formatDateTimeKst(event.startsAt)} · " +
+                    "${if (marketProtection) "거래소 조치" else event.type.displayName} · ${event.scope.displayName}",
                 style = MarketType.caption,
                 color = MarketColors.InkMuted,
             )
@@ -369,7 +371,8 @@ private fun EventDetail(
     onOpenStock: (String) -> Unit,
 ) {
     val event = entry.event
-    val color = eventDirectionColor(entry.personalDirection)
+    val marketProtection = event.isMarketProtectionEvent
+    val color = if (marketProtection) MarketColors.Amber else eventDirectionColor(entry.personalDirection)
     val stocksById = stocks.associateBy(StockDefinition::id)
     val targetIds = linkedSetOf<String>().apply {
         addAll(entry.relevance.heldStockIds)
@@ -380,8 +383,8 @@ private fun EventDetail(
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            StatusLabel(entry.personalDirection.displayName, color, strong = true)
-            if (entry.relevance.isPersonal && entry.personalDirection != event.impact.direction) {
+            StatusLabel(if (marketProtection) "시장조치" else entry.personalDirection.displayName, color, strong = true)
+            if (!marketProtection && entry.relevance.isPersonal && entry.personalDirection != event.impact.direction) {
                 Spacer(Modifier.width(6.dp))
                 StatusLabel("원 뉴스 ${event.impact.direction.displayName}", eventDirectionColor(event.impact.direction))
             }
@@ -405,13 +408,30 @@ private fun EventDetail(
         Spacer(Modifier.height(MarketSpacing.lg))
         LedgerDivider()
         Spacer(Modifier.height(MarketSpacing.lg))
-        Text("가격 엔진 영향", style = MarketType.heading, color = MarketColors.Ink)
-        Spacer(Modifier.height(MarketSpacing.sm))
-        Row(Modifier.fillMaxWidth()) {
-            ImpactMetric("원 이벤트 충격", formatPercent(event.impact.shockReturn), eventDirectionColor(event.impact.direction), Modifier.weight(1f))
-            ImpactMetric("시간 드리프트", formatPercent(event.impact.hourlyDrift), color, Modifier.weight(1f))
-            ImpactMetric("변동성", "×${event.impact.volatilityMultiplier}", MarketColors.Amber, Modifier.weight(1f))
-            ImpactMetric("거래량", "×${event.impact.volumeMultiplier}", MarketColors.Celadon, Modifier.weight(1f))
+        if (marketProtection) {
+            Text("시장조치 적용", style = MarketType.heading, color = MarketColors.Ink)
+            Spacer(Modifier.height(MarketSpacing.sm))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .background(MarketColors.AmberSoft, RoundedCornerShape(MarketRadii.medium))
+                    .padding(MarketSpacing.md),
+            ) {
+                Text(
+                    "가격을 임의로 움직이는 뉴스가 아니라 주문 접수·취소·체결과 거래 가능 시간을 바꾸는 거래소 조치예요. 현재 상태는 상단 안내나 종목 배지에서 확인할 수 있어요.",
+                    style = MarketType.body,
+                    color = MarketColors.Ink,
+                )
+            }
+        } else {
+            Text("가격 엔진 영향", style = MarketType.heading, color = MarketColors.Ink)
+            Spacer(Modifier.height(MarketSpacing.sm))
+            Row(Modifier.fillMaxWidth()) {
+                ImpactMetric("원 이벤트 충격", formatPercent(event.impact.shockReturn), eventDirectionColor(event.impact.direction), Modifier.weight(1f))
+                ImpactMetric("시간 드리프트", formatPercent(event.impact.hourlyDrift), color, Modifier.weight(1f))
+                ImpactMetric("변동성", "×${event.impact.volatilityMultiplier}", MarketColors.Amber, Modifier.weight(1f))
+                ImpactMetric("거래량", "×${event.impact.volumeMultiplier}", MarketColors.Celadon, Modifier.weight(1f))
+            }
         }
         Spacer(Modifier.height(MarketSpacing.lg))
         Text("적용 범위", style = MarketType.heading, color = MarketColors.Ink)
@@ -428,7 +448,7 @@ private fun EventDetail(
         )
         Spacer(Modifier.height(MarketSpacing.sm))
         Text(
-            "발표 ${formatDateTimeKst(event.startsAt)} · 영향 창 ${event.durationHours}시간 · " +
+            "${if (marketProtection) "기록" else "발표"} ${formatDateTimeKst(event.startsAt)} · 영향 창 ${event.durationHours}시간 · " +
                 if (event.isActiveAt(currentTime)) "정규장 기준 반영 중 또는 대기" else "영향 종료",
             style = MarketType.caption,
             color = if (event.isActiveAt(currentTime)) color else MarketColors.InkMuted,
@@ -466,6 +486,8 @@ private fun EventDetail(
             Text(
                 if (ScheduledEventOccurrence.isScheduledId(event.id)) {
                     "발표 일정과 실제·예상 수치는 분리됩니다. '게임 수치'는 occurrence id와 시드로 만든 가상 값이며 투자 정보가 아닙니다."
+                } else if (marketProtection) {
+                    "공개 거래소 규칙을 게임의 시간봉과 가상 시세에 적용한 시장조치 기록입니다. 실제 거래소 공시나 투자 정보가 아닙니다."
                 } else {
                     "이 뉴스는 규칙·조건·확률·쿨다운으로 생성된 게임 이벤트입니다. 실제 보도나 투자 정보가 아닙니다."
                 },
@@ -475,6 +497,11 @@ private fun EventDetail(
         }
     }
 }
+
+private val GameEvent.isMarketProtectionEvent: Boolean
+    get() = id.startsWith("market-protection:") ||
+        id.startsWith("listing-lifecycle:") ||
+        id.startsWith("listing-resolution:")
 
 @Composable
 private fun InstrumentImpactRow(

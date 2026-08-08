@@ -61,6 +61,12 @@ fun formatDateTimeKst(instant: Instant): String {
         "${local.hour.twoDigits()}:${local.minute.twoDigits()}"
 }
 
+fun formatDateTimeEt(instant: Instant): String {
+    val local = instant.toLocalDateTime(TimeZone.of("America/New_York"))
+    return "${local.year}.${local.month.number.twoDigits()}.${local.day.twoDigits()} " +
+        "${local.hour.twoDigits()}:${local.minute.twoDigits()}"
+}
+
 fun formatDateKst(instant: Instant): String {
     val local = instant.toLocalDateTime(TimeZone.of("Asia/Seoul"))
     return "${local.year}.${local.month.number.twoDigits()}.${local.day.twoDigits()}"

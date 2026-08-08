@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.amond.kmpbook.domain.model.Currency
 import com.amond.kmpbook.domain.model.Holding
 import com.amond.kmpbook.domain.model.InstrumentType
@@ -50,12 +51,16 @@ import com.amond.kmpbook.domain.model.Quote
 import com.amond.kmpbook.domain.model.ReferenceCurrency
 import com.amond.kmpbook.domain.model.StockDefinition
 import com.amond.kmpbook.domain.model.TimeInForce
+import com.amond.kmpbook.presentation.ProtectionDetailUi
+import com.amond.kmpbook.presentation.ProtectionStatusBadgeUi
 import com.amond.kmpbook.ui.charts.CandlestickVolumeChart
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
 import com.amond.kmpbook.ui.components.MarketButton
 import com.amond.kmpbook.ui.components.MarketButtonTone
+import com.amond.kmpbook.ui.components.MarketProtectionDetailSurface
 import com.amond.kmpbook.ui.components.Metric
+import com.amond.kmpbook.ui.components.ProtectionStatusBadge
 import com.amond.kmpbook.ui.components.SectionHeading
 import com.amond.kmpbook.ui.components.StatusLabel
 import com.amond.kmpbook.ui.components.deltaColor
@@ -89,11 +94,15 @@ fun MarketTradingScreen(
         quantity: Double,
         limitPrice: Double?,
     ) -> Unit,
+    protectionBadges: Map<String, ProtectionStatusBadgeUi> = emptyMap(),
+    selectedProtectionDetail: ProtectionDetailUi? = null,
+    orderUnavailableReason: (stockId: String, orderType: OrderType) -> String? = { _, _ -> null },
     modifier: Modifier = Modifier,
 ) {
     val selectedStock = stocks.firstOrNull { it.id == selectedStockId } ?: stocks.firstOrNull()
     val quote = selectedStock?.let { quotes[it.id] }
     val bars = selectedStock?.let { priceHistory[it.id].orEmpty() }.orEmpty()
+    var showSelectedProtectionDetail by remember(selectedStock?.id) { mutableStateOf(false) }
 
     Row(
         modifier = modifier.fillMaxSize().padding(MarketLayout.screenPadding),
@@ -106,6 +115,7 @@ fun MarketTradingScreen(
             onSelectStock = onSelectStock,
             watchlistedStockIds = watchlistedStockIds,
             onToggleWatchlist = onToggleWatchlist,
+            protectionBadges = protectionBadges,
             modifier = Modifier.width(252.dp).fillMaxHeight(),
         )
         if (selectedStock != null && quote != null) {
@@ -116,6 +126,8 @@ fun MarketTradingScreen(
                 holding = holding,
                 watched = selectedStock.id in watchlistedStockIds,
                 onToggleWatchlist = { onToggleWatchlist(selectedStock.id) },
+                protectionBadge = protectionBadges[selectedStock.id],
+                onOpenProtectionDetail = { showSelectedProtectionDetail = true },
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
             Column(
@@ -134,6 +146,8 @@ fun MarketTradingScreen(
                     holding = holding,
                     cashKrw = cashKrw,
                     cashUsd = cashUsd,
+                    protectionDetail = selectedProtectionDetail,
+                    orderUnavailableReason = { type -> orderUnavailableReason(selectedStock.id, type) },
                     onSubmitOrder = onSubmitOrder,
                     modifier = Modifier.fillMaxWidth().weight(1.05f),
                 )
@@ -143,6 +157,18 @@ fun MarketTradingScreen(
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("표시할 종목이 없습니다.", style = MarketType.body, color = MarketColors.InkMuted)
                 }
+            }
+        }
+    }
+    if (showSelectedProtectionDetail) {
+        selectedProtectionDetail?.let { detail ->
+            Dialog(onDismissRequest = { showSelectedProtectionDetail = false }) {
+                MarketProtectionDetailSurface(
+                    model = detail,
+                    modifier = Modifier.width(720.dp),
+                    contextTitle = selectedStock?.name,
+                    onClose = { showSelectedProtectionDetail = false },
+                )
             }
         }
     }
@@ -156,6 +182,7 @@ private fun WatchlistPanel(
     onSelectStock: (String) -> Unit,
     watchlistedStockIds: Set<String>,
     onToggleWatchlist: (String) -> Unit,
+    protectionBadges: Map<String, ProtectionStatusBadgeUi>,
     modifier: Modifier,
 ) {
     var query by remember { mutableStateOf("") }
@@ -227,6 +254,7 @@ private fun WatchlistPanel(
                         quote = quotes[stock.id],
                         selected = stock.id == selectedStockId,
                         watched = stock.id in watchlistedStockIds,
+                        protectionBadge = protectionBadges[stock.id],
                         onClick = { onSelectStock(stock.id) },
                         onToggleWatchlist = { onToggleWatchlist(stock.id) },
                     )
@@ -270,6 +298,7 @@ private fun WatchlistRow(
     quote: Quote?,
     selected: Boolean,
     watched: Boolean,
+    protectionBadge: ProtectionStatusBadgeUi?,
     onClick: () -> Unit,
     onToggleWatchlist: () -> Unit,
 ) {
@@ -314,6 +343,10 @@ private fun WatchlistRow(
                 color = MarketColors.InkMuted,
                 maxLines = 1,
             )
+            ProtectionStatusBadge(
+                model = protectionBadge,
+                modifier = Modifier.padding(top = 2.dp),
+            )
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(
@@ -338,6 +371,8 @@ private fun StockChartPanel(
     holding: Holding?,
     watched: Boolean,
     onToggleWatchlist: () -> Unit,
+    protectionBadge: ProtectionStatusBadgeUi?,
+    onOpenProtectionDetail: () -> Unit,
     modifier: Modifier,
 ) {
     var range by remember { mutableStateOf("1개월") }
@@ -397,6 +432,13 @@ private fun StockChartPanel(
                     StatusLabel(stock.instrumentType.displayName, MarketColors.Celadon)
                     StatusLabel(stock.market.displayName, MarketColors.InkMuted)
                     StatusLabel(stock.behavior.strategy.displayName, MarketColors.Primary)
+                }
+                if (protectionBadge != null) {
+                    Spacer(Modifier.height(4.dp))
+                    ProtectionStatusBadge(
+                        model = protectionBadge,
+                        onClick = onOpenProtectionDetail,
+                    )
                 }
                 Spacer(Modifier.height(6.dp))
                 Row(
@@ -725,6 +767,8 @@ private fun OrderTicketPanel(
     holding: Holding?,
     cashKrw: Double,
     cashUsd: Double,
+    protectionDetail: ProtectionDetailUi?,
+    orderUnavailableReason: (OrderType) -> String?,
     onSubmitOrder: (OrderSide, OrderType, TimeInForce, Double, Double?) -> Unit,
     modifier: Modifier,
 ) {
@@ -740,6 +784,7 @@ private fun OrderTicketPanel(
     val expectedPrice = if (type == OrderType.LIMIT) limitPrice ?: quote.price else quote.price
     val expectedAmount = quantity * expectedPrice
     val availableCash = if (stock.currency == Currency.KRW) cashKrw else cashUsd
+    val protectionBlockReason = orderUnavailableReason(type)
 
     LedgerPanel(modifier, padding = 12.dp) {
         Column(Modifier.fillMaxSize()) {
@@ -827,6 +872,16 @@ private fun OrderTicketPanel(
                 )
             }
             Spacer(Modifier.weight(1f))
+            protectionDetail?.let { detail ->
+                Text(
+                    text = protectionBlockReason ?: detail.primary.orderImpact,
+                    style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                    color = if (protectionBlockReason == null) MarketColors.Primary else MarketColors.Rise,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(7.dp))
+            }
             Text(
                 when {
                     stock.etfProfile?.taxCategory == com.amond.kmpbook.domain.model.EtfTaxCategory.KOREAN_DOMESTIC_EQUITY ->
@@ -843,7 +898,11 @@ private fun OrderTicketPanel(
             )
             Spacer(Modifier.height(7.dp))
             MarketButton(
-                text = "${stock.name} ${side.displayName} 주문",
+                text = if (protectionBlockReason == null) {
+                    "${stock.name} ${side.displayName} 주문"
+                } else {
+                    protectionDetail.disabledOrderCtaText()
+                },
                 onClick = {
                     if (quantity > 0.0) {
                         onSubmitOrder(
@@ -856,12 +915,22 @@ private fun OrderTicketPanel(
                     }
                 },
                 enabled = quantity > 0.0 && stock.acceptsQuantity(quantity) &&
-                    (type == OrderType.MARKET || (limitPrice ?: 0.0) > 0.0),
+                    (type == OrderType.MARKET || (limitPrice ?: 0.0) > 0.0) &&
+                    protectionBlockReason == null,
                 modifier = Modifier.fillMaxWidth(),
                 tone = if (side == OrderSide.BUY) MarketButtonTone.Rise else MarketButtonTone.Fall,
             )
         }
     }
+}
+
+private fun ProtectionDetailUi?.disabledOrderCtaText(): String = when {
+    this == null -> "지금은 주문할 수 없어요"
+    primary.id.startsWith("market:") -> "시장 거래가 멈췄어요"
+    primary.id.startsWith("stock:listing:") &&
+        ("상장폐지" in primary.badgeLabel || "상품 종료" in primary.badgeLabel || "청산금" in primary.badgeLabel) ->
+        "거래할 수 없는 종목이에요"
+    else -> "거래가 멈췄어요"
 }
 
 private enum class InstrumentFilter(val label: String) {

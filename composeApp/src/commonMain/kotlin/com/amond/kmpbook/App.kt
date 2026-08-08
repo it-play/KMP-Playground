@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.amond.kmpbook.domain.model.Currency
 import com.amond.kmpbook.domain.model.GamePhase
 import com.amond.kmpbook.domain.model.Market
@@ -29,6 +31,9 @@ import com.amond.kmpbook.domain.model.MarketSession
 import com.amond.kmpbook.domain.model.OrderSide
 import com.amond.kmpbook.domain.model.OrderType
 import com.amond.kmpbook.domain.model.Screen
+import com.amond.kmpbook.domain.model.TradingProtectionAction
+import com.amond.kmpbook.domain.model.TradingProtectionRequest
+import com.amond.kmpbook.domain.model.TradingRestrictionSource
 import com.amond.kmpbook.domain.tax.FeeCategory
 import com.amond.kmpbook.domain.tax.TaxCategory
 import com.amond.kmpbook.domain.tax.TaxLiabilityStatus
@@ -38,8 +43,13 @@ import com.amond.kmpbook.persistence.GameSavePresenceResult
 import com.amond.kmpbook.persistence.GameSaveResult
 import com.amond.kmpbook.persistence.GameSaveStorage
 import com.amond.kmpbook.presentation.NewGameOptions
+import com.amond.kmpbook.presentation.ProtectionUiProjection
 import com.amond.kmpbook.presentation.SimulatorUiState
 import com.amond.kmpbook.presentation.SimulatorViewModel
+import com.amond.kmpbook.presentation.buildProtectionUiProjection
+import com.amond.kmpbook.domain.simulation.TradingProtectionEngine
+import com.amond.kmpbook.ui.components.MarketProtectionDetailSurface
+import com.amond.kmpbook.ui.components.MarketProtectionStrip
 import com.amond.kmpbook.ui.screens.AnalyticsScreen
 import com.amond.kmpbook.ui.screens.EndingScreen
 import com.amond.kmpbook.ui.screens.EventsScreen
@@ -188,6 +198,26 @@ private fun RunningGame(
     onLoadGame: () -> Unit,
     onDeleteSave: () -> Unit,
 ) {
+    val selectedMarket = state.selectedStock?.market
+    val protectionProjection = remember(
+        state.tradingProtectionSnapshot,
+        state.listingLifecycleStates,
+        state.selectedStockId,
+        selectedMarket,
+        state.currentTime,
+    ) {
+        buildProtectionUiProjection(
+            snapshot = state.tradingProtectionSnapshot.orEmptyProtectionSnapshot(),
+            listingStates = state.listingLifecycleStates.orEmpty(),
+            selectedStockId = state.selectedStockId,
+            selectedMarket = selectedMarket,
+            at = state.currentTime,
+        )
+    }
+    var showMarketProtectionDetail by remember { mutableStateOf(false) }
+    LaunchedEffect(protectionProjection.marketStrip) {
+        if (protectionProjection.marketStrip == null) showMarketProtectionDetail = false
+    }
     Box(Modifier.fillMaxSize().background(MarketColors.Ledger)) {
         Row(Modifier.fillMaxSize()) {
             SimulatorSidebar(
@@ -214,16 +244,34 @@ private fun RunningGame(
                     onStepSelected = viewModel::selectTurnStep,
                     onAdvance = { viewModel.advance() },
                 )
+                MarketProtectionStrip(
+                    model = protectionProjection.marketStrip,
+                    onClick = { showMarketProtectionDetail = true },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
                 Box(Modifier.fillMaxSize()) {
                     ScreenContent(
                         state = state,
                         viewModel = viewModel,
+                        protectionProjection = protectionProjection,
                         hasSavedGame = hasSavedGame,
                         savePath = savePath,
                         saveStatus = saveStatus,
                         onSaveGame = onSaveGame,
                         onLoadGame = onLoadGame,
                         onDeleteSave = onDeleteSave,
+                    )
+                }
+            }
+        }
+
+        if (showMarketProtectionDetail) {
+            protectionProjection.marketStrip?.let { strip ->
+                Dialog(onDismissRequest = { showMarketProtectionDetail = false }) {
+                    MarketProtectionDetailSurface(
+                        model = strip.detail,
+                        modifier = Modifier.width(720.dp),
+                        onClose = { showMarketProtectionDetail = false },
                     )
                 }
             }
@@ -253,6 +301,7 @@ private fun RunningGame(
 private fun ScreenContent(
     state: SimulatorUiState,
     viewModel: SimulatorViewModel,
+    protectionProjection: ProtectionUiProjection,
     hasSavedGame: Boolean,
     savePath: String,
     saveStatus: String,
@@ -274,7 +323,6 @@ private fun ScreenContent(
             history = portfolioHistory,
             stocks = state.stocks,
             marketIndices = state.marketIndices.orEmpty(),
-            usCircuitBreakerState = state.usCircuitBreakerState ?: com.amond.kmpbook.presentation.UsCircuitBreakerState(),
             events = state.newsEvents,
             estimatedTaxKrw = estimatedTax,
             usdKrw = state.macro.usdKrw,
@@ -306,12 +354,18 @@ private fun ScreenContent(
                     viewModel.placeOrder(stockId, side, type, quantity, limitPrice, timeInForce)
                 }
             },
+            protectionBadges = protectionProjection.symbolBadges,
+            selectedProtectionDetail = protectionProjection.selectedSymbolDetail,
+            orderUnavailableReason = { stockId, orderType ->
+                state.orderSubmissionBlockReason(stockId, orderType)
+            },
         )
 
         Screen.ORDER -> OrdersScreen(
             orders = state.orders,
             trades = state.trades,
             stocks = state.stocks,
+            protectionPendingLabels = state.orderProtectionPendingLabels(),
             onCancelOrder = { viewModel.cancelOrder(it) },
             onOpenStock = openStock,
         )
@@ -377,6 +431,68 @@ private fun ScreenContent(
             onNewGame = viewModel::resetGame,
         )
     }
+}
+
+private fun com.amond.kmpbook.domain.model.TradingProtectionSnapshot?.orEmptyProtectionSnapshot() =
+    this ?: com.amond.kmpbook.domain.model.TradingProtectionSnapshot()
+
+private fun SimulatorUiState.orderSubmissionBlockReason(stockId: String, orderType: OrderType): String? {
+    val stock = stocks.firstOrNull { it.id == stockId } ?: return "존재하지 않는 종목이에요."
+    val listing = listingLifecycleStates.orEmpty()[stockId]
+    if (listing != null && !listing.isOrderAllowed) {
+        return when {
+            listing.isTerminal -> "거래가 종료된 종목이에요."
+            listing.isSettlementPending -> "청산금 지급 절차가 진행 중이에요."
+            else -> "상장 유지 심사 또는 상장폐지 절차로 거래가 멈췄어요."
+        }
+    }
+    val snapshot = tradingProtectionSnapshot ?: return null
+    val decision = TradingProtectionEngine.permission(
+        snapshot,
+        TradingProtectionRequest(
+            market = stock.market,
+            action = TradingProtectionAction.SUBMIT_ORDER,
+            stockId = stockId,
+            isAuctionEligibleOrder = orderType == OrderType.LIMIT,
+        ),
+        currentTime,
+    )
+    return decision.controllingRestriction?.message.takeUnless { decision.allowed }
+}
+
+private fun SimulatorUiState.orderProtectionPendingLabels(): Map<String, String> {
+    val snapshot = tradingProtectionSnapshot ?: return emptyMap()
+    val stocksById = stocks.associateBy { it.id }
+    return orders.asSequence()
+        .filter { it.isOpen }
+        .mapNotNull { order ->
+            val stock = stocksById[order.stockId] ?: return@mapNotNull null
+            val listing = listingLifecycleStates.orEmpty()[order.stockId]
+            val listingLabel = if (listing != null && !listing.isTradable) "상장절차 대기" else null
+            val decision = TradingProtectionEngine.permission(
+                snapshot,
+                TradingProtectionRequest(
+                    market = stock.market,
+                    action = TradingProtectionAction.EXECUTE_TRADE,
+                    stockId = stock.id,
+                    proposedExecutionPrice = order.limitPrice ?: quotes[stock.id]?.price,
+                ),
+                currentTime,
+            )
+            val protectionLabel = decision.controllingRestriction?.source?.toPendingLabel()
+            (listingLabel ?: protectionLabel)?.let { order.id to it }
+        }
+        .toMap()
+}
+
+private fun TradingRestrictionSource.toPendingLabel(): String = when (this) {
+    TradingRestrictionSource.KRX_MARKET_CIRCUIT_BREAKER,
+    TradingRestrictionSource.US_MARKET_WIDE_CIRCUIT_BREAKER,
+    -> "시장정지 대기"
+    TradingRestrictionSource.KRX_VOLATILITY_INTERRUPTION -> "VI 대기"
+    TradingRestrictionSource.US_LIMIT_UP_LIMIT_DOWN -> "변동성정지 대기"
+    TradingRestrictionSource.INSTRUMENT_TRADING_HALT -> "거래정지 대기"
+    TradingRestrictionSource.KRX_SIDECAR -> "프로그램매매 대기"
 }
 
 private fun SimulatorUiState.toTaxCenterData(): TaxCenterData {

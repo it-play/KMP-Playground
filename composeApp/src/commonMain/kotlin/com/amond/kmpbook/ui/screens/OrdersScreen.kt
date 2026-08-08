@@ -56,6 +56,7 @@ fun OrdersScreen(
     orders: List<Order>,
     trades: List<Trade>,
     stocks: List<StockDefinition>,
+    protectionPendingLabels: Map<String, String> = emptyMap(),
     onCancelOrder: (String) -> Unit,
     onOpenStock: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -63,6 +64,7 @@ fun OrdersScreen(
     var tab by remember { mutableStateOf(0) }
     val stockById = stocks.associateBy { it.id }
     val openOrders = orders.count { it.isOpen }
+    val protectedOpenOrders = orders.count { it.isOpen && it.id in protectionPendingLabels }
     val grossTurnoverKrw = trades.sumOf { trade ->
         val stock = stockById[trade.stockId]
         trade.grossAmount * if (stock?.currency == Currency.USD) 1_350.0 else 1.0
@@ -76,7 +78,12 @@ fun OrdersScreen(
         verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
-            SummaryTile("미체결 주문", "${openOrders}건", "정규장 진입 시 체결 검사", Modifier.weight(1f))
+            SummaryTile(
+                "미체결 주문",
+                "${openOrders}건",
+                if (protectedOpenOrders > 0) "보호장치 대기 ${protectedOpenOrders}건 포함" else "정규장 진입 시 체결 검사",
+                Modifier.weight(1f),
+            )
             SummaryTile("누적 체결", "${trades.size}건", formatMoney(grossTurnoverKrw, Currency.KRW, true), Modifier.weight(1f))
             SummaryTile("거래 비용", formatMoney(totalCostsKrw, Currency.KRW), "수수료·거래세 합계", Modifier.weight(1f))
         }
@@ -93,7 +100,7 @@ fun OrdersScreen(
                 }
                 LedgerDivider()
                 if (tab == 0) {
-                    OrderTable(orders, stockById, onCancelOrder, onOpenStock)
+                    OrderTable(orders, stockById, protectionPendingLabels, onCancelOrder, onOpenStock)
                 } else {
                     TradeTable(trades, stockById, onOpenStock)
                 }
@@ -127,6 +134,7 @@ private fun TabCell(text: String, selected: Boolean, onClick: () -> Unit) {
 private fun OrderTable(
     orders: List<Order>,
     stockById: Map<String, StockDefinition>,
+    protectionPendingLabels: Map<String, String>,
     onCancelOrder: (String) -> Unit,
     onOpenStock: (String) -> Unit,
 ) {
@@ -150,7 +158,15 @@ private fun OrderTable(
                 Cell(order.limitPrice?.let { formatPrice(it, stock.currency) } ?: "시장가", 0.9f, number = true)
                 Cell(formatQuantity(order.filledQuantity), 0.7f, number = true)
                 Box(Modifier.weight(0.8f)) {
-                    StatusLabel(order.status.displayName, if (order.status.isTerminal) MarketColors.InkMuted else MarketColors.Celadon)
+                    val protectionLabel = protectionPendingLabels[order.id].takeIf { order.isOpen }
+                    StatusLabel(
+                        protectionLabel ?: order.status.displayName,
+                        when {
+                            protectionLabel != null -> MarketColors.Amber
+                            order.status.isTerminal -> MarketColors.InkMuted
+                            else -> MarketColors.Celadon
+                        },
+                    )
                 }
                 Box(Modifier.weight(0.5f), contentAlignment = Alignment.CenterEnd) {
                     if (order.canCancel) {

@@ -37,8 +37,10 @@ import com.amond.kmpbook.domain.model.Currency
 import com.amond.kmpbook.domain.model.MarketSession
 import com.amond.kmpbook.domain.model.Screen
 import com.amond.kmpbook.domain.model.TurnStep
+import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.ui.components.StatusLabel
 import com.amond.kmpbook.ui.components.MarketButton
+import com.amond.kmpbook.ui.format.formatDateTimeEt
 import com.amond.kmpbook.ui.format.formatDateTimeKst
 import com.amond.kmpbook.ui.format.formatMoney
 import com.amond.kmpbook.ui.format.formatPercent
@@ -262,6 +264,8 @@ fun SimulationClockRail(
     onAdvance: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val finalUsSessionTail = GameCalendar.toGameLocalDateTime(currentTime).date >
+        GameCalendar.CAMPAIGN_END_DATE
     Surface(
         modifier = modifier.fillMaxWidth().height(MarketLayout.marketPulseRailHeight),
         color = MarketColors.Paper,
@@ -286,7 +290,7 @@ fun SimulationClockRail(
                             .background(MarketColors.Rise, RoundedCornerShape(MarketRadii.pill)),
                     )
                     Text(
-                        "MARKET PULSE · KST",
+                        "MARKET PULSE · ${if (finalUsSessionTail) "ET" else "KST"}",
                         style = MarketType.caption.copy(
                             fontWeight = FontWeight.SemiBold,
                             letterSpacing = 0.3.sp,
@@ -295,7 +299,7 @@ fun SimulationClockRail(
                     )
                 }
                 Text(
-                    formatDateTimeKst(currentTime),
+                    if (finalUsSessionTail) formatDateTimeEt(currentTime) else formatDateTimeKst(currentTime),
                     style = MarketType.numberLarge.copy(fontSize = 20.sp, lineHeight = 28.sp),
                     color = MarketColors.Ink,
                     maxLines = 1,

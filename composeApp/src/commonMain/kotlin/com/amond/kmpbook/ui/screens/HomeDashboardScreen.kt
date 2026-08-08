@@ -51,7 +51,6 @@ import com.amond.kmpbook.ui.format.formatQuantity
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketLayout
 import com.amond.kmpbook.ui.theme.MarketType
-import com.amond.kmpbook.presentation.UsCircuitBreakerState
 
 @Composable
 fun HomeDashboardScreen(
@@ -59,7 +58,6 @@ fun HomeDashboardScreen(
     history: List<PortfolioSnapshot>,
     stocks: List<StockDefinition>,
     marketIndices: Map<MarketIndexId, MarketIndexSnapshot>,
-    usCircuitBreakerState: UsCircuitBreakerState,
     events: List<GameEvent>,
     estimatedTaxKrw: Double,
     usdKrw: Double,
@@ -82,7 +80,6 @@ fun HomeDashboardScreen(
             HeroAssetPanel(snapshot, estimatedTaxKrw, Modifier.weight(1.3f).height(148.dp))
             MarketPulsePanel(
                 indices = marketIndices,
-                circuitBreakerState = usCircuitBreakerState,
                 usdKrw = usdKrw,
                 modifier = Modifier.weight(1f).height(148.dp),
             )
@@ -193,23 +190,13 @@ private fun HeroAssetPanel(snapshot: PortfolioSnapshot, estimatedTaxKrw: Double,
 @Composable
 private fun MarketPulsePanel(
     indices: Map<MarketIndexId, MarketIndexSnapshot>,
-    circuitBreakerState: UsCircuitBreakerState,
     usdKrw: Double,
     modifier: Modifier,
 ) {
     LedgerPanel(modifier) {
         Column(Modifier.fillMaxSize()) {
             SectionHeading("미국 대표 지수", eyebrow = "SIMULATION INDEX") {
-                val circuitText = when {
-                    circuitBreakerState.haltedForDay -> "MWCB L3"
-                    circuitBreakerState.triggeredLevels.isNotEmpty() ->
-                        "MWCB L${circuitBreakerState.triggeredLevels.max()} 이력"
-                    else -> "게임 프록시"
-                }
-                StatusLabel(
-                    circuitText,
-                    if (circuitBreakerState.triggeredLevels.isEmpty()) MarketColors.Celadon else MarketColors.Amber,
-                )
+                StatusLabel("게임 지수", MarketColors.Celadon)
             }
             Spacer(Modifier.height(10.dp))
             val indexIds = listOf(
