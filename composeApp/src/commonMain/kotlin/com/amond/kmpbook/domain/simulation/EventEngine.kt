@@ -3,6 +3,7 @@ package com.amond.kmpbook.domain.simulation
 import com.amond.kmpbook.domain.model.EventScope
 import com.amond.kmpbook.domain.model.EventSeverity
 import com.amond.kmpbook.domain.model.EventType
+import com.amond.kmpbook.domain.model.CausalSignalSeed
 import com.amond.kmpbook.domain.model.EventImpactInsight
 import com.amond.kmpbook.domain.model.EventImpactCoveragePolicy
 import com.amond.kmpbook.domain.model.EventRecordKind
@@ -124,6 +125,8 @@ data class EventTemplate(
     val recordKind: EventRecordKind = EventRecordKind.NEWS,
     /** 같은 사건이 서로 다른 시장·산업·종목에 전달되는 구조화된 분석 경로다. */
     val impactInsights: List<EventImpactInsight> = emptyList(),
+    /** 경제 요인 그래프에 넣을 저장 가능한 시작 신호. 생성 이벤트에 그대로 복사한다. */
+    val causalSignals: List<CausalSignalSeed> = emptyList(),
     /** 분석 경로에 없는 스코프 대상으로 기본 영향을 확장할지 결정한다. */
     val impactCoveragePolicy: EventImpactCoveragePolicy =
         EventImpactCoveragePolicy.SCOPE_FALLBACK_WITH_OVERRIDES,
@@ -157,8 +160,11 @@ data class EventTemplate(
         }
         require(
             impactCoveragePolicy != EventImpactCoveragePolicy.EXPLICIT_PATHS_ONLY ||
-                impactInsights.isNotEmpty(),
-        ) { "Explicit-path event templates require at least one impact insight" }
+                impactInsights.isNotEmpty() || causalSignals.isNotEmpty(),
+        ) { "Explicit-path event templates require an impact insight or causal signal" }
+        require(causalSignals.map(CausalSignalSeed::factor).distinct().size == causalSignals.size) {
+            "Event templates cannot declare the same causal factor twice"
+        }
         terminationTemplate?.let { terms ->
             require(scope == EventScope.STOCK && recordKind == EventRecordKind.INSTRUMENT_LIFECYCLE) {
                 "Instrument termination templates must be stock lifecycle records"
@@ -451,6 +457,7 @@ class EventEngine(
         affectedStockIds = target.stockIds,
         sourceLabel = template.sourceLabel,
         impactInsights = materializeImpactInsights(template, target),
+        causalSignals = template.causalSignals,
         reportedFacts = emptyList(),
         marketAction = null,
         instrumentTermination = materializeInstrumentTermination(template, timestamp, samples),
@@ -547,6 +554,7 @@ class EventEngine(
             actual.affectedStockIds != expected.affectedStockIds -> "target"
         actual.sourceLabel != expected.sourceLabel -> "source"
         actual.impactInsights != expected.impactInsights -> "interpolated impact insights"
+        actual.causalSignals != expected.causalSignals -> "causal signals"
         actual.reportedFacts != expected.reportedFacts -> "reported facts"
         actual.marketAction != expected.marketAction -> "market action reference"
         actual.instrumentTermination != expected.instrumentTermination -> "instrument termination terms"
