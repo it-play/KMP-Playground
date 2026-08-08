@@ -23,6 +23,7 @@ import com.amond.kmpbook.domain.model.ListingLifecycleStatus
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.MarketActionKind
 import com.amond.kmpbook.domain.model.MarketActionTransition
+import com.amond.kmpbook.domain.model.MIN_CAUSAL_SIGNAL_STRENGTH
 import com.amond.kmpbook.domain.model.Sector
 import com.amond.kmpbook.domain.model.ScheduledEventKind
 import com.amond.kmpbook.domain.model.TradingHaltReason
@@ -466,6 +467,44 @@ actual class GameSaveStorage actual constructor() {
                     requiredEnumArray<Sector>("affectedSectors", "$path[$index].affectedSectors")
                     requiredArray("affectedStockIds")
                     required("sourceLabel")
+                    requiredObject("marketRegimeSnapshot").apply {
+                        val regimePath = "$path[$index].marketRegimeSnapshot"
+                        requireExactFields(
+                            expected = CAUSAL_MARKET_REGIME_SNAPSHOT_FIELDS,
+                            path = regimePath,
+                        )
+                        val riskSentiment = requiredFiniteDouble(
+                            "riskSentiment",
+                            "$regimePath.riskSentiment",
+                        )
+                        if (riskSentiment !in -1.0..1.0) {
+                            throw JsonParseException("필드 '$regimePath.riskSentiment'은 -1과 1 사이여야 합니다.")
+                        }
+                        val volatilityRegime = requiredFiniteDouble(
+                            "volatilityRegime",
+                            "$regimePath.volatilityRegime",
+                        )
+                        if (volatilityRegime !in 0.1..10.0) {
+                            throw JsonParseException("필드 '$regimePath.volatilityRegime'은 0.1과 10 사이여야 합니다.")
+                        }
+                        val usdKrwChangeRate = requiredFiniteDouble(
+                            "usdKrwChangeRate",
+                            "$regimePath.usdKrwChangeRate",
+                        )
+                        if (usdKrwChangeRate !in -0.25..0.25) {
+                            throw JsonParseException(
+                                "필드 '$regimePath.usdKrwChangeRate'은 -0.25와 0.25 사이여야 합니다.",
+                            )
+                        }
+                        requiredEnumFiniteDoubleMap<Market>(
+                            "marketHourlyReturns",
+                            "$regimePath.marketHourlyReturns",
+                        )
+                        requiredEnumFiniteDoubleMap<Market>(
+                            "marketChangeFromPreviousClose",
+                            "$regimePath.marketChangeFromPreviousClose",
+                        )
+                    }
                     requiredArray("causalSignals").forEachIndexed { signalIndex, signalElement ->
                         val signalPath = "$path[$index].causalSignals[$signalIndex]"
                         signalElement.requireObject(signalPath).apply {
@@ -475,8 +514,16 @@ actual class GameSaveStorage actual constructor() {
                             )
                             requiredEnum<CausalEconomicFactor>("factor", "$signalPath.factor")
                             requiredEnum<CausalSignalDirection>("direction", "$signalPath.direction")
-                            requiredFiniteDouble("strength", "$signalPath.strength")
-                            requiredFiniteDouble("confidence", "$signalPath.confidence")
+                            val strength = requiredFiniteDouble("strength", "$signalPath.strength")
+                            if (strength !in MIN_CAUSAL_SIGNAL_STRENGTH..1.0) {
+                                throw JsonParseException(
+                                    "필드 '$signalPath.strength'은 $MIN_CAUSAL_SIGNAL_STRENGTH 이상 1 이하여야 합니다.",
+                                )
+                            }
+                            val confidence = requiredFiniteDouble("confidence", "$signalPath.confidence")
+                            if (confidence !in 0.0..1.0 || confidence == 0.0) {
+                                throw JsonParseException("필드 '$signalPath.confidence'는 0보다 크고 1 이하여야 합니다.")
+                            }
                             requiredEnum<CausalTransmissionProfile>(
                                 "transmissionProfile",
                                 "$signalPath.transmissionProfile",
@@ -775,6 +822,14 @@ actual class GameSaveStorage actual constructor() {
             "transmissionProfile",
         )
 
+        val CAUSAL_MARKET_REGIME_SNAPSHOT_FIELDS: Set<String> = setOf(
+            "riskSentiment",
+            "volatilityRegime",
+            "usdKrwChangeRate",
+            "marketHourlyReturns",
+            "marketChangeFromPreviousClose",
+        )
+
         fun createSaveGson(): Gson = GsonBuilder()
             .registerTypeAdapter(Instant::class.java, InstantTypeAdapter().nullSafe())
             .registerTypeAdapter(LocalDate::class.java, LocalDateTypeAdapter().nullSafe())
@@ -896,6 +951,19 @@ private inline fun <reified E : Enum<E>> JsonObject.requiredEnumArray(
     val value = primitive.asString
     enumValues<E>().firstOrNull { it.name == value }
         ?: throw JsonParseException("필드 '$path[$index]'의 enum 값 '$value'이 유효하지 않습니다.")
+}
+
+private inline fun <reified E : Enum<E>> JsonObject.requiredEnumFiniteDoubleMap(
+    name: String,
+    path: String,
+): Map<E, Double> {
+    val validKeys = enumValues<E>().associateBy { it.name }
+    val values = requiredObject(name)
+    return values.entrySet().associate { (key, _) ->
+        val enumKey = validKeys[key]
+            ?: throw JsonParseException("필드 '$path'에 유효하지 않은 enum 키 '$key'가 있습니다.")
+        enumKey to values.requiredFiniteDouble(key, "$path.$key")
+    }
 }
 
 private fun JsonObject.requiredInt(name: String): Int = try {
