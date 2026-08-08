@@ -88,21 +88,21 @@ fun SimulatorSidebar(
         modifier = modifier
             .width(MarketLayout.sidebarWidth)
             .fillMaxHeight()
-            .background(MarketColors.Paper)
-            .padding(horizontal = MarketSpacing.md, vertical = MarketSpacing.md),
+            .background(MarketColors.Navy)
+            .padding(horizontal = MarketSpacing.sm, vertical = MarketSpacing.md),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(42.dp)
                     .background(
-                        color = MarketColors.Primary,
+                        color = MarketColors.Signal,
                         shape = RoundedCornerShape(MarketRadii.medium),
                     ),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    "ML",
+                    "M∴",
                     style = MarketType.label.copy(fontWeight = FontWeight.Bold),
                     color = Color.White,
                 )
@@ -112,13 +112,13 @@ fun SimulatorSidebar(
                 Text(
                     "Market Ledger",
                     style = MarketType.heading,
-                    color = MarketColors.Ink,
+                    color = Color.White,
                     maxLines = 1,
                 )
                 Text(
-                    "SIMULATION · 2040",
+                    "CAUSAL MARKET · 2040",
                     style = MarketType.caption.copy(letterSpacing = 0.35.sp),
-                    color = MarketColors.InkMuted,
+                    color = MarketColors.Grey400,
                 )
             }
         }
@@ -126,18 +126,18 @@ fun SimulatorSidebar(
         Spacer(Modifier.height(MarketSpacing.lg))
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = MarketColors.Grey100,
+            color = MarketColors.NavyRaised,
             shape = RoundedCornerShape(MarketRadii.large),
         ) {
             Column(
                 modifier = Modifier.padding(MarketSpacing.sm),
                 verticalArrangement = Arrangement.spacedBy(MarketSpacing.xxs),
             ) {
-                Text("투자 계정", style = MarketType.caption, color = MarketColors.InkMuted)
+                Text("투자 계정", style = MarketType.caption, color = MarketColors.Grey400)
                 Text(
                     formatMoney(summary.totalAssetsKrw, Currency.KRW, compact = true),
                     style = MarketType.numberLarge.copy(fontSize = 21.sp, lineHeight = 29.sp),
-                    color = MarketColors.Ink,
+                    color = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -150,7 +150,7 @@ fun SimulatorSidebar(
         }
 
         Spacer(Modifier.height(MarketSpacing.lg))
-        Text("메뉴", style = MarketType.caption, color = MarketColors.InkMuted)
+        Text("시뮬레이션", style = MarketType.caption, color = MarketColors.Grey400)
         Spacer(Modifier.height(MarketSpacing.xs))
         navigationItems.forEach { item ->
             SidebarItem(
@@ -166,7 +166,7 @@ fun SimulatorSidebar(
         Spacer(Modifier.weight(1f))
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = MarketColors.Grey50,
+            color = MarketColors.NavyRaised,
             shape = RoundedCornerShape(MarketRadii.medium),
         ) {
             Column(
@@ -176,12 +176,12 @@ fun SimulatorSidebar(
                 Text(
                     "2026 세법 동결 시나리오",
                     style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
-                    color = MarketColors.Ink,
+                    color = Color.White,
                 )
                 Text(
                     "법률 기준일 2026.08.07\n미래 시세는 게임 데이터입니다.",
                     style = MarketType.caption,
-                    color = MarketColors.InkMuted,
+                    color = MarketColors.Grey400,
                 )
             }
         }
@@ -196,11 +196,11 @@ private fun SidebarItem(
     onClick: () -> Unit,
 ) {
     val background by animateColorAsState(
-        targetValue = if (selected) MarketColors.PrimaryWeak else Color.Transparent,
+        targetValue = if (selected) MarketColors.Signal.copy(alpha = 0.18f) else Color.Transparent,
         animationSpec = tween(MarketMotion.quick),
     )
     val markerBackground by animateColorAsState(
-        targetValue = if (selected) MarketColors.Primary else MarketColors.Grey100,
+        targetValue = if (selected) MarketColors.Signal else MarketColors.NavyRaised,
         animationSpec = tween(MarketMotion.quick),
     )
     Row(
@@ -221,7 +221,7 @@ private fun SidebarItem(
             Text(
                 item.marker,
                 style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
-                color = if (selected) Color.White else MarketColors.InkMuted,
+                color = if (selected) Color.White else MarketColors.Grey400,
             )
         }
         Spacer(Modifier.width(MarketSpacing.sm))
@@ -231,7 +231,7 @@ private fun SidebarItem(
             style = MarketType.label.copy(
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             ),
-            color = if (selected) MarketColors.Primary else MarketColors.InkMuted,
+            color = if (selected) Color.White else MarketColors.Grey400,
             maxLines = 1,
         )
         if (badge > 0) {
@@ -272,12 +272,12 @@ fun SimulationClockRail(
         shadowElevation = MarketElevation.card,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = MarketSpacing.lg, vertical = MarketSpacing.md),
+            modifier = Modifier.padding(horizontal = MarketSpacing.md, vertical = MarketSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(MarketSpacing.xl),
+            horizontalArrangement = Arrangement.spacedBy(MarketSpacing.md),
         ) {
             Column(
-                modifier = Modifier.width(202.dp),
+                modifier = Modifier.width(188.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Row(
@@ -287,7 +287,7 @@ fun SimulationClockRail(
                     Box(
                         Modifier
                             .size(7.dp)
-                            .background(MarketColors.Rise, RoundedCornerShape(MarketRadii.pill)),
+                            .background(MarketColors.Signal, RoundedCornerShape(MarketRadii.pill)),
                     )
                     Text(
                         "MARKET PULSE · ${if (finalUsSessionTail) "ET" else "KST"}",
@@ -310,7 +310,7 @@ fun SimulationClockRail(
                         fontWeight = FontWeight.SemiBold,
                         fontFeatureSettings = "tnum",
                     ),
-                    color = MarketColors.Primary,
+                    color = MarketColors.PrimaryText,
                 )
             }
 
@@ -341,20 +341,18 @@ fun SimulationClockRail(
                 }
             }
 
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TurnStep.entries.forEach { step ->
-                        StepButton(step, step == selectedStep) { onStepSelected(step) }
-                    }
+                TurnStep.entries.forEach { step ->
+                    StepButton(step, step == selectedStep) { onStepSelected(step) }
                 }
                 MarketButton(
                     text = "${selectedStep.displayName} 진행  →",
                     onClick = onAdvance,
                     enabled = canAdvance,
-                    modifier = Modifier.width(284.dp),
+                    modifier = Modifier.width(190.dp),
                 )
             }
         }
@@ -369,7 +367,7 @@ private fun StepButton(step: TurnStep, selected: Boolean, onClick: () -> Unit) {
     )
     Box(
         modifier = Modifier
-            .width(58.dp)
+            .width(52.dp)
             .height(MarketComponentSize.minimumInteractiveTarget)
             .background(background, RoundedCornerShape(MarketRadii.small))
             .selectable(selected = selected, role = Role.Button, onClick = onClick),
@@ -398,7 +396,7 @@ private fun TimeProgressTrack(progress: Float, modifier: Modifier = Modifier) {
             cornerRadius = CornerRadius(radius, radius),
         )
         drawRoundRect(
-            color = MarketColors.Primary,
+            color = MarketColors.Signal,
             topLeft = Offset(0f, centerY - radius),
             size = Size(size.width * progress, trackHeight),
             cornerRadius = CornerRadius(radius, radius),
@@ -423,7 +421,7 @@ private fun TimeProgressTrack(progress: Float, modifier: Modifier = Modifier) {
             center = Offset(size.width * progress, centerY),
         )
         drawCircle(
-            color = MarketColors.Rise,
+            color = MarketColors.Signal,
             radius = 4.dp.toPx(),
             center = Offset(size.width * progress, centerY),
         )

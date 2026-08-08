@@ -25,42 +25,51 @@ import kmpbook.composeapp.generated.resources.pretendard_regular
 import kmpbook.composeapp.generated.resources.pretendard_semibold
 import org.jetbrains.compose.resources.Font
 
-/** Market Ledger's soft-finance palette with Korean red-up and blue-down semantics. */
+/**
+ * Market Ledger's signal-observatory palette.
+ *
+ * Neutral surfaces behave like an instrument chassis while violet is reserved for causal links
+ * and primary decisions. Korean red-up and blue-down semantics remain independent from that
+ * accent, so an interaction colour can never be mistaken for a price direction.
+ */
 object MarketColors {
-    val Grey50 = Color(0xFFF9FAFB)
-    val Grey100 = Color(0xFFF2F4F6)
-    val Grey200 = Color(0xFFE5E8EB)
-    val Grey400 = Color(0xFFB0B8C1)
-    val Grey600 = Color(0xFF6B7684)
-    val Grey700 = Color(0xFF4E5968)
-    val Grey900 = Color(0xFF191F28)
+    val Grey50 = Color(0xFFF8FAFB)
+    val Grey100 = Color(0xFFEFF2F5)
+    val Grey200 = Color(0xFFDCE2E8)
+    val Grey400 = Color(0xFF9AA7B4)
+    val Grey600 = Color(0xFF5E6C79)
+    val Grey700 = Color(0xFF394754)
+    val Grey900 = Color(0xFF17222D)
 
-    val Primary = Color(0xFF3182F6)
-    val PrimaryWeak = Color(0xFFE8F3FF)
+    val Primary = Color(0xFF625CF6)
+    val PrimaryWeak = Color(0xFFEEEDFF)
     /** 흰색·옅은 배경 위 작은 상태 텍스트용 WCAG 대비 색상. */
-    val PrimaryText = Color(0xFF1B64DA)
-    val Rise = Color(0xFFF04452)
-    val RiseSoft = Color(0xFFFFECEE)
-    val RiseText = Color(0xFFC92B3A)
-    val Fall = Color(0xFF3182F6)
-    val FallSoft = Color(0xFFE8F3FF)
-    val FallText = PrimaryText
-    val Positive = Color(0xFF00A980)
-    val PositiveSoft = Color(0xFFE8F8F3)
-    val Amber = Color(0xFFF08C00)
-    val AmberSoft = Color(0xFFFFF4E5)
-    val AmberText = Color(0xFF9A5700)
+    val PrimaryText = Color(0xFF4B45D6)
+    val Signal = Primary
+    val SignalSoft = PrimaryWeak
+    val SignalLine = Color(0xFFB8B4FF)
+    val Rise = Color(0xFFE34D5B)
+    val RiseSoft = Color(0xFFFFECEF)
+    val RiseText = Color(0xFFBD3141)
+    val Fall = Color(0xFF2F73D2)
+    val FallSoft = Color(0xFFEAF2FC)
+    val FallText = Color(0xFF255EAD)
+    val Positive = Color(0xFF0B9274)
+    val PositiveSoft = Color(0xFFE7F6F1)
+    val Amber = Color(0xFFE08719)
+    val AmberSoft = Color(0xFFFFF3E2)
+    val AmberText = Color(0xFF92530C)
 
-    val Ledger = Grey100
-    val Paper = Color.White
+    val Ledger = Color(0xFFEDF1F4)
+    val Paper = Color(0xFFFCFDFE)
     val PaperMuted = Grey100
-    val Navy = Grey900
-    val NavyRaised = Color(0xFF333D4B)
+    val Navy = Color(0xFF121B24)
+    val NavyRaised = Color(0xFF1D2A35)
     val Ink = Grey900
     val InkMuted = Grey600
     val Line = Grey200
 
-    val Scrim = Color(0x99191F28)
+    val Scrim = Color(0xA6121B24)
 }
 
 object MarketSpacing {
@@ -74,10 +83,10 @@ object MarketSpacing {
 }
 
 object MarketRadii {
-    val small = 12.dp
-    val medium = 16.dp
-    val large = 20.dp
-    val xLarge = 24.dp
+    val small = 6.dp
+    val medium = 10.dp
+    val large = 14.dp
+    val xLarge = 18.dp
     val pill = 999.dp
 }
 

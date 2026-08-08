@@ -8,14 +8,14 @@ import androidx.compose.ui.unit.sp
 /**
  * Executable design-system contract for Market Ledger 2040.
  *
- * The product is a dense desktop market simulator for Korean retail investors. Its signature is the
- * persistent Market Pulse rail: time, market state, campaign progress, and the single irreversible
- * turn-advance action stay visible together. TDS public principles inform the hierarchy, but this is
- * an independent system using Korean red-up/blue-down market semantics.
+ * The product is a dense causal-market simulator for Korean retail investors. Its visual thesis is
+ * a signal observatory: market events are not isolated cards, but traceable paths from a source to
+ * an economic factor and finally an instrument. The persistent clock rail keeps the irreversible
+ * time action visible; the stock intelligence deck owns the single memorable causal ribbon.
  *
  * Rules that screens must preserve:
  * - content and financial state outrank decoration;
- * - the global primary decision uses filled blue; buy/sell actions use labelled Korean rise/fall tones;
+ * - the global primary decision and causal links use violet; buy/sell actions use labelled Korean rise/fall tones;
  * - monetary and market figures use tabular numerals and always expose a unit or currency;
  * - colour is never the only direction/status signal;
  * - projected schedules and generated figures are labelled as simulation data.
@@ -64,8 +64,8 @@ object MarketLayout {
     const val minimumWindowWidthPx: Int = 1_280
     const val minimumWindowHeightPx: Int = 800
 
-    val sidebarWidth = 224.dp
-    val marketPulseRailHeight = 116.dp
+    val sidebarWidth = 208.dp
+    val marketPulseRailHeight = 96.dp
     val screenPadding = MarketSpacing.sm
     val screenGap = MarketSpacing.sm
     val panelPadding = MarketSpacing.md
