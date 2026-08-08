@@ -165,6 +165,12 @@ data class EventTemplate(
         require(causalSignals.map(CausalSignalSeed::factor).distinct().size == causalSignals.size) {
             "Event templates cannot declare the same causal factor twice"
         }
+        require(
+            scope !in setOf(EventScope.COUNTRY, EventScope.MARKET) ||
+                causalSignals.map(CausalSignalSeed::transmissionProfile).distinct().size <= 1,
+        ) {
+            "Country and market event templates must use one transmission profile per event"
+        }
         terminationTemplate?.let { terms ->
             require(scope == EventScope.STOCK && recordKind == EventRecordKind.INSTRUMENT_LIFECYCLE) {
                 "Instrument termination templates must be stock lifecycle records"
@@ -838,8 +844,8 @@ object EventShockCalculator {
                 directProductReturnFactor *= 1.0 + eventReturn
             }
             val weight = effectWeightBetween(event, from, to)
-            volatilityMultiplier *= 1.0 + (event.impact.volatilityMultiplier - 1.0) * weight
-            volumeMultiplier *= 1.0 + (event.impact.volumeMultiplier - 1.0) * weight
+            volatilityMultiplier *= 1.0 + (stockSpecificImpact.volatilityMultiplier - 1.0) * weight
+            volumeMultiplier *= 1.0 + (stockSpecificImpact.volumeMultiplier - 1.0) * weight
         }
         return PriceImpulse(
             returnRate = (returnFactor - 1.0).coerceIn(-0.90, 1.50),
@@ -859,7 +865,8 @@ object EventShockCalculator {
         for (event in events) {
             if (!event.affects(stock)) continue
             val weight = effectWeightAt(event, time)
-            multiplier *= 1.0 + (event.impact.liquidityMultiplier - 1.0) * weight
+            val stockSpecificImpact = event.impactFor(stock)
+            multiplier *= 1.0 + (stockSpecificImpact.liquidityMultiplier - 1.0) * weight
         }
         return multiplier.coerceIn(0.05, 20.0)
     }
@@ -876,7 +883,8 @@ object EventShockCalculator {
         for (event in events) {
             if (!event.affects(stock)) continue
             val weight = effectWeightBetween(event, from, to)
-            multiplier *= 1.0 + (event.impact.liquidityMultiplier - 1.0) * weight
+            val stockSpecificImpact = event.impactFor(stock)
+            multiplier *= 1.0 + (stockSpecificImpact.liquidityMultiplier - 1.0) * weight
         }
         return multiplier.coerceIn(0.05, 20.0)
     }
@@ -911,10 +919,7 @@ object EventShockCalculator {
         return (integratedWeight / intervalHours).coerceIn(0.0, 1.0)
     }
 
-    /**
-     * 가격 방향은 가장 구체적인 분석 경로로 바꾸되, 변동성·거래량·유동성은 사건 전체의
-     * 시장 충격을 유지한다. 인버스 배율은 PriceEngine이 기초자산 수익에 한 번만 적용한다.
-     */
+    /** 가격 방향과 해외 전염 강도를 종목별 충격에 함께 반영한다. */
     private fun GameEvent.impactFor(stock: StockDefinition): GameEventImpact {
         val resolved = resolvedImpactFor(stock)
         fun directional(value: Double): Double = when (resolved.direction) {
@@ -923,9 +928,19 @@ object EventShockCalculator {
             ImpactDirection.MIXED -> value * resolved.relativeSensitivity
             ImpactDirection.NEUTRAL -> 0.0
         }
+        val transmissions = resolved.causalImpact?.marketTransmissionsByFactor.orEmpty().values
+        val transmissionScale = transmissions.takeIf { it.isNotEmpty() }?.fold(1.0) { survival, trace ->
+            survival * (1.0 - trace.reach)
+        }?.let { survival -> 1.0 - survival } ?: 1.0
+        fun transmittedMultiplier(value: Double): Double =
+            1.0 + (value - 1.0) * transmissionScale
         return impact.copy(
             shockReturn = directional(impact.shockReturn).coerceAtLeast(-0.95),
             hourlyDrift = directional(impact.hourlyDrift),
+            volatilityMultiplier = transmittedMultiplier(impact.volatilityMultiplier),
+            volumeMultiplier = transmittedMultiplier(impact.volumeMultiplier),
+            liquidityMultiplier = transmittedMultiplier(impact.liquidityMultiplier),
+            sentiment = impact.sentiment * transmissionScale,
         )
     }
 
