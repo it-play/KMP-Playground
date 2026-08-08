@@ -3,6 +3,9 @@ package com.amond.kmpbook.domain.simulation
 import com.amond.kmpbook.domain.model.EventScope
 import com.amond.kmpbook.domain.model.EventSeverity
 import com.amond.kmpbook.domain.model.EventType
+import com.amond.kmpbook.domain.model.CausalEconomicFactor
+import com.amond.kmpbook.domain.model.CausalSignalDirection
+import com.amond.kmpbook.domain.model.CausalSignalSeed
 import com.amond.kmpbook.domain.model.EventImpactHorizon
 import com.amond.kmpbook.domain.model.EventImpactInsight
 import com.amond.kmpbook.domain.model.EventImpactTargetKind
@@ -155,6 +158,10 @@ object DefaultEventTemplates {
             EventType.MARKET_SENTIMENT, EventSeverity.CRITICAL, ImpactDirection.NEGATIVE,
             0.0015, 1_440, 96..336, -0.080..-0.035, -0.00025..-0.00008, 1.7..2.5, 1.4..2.4,
             0.35..0.65, -0.95..-0.6, EventCondition.HIGH_VOLATILITY,
+        ).copy(
+            causalSignals = listOf(
+                causalSignal(CausalEconomicFactor.CREDIT_AVAILABILITY, CausalSignalDirection.DECREASE, 0.95),
+            ),
         ),
         rule(
             "risk_on_rally", "위험자산 선호 확산",
@@ -162,6 +169,10 @@ object DefaultEventTemplates {
             EventType.MARKET_SENTIMENT, EventSeverity.MODERATE, ImpactDirection.POSITIVE,
             0.005, 240, 12..72, 0.008..0.026, 0.00003..0.00012, 1.05..1.3, 1.15..1.65,
             1.05..1.25, 0.35..0.7, EventCondition.RISK_ON,
+        ).copy(
+            causalSignals = listOf(
+                causalSignal(CausalEconomicFactor.RISK_APPETITE, CausalSignalDirection.INCREASE, 0.82),
+            ),
         ),
         rule(
             "capitulation", "투매성 매도 출현",
@@ -169,6 +180,10 @@ object DefaultEventTemplates {
             EventType.MARKET_SENTIMENT, EventSeverity.CRITICAL, ImpactDirection.NEGATIVE,
             0.004, 240, 6..36, -0.070..-0.025, -0.00015..-0.00004, 1.8..2.8, 2.0..4.0,
             0.3..0.6, -0.95..-0.65, EventCondition.MARKET_DRAWDOWN,
+        ).copy(
+            causalSignals = listOf(
+                causalSignal(CausalEconomicFactor.RISK_APPETITE, CausalSignalDirection.DECREASE, 0.92),
+            ),
         ),
 
         // Industry supply/demand and policy cycles.
@@ -210,6 +225,9 @@ object DefaultEventTemplates {
             Sector.ENERGY, true, 0.004, 72..336, 0.020..0.065, severity = EventSeverity.MAJOR,
             type = EventType.COMMODITY,
         ).copy(
+            causalSignals = listOf(
+                causalSignal(CausalEconomicFactor.CRUDE_OIL_PRICE, CausalSignalDirection.INCREASE, 0.96),
+            ),
             impactInsights = listOf(
                 industryInsight(
                     "종합 석유·가스", Sector.ENERGY, ImpactDirection.POSITIVE,
@@ -223,6 +241,10 @@ object DefaultEventTemplates {
                     "경기소비재", Sector.CONSUMER_DISCRETIONARY, ImpactDirection.NEGATIVE,
                     "에너지 지출 증가가 가계의 선택 소비 여력을 줄인다.", 0.70,
                 ),
+                stockInsight(
+                    "엑슨 모빌", "${Market.NYSE.name}:XOM", ImpactDirection.POSITIVE,
+                    "상류 생산과 정유를 함께 보유해 원유 판매가격 상승이 현금흐름에 직접 반영된다.", 1.35,
+                ),
             ),
         ),
         industry(
@@ -230,6 +252,9 @@ object DefaultEventTemplates {
             Sector.ENERGY, false, 0.004, 72..336, -0.065..-0.020, severity = EventSeverity.MAJOR,
             type = EventType.COMMODITY,
         ).copy(
+            causalSignals = listOf(
+                causalSignal(CausalEconomicFactor.CRUDE_OIL_PRICE, CausalSignalDirection.DECREASE, 0.94),
+            ),
             impactInsights = listOf(
                 industryInsight(
                     "종합 석유·가스", Sector.ENERGY, ImpactDirection.NEGATIVE,
@@ -242,6 +267,10 @@ object DefaultEventTemplates {
                 industryInsight(
                     "경기소비재", Sector.CONSUMER_DISCRETIONARY, ImpactDirection.POSITIVE,
                     "가계 에너지 부담 완화가 선택 소비 여력을 높인다.", 0.65,
+                ),
+                stockInsight(
+                    "엑슨 모빌", "${Market.NYSE.name}:XOM", ImpactDirection.NEGATIVE,
+                    "상류 생산과 정유를 함께 보유해 원유 판매가격 하락이 현금흐름을 직접 낮춘다.", 1.35,
                 ),
             ),
         ),
@@ -286,6 +315,9 @@ object DefaultEventTemplates {
             "freight_rate_surge", "운임 지수 급등", "선복 부족과 항로 차질로 운임이 빠르게 상승했다.",
             Sector.TRANSPORTATION_LOGISTICS, true, 0.004, 72..336, 0.015..0.050,
         ).copy(
+            causalSignals = listOf(
+                causalSignal(CausalEconomicFactor.FREIGHT_RATE, CausalSignalDirection.INCREASE, 0.90),
+            ),
             impactInsights = listOf(
                 industryInsight(
                     "해상 운송", Sector.TRANSPORTATION_LOGISTICS, ImpactDirection.POSITIVE,
@@ -305,6 +337,10 @@ object DefaultEventTemplates {
         industry(
             "consumer_slowdown", "소비 심리 위축", "고금리와 생활비 부담으로 선택 소비 지출이 둔화됐다.",
             Sector.CONSUMER_DISCRETIONARY, false, 0.006, 120..480, -0.040..-0.012,
+        ).copy(
+            causalSignals = listOf(
+                causalSignal(CausalEconomicFactor.CONSUMER_DEMAND, CausalSignalDirection.DECREASE, 0.82),
+            ),
         ),
         industry(
             "bank_margin_expansion", "은행 순이자마진 개선", "대출 금리와 조달 비용의 차이가 확대됐다.",
@@ -358,6 +394,20 @@ object DefaultEventTemplates {
         industry(
             "game_hit_cycle", "신작 흥행 기대", "주요 신작의 초기 이용자와 매출 지표가 강하게 나타났다.",
             Sector.GAMING, true, 0.006, 72..240, 0.018..0.060, type = EventType.PRODUCT_TECHNOLOGY,
+        ).copy(
+            causalSignals = listOf(
+                causalSignal(CausalEconomicFactor.GAME_SOFTWARE_DEMAND, CausalSignalDirection.INCREASE, 0.86),
+            ),
+        ),
+        industry(
+            "game_demand_slowdown", "게임 소프트웨어 수요 둔화",
+            "신작 지연과 이용시간 감소로 게임 소프트웨어 결제 수요가 약해졌다.",
+            Sector.GAMING, false, 0.005, 96..336, -0.052..-0.018,
+            type = EventType.INDUSTRY_SUPPLY_DEMAND,
+        ).copy(
+            causalSignals = listOf(
+                causalSignal(CausalEconomicFactor.GAME_SOFTWARE_DEMAND, CausalSignalDirection.DECREASE, 0.90),
+            ),
         ),
         industry(
             "entertainment_global_hit", "글로벌 콘텐츠 흥행", "신규 콘텐츠가 여러 지역의 순위 상단에 올랐다.",
@@ -912,6 +962,34 @@ object DefaultEventTemplates {
         sector = sector,
         industrySegment = industrySegment,
         horizon = horizon,
+        relativeSensitivity = sensitivity,
+    )
+
+    private fun causalSignal(
+        factor: CausalEconomicFactor,
+        direction: CausalSignalDirection,
+        strength: Double,
+        confidence: Double = 0.90,
+    ): CausalSignalSeed = CausalSignalSeed(
+        factor = factor,
+        direction = direction,
+        strength = strength,
+        confidence = confidence,
+    )
+
+    private fun stockInsight(
+        label: String,
+        stockId: String,
+        direction: ImpactDirection,
+        rationale: String,
+        sensitivity: Double,
+    ): EventImpactInsight = EventImpactInsight(
+        targetKind = EventImpactTargetKind.STOCK,
+        targetLabel = label,
+        direction = direction,
+        rationale = rationale,
+        stockId = stockId,
+        horizon = EventImpactHorizon.SHORT_TERM,
         relativeSensitivity = sensitivity,
     )
 }
