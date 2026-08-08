@@ -1,17 +1,5 @@
 package com.amond.kmpbook.domain.model
 
-/** 뉴스가 플레이어의 보유·관심 자산에 어떤 경로로 연결됐는지를 표시한다. */
-data class NewsRelevance(
-    val heldStockIds: Set<String> = emptySet(),
-    val watchedStockIds: Set<String> = emptySet(),
-    val relatedSectors: Set<Sector> = emptySet(),
-) {
-    val isPersonal: Boolean get() = heldStockIds.isNotEmpty() || watchedStockIds.isNotEmpty()
-    val isHoldingRelated: Boolean get() = heldStockIds.isNotEmpty()
-    val isWatchlistRelated: Boolean get() = watchedStockIds.isNotEmpty()
-    val isSectorRelated: Boolean get() = relatedSectors.isNotEmpty()
-}
-
 fun GameEvent.relevanceTo(
     stocks: List<StockDefinition>,
     holdingIds: Set<String>,
@@ -43,15 +31,6 @@ fun GameEvent.relevanceTo(
         relatedSectors = relatedSectors,
     )
 }
-
-/** 한 종목에 적용되는 분석 경로 중 가장 구체적인 단계만 가격 엔진과 UI가 공유한다. */
-data class ResolvedEventImpact(
-    val direction: ImpactDirection,
-    val relativeSensitivity: Double,
-    val insights: List<EventImpactInsight>,
-    val source: EventImpactResolutionSource,
-    val causalImpact: CausalStockImpact? = null,
-)
 
 fun GameEvent.resolvedImpactFor(stock: StockDefinition): ResolvedEventImpact {
     val coverage = impactCoverageFor(stock)
