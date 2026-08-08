@@ -1,14 +1,17 @@
 package com.amond.kmpbook.domain.simulation
 
 import com.amond.kmpbook.domain.model.CausalEconomicFactor
+import com.amond.kmpbook.domain.model.CausalMarketRegimeSnapshot
 import com.amond.kmpbook.domain.model.CausalMarketTransmissionTrace
 import com.amond.kmpbook.domain.model.CausalSignalSeed
 import com.amond.kmpbook.domain.model.CausalStockImpact
 import com.amond.kmpbook.domain.model.CausalTransmissionProfile
 import com.amond.kmpbook.domain.model.EtfExposureRegion
 import com.amond.kmpbook.domain.model.Market
+import com.amond.kmpbook.domain.model.MAX_CAUSAL_MARKET_RESPONSE_INTENSITY
+import com.amond.kmpbook.domain.model.MIN_CAUSAL_SIGNAL_STRENGTH
 import com.amond.kmpbook.domain.model.StockDefinition
-import kotlin.math.roundToInt
+import kotlin.math.pow
 
 /** 거래소 사이에서 같은 방향의 금융 신호가 이동하는 통로다. */
 data class MarketContagionEdge(
@@ -39,6 +42,8 @@ data class MarketSignalTransmission(
     val originalSeed: CausalSignalSeed,
     val transmittedSeed: CausalSignalSeed,
     val reach: Double,
+    /** 원신호 강도에 대한 도착시장 반응비. 확률이 아니므로 취약 국면에는 1을 넘을 수 있다. */
+    val responseIntensity: Double,
     val representativePath: List<Market>,
     val dominantPathContribution: Double,
     val directExposure: Boolean,
@@ -47,6 +52,11 @@ data class MarketSignalTransmission(
         require(originalSeed.factor == transmittedSeed.factor)
         require(originalSeed.direction == transmittedSeed.direction)
         require(reach.isFinite() && reach > 0.0 && reach <= 1.0)
+        require(
+            responseIntensity.isFinite() &&
+                responseIntensity > 0.0 &&
+                responseIntensity <= MAX_CAUSAL_MARKET_RESPONSE_INTENSITY,
+        )
         require(representativePath.isNotEmpty())
         require(dominantPathContribution.isFinite() && dominantPathContribution > 0.0)
         require(dominantPathContribution <= reach)
@@ -57,6 +67,7 @@ data class MarketSignalTransmission(
             markets = representativePath,
             reach = reach,
             dominantPathContribution = dominantPathContribution,
+            responseIntensity = responseIntensity,
         )
 }
 
@@ -73,12 +84,14 @@ data class MarketContagionResult(
  * 경로 p의 순수 이동률은 `u_p = product(tau_f * mobility_profile * link_e)`다. 출발시장 s의
  * 대체 경로는 `R_s = 1 - product(1 - u_p)`로 합치고, 최종 전염도는
  * `q * sum(a_s * R_s)`로 계산한다. 따라서 신뢰도 q와 국가 사건의 출발 질량 a_s는 정확히
- * 한 번만 곱해지고 결과는 [0, 1]에 머문다. seed 강도는 뒤의 경제 요인 그래프에서 한 번만
- * 곱하므로 여기서 중복하지 않는다.
+ * 한 번만 곱해지고 결과는 [0, 1]에 머문다. 그 뒤 발생 시점 도착시장의 취약도에 따라
+ * `A(x,g) = gx / (1 + (g - 1)x)`로 유효 신호를 포화 증폭한다. 연결 확률과 반응 강도를
+ * 분리하므로 작은 충격은 커질 수 있지만 도착 반응은 출발 신호의 1.5배를 넘지 않는다.
  */
 object MarketContagionEngine {
     const val MAX_MARKET_DEPTH: Int = 3
     const val MIN_MARKET_REACH: Double = 0.015
+    const val MAX_RESPONSE_INTENSITY: Double = MAX_CAUSAL_MARKET_RESPONSE_INTENSITY
 
     private const val MIN_PATH_CONTRIBUTION: Double = 0.002
 
@@ -142,39 +155,55 @@ object MarketContagionEngine {
         seeds: List<CausalSignalSeed>,
         sourceMarkets: Set<Market>,
         stock: StockDefinition,
+        regimeSnapshot: CausalMarketRegimeSnapshot = CausalMarketRegimeSnapshot(),
     ): MarketContagionResult {
         if (seeds.isEmpty() || sourceMarkets.isEmpty()) return MarketContagionResult(emptyList())
+        require(seeds.all { it.strength >= MIN_CAUSAL_SIGNAL_STRENGTH }) {
+            "시장 전염의 시작 신호는 $MIN_CAUSAL_SIGNAL_STRENGTH 이상의 강도여야 합니다."
+        }
 
         val sourceMass = canonicalSourceMass(sourceMarkets)
         val transmissions = seeds.sortedBy { it.factor.ordinal }.mapNotNull { seed ->
             val direct = directExposureFor(seed.transmissionProfile, stock, sourceMarkets, sourceMass)
-            val spatial = if (direct?.preferOverSpatial == true) {
-                null
+            val candidates = if (direct?.preferOverSpatial == true) {
+                listOf(direct.asReach())
             } else {
-                spatialReachFor(seed, sourceMass, targetMarketsFor(seed.transmissionProfile, stock))
+                listOfNotNull(direct?.asReach()) + spatialReachesFor(
+                    seed = seed,
+                    sourceMass = sourceMass,
+                    targetMarkets = targetMarketsFor(seed.transmissionProfile, stock),
+                )
             }
-            val selected = listOfNotNull(direct?.asReach(), spatial).maxWithOrNull(
-                compareBy<TransmissionReach>(TransmissionReach::reach)
-                    .thenBy(TransmissionReach::directExposure),
+            val selected = candidates.map { transmission ->
+                ResponseCandidate(
+                    transmission = transmission,
+                    response = responseFor(seed, transmission, regimeSnapshot),
+                )
+            }.maxWithOrNull(
+                compareBy<ResponseCandidate> { it.response.effectiveStrength }
+                    .thenBy { it.transmission.reach }
+                    .thenBy { it.transmission.directExposure },
             ) ?: return@mapNotNull null
-            if (selected.reach < MIN_MARKET_REACH) return@mapNotNull null
+            val transmission = selected.transmission
+            val response = selected.response
+            if (response.intensity < MIN_MARKET_REACH) return@mapNotNull null
 
-            val transmittedStrength = (seed.strength * selected.reach).coerceIn(Double.MIN_VALUE, 1.0)
-            val transmittedConfidence = if (selected.directExposure) {
-                seed.confidence * selected.reach
+            val transmittedConfidence = if (transmission.directExposure) {
+                seed.confidence * transmission.reach
             } else {
-                selected.reach
+                transmission.reach
             }.coerceIn(Double.MIN_VALUE, 1.0)
             MarketSignalTransmission(
                 originalSeed = seed,
                 transmittedSeed = seed.copy(
-                    strength = transmittedStrength,
+                    strength = response.effectiveStrength,
                     confidence = transmittedConfidence,
                 ),
-                reach = selected.reach,
-                representativePath = selected.path,
-                dominantPathContribution = selected.dominantPathContribution,
-                directExposure = selected.directExposure,
+                reach = transmission.reach,
+                responseIntensity = response.intensity,
+                representativePath = transmission.path,
+                dominantPathContribution = transmission.dominantPathContribution,
+                directExposure = transmission.directExposure,
             )
         }
         return MarketContagionResult(transmissions)
@@ -184,8 +213,9 @@ object MarketContagionEngine {
         seeds: List<CausalSignalSeed>,
         sourceMarkets: Set<Market>,
         stock: StockDefinition,
+        regimeSnapshot: CausalMarketRegimeSnapshot = CausalMarketRegimeSnapshot(),
     ): CausalStockImpact? {
-        val result = transmit(seeds, sourceMarkets, stock)
+        val result = transmit(seeds, sourceMarkets, stock, regimeSnapshot)
         if (result.transmissions.isEmpty()) return null
         val impact = CausalMarketEngine.impactFor(result.transmittedSeeds, stock) ?: return null
         val transmissionByFactor = result.transmissions.associateBy { it.originalSeed.factor }
@@ -197,23 +227,113 @@ object MarketContagionEngine {
             traces = impact.traces.map { trace ->
                 val factor = trace.nodes.firstOrNull()?.factor ?: return@map trace
                 val transmission = transmissionByFactor[factor] ?: return@map trace
-                val marketTrace = transmission.trace
-                val transmissionReason = if (marketTrace.isCrossMarket) {
-                    val route = marketTrace.labels.joinToString(" → ")
-                    val percent = (marketTrace.reach * 100.0).roundToInt()
-                    "$route 시장 경로에서 ${factor.displayName} 신호가 전염도 $percent%로 감쇠됐습니다."
-                } else if (marketTrace.reach < 0.999) {
-                    val percent = (marketTrace.reach * 100.0).roundToInt()
-                    "${marketTrace.labels.single()} 기초·상장 노출 중 $percent%가 직접 연결됩니다."
-                } else {
-                    "${marketTrace.labels.single()}의 직접 시장 노출입니다."
-                }
                 trace.copy(
-                    rationale = "$transmissionReason ${trace.rationale}",
-                    marketTransmission = marketTrace,
+                    marketTransmission = transmission.trace,
                 )
             },
         )
+    }
+
+    /**
+     * 작은 도착 신호만 크게 확대되고 큰 신호는 자연스럽게 포화되는 결정론적 반응 함수다.
+     * 중립 국면(g=1)에는 effective=s*reach가 되어 기존 선형 결과를 정확히 보존한다.
+     */
+    private fun responseFor(
+        seed: CausalSignalSeed,
+        transmission: TransmissionReach,
+        regime: CausalMarketRegimeSnapshot,
+    ): MarketResponse {
+        val rawStrength = seed.strength * transmission.reach
+        if (transmission.directExposure) {
+            return MarketResponse(
+                effectiveStrength = rawStrength.coerceIn(Double.MIN_VALUE, 1.0),
+                intensity = transmission.reach,
+            )
+        }
+
+        val target = transmission.path.last()
+        val fragility = fragilityFor(target, seed.transmissionProfile, regime)
+        val threshold = fragilityThresholdFor(target)
+        val normalized = ((fragility - threshold) / (1.0 - threshold)).coerceIn(0.0, 1.0)
+        val activation = normalized * normalized * (3.0 - 2.0 * normalized)
+        val pathConvergence = (
+            (transmission.reach - transmission.dominantPathContribution) /
+                transmission.reach
+            ).coerceIn(0.0, 1.0)
+        val networkPressure = 0.85 + 0.15 * pathConvergence
+        val gain = 1.0 +
+            (maxGainFor(seed.transmissionProfile) - 1.0) *
+            activation * reflexivityFor(target) * networkPressure
+        val saturated = gain * rawStrength / (1.0 + (gain - 1.0) * rawStrength)
+        val effective = minOf(
+            saturated,
+            seed.strength * MAX_RESPONSE_INTENSITY,
+            1.0,
+        ).coerceAtLeast(Double.MIN_VALUE)
+        return MarketResponse(
+            effectiveStrength = effective,
+            intensity = (effective / seed.strength).coerceIn(Double.MIN_VALUE, MAX_RESPONSE_INTENSITY),
+        )
+    }
+
+    /** 가중 생존함수는 여러 약한 스트레스가 겹칠 때도 매끄럽게 취약도를 끌어올린다. */
+    private fun fragilityFor(
+        target: Market,
+        profile: CausalTransmissionProfile,
+        regime: CausalMarketRegimeSnapshot,
+    ): Double {
+        val drawdown = ((-regime.marketChangeFromPreviousClose.getOrElse(target) { 0.0 }) / 0.08)
+            .coerceIn(0.0, 0.98)
+        val hourlySelloff = ((-regime.marketHourlyReturns.getOrElse(target) { 0.0 }) / 0.04)
+            .coerceIn(0.0, 0.98)
+        val volatility = ((regime.volatilityRegime - 1.0) / 1.5).coerceIn(0.0, 0.98)
+        val riskOff = ((-regime.riskSentiment) / 0.90).coerceIn(0.0, 0.98)
+        val wonFundingStress = if (target.isKorean && profile == CausalTransmissionProfile.FUNDING_STRESS) {
+            (regime.usdKrwChangeRate / 0.05).coerceIn(0.0, 0.98)
+        } else {
+            0.0
+        }
+        val stresses = listOf(
+            volatility to 0.30,
+            drawdown to 0.34,
+            riskOff to 0.22,
+            hourlySelloff to 0.08,
+            wonFundingStress to 0.06,
+        )
+        val survival = stresses.fold(1.0) { product, (stress, weight) ->
+            product * (1.0 - stress).pow(weight)
+        }
+        return (1.0 - survival).coerceIn(0.0, 1.0)
+    }
+
+    private fun fragilityThresholdFor(market: Market): Double = when (market) {
+        Market.KOSDAQ -> 0.18
+        Market.NASDAQ -> 0.21
+        Market.KOSPI -> 0.24
+        Market.NYSE -> 0.28
+        Market.NYSE_ARCA,
+        Market.CBOE_BZX,
+        Market.NYSE_AMERICAN,
+        -> 0.25
+    }
+
+    private fun reflexivityFor(market: Market): Double = when (market) {
+        Market.KOSDAQ -> 1.00
+        Market.NASDAQ -> 0.95
+        Market.KOSPI -> 0.86
+        Market.NYSE -> 0.76
+        Market.NYSE_ARCA,
+        Market.CBOE_BZX,
+        Market.NYSE_AMERICAN,
+        -> 0.82
+    }
+
+    private fun maxGainFor(profile: CausalTransmissionProfile): Double = when (profile) {
+        CausalTransmissionProfile.LOCAL_MICROSTRUCTURE -> 1.10
+        CausalTransmissionProfile.PORTFOLIO_DELEVERAGING -> 5.50
+        CausalTransmissionProfile.FUNDING_STRESS -> 6.00
+        CausalTransmissionProfile.GLOBAL_REAL_ECONOMY -> 3.00
+        CausalTransmissionProfile.GLOBAL_REFERENCE_PRICE -> 2.20
     }
 
     private fun directExposureFor(
@@ -283,39 +403,40 @@ object MarketContagionEngine {
         return roots.associateWith { mass }
     }
 
-    private fun spatialReachFor(
+    /** 기초 목적시장마다 반응을 따로 계산할 수 있도록 topology 후보를 합치지 않고 보존한다. */
+    private fun spatialReachesFor(
         seed: CausalSignalSeed,
         sourceMass: Map<Market, Double>,
         targetMarkets: Set<Market>,
-    ): TransmissionReach? {
-        if (targetMarkets.isEmpty()) return null
-        val sourceResults = sourceMass.mapNotNull { (source, mass) ->
-            val bestTarget = targetMarkets.mapNotNull { target ->
+    ): List<TransmissionReach> {
+        if (targetMarkets.isEmpty()) return emptyList()
+        return targetMarkets.sortedBy(Market::ordinal).mapNotNull targetCandidate@ { target ->
+            val sourceResults = sourceMass.mapNotNull sourceCandidate@ { (source, mass) ->
                 val paths = pathsFor(
                     factor = seed.factor,
                     transmissionProfile = seed.transmissionProfile,
                     source = source,
                     target = target,
                 ).distinctBy(MarketContagionPath::markets)
-                if (paths.isEmpty()) return@mapNotNull null
+                if (paths.isEmpty()) return@sourceCandidate null
                 val sourceReach = noisyOr(paths.map(MarketContagionPath::contribution))
-                TargetReach(sourceReach, paths.maxBy(MarketContagionPath::contribution))
-            }.maxByOrNull(TargetReach::reach) ?: return@mapNotNull null
-            SourceReach(
-                weightedReach = mass * bestTarget.reach,
-                representative = bestTarget.representative,
-                representativeEffectiveContribution = seed.confidence * mass * bestTarget.representative.contribution,
+                val representative = paths.maxBy(MarketContagionPath::contribution)
+                SourceReach(
+                    weightedReach = mass * sourceReach,
+                    representative = representative,
+                    representativeEffectiveContribution = seed.confidence * mass * representative.contribution,
+                )
+            }
+            if (sourceResults.isEmpty()) return@targetCandidate null
+            val reach = (seed.confidence * sourceResults.sumOf(SourceReach::weightedReach)).coerceIn(0.0, 1.0)
+            val dominant = sourceResults.maxBy(SourceReach::representativeEffectiveContribution)
+            TransmissionReach(
+                reach = reach,
+                path = dominant.representative.markets,
+                dominantPathContribution = dominant.representativeEffectiveContribution.coerceAtMost(reach),
+                directExposure = false,
             )
         }
-        if (sourceResults.isEmpty()) return null
-        val reach = (seed.confidence * sourceResults.sumOf(SourceReach::weightedReach)).coerceIn(0.0, 1.0)
-        val dominant = sourceResults.maxBy(SourceReach::representativeEffectiveContribution)
-        return TransmissionReach(
-            reach = reach,
-            path = dominant.representative.markets,
-            dominantPathContribution = dominant.representativeEffectiveContribution.coerceAtMost(reach),
-            directExposure = false,
-        )
     }
 
     private fun pathsFor(
@@ -394,11 +515,6 @@ object MarketContagionEngine {
         )
     }
 
-    private data class TargetReach(
-        val reach: Double,
-        val representative: MarketContagionPath,
-    )
-
     private data class SourceReach(
         val weightedReach: Double,
         val representative: MarketContagionPath,
@@ -410,5 +526,15 @@ object MarketContagionEngine {
         val path: List<Market>,
         val dominantPathContribution: Double,
         val directExposure: Boolean,
+    )
+
+    private data class MarketResponse(
+        val effectiveStrength: Double,
+        val intensity: Double,
+    )
+
+    private data class ResponseCandidate(
+        val transmission: TransmissionReach,
+        val response: MarketResponse,
     )
 }
