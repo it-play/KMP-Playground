@@ -848,38 +848,6 @@ actual class GameSaveStorage actual constructor() {
     }
 }
 
-private class InstantTypeAdapter : TypeAdapter<Instant>() {
-    override fun write(writer: JsonWriter, value: Instant) {
-        writer.value(value.toString())
-    }
-
-    override fun read(reader: JsonReader): Instant {
-        if (reader.peek() != JsonToken.STRING) throw JsonParseException("Instant는 ISO-8601 문자열이어야 합니다.")
-        val value = reader.nextString()
-        return try {
-            Instant.parse(value)
-        } catch (error: IllegalArgumentException) {
-            throw JsonParseException("올바르지 않은 Instant '$value'입니다.", error)
-        }
-    }
-}
-
-private class LocalDateTypeAdapter : TypeAdapter<LocalDate>() {
-    override fun write(writer: JsonWriter, value: LocalDate) {
-        writer.value(value.toString())
-    }
-
-    override fun read(reader: JsonReader): LocalDate {
-        if (reader.peek() != JsonToken.STRING) throw JsonParseException("LocalDate는 ISO-8601 문자열이어야 합니다.")
-        val value = reader.nextString()
-        return try {
-            LocalDate.parse(value)
-        } catch (error: IllegalArgumentException) {
-            throw JsonParseException("올바르지 않은 LocalDate '$value'입니다.", error)
-        }
-    }
-}
-
 private fun JsonObject.required(name: String): JsonElement = get(name)
     ?.takeUnless(JsonElement::isJsonNull)
     ?: throw JsonParseException("필수 필드 '$name'이 없습니다.")

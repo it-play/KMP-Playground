@@ -1,0 +1,12 @@
+package com.amond.kmpbook.persistence
+
+import com.amond.kmpbook.presentation.SimulatorUiState
+import kotlin.time.Instant
+
+data class GameSaveMetadata(
+    val format: String,
+    val schemaVersion: Int,
+    val savedAt: Instant,
+    val gameTime: Instant,
+    val turn: Long,
+)
