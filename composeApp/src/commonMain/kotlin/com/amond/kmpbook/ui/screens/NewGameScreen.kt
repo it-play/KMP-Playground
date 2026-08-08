@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.amond.kmpbook.presentation.NewGameOptions
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
 import com.amond.kmpbook.ui.components.MarketButton
@@ -53,7 +54,7 @@ fun NewGameScreen(
     modifier: Modifier = Modifier,
 ) {
     var capitalText by remember { mutableStateOf("100000000") }
-    var seedText by remember { mutableStateOf("20400807") }
+    var seedText by remember { mutableStateOf(NewGameOptions.DEFAULT_SEED.toString()) }
     var fractional by remember { mutableStateOf(false) }
     var autoExchange by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -68,7 +69,7 @@ fun NewGameScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(44.dp).background(MarketColors.Celadon, RoundedCornerShape(MarketRadii.small)),
+                    Modifier.size(44.dp).background(MarketColors.Primary, RoundedCornerShape(MarketRadii.small)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text("40", style = MarketType.numberLarge.copy(fontSize = 17.sp), color = Color.White)
@@ -204,7 +205,7 @@ fun NewGameScreen(
                             val capital = capitalText.toDoubleOrNull()
                             val seed = seedText.toLongOrNull()
                             when {
-                                capital == null || capital < 1_000_000.0 ->
+                                capital == null || capital < NewGameOptions.MIN_INITIAL_CAPITAL_KRW ->
                                     error = "초기 투자금은 100만원 이상 입력하세요."
                                 seed == null -> error = "시장 시드를 정수로 입력하세요."
                                 else -> {
@@ -227,7 +228,7 @@ fun NewGameScreen(
                     TextButton(
                         onClick = {
                             capitalText = "100000000"
-                            seedText = "20400807"
+                            seedText = NewGameOptions.DEFAULT_SEED.toString()
                             fractional = false
                             autoExchange = true
                             error = null
@@ -266,7 +267,7 @@ private fun CheckRow(
         Checkbox(
             checked = checked,
             onCheckedChange = onCheckedChange,
-            colors = CheckboxDefaults.colors(checkedColor = MarketColors.Celadon),
+            colors = CheckboxDefaults.colors(checkedColor = MarketColors.Primary),
         )
         Column {
             Text(title, style = MarketType.body.copy(fontWeight = FontWeight.Medium), color = MarketColors.Ink)
@@ -280,7 +281,7 @@ private fun MarketTimeline(modifier: Modifier = Modifier) {
     Canvas(modifier) {
         val y = size.height / 2f
         drawLine(Color.White.copy(alpha = 0.18f), Offset(0f, y), Offset(size.width, y), 2f)
-        drawLine(MarketColors.Celadon, Offset(0f, y), Offset(size.width * 0.18f, y), 3f)
+        drawLine(MarketColors.Primary, Offset(0f, y), Offset(size.width * 0.18f, y), 3f)
         listOf(0f, 0.26f, 0.61f, 1f).forEachIndexed { index, fraction ->
             drawCircle(
                 color = if (index == 0) MarketColors.Rise else Color.White.copy(alpha = 0.5f),
@@ -313,7 +314,7 @@ private fun MarketStamp(name: String, country: String) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        Box(Modifier.size(5.dp).background(MarketColors.Celadon, RoundedCornerShape(50)))
+        Box(Modifier.size(5.dp).background(MarketColors.Primary, RoundedCornerShape(50)))
         Text(name, style = MarketType.number, color = Color.White.copy(alpha = 0.84f))
         Text(country, style = MarketType.caption, color = Color.White.copy(alpha = 0.60f))
     }

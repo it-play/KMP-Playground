@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amond.kmpbook.domain.model.Currency
 import com.amond.kmpbook.domain.model.PortfolioSnapshot
+import com.amond.kmpbook.persistence.CURRENT_GAME_SAVE_SCHEMA_VERSION
 import com.amond.kmpbook.ui.charts.LineAreaChart
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
@@ -101,7 +102,7 @@ fun SettingsScreen(
                         Spacer(Modifier.height(15.dp))
                         Row {
                             Metric("초기 투자금", formatMoney(settings.initialCapitalKrw, Currency.KRW), Modifier.weight(1f))
-                            Metric("시장 시드", settings.seed.toString(), Modifier.weight(1f), MarketColors.Celadon)
+                            Metric("시장 시드", settings.seed.toString(), Modifier.weight(1f), MarketColors.Primary)
                             Metric("종료일", "2040.12.31", Modifier.weight(1f))
                         }
                         Spacer(Modifier.height(16.dp))
@@ -116,14 +117,14 @@ fun SettingsScreen(
                 }
                 LedgerPanel(Modifier.fillMaxWidth().height(180.dp)) {
                     Column(Modifier.fillMaxSize()) {
-                        SectionHeading("장부 저장", eyebrow = "SAVE GAME · SCHEMA 1")
+                        SectionHeading("장부 저장", eyebrow = "SAVE GAME · SCHEMA $CURRENT_GAME_SAVE_SCHEMA_VERSION")
                         Spacer(Modifier.height(9.dp))
                         Text(saveStatus, style = MarketType.body, color = MarketColors.Ink)
                         Text(savePath, style = MarketType.caption, color = MarketColors.InkMuted, maxLines = 1)
                         Spacer(Modifier.weight(1f))
                         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                             SaveActionButton("현재 장부 저장", Modifier.weight(1.25f), MarketColors.Navy, onSaveGame)
-                            SaveActionButton("불러오기", Modifier.weight(1f), MarketColors.Celadon, onLoadGame, hasSavedGame)
+                            SaveActionButton("불러오기", Modifier.weight(1f), MarketColors.Primary, onLoadGame, hasSavedGame)
                             SaveActionButton(
                                 if (deleteArmed) "삭제 확정" else "저장 삭제",
                                 Modifier.weight(1f),
@@ -312,7 +313,7 @@ fun EndingScreen(
     Box(modifier.fillMaxSize().background(MarketColors.Navy), contentAlignment = Alignment.Center) {
         Row(Modifier.fillMaxWidth(0.86f).fillMaxHeight(0.82f), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.Center) {
-                Text("2040 · FINAL LEDGER", style = MarketType.label.copy(letterSpacing = 0.3.sp), color = MarketColors.CeladonSoft)
+                Text("2040 · FINAL LEDGER", style = MarketType.label.copy(letterSpacing = 0.3.sp), color = MarketColors.PrimaryWeak)
                 Spacer(Modifier.height(12.dp))
                 Text(ending, style = MarketType.display.copy(fontSize = 42.sp, lineHeight = 52.sp), color = Color.White)
                 Spacer(Modifier.height(12.dp))
@@ -387,7 +388,7 @@ private fun SettingCheck(
             checked = checked,
             onCheckedChange = onChange,
             enabled = enabled,
-            colors = CheckboxDefaults.colors(checkedColor = MarketColors.Celadon),
+            colors = CheckboxDefaults.colors(checkedColor = MarketColors.Primary),
         )
         Column {
             Text(title, style = MarketType.body.copy(fontWeight = FontWeight.Medium), color = if (enabled) MarketColors.Ink else MarketColors.InkMuted)
