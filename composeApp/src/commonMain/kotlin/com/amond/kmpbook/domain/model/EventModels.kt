@@ -147,6 +147,8 @@ data class GameEvent(
     val sourceLabel: String = "게임 뉴스",
     /** 제목에서 파생한 예측치가 아니라 대상별 인과·방향을 담는 불변 분석 경로다. */
     val impactInsights: List<EventImpactInsight> = emptyList(),
+    /** 경제 요인 그래프를 통해 명시 경로 밖의 산업·종목으로 전파되는 구조화된 시작 신호다. */
+    val causalSignals: List<CausalSignalSeed> = emptyList(),
     /** 실적·경제지표처럼 실제로 발표된 값만 담는다. 가격 예상치는 저장하지 않는다. */
     val reportedFacts: List<ReportedFact> = emptyList(),
     /** 거래소·상장 조치 뉴스가 자신을 만든 원장 전이와 정확히 연결되는 불변 참조다. */
@@ -185,9 +187,12 @@ data class GameEvent(
         }
         require(
             impactCoveragePolicy != EventImpactCoveragePolicy.EXPLICIT_PATHS_ONLY ||
-                impactInsights.isNotEmpty(),
+                impactInsights.isNotEmpty() || causalSignals.isNotEmpty(),
         ) {
-            "명시 경로 전용 이벤트에는 하나 이상의 영향 경로가 필요합니다."
+            "명시 경로 전용 이벤트에는 영향 경로 또는 인과 신호가 필요합니다."
+        }
+        require(causalSignals.map(CausalSignalSeed::factor).distinct().size == causalSignals.size) {
+            "한 이벤트에는 같은 경제 요인의 인과 신호를 중복 선언할 수 없습니다."
         }
         require((recordKind == EventRecordKind.MARKET_ACTION) == (marketAction != null)) {
             "거래소 조치 기록과 시장조치 참조는 항상 함께 존재해야 합니다."
