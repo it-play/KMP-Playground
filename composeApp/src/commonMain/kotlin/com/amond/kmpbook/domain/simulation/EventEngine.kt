@@ -8,6 +8,9 @@ import com.amond.kmpbook.domain.model.GameEventImpact
 import com.amond.kmpbook.domain.model.ImpactDirection
 import com.amond.kmpbook.domain.model.InstrumentStrategy
 import com.amond.kmpbook.domain.model.InstrumentType
+import com.amond.kmpbook.domain.model.ListingFinalDispositionType
+import com.amond.kmpbook.domain.model.ListingRecoveryCondition
+import com.amond.kmpbook.domain.model.ListingRiskTag
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.Sector
 import com.amond.kmpbook.domain.model.StockDefinition
@@ -61,6 +64,10 @@ data class EventTemplate(
     val eligibleInstrumentTypes: Set<InstrumentType> = emptySet(),
     /** 비어 있으면 모든 전략, 값이 있으면 실제 수익 구조가 일치하는 상품만 후보가 된다. */
     val eligibleStrategies: Set<InstrumentStrategy> = emptySet(),
+    /** 가격 효과와 독립적으로 상장 생애주기 엔진에 전달되는 거래소 감시 신호. */
+    val listingRiskTags: Set<ListingRiskTag> = emptySet(),
+    val listingRecoveryConditions: Set<ListingRecoveryCondition> = emptySet(),
+    val listingFinalDispositionHint: ListingFinalDispositionType? = null,
     val sourceLabel: String = "시뮬레이션 뉴스",
 ) {
     init {
@@ -214,6 +221,9 @@ class EventEngine(
             affectedSectors = target.sectors,
             affectedStockIds = target.stockIds,
             sourceLabel = template.sourceLabel,
+            listingRiskTags = template.listingRiskTags,
+            listingRecoveryConditions = template.listingRecoveryConditions,
+            listingFinalDispositionHint = template.listingFinalDispositionHint,
         )
     }
 

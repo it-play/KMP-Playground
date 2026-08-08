@@ -38,10 +38,17 @@ object GameCalendar {
     val NEW_YORK_TIME_ZONE: TimeZone = TimeZone.of("America/New_York")
 
     val START_LOCAL_DATE_TIME: LocalDateTime = LocalDateTime(2026, 8, 7, 9, 0)
-    val END_LOCAL_DATE_TIME: LocalDateTime = LocalDateTime(2040, 12, 31, 23, 0)
+    val CAMPAIGN_END_DATE: LocalDate = LocalDate(2040, 12, 31)
+    private val END_NEW_YORK_DATE_TIME: LocalDateTime = LocalDateTime(CAMPAIGN_END_DATE, LocalTime(16, 0))
+    /** v1 saves ended at KST 23:00 before the last U.S. session; restore migration resumes them. */
+    internal val LEGACY_END_INSTANT: Instant =
+        LocalDateTime(CAMPAIGN_END_DATE, LocalTime(23, 0)).toInstant(KOREA_TIME_ZONE)
 
     val startInstant: Instant = START_LOCAL_DATE_TIME.toInstant(KOREA_TIME_ZONE)
-    val endInstant: Instant = END_LOCAL_DATE_TIME.toInstant(KOREA_TIME_ZONE)
+    /** 모든 지원 거래소의 2040-12-31 정규장이 끝나는 뉴욕장 마감 시각. */
+    val endInstant: Instant = END_NEW_YORK_DATE_TIME.toInstant(NEW_YORK_TIME_ZONE)
+    /** 실제 KST 표시는 2041-01-01 06:00이지만 캠페인 귀속일은 2040-12-31이다. */
+    val END_LOCAL_DATE_TIME: LocalDateTime = endInstant.toLocalDateTime(KOREA_TIME_ZONE)
 
     /** 짧은 이름이 필요한 엔진 호출부용 별칭. */
     val start: Instant get() = startInstant
@@ -60,7 +67,7 @@ object GameCalendar {
     /** 유효 게임 구간으로 시각을 제한한다. */
     fun clamp(time: Instant): Instant = time.coerceIn(startInstant, endInstant)
 
-    /** 선택한 단위만큼 실제 시간을 진행하되 2040-12-31 23:00 KST를 넘지 않는다. */
+    /** 선택한 단위만큼 실제 시간을 진행하되 마지막 지원 거래소의 2040-12-31 마감을 넘지 않는다. */
     fun advance(from: Instant, step: TurnStep): Instant = advanceHours(from, step.hours)
 
     fun advanceHours(from: Instant, hours: Int): Instant {
@@ -84,6 +91,10 @@ object GameCalendar {
     }
 
     fun toGameLocalDateTime(time: Instant): LocalDateTime = time.toLocalDateTime(KOREA_TIME_ZONE)
+
+    /** KST 자정 뒤 이어지는 마지막 미국장도 2040-12-31 캠페인 날짜로 귀속한다. */
+    fun campaignDate(time: Instant): LocalDate =
+        time.toLocalDateTime(KOREA_TIME_ZONE).date.coerceAtMost(CAMPAIGN_END_DATE)
 
     fun fromGameLocalDateTime(localDateTime: LocalDateTime): Instant = localDateTime.toInstant(KOREA_TIME_ZONE)
 

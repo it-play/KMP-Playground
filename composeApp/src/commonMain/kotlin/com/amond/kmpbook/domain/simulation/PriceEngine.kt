@@ -295,9 +295,13 @@ class PriceEngine(private val seed: Long) {
             // Currency hedging is an independent overlay. Multiplying it by an inverse or
             // leveraged equity mandate would incorrectly reverse/double the FX leg.
             foreignExchange = fxReturn,
-            event = fundLeverage * strategyParticipation(behavior, input.eventImpulse.referenceReturnRate) *
-                ln(1.0 + input.eventImpulse.referenceReturnRate) * referenceFraction +
-                ln(1.0 + input.eventImpulse.directProductReturnRate) * fairValueFraction,
+            event = eventLogReturn(
+                stock = stock,
+                eventImpulse = input.eventImpulse,
+                // News reaches the listing while its underlying reference venue may be closed.
+                referenceFraction = fairValueFraction,
+                fairValueFraction = fairValueFraction,
+            ),
             fundCosts = fundCosts,
             carriedReference = input.carriedReferenceLogReturn,
             idiosyncratic = randomComponent,
@@ -311,7 +315,7 @@ class PriceEngine(private val seed: Long) {
             MAX_RAW_LOG_RETURN,
         )
         val rawOpen = input.previousPrice * exp(boundedCarry)
-        val open = boundedPrice(stock.market, rawOpen, input.dailyBasePrice)
+        val open = boundedPrice(stock, rawOpen, input.dailyBasePrice)
         val activeLogReturn = (
             attribution.market + attribution.sector + attribution.ratesAndInflation +
                 attribution.growthAndSentiment + attribution.foreignExchange +
@@ -325,15 +329,15 @@ class PriceEngine(private val seed: Long) {
         val volatilityPause = stock.market.isUnitedStates && stabilizedLogReturn != activeLogReturn
 
         val rawClose = open.price * exp(stabilizedLogReturn)
-        val boundedClose = boundedPrice(stock.market, rawClose, input.dailyBasePrice)
+        val boundedClose = boundedPrice(stock, rawClose, input.dailyBasePrice)
         val close = boundedClose.price
 
         val rangeScale = (hourlyVolatility + abs(stabilizedLogReturn) * 0.35)
             .coerceAtMost(MAX_INTRAHOUR_RANGE)
         val rawHigh = max(open.price, close) * exp(abs(random.nextGaussian()) * rangeScale * 0.55)
         val rawLow = min(open.price, close) * exp(-abs(random.nextGaussian()) * rangeScale * 0.55)
-        val high = boundHigh(stock.market, rawHigh, input.dailyBasePrice, max(open.price, close))
-        val low = boundLow(stock.market, rawLow, input.dailyBasePrice, min(open.price, close))
+        val high = boundHigh(stock, rawHigh, input.dailyBasePrice, max(open.price, close))
+        val low = boundLow(stock, rawLow, input.dailyBasePrice, min(open.price, close))
 
         val returnRate = close / open.price - 1.0
         val circuitVolumeFactor = if (circuitLevel in 1..2) US_REOPENED_VOLUME_FACTOR else 1.0
@@ -431,13 +435,30 @@ class PriceEngine(private val seed: Long) {
         val growthAndSentiment = leverage * instrumentGrowthAndCreditReturn(stock, macro) *
             referenceTradingFraction
         val fx = structuredFxReturn(stock, macro, profile.legacyUsdKrwSensitivity) * fxTradingFraction
-        val event = leverage * strategyParticipation(behavior, eventImpulse.referenceReturnRate) *
-            ln(1.0 + eventImpulse.referenceReturnRate) * referenceTradingFraction +
-            ln(1.0 + eventImpulse.directProductReturnRate) * fxTradingFraction
+        val event = eventLogReturn(stock, eventImpulse, referenceTradingFraction, fxTradingFraction)
         // Expense and hedge-cost accrual belongs to the listing's regular-session NAV
         // path. Including it here would charge a foreign-market ETF once while its
         // reference trades and again while the listing trades.
         return market + sector + ratesAndInflation + growthAndSentiment + fx + event
+    }
+
+    /**
+     * Converts an event impulse to the exact log-return term used by live pricing. Runtime uses
+     * the same function to carry the closed portion of an event into the next opening auction.
+     */
+    fun eventLogReturn(
+        stock: StockDefinition,
+        eventImpulse: PriceImpulse,
+        referenceFraction: Double = 1.0,
+        fairValueFraction: Double = 1.0,
+    ): Double {
+        require(referenceFraction in 0.0..1.0)
+        require(fairValueFraction in 0.0..1.0)
+        val leverage = stock.etfProfile?.leverage ?: 1.0
+        val behavior = stock.behavior
+        return leverage * strategyParticipation(behavior, eventImpulse.referenceReturnRate) *
+            ln(1.0 + eventImpulse.referenceReturnRate) * referenceFraction +
+            ln(1.0 + eventImpulse.directProductReturnRate) * fairValueFraction
     }
 
     private fun structuredFxReturn(
@@ -593,16 +614,16 @@ class PriceEngine(private val seed: Long) {
             .toLong()
     }
 
-    private fun boundedPrice(market: Market, rawPrice: Double, basePrice: Double): BoundedPrice {
-        val positive = rawPrice.coerceAtLeast(MarketMicrostructure.minimumPrice(market))
-        val limits = MarketMicrostructure.dailyPriceLimits(market, basePrice)
+    private fun boundedPrice(stock: StockDefinition, rawPrice: Double, basePrice: Double): BoundedPrice {
+        val positive = rawPrice.coerceAtLeast(MarketMicrostructure.minimumPrice(stock.market))
+        val limits = MarketMicrostructure.dailyPriceLimits(stock, basePrice)
         if (limits == null) {
-            val rounded = MarketMicrostructure.roundNearest(market, positive)
+            val rounded = MarketMicrostructure.roundNearest(stock, positive)
             return BoundedPrice(rounded, rounded != rawPrice)
         }
 
         val clamped = positive.coerceIn(limits.lower, limits.upper)
-        val rounded = MarketMicrostructure.roundNearest(market, clamped)
+        val rounded = MarketMicrostructure.roundNearest(stock, clamped)
             .coerceIn(limits.lower, limits.upper)
         return BoundedPrice(
             price = rounded,
@@ -613,27 +634,27 @@ class PriceEngine(private val seed: Long) {
     }
 
     private fun boundHigh(
-        market: Market,
+        stock: StockDefinition,
         rawPrice: Double,
         basePrice: Double,
         minimum: Double,
     ): BoundedPrice {
-        val limits = MarketMicrostructure.dailyPriceLimits(market, basePrice)
+        val limits = MarketMicrostructure.dailyPriceLimits(stock, basePrice)
         val limited = if (limits == null) rawPrice else rawPrice.coerceAtMost(limits.upper)
-        val rounded = MarketMicrostructure.roundUp(market, max(limited, minimum))
+        val rounded = MarketMicrostructure.roundUp(stock, max(limited, minimum))
         val finalPrice = if (limits == null) rounded else rounded.coerceAtMost(limits.upper)
         return BoundedPrice(finalPrice, finalPrice != rawPrice)
     }
 
     private fun boundLow(
-        market: Market,
+        stock: StockDefinition,
         rawPrice: Double,
         basePrice: Double,
         maximum: Double,
     ): BoundedPrice {
-        val limits = MarketMicrostructure.dailyPriceLimits(market, basePrice)
+        val limits = MarketMicrostructure.dailyPriceLimits(stock, basePrice)
         val limited = if (limits == null) rawPrice else rawPrice.coerceAtLeast(limits.lower)
-        val rounded = MarketMicrostructure.roundDown(market, min(limited, maximum))
+        val rounded = MarketMicrostructure.roundDown(stock, min(limited, maximum))
         val finalPrice = if (limits == null) rounded else rounded.coerceAtLeast(limits.lower)
         return BoundedPrice(finalPrice, finalPrice != rawPrice)
     }

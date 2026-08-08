@@ -38,8 +38,58 @@ import com.amond.kmpbook.domain.model.EventType
 import com.amond.kmpbook.domain.model.GameEventImpact
 import com.amond.kmpbook.domain.model.ImpactDirection
 import com.amond.kmpbook.domain.model.InstrumentType
+import com.amond.kmpbook.domain.model.DailyListingSurveillanceInput
+import com.amond.kmpbook.domain.model.ListingFinalDisposition
+import com.amond.kmpbook.domain.model.ListingFinalDispositionType
+import com.amond.kmpbook.domain.model.ListingLifecycleEventKind
+import com.amond.kmpbook.domain.model.ListingLifecycleLedgerEvent
+import com.amond.kmpbook.domain.model.ListingLifecycleReason
+import com.amond.kmpbook.domain.model.ListingLifecycleState
+import com.amond.kmpbook.domain.model.ListingLifecycleStatus
+import com.amond.kmpbook.domain.model.ListingNoticeLevel
+import com.amond.kmpbook.domain.model.ListingRecoveryCondition
+import com.amond.kmpbook.domain.model.ListingRiskSeverity
+import com.amond.kmpbook.domain.model.ListingRiskTag
+import com.amond.kmpbook.domain.model.InvestmentAlertDesignation
+import com.amond.kmpbook.domain.model.InvestmentAlertLevel
+import com.amond.kmpbook.domain.model.InvestmentAlertReleaseRule
+import com.amond.kmpbook.domain.model.InvestmentAlertStatus
+import com.amond.kmpbook.domain.model.InstrumentTradingHalt
+import com.amond.kmpbook.domain.model.KrxCircuitBreakerEvent
+import com.amond.kmpbook.domain.model.KrxCircuitBreakerLevel
+import com.amond.kmpbook.domain.model.KrxCircuitBreakerObservation
+import com.amond.kmpbook.domain.model.KrxCircuitBreakerPhase
+import com.amond.kmpbook.domain.model.KrxSidecarEvent
+import com.amond.kmpbook.domain.model.KrxSidecarObservation
+import com.amond.kmpbook.domain.model.KrxSidecarPhase
+import com.amond.kmpbook.domain.model.KrxViEvent
+import com.amond.kmpbook.domain.model.KrxViKind
+import com.amond.kmpbook.domain.model.KrxViObservation
+import com.amond.kmpbook.domain.model.KrxViPhase
+import com.amond.kmpbook.domain.model.KrxViProductClass
+import com.amond.kmpbook.domain.model.KrxViSession
+import com.amond.kmpbook.domain.model.MarketMoveDirection
+import com.amond.kmpbook.domain.model.TradingDayWindow
+import com.amond.kmpbook.domain.model.TradingHaltReason
+import com.amond.kmpbook.domain.model.TradingHaltStatus
+import com.amond.kmpbook.domain.model.TradingProtectionAction
+import com.amond.kmpbook.domain.model.TradingProtectionRequest
+import com.amond.kmpbook.domain.model.TradingProtectionSnapshot
+import com.amond.kmpbook.domain.model.UsLuldEvent
+import com.amond.kmpbook.domain.model.UsLuldLimitSide
+import com.amond.kmpbook.domain.model.UsLuldObservation
+import com.amond.kmpbook.domain.model.UsLuldPhase
+import com.amond.kmpbook.domain.model.UsLuldTier
+import com.amond.kmpbook.domain.model.UsMwcbEvent
+import com.amond.kmpbook.domain.model.UsMwcbLevel
+import com.amond.kmpbook.domain.model.UsMwcbObservation
+import com.amond.kmpbook.domain.model.UsMwcbPhase
+import com.amond.kmpbook.domain.model.UsMwcbState
+import com.amond.kmpbook.domain.model.UsMwcbVenuePhase
+import com.amond.kmpbook.domain.model.UsMwcbVenueStatus
 import com.amond.kmpbook.domain.model.TimeInForce
 import com.amond.kmpbook.domain.model.Trade
+import com.amond.kmpbook.domain.model.TradeSettlementKind
 import com.amond.kmpbook.domain.model.TurnStep
 import com.amond.kmpbook.domain.simulation.DeterministicRandom
 import com.amond.kmpbook.domain.simulation.EventEngine
@@ -47,6 +97,11 @@ import com.amond.kmpbook.domain.simulation.EventGenerationContext
 import com.amond.kmpbook.domain.simulation.EventShockCalculator
 import com.amond.kmpbook.domain.simulation.MacroEnvironment
 import com.amond.kmpbook.domain.simulation.MarketMicrostructure
+import com.amond.kmpbook.domain.simulation.ListingLifecycleEngine
+import com.amond.kmpbook.domain.simulation.ListingRemediationDecisionStatus
+import com.amond.kmpbook.domain.simulation.ListingRemediationPolicy
+import com.amond.kmpbook.domain.simulation.TradingProtectionEngine
+import com.amond.kmpbook.domain.simulation.TradingProtectionRules
 import com.amond.kmpbook.domain.simulation.MarketIndexCalculationInput
 import com.amond.kmpbook.domain.simulation.MarketIndexEngine
 import com.amond.kmpbook.domain.simulation.OrderBookEngine
@@ -94,7 +149,370 @@ import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.round
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.nanoseconds
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
+
+internal data class RuntimeTradingInterval(
+    val startsAt: Instant,
+    val endsAt: Instant,
+) {
+    init {
+        require(endsAt > startsAt) { "거래 가능 구간의 종료 시각은 시작 시각보다 뒤여야 합니다." }
+    }
+}
+
+internal data class RuntimePriceBounds(
+    val lower: Double? = null,
+    val upper: Double? = null,
+) {
+    init {
+        require(lower == null || lower >= 0.0 && lower.isFinite())
+        require(upper == null || upper >= 0.0 && upper.isFinite())
+        require(lower == null || upper == null || lower <= upper)
+    }
+
+    fun merge(other: RuntimePriceBounds): RuntimePriceBounds = RuntimePriceBounds(
+        lower = listOfNotNull(lower, other.lower).maxOrNull(),
+        upper = listOfNotNull(upper, other.upper).minOrNull(),
+    )
+}
+
+internal data class ListingTerminationControl(
+    val event: GameEvent,
+    /** Unclamped contractual/effective date used to choose one controlling notice. */
+    val rawEffectiveOn: LocalDate,
+)
+
+/** Uses the real persistence deadline when it fits in this turn; otherwise leaves a pending observation at turn-end. */
+internal fun runtimePersistenceObservationAt(
+    conditionSince: Instant,
+    turnEnd: Instant,
+    persistence: kotlin.time.Duration,
+): Instant = minOf(conditionSince + persistence, turnEnd)
+
+/**
+ * Campaign-aware exchange closures.
+ *
+ * The frozen holiday pack ends in 2040, while the last New York session reaches
+ * 2041-01-01 06:00 KST and legal T+1/T+2 dates can fall a few days into 2041.
+ * Only New Year's Day needs an explicit closure in that short settlement tail.
+ */
+internal fun runtimeClosedDates(market: Market, date: LocalDate): Set<LocalDate> = when {
+    date.year in GameCalendar.START_LOCAL_DATE_TIME.year..GameCalendar.CAMPAIGN_END_DATE.year ->
+        DefaultMarketHolidays.closedDates(market, date.year)
+    date == LocalDate(GameCalendar.CAMPAIGN_END_DATE.year + 1, 1, 1) -> setOf(date)
+    else -> emptySet()
+}
+
+/** Exact regular-session intersection minus half-open protection intervals. */
+internal fun runtimeTradableIntervals(
+    market: Market,
+    from: Instant,
+    to: Instant,
+    blocked: List<RuntimeTradingInterval> = emptyList(),
+): List<RuntimeTradingInterval> {
+    require(to >= from)
+    if (to == from) return emptyList()
+    val localDates = linkedSetOf(
+        GameCalendar.marketLocalDateTime(market, from).date,
+        GameCalendar.marketLocalDateTime(market, to).date,
+    )
+    val regular = localDates.mapNotNull { date ->
+        GameCalendar.regularSessionWindow(
+            market,
+            date,
+            runtimeClosedDates(market, date),
+        )?.let { window ->
+            val start = maxOf(from, window.opensAt)
+            val end = minOf(to, window.closesAt)
+            if (end > start) RuntimeTradingInterval(start, end) else null
+        }
+    }
+    if (regular.isEmpty() || blocked.isEmpty()) return regular
+
+    return blocked.sortedBy(RuntimeTradingInterval::startsAt).fold(regular) { available, exclusion ->
+        available.flatMap { interval ->
+            if (exclusion.endsAt <= interval.startsAt || exclusion.startsAt >= interval.endsAt) {
+                listOf(interval)
+            } else {
+                buildList {
+                    if (exclusion.startsAt > interval.startsAt) {
+                        add(RuntimeTradingInterval(interval.startsAt, minOf(exclusion.startsAt, interval.endsAt)))
+                    }
+                    if (exclusion.endsAt < interval.endsAt) {
+                        add(RuntimeTradingInterval(maxOf(exclusion.endsAt, interval.startsAt), interval.endsAt))
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal fun runtimeTradingFraction(
+    from: Instant,
+    to: Instant,
+    intervals: List<RuntimeTradingInterval>,
+): Double {
+    require(to >= from)
+    if (to == from) return 0.0
+    val available = intervals.sumOf { (it.endsAt - it.startsAt).inWholeNanoseconds }.toDouble()
+    return (available / (to - from).inWholeNanoseconds.toDouble()).coerceIn(0.0, 1.0)
+}
+
+/** VI triggering quotations and LULD out-of-band quotations are observations, not executable OHLC prices. */
+internal fun runtimeClampBarToBounds(bar: PriceBar, bounds: RuntimePriceBounds): PriceBar {
+    fun bounded(value: Double): Double = value
+        .let { bounds.lower?.let { lower -> it.coerceAtLeast(lower) } ?: it }
+        .let { bounds.upper?.let { upper -> it.coerceAtMost(upper) } ?: it }
+    val open = bounded(bar.open)
+    val close = bounded(bar.close)
+    val high = bounded(bar.high).coerceAtLeast(maxOf(open, close))
+    val low = bounded(bar.low).coerceAtMost(minOf(open, close))
+    return bar.copy(open = open, high = high, low = low, close = close)
+}
+
+internal fun krxInvestmentAlertReleaseCriteriaCleared(
+    designation: InvestmentAlertDesignation,
+    points: List<DailyTradingSurveillancePoint>,
+): Boolean {
+    if (points.isEmpty()) return false
+    val close = points.last().close
+    fun rise(days: Int): Double? = points.getOrNull(points.lastIndex - days)?.close
+        ?.takeIf { it > 0.0 }
+        ?.let { close / it - 1.0 }
+    val hasFullReleaseWindow = points.size >= 16
+    val highest15 = points.size >= 15 && close >= points.takeLast(15)
+        .maxOf(DailyTradingSurveillancePoint::close)
+    val recentAverageVolume = points.dropLast(1).takeLast(5)
+        .takeIf { it.size == 5 }
+        ?.map { it.volume.toDouble() }
+        ?.average()
+        ?: 0.0
+    val releaseRule = krxInvestmentAlertReleaseRule(designation)
+    return when (releaseRule) {
+        InvestmentAlertReleaseRule.CAUTION_PRICE_VOLUME ->
+            (rise(5) ?: Double.NEGATIVE_INFINITY) < 0.40 &&
+                (rise(15) ?: Double.NEGATIVE_INFINITY) < 0.75 &&
+                (recentAverageVolume <= 0.0 || points.last().volume < recentAverageVolume * 5.0)
+        InvestmentAlertReleaseRule.WARNING_45_75 -> hasFullReleaseWindow &&
+            (rise(5) ?: Double.POSITIVE_INFINITY) < 0.45 &&
+            (rise(15) ?: Double.POSITIVE_INFINITY) < 0.75 &&
+            !highest15
+        InvestmentAlertReleaseRule.WARNING_60_100,
+        InvestmentAlertReleaseRule.DANGER_60_100,
+        -> hasFullReleaseWindow &&
+            (rise(5) ?: Double.POSITIVE_INFINITY) < 0.60 &&
+            (rise(15) ?: Double.POSITIVE_INFINITY) < 1.00 &&
+            !highest15
+    }
+}
+
+internal fun krxInvestmentAlertReleaseRule(
+    designation: InvestmentAlertDesignation,
+): InvestmentAlertReleaseRule = designation.releaseRule ?: when (designation.level) {
+        InvestmentAlertLevel.CAUTION -> InvestmentAlertReleaseRule.CAUTION_PRICE_VOLUME
+        InvestmentAlertLevel.WARNING -> if (designation.reasonCodes.all { reason ->
+                reason.startsWith("WARNING_PRICE_INDEX_") || reason == "DANGER_RELEASE_DOWNGRADE"
+            }
+        ) {
+            InvestmentAlertReleaseRule.WARNING_60_100
+        } else {
+            InvestmentAlertReleaseRule.WARNING_45_75
+        }
+        InvestmentAlertLevel.DANGER -> InvestmentAlertReleaseRule.DANGER_60_100
+    }
+
+internal fun krxRelativeMarketRiseMultipleSatisfied(
+    points: List<DailyTradingSurveillancePoint>,
+    days: Int,
+    multiple: Double,
+): Boolean {
+    require(days > 0 && multiple > 0.0)
+    val current = points.lastOrNull() ?: return false
+    val base = points.getOrNull(points.lastIndex - days) ?: return false
+    val currentMarket = current.marketProxyClose ?: return false
+    val baseMarket = base.marketProxyClose ?: return false
+    if (base.close <= 0.0 || baseMarket <= 0.0) return false
+    val stockRise = current.close / base.close - 1.0
+    val marketRise = currentMarket / baseMarket - 1.0
+    return stockRise + SimulatorRuntime.PRICE_EPSILON >= marketRise * multiple
+}
+
+private fun krxAlertRise(
+    points: List<DailyTradingSurveillancePoint>,
+    days: Int,
+): Double? {
+    val current = points.lastOrNull()?.close ?: return null
+    return points.getOrNull(points.lastIndex - days)?.close
+        ?.takeIf { it > 0.0 }
+        ?.let { current / it - 1.0 }
+}
+
+private fun krxAlertIsHighest15(points: List<DailyTradingSurveillancePoint>): Boolean =
+    points.size >= 15 && points.last().close >= points.takeLast(15)
+        .maxOf(DailyTradingSurveillancePoint::close)
+
+internal fun krxOutsideTop100AtPreviousClose(
+    points: List<DailyTradingSurveillancePoint>,
+): Boolean = points.getOrNull(points.lastIndex - 1)
+    ?.krxMarketCapRank
+    ?.let { it > 100 }
+    ?: false
+
+internal fun krxWarningNoticeReasonCodes(
+    points: List<DailyTradingSurveillancePoint>,
+): Set<String> = buildSet {
+    // 지정예고는 가격상승률만 적출한다. 최고가·시장대비배수·시총순위는 예고 후
+    // 실제 지정 판단일에 함께 확인한다.
+    if ((krxAlertRise(points, 3) ?: Double.NEGATIVE_INFINITY) >= 1.00) add("WARNING_NOTICE_3D_100")
+    if ((krxAlertRise(points, 5) ?: Double.NEGATIVE_INFINITY) >= 0.60) add("WARNING_NOTICE_5D_60")
+    if ((krxAlertRise(points, 15) ?: Double.NEGATIVE_INFINITY) >= 1.00) add("WARNING_NOTICE_15D_100")
+}
+
+internal fun krxWarningDesignationReasonCodes(
+    designation: InvestmentAlertDesignation?,
+    points: List<DailyTradingSurveillancePoint>,
+    market: Market = Market.KOSDAQ,
+): Set<String> = buildSet {
+    if (designation?.level != InvestmentAlertLevel.CAUTION ||
+        !designation.escalationNoticeReasons.any { it.startsWith("WARNING_NOTICE_") } ||
+        !krxEscalationNoticeJudgmentOpen(designation, points) ||
+        !krxAlertIsHighest15(points)
+    ) {
+        return@buildSet
+    }
+    val outsideTop100 = krxOutsideTop100AtPreviousClose(points)
+    if ("WARNING_NOTICE_3D_100" in designation.escalationNoticeReasons &&
+        (market == Market.KOSPI || outsideTop100) &&
+        (krxAlertRise(points, 3) ?: Double.NEGATIVE_INFINITY) >= 1.00 &&
+        krxRelativeMarketRiseMultipleSatisfied(points, 3, 5.0)
+    ) {
+        add("WARNING_PRICE_INDEX_3D_100")
+    }
+    if ("WARNING_NOTICE_5D_60" in designation.escalationNoticeReasons &&
+        outsideTop100 &&
+        (krxAlertRise(points, 5) ?: Double.NEGATIVE_INFINITY) >= 0.60 &&
+        krxRelativeMarketRiseMultipleSatisfied(points, 5, 5.0)
+    ) {
+        add("WARNING_PRICE_INDEX_5D_60")
+    }
+    if ("WARNING_NOTICE_15D_100" in designation.escalationNoticeReasons &&
+        outsideTop100 &&
+        (krxAlertRise(points, 15) ?: Double.NEGATIVE_INFINITY) >= 1.00 &&
+        krxRelativeMarketRiseMultipleSatisfied(points, 15, 3.0)
+    ) {
+        add("WARNING_PRICE_INDEX_15D_100")
+    }
+}
+
+internal fun krxDangerNoticeReasonCodes(
+    points: List<DailyTradingSurveillancePoint>,
+): Set<String> = buildSet {
+    // 지정예고는 가격상승률만 적출한다. 최근 15일 최고가와 시장지수 대비 배수는
+    // 예고 후 실제 지정 판단일에 함께 확인한다.
+    if ((krxAlertRise(points, 3) ?: Double.NEGATIVE_INFINITY) >= 0.45) {
+        add("DANGER_NOTICE_3D_45")
+    }
+    if ((krxAlertRise(points, 5) ?: Double.NEGATIVE_INFINITY) >= 0.60) {
+        add("DANGER_NOTICE_5D_60")
+    }
+    if ((krxAlertRise(points, 15) ?: Double.NEGATIVE_INFINITY) >= 1.00) {
+        add("DANGER_NOTICE_15D_100")
+    }
+}
+
+internal fun krxDangerDesignationReasonCodes(
+    designation: InvestmentAlertDesignation?,
+    points: List<DailyTradingSurveillancePoint>,
+): Set<String> = buildSet {
+    if (designation?.status != InvestmentAlertStatus.ACTIVE ||
+        designation.level != InvestmentAlertLevel.WARNING ||
+        !designation.escalationNoticeReasons.any { it.startsWith("DANGER_NOTICE_") } ||
+        !krxEscalationNoticeJudgmentOpen(designation, points) ||
+        !krxAlertIsHighest15(points)
+    ) {
+        return@buildSet
+    }
+    if ("DANGER_NOTICE_3D_45" in designation.escalationNoticeReasons &&
+        (krxAlertRise(points, 3) ?: Double.NEGATIVE_INFINITY) >= 0.45 &&
+        krxRelativeMarketRiseMultipleSatisfied(points, 3, 5.0)
+    ) {
+        add("DANGER_PRICE_INDEX_3D_45")
+    }
+    if ("DANGER_NOTICE_5D_60" in designation.escalationNoticeReasons &&
+        (krxAlertRise(points, 5) ?: Double.NEGATIVE_INFINITY) >= 0.60 &&
+        krxRelativeMarketRiseMultipleSatisfied(points, 5, 5.0)
+    ) {
+        add("DANGER_PRICE_INDEX_5D_60")
+    }
+    if ("DANGER_NOTICE_15D_100" in designation.escalationNoticeReasons &&
+        (krxAlertRise(points, 15) ?: Double.NEGATIVE_INFINITY) >= 1.00 &&
+        krxRelativeMarketRiseMultipleSatisfied(points, 15, 3.0)
+    ) {
+        add("DANGER_PRICE_INDEX_15D_100")
+    }
+}
+
+internal fun krxEscalationNoticeJudgmentOpen(
+    designation: InvestmentAlertDesignation,
+    points: List<DailyTradingSurveillancePoint>,
+): Boolean {
+    val noticeOn = designation.escalationNoticeOn ?: return false
+    val observations = points.filter { it.date >= noticeOn }
+    return observations.isNotEmpty() && observations.size <= 10 && points.last().date >= noticeOn
+}
+
+internal fun krxWarningRedesignationCriteriaSatisfied(
+    designation: InvestmentAlertDesignation,
+    points: List<DailyTradingSurveillancePoint>,
+): Boolean {
+    if (designation.level != InvestmentAlertLevel.CAUTION ||
+        "WARNING_RELEASE_REDESIGNATION" !in designation.reasonCodes
+    ) {
+        return false
+    }
+    val today = points.lastOrNull()?.date ?: return false
+    if (designation.redesignationWindow?.contains(today) != true) return false
+    val current = points.last()
+    val twoDaysBefore = points.getOrNull(points.lastIndex - 2) ?: return false
+    val preDesignation = designation.preDesignationClose ?: return false
+    val preRelease = designation.preReleaseClose ?: return false
+    val wasOutsideTop100 = points.getOrNull(points.lastIndex - 1)?.krxMarketCapRank?.let { it > 100 } ?: false
+    return wasOutsideTop100 &&
+        current.close > preDesignation &&
+        current.close > preRelease &&
+        current.close + SimulatorRuntime.PRICE_EPSILON >= twoDaysBefore.close * 1.40
+}
+
+internal fun krxInvestmentAlertObservedTradingDays(
+    designation: InvestmentAlertDesignation,
+    points: List<DailyTradingSurveillancePoint>,
+): Int = when (designation.level) {
+    InvestmentAlertLevel.WARNING -> points.count { it.date >= designation.designatedOn }
+    InvestmentAlertLevel.CAUTION,
+    InvestmentAlertLevel.DANGER,
+    -> points.count { it.date > designation.designatedOn }
+}
+
+internal fun krxWarningAdditionalRiseEvaluationDate(
+    designation: InvestmentAlertDesignation,
+    points: List<DailyTradingSurveillancePoint>,
+): LocalDate? {
+    if (designation.level != InvestmentAlertLevel.WARNING || points.isEmpty()) return null
+    val designatedIndex = points.indexOfFirst { it.date == designation.designatedOn }
+    if (designatedIndex < 0) return null
+    val designatedClose = points[designatedIndex].close
+    val preDesignationClose = points.take(designatedIndex).lastOrNull()?.close ?: return null
+    val evaluation = points.getOrNull(designatedIndex + 2) ?: return null
+    val latest = points.last()
+    return evaluation.date.takeIf {
+        latest.date == evaluation.date &&
+            latest.close + SimulatorRuntime.PRICE_EPSILON >= designatedClose * 1.40 &&
+            latest.close > preDesignationClose
+    }
+}
 
 internal class SimulatorRuntime(
     initialOptions: NewGameOptions,
@@ -131,6 +549,8 @@ internal class SimulatorRuntime(
     private val quotes = linkedMapOf<String, Quote>()
     private val history = linkedMapOf<String, ArrayDeque<PriceBar>>()
     private val pendingEtfReferenceReturns = mutableMapOf<String, Double>()
+    /** Event level changes observed while a listing is closed, consumed by its next opening auction. */
+    private val pendingClosedEventLogReturns = mutableMapOf<String, Double>()
     private val marketIndices = linkedMapOf<MarketIndexId, MarketIndexSnapshot>()
     private val marketIndexHistory = linkedMapOf<MarketIndexId, ArrayDeque<MarketIndexSnapshot>>()
     private val dailyTrackers = mutableMapOf<String, DailyPriceTracker>()
@@ -152,6 +572,10 @@ internal class SimulatorRuntime(
     private val pendingCorporateActions = mutableListOf<PendingCorporateAction>()
     private val corporateActionLedger = mutableListOf<CorporateActionRecord>()
     private val terminatedInstrumentIds = linkedSetOf<String>()
+    private val listingLifecycleStates = linkedMapOf<String, ListingLifecycleState>()
+    private val listingLifecycleLedger = mutableListOf<ListingLifecycleLedgerEvent>()
+    private var tradingProtectionSnapshot = TradingProtectionSnapshot()
+    private val dailyTradingSurveillance = linkedMapOf<String, ArrayDeque<DailyTradingSurveillancePoint>>()
     private val portfolioSnapshots = mutableListOf<PortfolioSnapshot>()
     private val dailyStatistics = mutableListOf<DailyPortfolioStat>()
     private val benchmarkHistory = mutableListOf<BenchmarkPoint>()
@@ -176,6 +600,7 @@ internal class SimulatorRuntime(
     private val priceEngine = PriceEngine(DeterministicRandom.mixSeed(options.seed, PRICE_STREAM_ID))
     private val orderBookEngine = OrderBookEngine(DeterministicRandom.mixSeed(options.seed, BOOK_STREAM_ID))
     private val marketIndexEngine = MarketIndexEngine()
+    private val listingLifecycleEngine = ListingLifecycleEngine()
     private val eventEngine = EventEngine(DeterministicRandom.mixSeed(options.seed, EVENT_STREAM_ID))
     private val scheduledEventEngine = ScheduledEventEngine(
         DeterministicRandom.mixSeed(options.seed, SCHEDULED_EVENT_STREAM_ID),
@@ -198,8 +623,10 @@ internal class SimulatorRuntime(
     init {
         require(stocks.size >= 24) { "기본 종목 카탈로그가 충분하지 않습니다." }
         selectedStockId = stocks.firstOrNull()?.id
+        stocks.associateTo(listingLifecycleStates) { stock -> stock.id to listingLifecycleEngine.initialState(stock) }
         initializeMarketData()
         initializeMarketIndices(currentTime)
+        initializeTradingProtections(currentTime)
         recalculateAnnualTax(gameDate(currentTime).year)
         recordDailySnapshot(gameDate(currentTime), currentTime)
     }
@@ -287,6 +714,35 @@ internal class SimulatorRuntime(
     fun placeOrder(request: OrderRequest): Boolean {
         if (phase != GamePhase.PLAYING) return fail("진행 중인 게임에서만 주문할 수 있습니다.")
         val stock = stockById[request.stockId] ?: return fail("존재하지 않는 종목입니다.")
+        val listingState = listingLifecycleStates.getValue(stock.id)
+        if (!listingState.isOrderAllowed) {
+            return fail(
+                when (listingState.status) {
+                    ListingLifecycleStatus.TRADING_SUSPENDED,
+                    ListingLifecycleStatus.UNDER_REVIEW,
+                    -> "상장 유지 심사로 거래가 멈춘 종목입니다."
+                    ListingLifecycleStatus.DELISTING_SCHEDULED -> "상장폐지 절차로 새 주문을 받지 않습니다."
+                    ListingLifecycleStatus.LIQUIDATION_PENDING -> "청산금 지급 절차가 진행 중인 상품입니다."
+                    ListingLifecycleStatus.DELISTED,
+                    ListingLifecycleStatus.TERMINATED,
+                    -> "거래가 종료된 종목입니다."
+                    else -> "현재 상장 상태에서는 주문할 수 없습니다."
+                },
+            )
+        }
+        val protectionDecision = TradingProtectionEngine.permission(
+            tradingProtectionSnapshot,
+            TradingProtectionRequest(
+                market = stock.market,
+                action = TradingProtectionAction.SUBMIT_ORDER,
+                stockId = stock.id,
+                isAuctionEligibleOrder = request.type == OrderType.LIMIT,
+            ),
+            currentTime,
+        )
+        if (!protectionDecision.allowed) {
+            return fail(protectionDecision.controllingRestriction?.message ?: "시장 보호장치로 주문할 수 없습니다.")
+        }
         if (isInstrumentMatured(stock, currentTime)) {
             return fail("만기상환이 끝난 상품은 더 이상 주문할 수 없습니다.")
         }
@@ -301,7 +757,7 @@ internal class SimulatorRuntime(
             return fail("지정가 주문에는 0보다 큰 가격이 필요합니다.")
         }
         if (request.limitPrice != null) {
-            val rounded = MarketMicrostructure.roundNearest(stock.market, request.limitPrice)
+            val rounded = MarketMicrostructure.roundNearest(stock, request.limitPrice)
             if (abs(rounded - request.limitPrice) > PRICE_EPSILON) {
                 return fail("지정가가 ${stock.market.displayName} 호가 단위에 맞지 않습니다.")
             }
@@ -353,6 +809,19 @@ internal class SimulatorRuntime(
         if (index < 0) return fail("주문을 찾을 수 없습니다.")
         val order = orders[index]
         if (!order.canCancel) return fail("현재 상태에서는 주문을 취소할 수 없습니다.")
+        val stock = stockById.getValue(order.stockId)
+        val protectionDecision = TradingProtectionEngine.permission(
+            tradingProtectionSnapshot,
+            TradingProtectionRequest(
+                market = stock.market,
+                action = TradingProtectionAction.CANCEL_ORDER,
+                stockId = stock.id,
+            ),
+            currentTime,
+        )
+        if (!protectionDecision.allowed) {
+            return fail(protectionDecision.controllingRestriction?.message ?: "현재 주문을 취소할 수 없습니다.")
+        }
         orders[index] = order.copy(status = OrderStatus.CANCELLED, updatedAt = currentTime)
         lastMessage = "주문을 취소했습니다."
         return true
@@ -375,10 +844,27 @@ internal class SimulatorRuntime(
         )
         val stateQuotes = quotes.mapValues { (stockId, quote) ->
             val stock = stockById.getValue(stockId)
-            quote.copy(session = sessions.getValue(stock.market))
+            quote.copy(
+                session = if (listingLifecycleStates.getValue(stockId).isTradable) {
+                    sessions.getValue(stock.market)
+                } else {
+                    MarketSession.CLOSED
+                },
+            )
         }.toMutableMap()
         val selectedBook = selectedStockId?.takeIf { id ->
-            !isInstrumentMatured(stockById.getValue(id), currentTime)
+            val stock = stockById.getValue(id)
+            !isInstrumentMatured(stock, currentTime) &&
+                listingLifecycleStates.getValue(id).isTradable &&
+                TradingProtectionEngine.permission(
+                    tradingProtectionSnapshot,
+                    TradingProtectionRequest(
+                        market = stock.market,
+                        action = TradingProtectionAction.CONTINUOUS_TRADING,
+                        stockId = id,
+                    ),
+                    currentTime,
+                ).allowed
         }?.let { id ->
             val stock = stockById.getValue(id)
             val quote = stateQuotes.getValue(id)
@@ -426,6 +912,7 @@ internal class SimulatorRuntime(
             isAdvancing = isAdvancing,
             lastMessage = lastMessage,
             pendingEtfReferenceReturns = pendingEtfReferenceReturns.toMap(),
+            pendingClosedEventLogReturns = pendingClosedEventLogReturns.toMap(),
             marketIndices = marketIndices.toMap(),
             marketIndexHistory = marketIndexHistory.mapValues { (_, values) -> values.toList() },
             usCircuitBreakerState = usCircuitBreakerState,
@@ -435,6 +922,10 @@ internal class SimulatorRuntime(
             pendingCorporateActions = pendingCorporateActions.toList(),
             corporateActionLedger = corporateActionLedger.toList(),
             terminatedInstrumentIds = terminatedInstrumentIds.toSet(),
+            listingLifecycleStates = listingLifecycleStates.toMap(),
+            listingLifecycleLedger = listingLifecycleLedger.toList(),
+            tradingProtectionSnapshot = tradingProtectionSnapshot,
+            dailyTradingSurveillance = dailyTradingSurveillance.mapValues { (_, values) -> values.toList() },
         )
     }
 
@@ -458,6 +949,9 @@ internal class SimulatorRuntime(
         require(state.pendingEtfReferenceReturns.orEmpty().all { (stockId, value) ->
             stockById[stockId]?.isFundLike == true && value.isFinite()
         }) { "ETF 개장 갭 상태가 올바르지 않습니다." }
+        require(state.pendingClosedEventLogReturns.orEmpty().all { (stockId, value) ->
+            stockId in stockById && value.isFinite()
+        }) { "폐장 중 이벤트 개장 갭 상태가 올바르지 않습니다." }
         require(state.watchlistedStockIds.orEmpty().all(ids::contains)) {
             "관심 종목에 현재 카탈로그가 알 수 없는 ID가 있습니다."
         }
@@ -475,6 +969,24 @@ internal class SimulatorRuntime(
         require(state.terminatedInstrumentIds.orEmpty().all(ids::contains)) {
             "거래종료 원장에 현재 카탈로그가 알 수 없는 ID가 있습니다."
         }
+        require(state.listingLifecycleStates.orEmpty().all { (stockId, listing) ->
+            stockId in ids && listing.stockId == stockId && stockById[stockId]?.market == listing.market
+        }) { "상장 생명주기 상태가 현재 종목 카탈로그와 일치하지 않습니다." }
+        require(state.listingLifecycleLedger.orEmpty().all { it.stockId in ids }) {
+            "상장 생명주기 원장에 현재 카탈로그가 알 수 없는 ID가 있습니다."
+        }
+        require(state.tradingProtectionSnapshot?.let { protection ->
+            protection.krxCircuitBreakers.keys.all { it.isKorean } &&
+                protection.krxSidecars.keys.all { it.isKorean } &&
+                protection.krxVolatilityInterruptions.keys.all(ids::contains) &&
+                protection.instrumentTradingHalts.keys.all(ids::contains) &&
+                protection.scheduledInstrumentTradingHalts.orEmpty().values.all { it.stockId in ids } &&
+                protection.investmentAlerts.keys.all(ids::contains) &&
+                protection.usLuldStates.keys.all(ids::contains)
+        } != false) { "시장 보호장치 저장 상태가 현재 종목 카탈로그와 일치하지 않습니다." }
+        require(state.dailyTradingSurveillance.orEmpty().all { (stockId, values) ->
+            stockId in ids && values.zipWithNext().all { (left, right) -> left.date < right.date }
+        }) { "일별 시장감시 이력이 올바르지 않습니다." }
         val savedIndices = state.marketIndices.orEmpty()
         require(savedIndices.isEmpty() || savedIndices.keys == MarketIndexId.entries.toSet()) {
             "대표 지수 현재값 4종이 모두 필요합니다."
@@ -484,15 +996,21 @@ internal class SimulatorRuntime(
                 values.zipWithNext().all { (left, right) -> left.timestamp <= right.timestamp }
         }) { "대표 지수 이력이 올바르지 않습니다." }
 
+        val resumesLegacyFinalUsSession = state.currentTime == GameCalendar.LEGACY_END_INSTANT &&
+            state.phase in setOf(GamePhase.SETTLEMENT, GamePhase.FINISHED)
         options = state.options
-        phase = state.phase
-        screen = state.screen
+        phase = if (resumesLegacyFinalUsSession) GamePhase.PLAYING else state.phase
+        screen = if (resumesLegacyFinalUsSession) Screen.HOME else state.screen
         currentTime = state.currentTime
         turn = state.turn
         selectedTurnStep = state.selectedTurnStep
         selectedStockId = state.selectedStockId?.also { require(it in ids) }
         isAdvancing = false
-        lastMessage = "저장 게임을 불러왔습니다."
+        lastMessage = if (resumesLegacyFinalUsSession) {
+            "이전 버전 저장을 불러왔습니다. 2040년 마지막 미국장까지 이어서 진행합니다."
+        } else {
+            "저장 게임을 불러왔습니다."
+        }
         macro = normalizeFxState(state.macro)
         macroDate = gameDate(currentTime)
         benchmarkValue = state.benchmarkHistory.lastOrNull()?.value ?: BENCHMARK_START
@@ -526,6 +1044,8 @@ internal class SimulatorRuntime(
         }
         pendingEtfReferenceReturns.clear()
         pendingEtfReferenceReturns.putAll(state.pendingEtfReferenceReturns.orEmpty())
+        pendingClosedEventLogReturns.clear()
+        pendingClosedEventLogReturns.putAll(state.pendingClosedEventLogReturns.orEmpty())
         marketIndices.clear()
         marketIndexHistory.clear()
         if (savedIndices.isEmpty()) {
@@ -564,6 +1084,49 @@ internal class SimulatorRuntime(
         }) { "저장된 유통주식수가 기업행동 원장과 일치하지 않습니다." }
         terminatedInstrumentIds.clear()
         terminatedInstrumentIds += state.terminatedInstrumentIds.orEmpty()
+        listingLifecycleStates.clear()
+        listingLifecycleStates.putAll(
+            stocks.associate { stock ->
+                val restored = state.listingLifecycleStates.orEmpty()[stock.id]
+                    ?: listingLifecycleEngine.initialState(stock)
+                val disposition = restored.finalDisposition
+                val holding = holdings[stock.id]
+                val normalized = if (restored.status == ListingLifecycleStatus.LIQUIDATION_PENDING &&
+                    disposition?.type == ListingFinalDispositionType.CASH_LIQUIDATION &&
+                    (disposition.entitledQuantity == null || disposition.entitledCostBasis == null)
+                ) {
+                    restored.copy(
+                        finalDisposition = disposition.copy(
+                            entitledQuantity = holding?.quantity ?: 0.0,
+                            entitledCostBasis = holding?.costBasis ?: 0.0,
+                        ),
+                    )
+                } else {
+                    restored
+                }
+                stock.id to normalized
+            },
+        )
+        updateHoldingPrices()
+        listingLifecycleLedger.clear()
+        listingLifecycleLedger += state.listingLifecycleLedger.orEmpty()
+        if (state.tradingProtectionSnapshot == null) {
+            initializeTradingProtections(currentTime)
+            val migrated = migrateLegacyUsMwcb(state)
+            tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
+                usMarketWideCircuitBreaker = migrated,
+            )
+        } else {
+            tradingProtectionSnapshot = state.tradingProtectionSnapshot
+            dailyTradingSurveillance.clear()
+            stocks.forEach { stock ->
+                dailyTradingSurveillance[stock.id] = ArrayDeque(
+                    state.dailyTradingSurveillance.orEmpty()[stock.id].orEmpty()
+                        .takeLast(MAX_DAILY_SURVEILLANCE_POINTS),
+                )
+            }
+        }
+        tradingProtectionSnapshot.usMarketWideCircuitBreaker?.let(::syncLegacyUsCircuitBreaker)
         // 구형 저장은 거래종료 집합이 없으므로 만기일과 기존 만기 뉴스를 함께 복원 근거로 쓴다.
         if (state.terminatedInstrumentIds == null) {
             stocks.filter { stock ->
@@ -572,6 +1135,11 @@ internal class SimulatorRuntime(
             }.mapTo(terminatedInstrumentIds, StockDefinition::id)
         }
         restoreTaxExchangeRateLedger(state)
+        // Older builds clamped late-2040 legal settlement dates into 2040. Preserve the saved
+        // gain years before replay so years that become empty (usually 2040 -> 2041) are also
+        // recalculated and their stale liabilities/notices are removed.
+        val savedRealizedGainTaxYears = state.realizedGains
+            .mapTo(linkedSetOf()) { it.settlementDate.year }
         val replayedTaxYears = replayTaxAccountingLedger()
         require(fifoCostBasisBook.lots.all { it.stockId in ids } && fifoBookMatchesHoldings()) {
             "FIFO 세무원장과 보유 수량이 일치하지 않습니다."
@@ -598,7 +1166,7 @@ internal class SimulatorRuntime(
         annualTaxLedgers.putAll(state.annualTaxLedgers)
         taxPaymentNotices.clear()
         taxPaymentNotices += state.taxPaymentNotices
-        replayedTaxYears.forEach(::recalculateAnnualTax)
+        (savedRealizedGainTaxYears + replayedTaxYears).forEach(::recalculateAnnualTax)
 
         dailyTrackers.clear()
         for (stock in stocks) {
@@ -637,6 +1205,100 @@ internal class SimulatorRuntime(
         for ((id, snapshot) in initial) {
             marketIndexHistory[id] = ArrayDeque<MarketIndexSnapshot>().apply { addLast(snapshot) }
         }
+    }
+
+    private fun initializeTradingProtections(at: Instant) {
+        val krxMarkets = listOf(Market.KOSPI, Market.KOSDAQ)
+        val krxCircuitBreakers = krxMarkets.associateWith { market ->
+            TradingProtectionEngine.initialKrxCircuitBreaker(market, marketDate(market, at))
+        }
+        val krxSidecars = krxMarkets.associateWith { market ->
+            TradingProtectionEngine.initialKrxSidecar(market, marketDate(market, at))
+        }
+        val krxVis = stocks.asSequence().filter { it.market.isKorean }.associate { stock ->
+            stock.id to TradingProtectionEngine.initialKrxVi(stock.id, stock.market)
+        }
+        val usDate = marketDate(Market.NYSE, at)
+        val usLuld = stocks.asSequence().filter { it.market.isUnitedStates }.associate { stock ->
+            val quote = quotes.getValue(stock.id)
+            val reference = quote.price.coerceAtLeast(0.01)
+            val easternTime = GameCalendar.marketLocalDateTime(stock.market, at).time
+            stock.id to TradingProtectionEngine.initialUsLuld(
+                stockId = stock.id,
+                primaryMarket = stock.market,
+                tradingDate = usDate,
+                tier = usLuldTier(stock),
+                previousClose = quote.previousClose.coerceAtLeast(0.01),
+                referencePrice = reference,
+                referencePriceEffectiveAt = at,
+                easternTime = easternTime,
+            )
+        }
+        tradingProtectionSnapshot = TradingProtectionSnapshot(
+            krxCircuitBreakers = krxCircuitBreakers,
+            krxSidecars = krxSidecars,
+            krxVolatilityInterruptions = krxVis,
+            usMarketWideCircuitBreaker = TradingProtectionEngine.initialUsMwcb(usDate, at),
+            usLuldStates = usLuld,
+        )
+        dailyTradingSurveillance.clear()
+        stocks.forEach { stock -> dailyTradingSurveillance[stock.id] = ArrayDeque() }
+    }
+
+    /** v1 stored only a completed-hour summary, so never invent intrahour halt timestamps. */
+    private fun migrateLegacyUsMwcb(saved: SimulatorUiState): UsMwcbState {
+        val tradingDate = marketDate(Market.NYSE, currentTime)
+        val initial = TradingProtectionEngine.initialUsMwcb(tradingDate, currentTime)
+        val legacy = saved.usCircuitBreakerState
+        val levelNumbers: Set<Int>
+        val closedForDay: Boolean
+        when {
+            legacy != null && legacy.tradingDate == tradingDate -> {
+                levelNumbers = legacy.triggeredLevels
+                closedForDay = legacy.haltedForDay
+            }
+            legacy != null -> {
+                // A dated legacy state from another session is stale. The transient macro field
+                // must not resurrect yesterday's close-for-day state.
+                levelNumbers = emptySet()
+                closedForDay = false
+            }
+            else -> {
+                levelNumbers = when (saved.macro.usCircuitBreakerLevel) {
+                    1 -> setOf(1)
+                    2 -> setOf(1, 2)
+                    3 -> setOf(3)
+                    else -> emptySet()
+                }
+                closedForDay = saved.macro.usCircuitBreakerLevel == 3
+            }
+        }
+        val normalizedNumbers = if (2 in levelNumbers) levelNumbers + 1 else levelNumbers
+        val levels = normalizedNumbers.mapTo(linkedSetOf()) { number ->
+            when (number) {
+                1 -> UsMwcbLevel.LEVEL_1
+                2 -> UsMwcbLevel.LEVEL_2
+                3 -> UsMwcbLevel.LEVEL_3
+                else -> error("지원하지 않는 구형 MWCB 단계입니다.")
+            }
+        }
+        if (!closedForDay) return initial.copy(triggeredLevels = levels)
+        return initial.copy(
+            phase = UsMwcbPhase.CLOSED_FOR_DAY,
+            triggeredLevels = levels + UsMwcbLevel.LEVEL_3,
+            activeLevel = UsMwcbLevel.LEVEL_3,
+            triggeredAt = currentTime,
+            haltEndsAt = null,
+            venueStatuses = initial.venueStatuses.mapValues { (market, _) ->
+                UsMwcbVenueStatus(market, UsMwcbVenuePhase.CLOSED, currentTime)
+            },
+        )
+    }
+
+    private fun usLuldTier(stock: StockDefinition): UsLuldTier = when {
+        stock.isFundLike -> UsLuldTier.TIER_1
+        stock.marketCap >= 10_000_000_000.0 -> UsLuldTier.TIER_1
+        else -> UsLuldTier.TIER_2
     }
 
     private fun initializeInstrumentMarketData(stock: StockDefinition, at: Instant) {
@@ -680,34 +1342,204 @@ internal class SimulatorRuntime(
         val fromGameDate = gameDate(from)
 
         processInstrumentLifecycle(from)
+        advanceProtectionClock(from)
         applyDueCorporateActions(from, to)
         updateMacro(from)
         generateEvents(from, to)
-        prepareUsCircuitBreaker(from)
+        syncEventDrivenTradingHalts(from, to)
         val activeStocks = stocks.filterNot { isInstrumentMatured(it, from) }
         val scheduledImpactEvents = scheduledEventEngine.impactEventsBetween(from, to, activeStocks)
 
         val previousClosesByStockId = quotes.mapValues { (_, quote) -> quote.price }
-        val generatedBars = linkedMapOf<String, PriceBar>()
-        val ordinaryTradingFractions = mutableMapOf<Market, Double>()
-        val tradingFractions = mutableMapOf<Market, Double>()
-        for (market in Market.entries) {
-            val ordinaryFraction = regularTradingFraction(market, from, to)
-            ordinaryTradingFractions[market] = ordinaryFraction
-            tradingFractions[market] = if (!market.isUnitedStates) {
-                ordinaryFraction
-            } else {
-                when (macro.usCircuitBreakerLevel) {
-                    1, 2 -> ordinaryFraction * 0.75 // 15-minute halt within the one-hour turn.
-                    3 -> 0.0
-                    else -> ordinaryFraction
-                }
-            }
+        val turnEvents = activeEvents + scheduledImpactEvents
+        val ordinaryTradingFractions = Market.entries.associateWith { market ->
+            regularTradingFraction(market, from, to)
         }
+        val provisionalMarketFractions = Market.entries.associateWith { market ->
+            marketProtectionTradingFraction(
+                market,
+                from,
+                to,
+                ordinaryTradingFractions.getValue(market),
+            )
+        }
+        val protectionBeforeObservation = tradingProtectionSnapshot
+        val provisional = generateTurnBars(
+            from = from,
+            to = to,
+            turnEvents = turnEvents,
+            ordinaryTradingFractions = ordinaryTradingFractions,
+            effectiveMarketFractions = provisionalMarketFractions,
+            commit = false,
+        )
+        val provisionalIndices = calculateMarketIndices(
+            timestamp = to,
+            bars = provisional.bars,
+            previousClosesByStockId = previousClosesByStockId,
+            fractions = provisionalMarketFractions,
+        )
+        val protectionImpact = evaluateTradingProtections(
+            from = from,
+            to = to,
+            bars = provisional.bars,
+            previousPrices = previousClosesByStockId,
+            provisionalIndices = provisionalIndices,
+            ordinaryTradingFractions = ordinaryTradingFractions,
+        )
+        val tradingFractions = Market.entries.associateWith { market ->
+            marketProtectionTradingFraction(
+                market,
+                from,
+                to,
+                ordinaryTradingFractions.getValue(market),
+                protectionImpact.marketBlocks[market].orEmpty(),
+            )
+        }
+        val finalized = generateTurnBars(
+            from = from,
+            to = to,
+            turnEvents = turnEvents,
+            ordinaryTradingFractions = ordinaryTradingFractions,
+            effectiveMarketFractions = tradingFractions,
+            additionalInstrumentBlocks = protectionImpact.instrumentBlocks,
+            priceBounds = protectionImpact.priceBounds,
+            temporaryProtectionMarkets = protectionImpact.temporaryProtectionMarkets,
+            commit = true,
+        )
+
+        updateMarketIndices(to, finalized.bars, previousClosesByStockId, tradingFractions)
+        updateMarketChange(finalized.bars, tradingFractions)
+        processOpenOrders(
+            finalized.bars,
+            finalized.stockTradingFractions,
+            finalized.stockFirstExecutionTimes,
+            protectionBeforeObservation,
+            protectionImpact,
+        )
+        processDailyListingSurveillance(from, to)
+        processInstrumentLifecycle(to)
+        processScheduledDividends(from, to)
+        maybeAnnounceCorporateActions(from, to)
+        applyDueCorporateActionsAtBoundary(to)
+        updateHoldingPrices()
+        expireDayOrders(to)
+        updateBenchmark(finalized.bars, tradingFractions)
+
+        currentTime = to
+        turn = GameCalendar.turnAt(to)
+        // Make restrictions whose legal boundary is exactly the turn end visible before the user
+        // can place the next order (for example, a KRX full-session halt beginning at 09:00).
+        advanceProtectionClock(to)
+        processTaxExchangeRateSettlements(to)
+        processDueTaxPayments(gameDate(to))
+        updateDrawdown()
+
+        val toGameDate = gameDate(to)
+        if (toGameDate != fromGameDate) {
+            recalculateAnnualTax(fromGameDate.year)
+            if (toGameDate.year != fromGameDate.year && toGameDate.year <= 2040) {
+                recalculateAnnualTax(toGameDate.year)
+            }
+            recordDailySnapshot(fromGameDate, to)
+        }
+    }
+
+    private data class TurnGenerationResult(
+        val bars: Map<String, PriceBar>,
+        val stockTradingFractions: Map<String, Double>,
+        val stockFirstExecutionTimes: Map<String, Instant>,
+    )
+
+    private data class TurnProtectionImpact(
+        val marketBlocks: Map<Market, List<RuntimeTradingInterval>> = emptyMap(),
+        val instrumentBlocks: Map<String, List<RuntimeTradingInterval>> = emptyMap(),
+        val priceBounds: Map<String, RuntimePriceBounds> = emptyMap(),
+        val newRestrictionStartedAt: Map<String, Instant> = emptyMap(),
+        val newMarketRestrictionStartedAt: Map<Market, Instant> = emptyMap(),
+        val temporaryProtectionMarkets: Set<Market> = emptySet(),
+        val usMwcbControlledTurn: Boolean = false,
+    ) {
+        fun firstNewRestrictionAt(stock: StockDefinition): Instant? = listOfNotNull(
+            newRestrictionStartedAt[stock.id],
+            newMarketRestrictionStartedAt[stock.market],
+        ).minOrNull()
+    }
+
+    private class TurnProtectionImpactBuilder {
+        val marketBlocks = mutableMapOf<Market, MutableList<RuntimeTradingInterval>>()
+        val instrumentBlocks = mutableMapOf<String, MutableList<RuntimeTradingInterval>>()
+        val priceBounds = mutableMapOf<String, RuntimePriceBounds>()
+        val newRestrictionStartedAt = mutableMapOf<String, Instant>()
+        val newMarketRestrictionStartedAt = mutableMapOf<Market, Instant>()
+        val temporaryProtectionMarkets = mutableSetOf<Market>()
+        var usMwcbControlledTurn: Boolean = false
+
+        fun addMarketBlock(market: Market, block: RuntimeTradingInterval, temporary: Boolean) {
+            marketBlocks.getOrPut(market) { mutableListOf() } += block
+            newMarketRestrictionStartedAt[market] = minOf(
+                newMarketRestrictionStartedAt[market] ?: block.startsAt,
+                block.startsAt,
+            )
+            if (temporary) temporaryProtectionMarkets += market
+        }
+
+        fun addInstrumentBlock(stockId: String, block: RuntimeTradingInterval) {
+            instrumentBlocks.getOrPut(stockId) { mutableListOf() } += block
+            newRestrictionStartedAt[stockId] = minOf(
+                newRestrictionStartedAt[stockId] ?: block.startsAt,
+                block.startsAt,
+            )
+        }
+
+        fun mergePriceBounds(stockId: String, bounds: RuntimePriceBounds) {
+            priceBounds[stockId] = priceBounds[stockId]?.merge(bounds) ?: bounds
+        }
+
+        fun build(): TurnProtectionImpact = TurnProtectionImpact(
+            marketBlocks = marketBlocks.mapValues { it.value.toList() },
+            instrumentBlocks = instrumentBlocks.mapValues { it.value.toList() },
+            priceBounds = priceBounds.toMap(),
+            newRestrictionStartedAt = newRestrictionStartedAt.toMap(),
+            newMarketRestrictionStartedAt = newMarketRestrictionStartedAt.toMap(),
+            temporaryProtectionMarkets = temporaryProtectionMarkets.toSet(),
+            usMwcbControlledTurn = usMwcbControlledTurn,
+        )
+    }
+
+    /**
+     * Price generation is keyed by stock and hour, so this provisional/final two-pass use is
+     * deterministic. The provisional pass is read-only; only the finalized pass consumes carry,
+     * advances daily trackers, writes quotes, and appends one history bar.
+     */
+    private fun generateTurnBars(
+        from: Instant,
+        to: Instant,
+        turnEvents: List<GameEvent>,
+        ordinaryTradingFractions: Map<Market, Double>,
+        effectiveMarketFractions: Map<Market, Double>,
+        additionalInstrumentBlocks: Map<String, List<RuntimeTradingInterval>> = emptyMap(),
+        priceBounds: Map<String, RuntimePriceBounds> = emptyMap(),
+        temporaryProtectionMarkets: Set<Market> = emptySet(),
+        commit: Boolean,
+    ): TurnGenerationResult {
+        val generatedBars = linkedMapOf<String, PriceBar>()
+        val stockTradingFractions = mutableMapOf<String, Double>()
+        val stockFirstExecutionTimes = mutableMapOf<String, Instant>()
 
         for (stock in stocks) {
             val previousQuote = quotes.getValue(stock.id)
-            if (isInstrumentMatured(stock, from)) {
+            val listingTradable = listingLifecycleStates.getValue(stock.id).isTradable
+            if (isInstrumentMatured(stock, from) || !listingTradable) {
+                stockTradingFractions[stock.id] = 0.0
+                if (commit && !isInstrumentMatured(stock, from)) {
+                    val haltedImpulse = EventShockCalculator.aggregate(turnEvents, stock, from, to)
+                    val haltedEventReturn = priceEngine.eventLogReturn(stock, haltedImpulse)
+                    if (haltedEventReturn != 0.0) {
+                        pendingClosedEventLogReturns[stock.id] = (
+                            (pendingClosedEventLogReturns[stock.id] ?: 0.0) + haltedEventReturn
+                            ).coerceIn(-2.5, 2.5)
+                    }
+                }
                 val flatBar = PriceBar(
                     stockId = stock.id,
                     startTime = from,
@@ -719,53 +1551,58 @@ internal class SimulatorRuntime(
                     close = previousQuote.price,
                     volume = 0L,
                 )
-                quotes[stock.id] = previousQuote.copy(
-                    timestamp = to,
-                    volume = 0L,
-                    bidPrice = null,
-                    askPrice = null,
-                    bidQuantity = 0.0,
-                    askQuantity = 0.0,
-                    session = MarketSession.CLOSED,
-                )
                 generatedBars[stock.id] = flatBar
-                appendHistory(stock.id, flatBar)
+                if (commit) {
+                    quotes[stock.id] = previousQuote.copy(
+                        timestamp = to,
+                        volume = 0L,
+                        bidPrice = null,
+                        askPrice = null,
+                        bidQuantity = 0.0,
+                        askQuantity = 0.0,
+                        session = MarketSession.CLOSED,
+                    )
+                    appendHistory(stock.id, flatBar)
+                }
                 continue
             }
-            val tracker = trackerFor(stock, from, previousQuote.price)
-            val fraction = tradingFractions.getValue(stock.market)
-            val session = if (fraction > 0.0) MarketSession.REGULAR else marketSession(stock.market, from)
-            val impulse = EventShockCalculator.aggregate(
-                activeEvents + scheduledImpactEvents,
-                stock,
-                from,
-                to,
+
+            val tracker = if (commit) {
+                trackerFor(stock, from, previousQuote.price)
+            } else {
+                dailyTrackerSnapshot(stock, from, previousQuote.price)
+            }
+            val tradingIntervals = instrumentProtectionTradingIntervals(
+                stock = stock,
+                from = from,
+                to = to,
+                additionalBlocks = additionalInstrumentBlocks[stock.id].orEmpty(),
             )
+            val fraction = runtimeTradingFraction(from, to, tradingIntervals)
+            stockTradingFractions[stock.id] = fraction
+            tradingIntervals.firstOrNull()?.startsAt?.let { stockFirstExecutionTimes[stock.id] = it }
+            val session = if (fraction > 0.0) MarketSession.REGULAR else marketSession(stock.market, from)
+            val impulse = EventShockCalculator.aggregate(turnEvents, stock, from, to)
             val ordinaryFraction = ordinaryTradingFractions.getValue(stock.market)
             val fairValueFraction = if (
-                stock.market.isUnitedStates && macro.usCircuitBreakerLevel in 1..2
+                stock.market.isUnitedStates &&
+                (macro.usCircuitBreakerLevel in 1..2 || stock.market in temporaryProtectionMarkets)
             ) {
-                // L1/L2 reopens inside this one-hour turn. The 15-minute halt reduces
-                // executions and underlying U.S. returns, but FX fair value and fund
-                // cost clocks do not wait until the next trading day.
                 ordinaryFraction
             } else {
                 fraction
             }
             val totalReferenceFraction = stock.etfProfile?.let {
-                regionalTradingFraction(it.exposureRegion, from, tradingFractions)
+                regionalTradingFraction(it.exposureRegion, from, effectiveMarketFractions)
             } ?: fraction
-            // Under the uniform-within-the-hour approximation, at most the listing's
-            // observable fraction can be reflected in this bar. L1/L2 reopens inside
-            // the bar, so its temporary halt is not mistaken for an overnight closure.
             val activeReferenceFraction = minOf(totalReferenceFraction, fairValueFraction)
-            val closedReferenceFraction = (totalReferenceFraction - activeReferenceFraction)
-                .coerceIn(0.0, 1.0)
+            val closedReferenceFraction = (totalReferenceFraction - activeReferenceFraction).coerceIn(0.0, 1.0)
             val closedFxFraction = (1.0 - fairValueFraction).coerceIn(0.0, 1.0)
-            val previousCarry = if (fraction > 0.0) {
-                pendingEtfReferenceReturns.remove(stock.id) ?: 0.0
-            } else {
-                0.0
+            val previousCarry = if (fraction > 0.0) pendingEtfReferenceReturns[stock.id] ?: 0.0 else 0.0
+            val previousEventCarry = if (fraction > 0.0) pendingClosedEventLogReturns[stock.id] ?: 0.0 else 0.0
+            if (commit && fraction > 0.0) {
+                pendingEtfReferenceReturns.remove(stock.id)
+                pendingClosedEventLogReturns.remove(stock.id)
             }
             val closedFairValueReturn = if (
                 stock.isFundLike && (closedReferenceFraction > 0.0 || closedFxFraction > 0.0)
@@ -775,26 +1612,36 @@ internal class SimulatorRuntime(
                     macro = macro,
                     referenceTradingFraction = closedReferenceFraction,
                     fxTradingFraction = closedFxFraction,
-                    eventImpulse = impulse,
                 )
             } else {
                 0.0
             }
-            // U.S. 09:00-09:30 is the leading closed half of the 09:00 hour, so it
-            // belongs in that day's 09:30 opening gap. KRX 15:30-16:00 is trailing,
-            // therefore it remains pending for the following opening. L3 has no open.
-            val hasLeadingClosedComplement = fraction > 0.0 &&
-                marketSession(stock.market, from) != MarketSession.REGULAR
-            val carriedReference = previousCarry + if (hasLeadingClosedComplement) {
-                closedFairValueReturn
+            val closedEventFraction = (1.0 - fairValueFraction).coerceIn(0.0, 1.0)
+            val closedEventReturn = if (closedEventFraction > 0.0) {
+                priceEngine.eventLogReturn(
+                    stock = stock,
+                    eventImpulse = impulse,
+                    referenceFraction = closedEventFraction,
+                    fairValueFraction = closedEventFraction,
+                )
             } else {
                 0.0
             }
-            if (!hasLeadingClosedComplement && closedFairValueReturn != 0.0) {
-                if (stock.isFundLike) {
-                    pendingEtfReferenceReturns[stock.id] =
-                        (pendingEtfReferenceReturns[stock.id] ?: 0.0) + closedFairValueReturn
-                }
+            val hasLeadingClosedComplement = fraction > 0.0 &&
+                runtimeTradableIntervals(stock.market, from, to).firstOrNull()?.startsAt?.let { it > from } == true
+            val carriedReference = previousCarry + previousEventCarry + if (hasLeadingClosedComplement) {
+                closedFairValueReturn + closedEventReturn
+            } else {
+                0.0
+            }
+            if (commit && !hasLeadingClosedComplement && closedFairValueReturn != 0.0 && stock.isFundLike) {
+                pendingEtfReferenceReturns[stock.id] =
+                    (pendingEtfReferenceReturns[stock.id] ?: 0.0) + closedFairValueReturn
+            }
+            if (commit && !hasLeadingClosedComplement && closedEventReturn != 0.0) {
+                pendingClosedEventLogReturns[stock.id] = (
+                    (pendingClosedEventLogReturns[stock.id] ?: 0.0) + closedEventReturn
+                    ).coerceIn(-2.5, 2.5)
             }
             val firstRegularBar = fraction > 0.0 && !tracker.hasRegularTrading
             val result = priceEngine.generateHour(
@@ -816,53 +1663,85 @@ internal class SimulatorRuntime(
                     isFirstRegularBarOfDay = firstRegularBar,
                 ),
             )
-            quotes[stock.id] = result.quote
-            generatedBars[stock.id] = result.bar
-            appendHistory(stock.id, result.bar)
-            if (fraction > 0.0) {
-                if (firstRegularBar) {
-                    tracker.open = result.bar.open
-                    tracker.high = result.bar.high
-                    tracker.low = result.bar.low
-                    tracker.hasRegularTrading = true
+            val effectiveBounds = if (commit) effectiveProtectionPriceBounds(stock, priceBounds[stock.id]) else null
+            val bar = effectiveBounds?.let { runtimeClampBarToBounds(result.bar, it) } ?: result.bar
+            generatedBars[stock.id] = bar
+            if (commit) {
+                val quote = if (bar == result.bar) {
+                    result.quote
                 } else {
-                    tracker.high = maxOf(tracker.high, result.bar.high)
-                    tracker.low = minOf(tracker.low, result.bar.low)
+                    result.quote.copy(
+                        price = bar.close,
+                        open = if (firstRegularBar) bar.open else tracker.open,
+                        high = if (firstRegularBar) bar.high else maxOf(tracker.high, bar.high),
+                        low = if (firstRegularBar) bar.low else minOf(tracker.low, bar.low),
+                        volume = bar.volume,
+                    )
+                }
+                quotes[stock.id] = quote
+                appendHistory(stock.id, bar)
+                if (fraction > 0.0) {
+                    if (firstRegularBar) {
+                        tracker.open = bar.open
+                        tracker.high = bar.high
+                        tracker.low = bar.low
+                        tracker.hasRegularTrading = true
+                    } else {
+                        tracker.high = maxOf(tracker.high, bar.high)
+                        tracker.low = minOf(tracker.low, bar.low)
+                    }
                 }
             }
         }
+        return TurnGenerationResult(generatedBars, stockTradingFractions, stockFirstExecutionTimes)
+    }
 
-        updateMarketIndices(to, generatedBars, previousClosesByStockId, tradingFractions)
-        updateMarketChange(generatedBars, tradingFractions)
-        processOpenOrders(generatedBars, tradingFractions, to)
-        updateHoldingPrices()
-        processInstrumentLifecycle(to)
-        processScheduledDividends(from, to)
-        maybeAnnounceCorporateActions(from, to)
-        applyDueCorporateActionsAtBoundary(to)
-        expireDayOrders(to)
-        updateBenchmark(generatedBars, tradingFractions)
-
-        currentTime = to
-        turn = GameCalendar.turnAt(to)
-        processTaxExchangeRateSettlements(to)
-        processDueTaxPayments(gameDate(to))
-        updateDrawdown()
-
-        val toGameDate = gameDate(to)
-        if (toGameDate != fromGameDate) {
-            recalculateAnnualTax(fromGameDate.year)
-            if (toGameDate.year != fromGameDate.year && toGameDate.year <= 2040) {
-                recalculateAnnualTax(toGameDate.year)
-            }
-            recordDailySnapshot(fromGameDate, to)
+    private fun dailyTrackerSnapshot(
+        stock: StockDefinition,
+        time: Instant,
+        previousPrice: Double,
+    ): DailyPriceTracker {
+        val existing = dailyTrackers.getValue(stock.id)
+        val date = marketDate(stock.market, time)
+        return if (existing.date == date) {
+            existing.copy()
+        } else {
+            DailyPriceTracker(date, previousPrice, previousPrice, previousPrice, previousPrice, false)
         }
+    }
+
+    private fun effectiveProtectionPriceBounds(
+        stock: StockDefinition,
+        additional: RuntimePriceBounds?,
+    ): RuntimePriceBounds? {
+        var result = additional
+        tradingProtectionSnapshot.krxVolatilityInterruptions[stock.id]?.takeIf {
+            it.phase == KrxViPhase.CALL_AUCTION
+        }?.let { vi ->
+            val reference = requireNotNull(vi.referencePrice)
+            val rate = requireNotNull(vi.triggerRate)
+            val viBounds = if (vi.direction == com.amond.kmpbook.domain.model.KrxViDirection.UPPER) {
+                RuntimePriceBounds(upper = reference * (1.0 + rate))
+            } else {
+                RuntimePriceBounds(lower = reference * (1.0 - rate))
+            }
+            result = result?.merge(viBounds) ?: viBounds
+        }
+        tradingProtectionSnapshot.usLuldStates[stock.id]?.bands?.let { bands ->
+            val luldBounds = RuntimePriceBounds(
+                lower = bands.lower.coerceAtLeast(0.01),
+                upper = bands.upper,
+            )
+            result = result?.merge(luldBounds) ?: luldBounds
+        }
+        return result
     }
 
     private fun applyDueCorporateActions(from: Instant, to: Instant) {
         val due = pendingCorporateActions.filter { action ->
             action.effectiveNotBefore <= from &&
                 action.stockId !in terminatedInstrumentIds &&
+                listingLifecycleStates[action.stockId]?.isSettlementPending != true &&
                 stockById[action.stockId]?.let { regularTradingFraction(it.market, from, to) > 0.0 } == true
         }
         for (action in due) {
@@ -877,6 +1756,7 @@ internal class SimulatorRuntime(
         val due = pendingCorporateActions.filter { action ->
             action.effectiveNotBefore <= at &&
                 action.stockId !in terminatedInstrumentIds &&
+                listingLifecycleStates[action.stockId]?.isSettlementPending != true &&
                 stockById[action.stockId]?.let { regularTradingFraction(it.market, at, next) > 0.0 } == true
         }
         for (action in due) {
@@ -885,13 +1765,1307 @@ internal class SimulatorRuntime(
         }
     }
 
+    /** Runs once at each listing venue's local close and turns news/price data into exchange state. */
+    private fun processDailyListingSurveillance(from: Instant, to: Instant) {
+        val eligibleKrxStocks = stocks.filter { stock ->
+            stock.market.isKorean && stock.hasCorporateEarnings &&
+                listingLifecycleStates.getValue(stock.id).isIndexEligible
+        }
+        val krxMarketProxyClose = listOf(Market.KOSPI, Market.KOSDAQ).associateWith { market ->
+            eligibleKrxStocks.asSequence()
+                .filter { stock -> stock.market == market }
+                .sumOf { stock -> stock.sharesOutstanding.toDouble() * quotes.getValue(stock.id).price }
+                .takeIf { it > 0.0 }
+        }
+        // KOSPI 공시의 상대상승 비교는 업종지수 기준이다. 카탈로그 섹터에 비교 종목이
+        // 둘 이상 있을 때 섹터 시총 프록시를 쓰고, 단독 섹터는 자기 자신과 비교하지
+        // 않도록 KOSPI 종합 프록시로 물러난다. KOSDAQ은 공시대로 종합지수 프록시다.
+        val krxSectorProxyClose = eligibleKrxStocks
+            .groupBy { stock -> stock.market to stock.sector }
+            .mapValues { (_, members) ->
+                members.takeIf { it.size >= 2 }
+                    ?.sumOf { stock -> stock.sharesOutstanding.toDouble() * quotes.getValue(stock.id).price }
+            }
+        val krxMarketCaps = stocks.asSequence()
+            .filter { stock ->
+                stock.market.isKorean && stock.hasCorporateEarnings &&
+                    listingLifecycleStates.getValue(stock.id).isIndexEligible
+            }
+            .map { stock ->
+                stock.id to stock.sharesOutstanding.toDouble() * quotes.getValue(stock.id).price
+            }
+            .sortedByDescending(Pair<String, Double>::second)
+            .toList()
+        // 카탈로그가 KRX 전 종목을 담지는 않으므로 단순 1..N 순위는 모든 종목을 상위100으로
+        // 오인한다. 기준일 시총 경계 프록시를 먼저 적용하고, 경계 밖은 101위부터 매긴다.
+        val top100Proxy = krxMarketCaps.filter { it.second >= KRX_TOP_100_MARKET_CAP_PROXY_KRW }
+        val outsideTop100Proxy = krxMarketCaps.filter { it.second < KRX_TOP_100_MARKET_CAP_PROXY_KRW }
+        val krxMarketCapRanks = buildMap {
+            top100Proxy.forEachIndexed { index, (stockId, _) -> put(stockId, index + 1) }
+            outsideTop100Proxy.forEachIndexed { index, (stockId, _) -> put(stockId, 101 + index) }
+        }
+        for (stock in stocks) {
+            val previous = listingLifecycleStates.getValue(stock.id)
+            if (previous.isTerminal) continue
+            val tradingDate = marketDate(stock.market, from)
+            val venueCloseAt = GameCalendar.regularSessionWindow(
+                stock.market,
+                tradingDate,
+                runtimeClosedDates(stock.market, tradingDate),
+            )?.closesAt ?: continue
+            if (venueCloseAt <= from || venueCloseAt > to) continue
+            // The regular session is half-open; sample its final representable instant so an
+            // event that starts during this hour is included, while a post-close event is not.
+            val surveillanceAt = venueCloseAt - 1.nanoseconds
+            // Price exposure may legitimately propagate through an ETF's underlying holdings, but
+            // exchange listing actions must only affect the security named in the notice.
+            val directListingRiskEvents = newsEvents.filter { event ->
+                event.isActiveAt(surveillanceAt) && stock.id in event.affectedStockIds &&
+                    listingRiskTagsFor(event, stock.id).isNotEmpty()
+            }
+            // 최종처분 공시는 가격충격 duration이 끝나도 거래소 생명주기 판단 근거로 남는다.
+            val terminationControl = newsEvents.asSequence()
+                .filter { event -> event.startsAt <= surveillanceAt && stock.id in event.affectedStockIds }
+                .filter { event -> listingFinalDispositionHintFor(event, stock.id) != null }
+                .map { event ->
+                    ListingTerminationControl(
+                        event = event,
+                        rawEffectiveOn = listingTerminationEffectiveDate(stock, event),
+                    )
+                }
+                .minWithOrNull(
+                    compareBy<ListingTerminationControl>(
+                        ListingTerminationControl::rawEffectiveOn,
+                        { terminationNoticePriority(it.event) },
+                        { -it.event.severity.level },
+                        { it.event.startsAt },
+                        { it.event.id },
+                    ),
+                )
+            val terminationEvent = terminationControl?.event
+            val listingRiskEventsForInput = (directListingRiskEvents + listOfNotNull(terminationEvent))
+                .distinctBy(GameEvent::id)
+            val riskTags = listingRiskEventsForInput
+                .flatMapTo(linkedSetOf()) { event -> listingRiskTagsFor(event, stock.id) }
+            val resolutionKey = listingRemediationEventId(stock, previous)
+            val explicitRecoveryConditions = newsEvents.asSequence()
+                .filter { event ->
+                    event.isActiveAt(surveillanceAt) && stock.id in event.affectedStockIds &&
+                        (!event.id.startsWith(LISTING_RESOLUTION_EVENT_PREFIX) || event.id == resolutionKey)
+                }
+                .flatMap { event -> event.directListingRecoveryConditions(stock.id).asSequence() }
+                .toCollection(linkedSetOf())
+            val recoveryConditions = buildSet {
+                addAll(explicitRecoveryConditions)
+                evaluateListingRemediation(
+                    stock = stock,
+                    state = previous,
+                    tradingDate = tradingDate,
+                    at = venueCloseAt,
+                    activeRiskEvents = directListingRiskEvents,
+                )?.let(::add)
+            }
+            val dayVolume = history.getValue(stock.id)
+                .asSequence()
+                .filter { bar -> marketDate(stock.market, bar.endTime) == tradingDate }
+                .sumOf(PriceBar::volume)
+            val hadTradableObservation = history.getValue(stock.id).any { bar ->
+                bar.volume > 0L && marketDate(stock.market, bar.endTime) == tradingDate
+            }
+            val quote = quotes.getValue(stock.id)
+            val surveillance = dailyTradingSurveillance.getOrPut(stock.id) { ArrayDeque() }
+            if (hadTradableObservation && surveillance.lastOrNull()?.date != tradingDate) {
+                surveillance.addLast(
+                    DailyTradingSurveillancePoint(
+                        date = tradingDate,
+                        close = quote.price,
+                        volume = dayVolume,
+                        turnoverRate = dayVolume.toDouble() / stock.sharesOutstanding.toDouble(),
+                        marketProxyClose = if (stock.market == Market.KOSPI) {
+                            krxSectorProxyClose[stock.market to stock.sector]
+                                ?: krxMarketProxyClose[stock.market]
+                        } else {
+                            krxMarketProxyClose[stock.market]
+                        },
+                        krxMarketCapRank = krxMarketCapRanks[stock.id],
+                    ),
+                )
+                while (surveillance.size > MAX_DAILY_SURVEILLANCE_POINTS) surveillance.removeFirst()
+            }
+            if (stock.market.isKorean && hadTradableObservation) {
+                evaluateKrxInvestmentAlert(stock, venueCloseAt, surveillance.toList())
+            }
+            val severity = listingRiskEventsForInput.maxOfOrNull { event ->
+                when (event.severity) {
+                    EventSeverity.MINOR -> ListingRiskSeverity.LOW
+                    EventSeverity.MODERATE -> ListingRiskSeverity.MODERATE
+                    EventSeverity.MAJOR -> ListingRiskSeverity.HIGH
+                    EventSeverity.CRITICAL -> ListingRiskSeverity.CRITICAL
+                }
+            } ?: ListingRiskSeverity.NONE
+            val dispositionHint = terminationEvent?.let { event ->
+                listingFinalDispositionHintFor(event, stock.id)
+            }
+            // Compare raw dates first. Clamp only the winning notice so an overdue call cannot
+            // steal the payout terms from an earlier acceleration or contractual maturity.
+            val scheduledDelistingOn = terminationControl?.rawEffectiveOn?.let { raw ->
+                maxOf(tradingDate, raw)
+            }
+            val otcTransferAvailable = stock.market.isUnitedStates &&
+                previous.activeReason !in setOf(
+                    ListingLifecycleReason.BANKRUPTCY_OR_INSOLVENCY,
+                    ListingLifecycleReason.ETF_VOLUNTARY_LIQUIDATION,
+                    ListingLifecycleReason.ETN_MATURITY_OR_EARLY_REDEMPTION,
+                )
+            val input = DailyListingSurveillanceInput(
+                stockId = stock.id,
+                tradingDate = tradingDate,
+                close = quote.price,
+                marketCapitalization = stock.sharesOutstanding.toDouble() * quote.price,
+                tradedVolume = dayVolume.takeIf { hadTradableObservation },
+                turnoverRate = dayVolume.toDouble().div(stock.sharesOutstanding.toDouble())
+                    .takeIf { hadTradableObservation },
+                riskTags = riskTags,
+                riskSeverity = severity,
+                recoveryConditions = recoveryConditions,
+                scheduledDelistingOn = scheduledDelistingOn,
+                finalDispositionHint = dispositionHint,
+                otcTransferAvailable = otcTransferAvailable,
+                liquidationCashPerUnit = terminationEvent?.takeIf {
+                    dispositionHint == ListingFinalDispositionType.CASH_LIQUIDATION
+                }?.let { event -> listingLiquidationUnitPrice(stock, event, quote.price) },
+            )
+            val result = listingLifecycleEngine.evaluate(previous, input)
+            var nextState = result.state
+            var ledgerEvents = result.ledgerEvents
+            if (previous.status != ListingLifecycleStatus.LIQUIDATION_PENDING &&
+                nextState.status == ListingLifecycleStatus.LIQUIDATION_PENDING
+            ) {
+                val disposition = requireNotNull(nextState.finalDisposition)
+                val holding = holdings[stock.id]
+                val frozen = disposition.copy(
+                    entitledQuantity = holding?.quantity ?: 0.0,
+                    entitledCostBasis = holding?.costBasis ?: 0.0,
+                )
+                nextState = nextState.copy(finalDisposition = frozen)
+                ledgerEvents = ledgerEvents.map { event ->
+                    if (event.kind == ListingLifecycleEventKind.LIQUIDATION_STARTED) {
+                        event.copy(disposition = frozen)
+                    } else {
+                        event
+                    }
+                }
+                // 청산 권리는 이미 확정됐으므로 이후 분할·병합과 배당 권리에서 분리한다.
+                pendingCorporateActions.removeAll { it.stockId == stock.id }
+            }
+            listingLifecycleStates[stock.id] = nextState
+            if (ledgerEvents.isEmpty()) continue
+
+            listingLifecycleLedger += ledgerEvents
+            ledgerEvents.forEach { event -> addListingLifecycleNews(stock, event, venueCloseAt) }
+            if (previous.isTradable && !nextState.isTradable) {
+                cancelOpenOrdersForStock(
+                    stock.id,
+                    venueCloseAt,
+                    "${nextState.status.displayName} 조치로 미체결 주문을 취소했습니다.",
+                )
+            }
+            syncListingTradingHalt(stock, previous, nextState, venueCloseAt)
+            if (!previous.isTerminal && nextState.isTerminal) {
+                applyListingFinalDisposition(stock, nextState, venueCloseAt)
+            }
+        }
+    }
+
+    /** Adds v1-save fallbacks without letting an ETF inherit the listing status of an underlying. */
+    private fun listingRiskTagsFor(event: GameEvent, stockId: String): Set<ListingRiskTag> {
+        if (stockId !in event.affectedStockIds) return emptySet()
+        if (event.id.startsWith(ETN_CALL_EVENT_PREFIX) &&
+            stockById[stockId]?.identityProfile?.callable != true
+        ) {
+            return emptySet()
+        }
+        val structured = event.directListingRiskTags(stockId)
+        if (structured.isNotEmpty()) return structured
+        return when {
+            event.id.startsWith("delisting_warning:") ->
+                setOf(ListingRiskTag.LISTING_MAINTENANCE_DEFICIENCY)
+            event.id.startsWith("accounting_issue:") -> setOf(ListingRiskTag.AUDIT_OPINION_FAILURE)
+            event.id.startsWith("fund_liquidity_warning:") -> setOf(ListingRiskTag.LOW_TRADING_LIQUIDITY)
+            event.id.startsWith("serious_compliance_breach:") ->
+                setOf(ListingRiskTag.SERIOUS_COMPLIANCE_EVENT)
+            event.id.startsWith("core_business_suspension:") ->
+                setOf(ListingRiskTag.CORE_BUSINESS_SUSPENSION)
+            event.id.startsWith("bankruptcy_filing:") ->
+                setOf(ListingRiskTag.BANKRUPTCY_OR_INSOLVENCY)
+            event.id.startsWith("etf_liquidation_approved:") ->
+                setOf(ListingRiskTag.ETF_LIQUIDATION_APPROVED)
+            event.id.startsWith("issuer_eligibility_failure:") ->
+                setOf(ListingRiskTag.ISSUER_ELIGIBILITY_FAILURE)
+            event.id.startsWith("underlying_index_unavailable:") ->
+                setOf(ListingRiskTag.UNDERLYING_INDEX_UNAVAILABLE)
+            event.id.startsWith("liquidity_provider_failure:") ->
+                setOf(ListingRiskTag.LIQUIDITY_PROVIDER_FAILURE)
+            event.id.startsWith(ETN_CALL_EVENT_PREFIX) ||
+                event.id.startsWith(ETN_ACCELERATION_EVENT_PREFIX) ||
+                event.id.startsWith(ETN_MATURITY_EVENT_PREFIX) ->
+                setOf(ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION)
+            else -> emptySet()
+        }
+    }
+
+    private fun listingFinalDispositionHintFor(
+        event: GameEvent,
+        stockId: String,
+    ): ListingFinalDispositionType? {
+        if (stockId !in event.affectedStockIds) return null
+        if (event.id.startsWith(ETN_CALL_EVENT_PREFIX) &&
+            stockById[stockId]?.identityProfile?.callable != true
+        ) {
+            return null
+        }
+        return event.directListingFinalDispositionHint(stockId) ?: when {
+            event.id.startsWith("etf_liquidation_approved:") ||
+                event.id.startsWith(ETN_CALL_EVENT_PREFIX) ||
+                event.id.startsWith(ETN_ACCELERATION_EVENT_PREFIX) ||
+                event.id.startsWith(ETN_MATURITY_EVENT_PREFIX) ->
+                ListingFinalDispositionType.CASH_LIQUIDATION
+            else -> null
+        }
+    }
+
+    private fun listingLiquidationUnitPrice(
+        stock: StockDefinition,
+        event: GameEvent,
+        closingPrice: Double,
+    ): Double {
+        if (!event.id.startsWith(ETN_ACCELERATION_EVENT_PREFIX)) return closingPrice.coerceAtLeast(0.0)
+        val indicativeValueProxy = history.getValue(stock.id)
+            .asSequence()
+            .filter { it.volume > 0L }
+            .groupBy { marketDate(stock.market, it.endTime) }
+            .toSortedMap()
+            .values
+            .map { it.last().close }
+            .takeLast(5)
+            .takeIf { it.isNotEmpty() }
+            ?.average()
+            ?: closingPrice
+        val recoveryBucket = (PriceEngine.stableHash64(event.id) and Long.MAX_VALUE) % 41L
+        return (indicativeValueProxy * (0.40 + recoveryBucket.toDouble() / 100.0)).coerceAtLeast(0.0)
+    }
+
+    /** First venue close at or after the notice's contractual end; maturity is a hard cap. */
+    private fun listingTerminationEffectiveDate(stock: StockDefinition, event: GameEvent): LocalDate {
+        if (event.id.startsWith(ETN_MATURITY_EVENT_PREFIX)) {
+            val maturity = instrumentMaturityDate(stock) ?: marketDate(stock.market, event.startsAt)
+            return nextTradingDateOnOrAfter(stock.market, maturity)
+        }
+        var date = marketDate(stock.market, event.endsAt)
+        repeat(MAX_TERMINATION_SESSION_SEARCH_DAYS) {
+            val window = GameCalendar.regularSessionWindow(
+                stock.market,
+                date,
+                runtimeClosedDates(stock.market, date),
+            )
+            if (window != null && event.endsAt <= window.closesAt) return date
+            date = date.plus(1, DateTimeUnit.DAY)
+        }
+        error("종료 공시 ${event.id} 이후 거래소 종가를 찾을 수 없습니다.")
+    }
+
+    private fun terminationNoticePriority(event: GameEvent): Int = when {
+        event.id.startsWith(ETN_MATURITY_EVENT_PREFIX) -> 0
+        event.id.startsWith(ETN_ACCELERATION_EVENT_PREFIX) -> 1
+        event.id.startsWith(ETN_CALL_EVENT_PREFIX) -> 2
+        else -> 3
+    }
+
+    private fun evaluateListingRemediation(
+        stock: StockDefinition,
+        state: ListingLifecycleState,
+        tradingDate: LocalDate,
+        at: Instant,
+        activeRiskEvents: List<GameEvent>,
+    ): ListingRecoveryCondition? {
+        if (state.status == ListingLifecycleStatus.LISTED || state.isTerminal) return null
+        val stageStartedOn = listingLifecycleLedger
+            .lastOrNull { event -> event.stockId == stock.id && event.toStatus == state.status }
+            ?.tradingDate
+            ?: state.designatedOn
+            ?: tradingDate
+        val eventId = listingRemediationEventId(stock, state, stageStartedOn)
+        val alreadyDecided = newsEvents.any { event -> event.id == eventId }
+        val sourceRiskActive = activeRiskEvents.any { event ->
+            listingRiskTagsFor(event, stock.id).any { tag -> tag.matchesListingReason(state.activeReason) }
+        }
+        val decision = ListingRemediationPolicy.evaluate(
+            state = state,
+            tradingDate = tradingDate,
+            stageStartedOn = stageStartedOn,
+            campaignSeed = options.seed,
+            sourceRiskActive = sourceRiskActive,
+            alreadyDecidedForStage = alreadyDecided,
+        )
+        if (decision.status !in setOf(
+                ListingRemediationDecisionStatus.CURED,
+                ListingRemediationDecisionStatus.NOT_CURED,
+            )
+        ) {
+            return null
+        }
+        if (!alreadyDecided) {
+            val cured = decision.status == ListingRemediationDecisionStatus.CURED
+            newsEvents += GameEvent(
+                id = eventId,
+                title = if (cured) {
+                    "${stock.name} 개선 심사를 통과했어요"
+                } else {
+                    "${stock.name} 개선 심사가 계속돼요"
+                },
+                description = if (cured) {
+                    "거래소가 개선 자료를 확인해 ${state.status.displayName} 조치를 해제할 수 있다고 판단했습니다."
+                } else {
+                    "거래소 심사에서 개선이 충분히 확인되지 않았습니다. 다음 상장 절차가 예정대로 진행됩니다."
+                },
+                scope = EventScope.STOCK,
+                type = EventType.REGULATION_POLICY,
+                severity = if (cured) EventSeverity.MINOR else EventSeverity.MAJOR,
+                impact = GameEventImpact(direction = ImpactDirection.NEUTRAL),
+                startsAt = at,
+                durationHours = 720,
+                affectedMarkets = setOf(stock.market),
+                affectedSectors = setOf(stock.sector),
+                affectedStockIds = setOf(stock.id),
+                sourceLabel = "거래소 공개 규칙 · 게임 개선심사",
+                listingRecoveryConditions = decision.recoveryCondition?.let(::setOf),
+            )
+        }
+        return decision.recoveryCondition
+    }
+
+    private fun listingRemediationEventId(
+        stock: StockDefinition,
+        state: ListingLifecycleState,
+        stageStartedOn: LocalDate = listingLifecycleLedger
+            .lastOrNull { event -> event.stockId == stock.id && event.toStatus == state.status }
+            ?.tradingDate
+            ?: state.designatedOn
+            ?: marketDate(stock.market, currentTime),
+    ): String = "$LISTING_RESOLUTION_EVENT_PREFIX${stock.id}:${state.designatedOn}:${state.status}:$stageStartedOn"
+
+    private fun ListingRiskTag.matchesListingReason(reason: ListingLifecycleReason?): Boolean = when (reason) {
+        ListingLifecycleReason.KRX_LISTING_MAINTENANCE,
+        ListingLifecycleReason.US_LISTING_MAINTENANCE,
+        -> this in setOf(
+            ListingRiskTag.LISTING_MAINTENANCE_DEFICIENCY,
+            ListingRiskTag.QUALITATIVE_LISTING_REVIEW,
+        )
+        ListingLifecycleReason.KRX_ADMINISTRATIVE_ISSUE -> this == ListingRiskTag.ADMINISTRATIVE_ISSUE
+        ListingLifecycleReason.US_MINIMUM_BID_PRICE -> this == ListingRiskTag.LOW_BID_PRICE
+        ListingLifecycleReason.US_MARKET_CAPITALIZATION -> this == ListingRiskTag.LOW_MARKET_CAPITALIZATION
+        ListingLifecycleReason.LOW_TRADING_LIQUIDITY -> this == ListingRiskTag.LOW_TRADING_LIQUIDITY
+        ListingLifecycleReason.AUDIT_OR_DISCLOSURE_FAILURE ->
+            this == ListingRiskTag.AUDIT_OPINION_FAILURE || this == ListingRiskTag.DISCLOSURE_VIOLATION
+        ListingLifecycleReason.SERIOUS_COMPLIANCE_EVENT -> this == ListingRiskTag.SERIOUS_COMPLIANCE_EVENT
+        ListingLifecycleReason.BANKRUPTCY_OR_INSOLVENCY -> this == ListingRiskTag.BANKRUPTCY_OR_INSOLVENCY
+        ListingLifecycleReason.CORE_BUSINESS_SUSPENSION -> this == ListingRiskTag.CORE_BUSINESS_SUSPENSION
+        ListingLifecycleReason.ETF_VOLUNTARY_LIQUIDATION -> this == ListingRiskTag.ETF_LIQUIDATION_APPROVED
+        ListingLifecycleReason.ETN_MATURITY_OR_EARLY_REDEMPTION ->
+            this == ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION
+        ListingLifecycleReason.ISSUER_ELIGIBILITY_FAILURE -> this == ListingRiskTag.ISSUER_ELIGIBILITY_FAILURE
+        ListingLifecycleReason.UNDERLYING_INDEX_UNAVAILABLE -> this == ListingRiskTag.UNDERLYING_INDEX_UNAVAILABLE
+        ListingLifecycleReason.LIQUIDITY_PROVIDER_FAILURE -> this == ListingRiskTag.LIQUIDITY_PROVIDER_FAILURE
+        null -> false
+    }
+
+    private fun addListingLifecycleNews(
+        stock: StockDefinition,
+        ledgerEvent: ListingLifecycleLedgerEvent,
+        at: Instant,
+    ) {
+        val id = "listing-lifecycle:${ledgerEvent.id}"
+        if (newsEvents.any { it.id == id }) return
+        newsEvents += GameEvent(
+            id = id,
+            title = "${stock.name} ${ledgerEvent.title}",
+            description = ledgerEvent.summary,
+            scope = EventScope.STOCK,
+            type = EventType.REGULATION_POLICY,
+            severity = when (ledgerEvent.level) {
+                ListingNoticeLevel.INFO -> EventSeverity.MINOR
+                ListingNoticeLevel.CAUTION -> EventSeverity.MODERATE
+                ListingNoticeLevel.WARNING -> EventSeverity.MAJOR
+                ListingNoticeLevel.CRITICAL -> EventSeverity.CRITICAL
+            },
+            impact = GameEventImpact(direction = ImpactDirection.NEUTRAL),
+            startsAt = at,
+            durationHours = 720,
+            affectedMarkets = setOf(stock.market),
+            affectedSectors = setOf(stock.sector),
+            affectedStockIds = setOf(stock.id),
+            sourceLabel = "거래소 공개 규칙 · 게임 감시",
+        )
+    }
+
+    /**
+     * KRX price-surge alert ladder using the public 3/5/15-day price conditions. Account-
+     * concentration criteria cannot exist without simulated participant accounts and are omitted.
+     */
+    private fun evaluateKrxInvestmentAlert(
+        stock: StockDefinition,
+        at: Instant,
+        points: List<DailyTradingSurveillancePoint>,
+    ) {
+        if (points.isEmpty()) return
+        val today = points.last().date
+        val close = points.last().close
+        val previous = tradingProtectionSnapshot.investmentAlerts[stock.id]
+        val warningNoticeReasons = krxWarningNoticeReasonCodes(points)
+        val warningDesignationReasons = krxWarningDesignationReasonCodes(previous, points, stock.market)
+        val dangerNoticeReasons = if (previous?.status == InvestmentAlertStatus.ACTIVE &&
+            previous.level == InvestmentAlertLevel.WARNING
+        ) {
+            krxDangerNoticeReasonCodes(points)
+        } else {
+            emptySet()
+        }
+        val dangerDesignationReasons = krxDangerDesignationReasonCodes(previous, points)
+
+        if (previous?.status == InvestmentAlertStatus.RELEASED &&
+            previous.level == InvestmentAlertLevel.CAUTION
+        ) {
+            val redesignationReasons = when {
+                krxWarningRedesignationCriteriaSatisfied(previous, points) ->
+                    setOf("WARNING_REDESIGNATION_2D_40")
+                warningDesignationReasons.isNotEmpty() -> warningDesignationReasons
+                else -> emptySet()
+            }
+            if (redesignationReasons.isNotEmpty()) {
+                designateInvestmentAlert(
+                    stock = stock,
+                    at = at,
+                    onDate = nthTradingDate(stock.market, today, 1),
+                    level = InvestmentAlertLevel.WARNING,
+                    reasonCodes = redesignationReasons,
+                    previous = previous,
+                    releaseRule = previous.redesignationReleaseRule
+                        ?: InvestmentAlertReleaseRule.WARNING_60_100,
+                    preDesignationClose = previous.preDesignationClose ?: close,
+                    priorLevelUntilEffective = InvestmentAlertLevel.CAUTION,
+                    isRedesignation = "WARNING_REDESIGNATION_2D_40" in redesignationReasons,
+                )
+                return
+            }
+            val initialNoticeWindowOpen = previous.escalationNoticeReasons
+                .any { it.startsWith("WARNING_NOTICE_") } &&
+                krxEscalationNoticeJudgmentOpen(previous, points)
+            val redesignationWindowOpen = previous.redesignationWindow?.contains(today) == true
+            if (initialNoticeWindowOpen || redesignationWindowOpen) return
+        }
+
+        if (previous?.status == InvestmentAlertStatus.ACTIVE) {
+            // A warning's two-day follow-up condition and an initial danger designation can
+            // schedule a future full-session halt even when today's closing review also changes
+            // the alert level.
+            maybeStartInvestmentAlertHalt(stock, previous, points, at)
+            if (krxWarningRedesignationCriteriaSatisfied(previous, points)) {
+                designateInvestmentAlert(
+                    stock = stock,
+                    at = at,
+                    onDate = nthTradingDate(stock.market, today, 1),
+                    level = InvestmentAlertLevel.WARNING,
+                    reasonCodes = setOf("WARNING_REDESIGNATION_2D_40"),
+                    previous = previous,
+                    releaseRule = previous.redesignationReleaseRule
+                        ?: InvestmentAlertReleaseRule.WARNING_60_100,
+                    preDesignationClose = previous.preDesignationClose,
+                    priorLevelUntilEffective = InvestmentAlertLevel.CAUTION,
+                    isRedesignation = true,
+                )
+                return
+            }
+            val escalation = when (previous.level) {
+                InvestmentAlertLevel.CAUTION -> warningDesignationReasons
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { InvestmentAlertLevel.WARNING to it }
+                InvestmentAlertLevel.WARNING -> dangerDesignationReasons
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { InvestmentAlertLevel.DANGER to it }
+                InvestmentAlertLevel.DANGER -> null
+            }
+            if (escalation != null) {
+                designateInvestmentAlert(
+                    stock = stock,
+                    at = at,
+                    onDate = nthTradingDate(stock.market, today, 1),
+                    level = escalation.first,
+                    reasonCodes = escalation.second,
+                    previous = previous,
+                    releaseRule = if (escalation.first == InvestmentAlertLevel.WARNING) {
+                        InvestmentAlertReleaseRule.WARNING_60_100
+                    } else {
+                        InvestmentAlertReleaseRule.DANGER_60_100
+                    },
+                    preDesignationClose = close,
+                    priorLevelUntilEffective = previous.level,
+                )
+                return
+            }
+            val noticeReasons = when (previous.level) {
+                InvestmentAlertLevel.CAUTION -> warningNoticeReasons
+                InvestmentAlertLevel.WARNING -> dangerNoticeReasons
+                InvestmentAlertLevel.DANGER -> emptySet()
+            }
+            val noticeStillOpen = krxEscalationNoticeJudgmentOpen(previous, points)
+            if (noticeReasons.isNotEmpty() && !noticeStillOpen) {
+                recordInvestmentAlertEscalationNotice(stock, previous, noticeReasons, today, at)
+                return
+            }
+            if (previous.level == InvestmentAlertLevel.CAUTION) {
+                if (today >= previous.designatedOn) {
+                    val released = TradingProtectionEngine.releaseInvestmentAlert(
+                        state = previous,
+                        releasedAt = at,
+                        releasedOn = today,
+                        reason = "지정예고에 따른 투자주의 1일 적용이 끝났습니다.",
+                        criteriaCleared = true,
+                        force = true,
+                        releaseEffectiveOn = nthTradingDate(stock.market, today, 1),
+                    )
+                    tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
+                        investmentAlerts = tradingProtectionSnapshot.investmentAlerts + (stock.id to released),
+                    )
+                }
+                return
+            }
+            val observedTradingDays = krxInvestmentAlertObservedTradingDays(previous, points)
+            val requiredTradingDays = 10
+            val reviewOpen = today >= previous.releaseReviewWindow.startsOn &&
+                observedTradingDays >= requiredTradingDays
+            val criteriaCleared = krxInvestmentAlertReleaseCriteriaCleared(previous, points)
+            if (reviewOpen && criteriaCleared) {
+                val released = TradingProtectionEngine.releaseInvestmentAlert(
+                    state = previous,
+                    releasedAt = at,
+                    releasedOn = today,
+                    reason = "가격 급등 기준이 해소됐습니다.",
+                    criteriaCleared = true,
+                    releaseEffectiveOn = nthTradingDate(stock.market, today, 1),
+                )
+                tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
+                    investmentAlerts = tradingProtectionSnapshot.investmentAlerts + (stock.id to released),
+                )
+                addProtectionNews(
+                    id = "investment-alert-release:${stock.id}:${today}",
+                    title = "${stock.name} ${investmentAlertLabel(previous.level)} 지정이 내일부터 해제돼요",
+                    description = "해제 심사일에 가격 급등 기준을 다시 충족하지 않아 다음 거래일부터 시장경보를 해제합니다.",
+                    at = at,
+                    stock = stock,
+                    severity = EventSeverity.MINOR,
+                )
+                if (previous.level == InvestmentAlertLevel.DANGER) {
+                    designateInvestmentAlert(
+                        stock = stock,
+                        at = at,
+                        onDate = nthTradingDate(stock.market, today, 1),
+                        level = InvestmentAlertLevel.WARNING,
+                        reasonCodes = setOf("DANGER_RELEASE_DOWNGRADE"),
+                        previous = released,
+                        releaseRule = InvestmentAlertReleaseRule.WARNING_60_100,
+                        preDesignationClose = close,
+                        priorLevelUntilEffective = InvestmentAlertLevel.DANGER,
+                    )
+                } else if (previous.level == InvestmentAlertLevel.WARNING) {
+                    val cautionOn = nthTradingDate(stock.market, today, 1)
+                    designateInvestmentAlert(
+                        stock = stock,
+                        at = at,
+                        onDate = cautionOn,
+                        level = InvestmentAlertLevel.CAUTION,
+                        reasonCodes = setOf("WARNING_RELEASE_REDESIGNATION"),
+                        previous = released,
+                        releaseRule = InvestmentAlertReleaseRule.CAUTION_PRICE_VOLUME,
+                        preDesignationClose = previous.preDesignationClose,
+                        preReleaseClose = close,
+                        redesignationReleaseRule = krxInvestmentAlertReleaseRule(previous),
+                        redesignationWindow = TradingDayWindow(
+                            nthTradingDate(stock.market, cautionOn, 1),
+                            nthTradingDate(stock.market, cautionOn, 9),
+                        ),
+                        priorLevelUntilEffective = InvestmentAlertLevel.WARNING,
+                    )
+                }
+            }
+            return
+        }
+        if (warningNoticeReasons.isNotEmpty()) {
+            val cautionOn = nthTradingDate(stock.market, today, 1)
+            designateInvestmentAlert(
+                stock = stock,
+                at = at,
+                onDate = cautionOn,
+                level = InvestmentAlertLevel.CAUTION,
+                reasonCodes = warningNoticeReasons,
+                previous = previous,
+                releaseRule = InvestmentAlertReleaseRule.CAUTION_PRICE_VOLUME,
+                escalationNoticeOn = cautionOn,
+                escalationNoticeReasons = warningNoticeReasons,
+            )
+        }
+    }
+
+    private fun recordInvestmentAlertEscalationNotice(
+        stock: StockDefinition,
+        previous: InvestmentAlertDesignation,
+        reasons: Set<String>,
+        judgmentDate: LocalDate,
+        at: Instant,
+    ) {
+        val noticeOn = nthTradingDate(stock.market, judgmentDate, 1)
+        val target = if (previous.level == InvestmentAlertLevel.CAUTION) {
+            InvestmentAlertLevel.WARNING
+        } else {
+            InvestmentAlertLevel.DANGER
+        }
+        val updated = previous.copy(
+            escalationNoticeOn = noticeOn,
+            escalationNoticeReasons = reasons,
+        )
+        tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
+            investmentAlerts = tradingProtectionSnapshot.investmentAlerts + (stock.id to updated),
+        )
+        addProtectionNews(
+            id = "investment-alert-notice:${stock.id}:${target.name}:$noticeOn",
+            title = "${stock.name} ${investmentAlertLabel(target)} 지정예고 종목이에요",
+            description = "지정예고일부터 종목의 실제 거래일 기준 10일 동안 가격·시장지수 상대 상승 요건을 확인합니다.",
+            at = at,
+            stock = stock,
+            severity = if (target == InvestmentAlertLevel.DANGER) EventSeverity.MAJOR else EventSeverity.MODERATE,
+        )
+    }
+
+    private fun designateInvestmentAlert(
+        stock: StockDefinition,
+        at: Instant,
+        onDate: LocalDate,
+        level: InvestmentAlertLevel,
+        reasonCodes: Set<String>,
+        previous: InvestmentAlertDesignation?,
+        releaseRule: InvestmentAlertReleaseRule = when (level) {
+            InvestmentAlertLevel.CAUTION -> InvestmentAlertReleaseRule.CAUTION_PRICE_VOLUME
+            InvestmentAlertLevel.WARNING -> InvestmentAlertReleaseRule.WARNING_60_100
+            InvestmentAlertLevel.DANGER -> InvestmentAlertReleaseRule.DANGER_60_100
+        },
+        preDesignationClose: Double? = null,
+        preReleaseClose: Double? = null,
+        redesignationReleaseRule: InvestmentAlertReleaseRule? = null,
+        redesignationWindow: TradingDayWindow? = null,
+        escalationNoticeOn: LocalDate? = null,
+        escalationNoticeReasons: Set<String> = emptySet(),
+        priorLevelUntilEffective: InvestmentAlertLevel? = null,
+        isRedesignation: Boolean = false,
+    ) {
+        val releaseAfterTradingDays = when (level) {
+            InvestmentAlertLevel.CAUTION -> 0
+            // 투자경고는 지정일을 포함한 10거래일째, 투자위험은 지정일 다음부터
+            // 10거래일을 관찰한다. 종목정지로 관측일이 밀리면 evaluate 쪽에서 더 기다린다.
+            InvestmentAlertLevel.WARNING -> 9
+            InvestmentAlertLevel.DANGER -> 10
+        }
+        val reviewStart = nthTradingDate(stock.market, onDate, releaseAfterTradingDays)
+        val candidate = InvestmentAlertDesignation(
+            stockId = stock.id,
+            level = level,
+            reasonCodes = reasonCodes,
+            summary = when (level) {
+                InvestmentAlertLevel.CAUTION -> "최근 거래가 과열돼 주의가 필요해요"
+                InvestmentAlertLevel.WARNING -> "주가가 급등해 투자경고로 지정됐어요"
+                InvestmentAlertLevel.DANGER -> "가격 변동이 매우 커 투자위험으로 지정됐어요"
+            },
+            designatedAt = at,
+            designatedOn = onDate,
+            releaseReviewWindow = TradingDayWindow(
+                reviewStart,
+                nthTradingDate(stock.market, reviewStart, 260),
+            ),
+            redesignationWindow = redesignationWindow,
+            releaseRule = releaseRule,
+            preDesignationClose = preDesignationClose,
+            preReleaseClose = preReleaseClose,
+            redesignationReleaseRule = redesignationReleaseRule,
+            escalationNoticeOn = escalationNoticeOn,
+            escalationNoticeReasons = escalationNoticeReasons,
+            priorLevelUntilEffective = priorLevelUntilEffective,
+            isRedesignation = isRedesignation,
+        )
+        val designation = TradingProtectionEngine.designateInvestmentAlert(candidate, previous)
+        tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
+            investmentAlerts = tradingProtectionSnapshot.investmentAlerts + (stock.id to designation),
+        )
+        addProtectionNews(
+            id = "investment-alert:${stock.id}:${level.name}:$onDate",
+            title = if (onDate > marketDate(stock.market, at)) {
+                "${stock.name} 내일부터 ${investmentAlertLabel(level)} 종목이에요"
+            } else {
+                "${stock.name} ${investmentAlertLabel(level)} 종목이에요"
+            },
+            description = "효력일은 $onDate 입니다. " + designation.summary + if (level == InvestmentAlertLevel.WARNING) {
+                " 지정일부터 2거래일 뒤 종가가 지정일보다 40% 이상 높고 지정 전일 종가도 웃돌면 다음 거래일 하루 동안 거래가 멈춥니다."
+            } else if (level == InvestmentAlertLevel.DANGER) {
+                " 최초 투자위험 지정에 따라 지정 효력일의 정규장 거래가 하루 동안 멈춥니다."
+            } else {
+                ""
+            },
+            at = at,
+            stock = stock,
+            severity = when (level) {
+                InvestmentAlertLevel.CAUTION -> EventSeverity.MODERATE
+                InvestmentAlertLevel.WARNING -> EventSeverity.MAJOR
+                InvestmentAlertLevel.DANGER -> EventSeverity.CRITICAL
+            },
+        )
+        maybeStartInvestmentAlertHalt(stock, designation, dailyTradingSurveillance.getValue(stock.id).toList(), at)
+    }
+
+    private fun maybeStartInvestmentAlertHalt(
+        stock: StockDefinition,
+        designation: InvestmentAlertDesignation,
+        points: List<DailyTradingSurveillancePoint>,
+        at: Instant,
+    ) {
+        if (designation.level == InvestmentAlertLevel.CAUTION) return
+        if (designation.level == InvestmentAlertLevel.WARNING &&
+            "DANGER_RELEASE_DOWNGRADE" in designation.reasonCodes
+        ) {
+            return
+        }
+        val latest = points.lastOrNull()
+        val haltDate: LocalDate
+        val eventKey: String
+        val detail: String
+        val description: String
+        when (designation.level) {
+            InvestmentAlertLevel.WARNING -> {
+                val evaluationDate = krxWarningAdditionalRiseEvaluationDate(designation, points) ?: return
+                haltDate = nthTradingDate(stock.market, evaluationDate, 1)
+                eventKey = "investment-warning-additional-rise-halt:${stock.id}:${designation.designatedOn}"
+                detail = "투자경고 지정 후 2거래일간 추가 급등"
+                description =
+                    "투자경고 지정일부터 2거래일 뒤 종가가 지정일 종가보다 40% 이상 높고 지정 전일 종가도 웃돌아 다음 거래일 정규장 거래를 정지합니다."
+            }
+
+            InvestmentAlertLevel.DANGER -> {
+                // The designation is announced after today's close and becomes effective on the
+                // stored next trading date. If another halt overlaps, retry on a later review day
+                // instead of overwriting that independent regulatory state.
+                val nextTradingDate = nthTradingDate(
+                    stock.market,
+                    latest?.date ?: marketDate(stock.market, at),
+                    1,
+                )
+                haltDate = maxOf(designation.designatedOn, nextTradingDate)
+                eventKey = "investment-danger-initial-halt:${stock.id}:${designation.designatedOn}"
+                detail = "최초 투자위험 지정"
+                description = "최초 투자위험 지정에 따라 지정 효력일의 정규장 거래를 하루 동안 정지합니다."
+            }
+
+            InvestmentAlertLevel.CAUTION -> return
+        }
+        if (newsEvents.any { it.id.contains(eventKey) }) return
+        val session = GameCalendar.regularSessionWindow(
+            stock.market,
+            haltDate,
+            runtimeClosedDates(stock.market, haltDate),
+        ) ?: return
+        val halt = TradingProtectionEngine.startInstrumentTradingHalt(
+            stock.id,
+            TradingHaltReason.REGULATORY_ACTION,
+            detail,
+            session.opensAt,
+            session.closesAt,
+        )
+        tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
+            scheduledInstrumentTradingHalts =
+                tradingProtectionSnapshot.scheduledInstrumentTradingHalts.orEmpty() + (eventKey to halt),
+        )
+        addProtectionNews(
+            id = eventKey,
+            title = "${stock.name} 다음 거래일 거래가 멈춰요",
+            description = description,
+            at = at,
+            stock = stock,
+            severity = EventSeverity.CRITICAL,
+        )
+    }
+
+    private fun nthTradingDate(market: Market, start: LocalDate, count: Int): LocalDate {
+        var date = start
+        var remaining = count
+        while (remaining > 0 && date < LocalDate(2040, 12, 31)) {
+            date = date.plus(1, DateTimeUnit.DAY)
+            if (isTradingDate(market, date)) remaining -= 1
+        }
+        return date
+    }
+
+    private fun investmentAlertLabel(level: InvestmentAlertLevel): String = when (level) {
+        InvestmentAlertLevel.CAUTION -> "투자주의"
+        InvestmentAlertLevel.WARNING -> "투자경고"
+        InvestmentAlertLevel.DANGER -> "투자위험"
+    }
+
+    private fun cancelOpenOrdersForStock(stockId: String, at: Instant, reason: String) {
+        for (index in orders.indices) {
+            val order = orders[index]
+            if (order.stockId == stockId && order.isOpen) {
+                orders[index] = order.copy(
+                    status = OrderStatus.CANCELLED,
+                    updatedAt = at,
+                    rejectionReason = reason,
+                )
+            }
+        }
+    }
+
+    private fun syncListingTradingHalt(
+        stock: StockDefinition,
+        previous: ListingLifecycleState,
+        current: ListingLifecycleState,
+        at: Instant,
+    ) {
+        val halts = tradingProtectionSnapshot.instrumentTradingHalts.toMutableMap()
+        val scheduledHalts = tradingProtectionSnapshot.scheduledInstrumentTradingHalts.orEmpty().toMutableMap()
+        val existing = halts[stock.id]
+        val existingIsListingHalt = existing?.reason in LISTING_TRADING_HALT_REASONS
+        val desiredListingHaltReason = if (current.status == ListingLifecycleStatus.DELISTING_SCHEDULED) {
+            TradingHaltReason.DELISTING_PROCESS
+        } else {
+            TradingHaltReason.LISTING_MAINTENANCE_REVIEW
+        }
+        if (current.isTerminal) {
+            // The listing lifecycle is now the terminal source of truth. Keeping an ACTIVE halt
+            // would later emit a false "trading resumed" transition for a delisted security.
+            halts.remove(stock.id)
+            scheduledHalts.entries.removeAll { (_, halt) -> halt.stockId == stock.id }
+        } else if (!current.isTradable &&
+            (
+                existing == null || existing.status == TradingHaltStatus.RELEASED ||
+                    existingIsListingHalt && existing.reason != desiredListingHaltReason
+                )
+        ) {
+            halts[stock.id] = TradingProtectionEngine.startInstrumentTradingHalt(
+                stockId = stock.id,
+                reason = desiredListingHaltReason,
+                detail = current.activeReason?.displayName ?: current.status.displayName,
+                startedAt = at,
+            )
+        } else if (!previous.isTradable && current.isTradable && existingIsListingHalt &&
+            existing?.status == TradingHaltStatus.ACTIVE
+        ) {
+            halts[stock.id] = TradingProtectionEngine.releaseInstrumentTradingHalt(
+                existing,
+                at,
+                "상장 유지 조치가 해제됐습니다.",
+            )
+        }
+        tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
+            instrumentTradingHalts = halts,
+            scheduledInstrumentTradingHalts = scheduledHalts,
+        )
+    }
+
+    private fun syncEventDrivenTradingHalts(from: Instant, to: Instant) {
+        val newDisclosureEvents = newsEvents.filter { event ->
+            event.startsAt >= from && event.startsAt < to && event.affectedStockIds.isNotEmpty() &&
+                (
+                    event.id.startsWith("accounting_issue:") ||
+                        event.id.startsWith("major_lawsuit:") ||
+                        event.id.startsWith("factory_accident:")
+                    )
+        }
+        if (newDisclosureEvents.isEmpty()) return
+        val halts = tradingProtectionSnapshot.instrumentTradingHalts.toMutableMap()
+        val scheduledHalts = tradingProtectionSnapshot.scheduledInstrumentTradingHalts.orEmpty().toMutableMap()
+        for (event in newDisclosureEvents) {
+            for (stockId in event.affectedStockIds) {
+                val stock = stockById[stockId] ?: continue
+                if (!stock.market.isKorean) continue
+                val releaseAt = event.startsAt + KRX_MATERIAL_DISCLOSURE_HALT_MINUTES.minutes
+                val halt = TradingProtectionEngine.startInstrumentTradingHalt(
+                    stockId = stockId,
+                    reason = TradingHaltReason.MATERIAL_DISCLOSURE,
+                    detail = "중요정보 공시 확인",
+                    startedAt = event.startsAt,
+                    scheduledReleaseAt = releaseAt,
+                )
+                val current = halts[stockId]
+                if (current == null || !TradingProtectionEngine.isInstrumentHaltActive(current, event.startsAt)) {
+                    halts[stockId] = halt
+                } else {
+                    // 원인별 정지를 보존해 첫 정지가 끝난 뒤에도 두 번째 공시의 남은 구간을
+                    // permission·가격봉·주문 체결이 동일하게 차감하도록 한다.
+                    scheduledHalts["material-disclosure:$stockId:${event.id}"] = halt
+                }
+                addProtectionNews(
+                    id = "material-disclosure:$stockId:${event.startsAt.epochSeconds}",
+                    title = "${stock.name} 거래가 잠시 멈췄어요",
+                    description = "중요정보를 확인할 시간을 위해 30분간 거래를 정지합니다. 기존 주문은 취소할 수 있습니다.",
+                    at = event.startsAt,
+                    stock = stock,
+                    severity = EventSeverity.MAJOR,
+                )
+            }
+        }
+        tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
+            instrumentTradingHalts = halts,
+            scheduledInstrumentTradingHalts = scheduledHalts,
+        )
+    }
+
+    private fun applyListingFinalDisposition(
+        stock: StockDefinition,
+        state: ListingLifecycleState,
+        at: Instant,
+    ) {
+        val disposition = state.finalDisposition ?: return
+        terminatedInstrumentIds += stock.id
+        pendingCorporateActions.removeAll { it.stockId == stock.id }
+        pendingEtfReferenceReturns.remove(stock.id)
+        pendingClosedEventLogReturns.remove(stock.id)
+
+        when (disposition.type) {
+            ListingFinalDispositionType.CASH_LIQUIDATION -> settleListingCashDisposition(
+                stock = stock,
+                at = at,
+                disposition = disposition,
+                reason = disposition.type.displayName,
+            )
+
+            ListingFinalDispositionType.MARKET_SALE -> settleListingMarketSale(
+                stock = stock,
+                at = at,
+                unitPrice = quotes.getValue(stock.id).price,
+                reason = disposition.type.displayName,
+            )
+
+            ListingFinalDispositionType.WORTHLESS_DISPOSITION -> {
+                val quote = quotes.getValue(stock.id)
+                quotes[stock.id] = quote.copy(
+                    timestamp = at,
+                    price = 0.0,
+                    open = 0.0,
+                    high = 0.0,
+                    low = 0.0,
+                    volume = 0L,
+                    bidPrice = null,
+                    askPrice = null,
+                    bidQuantity = 0.0,
+                    askQuantity = 0.0,
+                    session = MarketSession.CLOSED,
+                )
+                holdings[stock.id]?.let { holding ->
+                    // Keep the legal right and FIFO lot at zero value. A tax loss is not invented
+                    // until a later legally recognizable disposal exists.
+                    holdings[stock.id] = holding.copy(currentPrice = 0.0)
+                }
+            }
+
+            ListingFinalDispositionType.OTC_TRANSFER -> {
+                // This simulator has no OTC order venue. The frozen holding remains visible as a
+                // non-tradable right. Until an OTC valuation engine exists it has zero portfolio
+                // value, rather than silently retaining the last exchange quote forever.
+                quotes[stock.id] = quotes.getValue(stock.id).copy(
+                    timestamp = at,
+                    price = 0.0,
+                    open = 0.0,
+                    high = 0.0,
+                    low = 0.0,
+                    volume = 0L,
+                    bidPrice = null,
+                    askPrice = null,
+                    bidQuantity = 0.0,
+                    askQuantity = 0.0,
+                    session = MarketSession.CLOSED,
+                )
+                holdings[stock.id]?.let { holding ->
+                    holdings[stock.id] = holding.copy(currentPrice = 0.0)
+                }
+            }
+        }
+    }
+
+    private fun settleListingCashDisposition(
+        stock: StockDefinition,
+        at: Instant,
+        disposition: ListingFinalDisposition,
+        reason: String,
+    ) {
+        val holding = holdings.remove(stock.id) ?: return
+        val quantity = requireNotNull(disposition.entitledQuantity)
+        require(kotlin.math.abs(quantity - holding.quantity) <= QUANTITY_EPSILON) {
+            "청산 효력일에 확정된 권리 수량과 보유 수량이 일치하지 않습니다."
+        }
+        // A contractual recovery can legally be zero. A minimum exchange tick only applies to an
+        // order-book trade and must never manufacture liquidation proceeds.
+        val price = requireNotNull(disposition.cashPerUnit).coerceAtLeast(0.0)
+        val gross = roundCurrency(price * quantity, stock.currency)
+        val paidOn = marketDate(stock.market, at)
+        val taxBreakdown = if (stock.market.isKorean && stock.etfProfile != null) {
+            val acquisitionValueKrw = round(requireNotNull(disposition.entitledCostBasis)).toLong()
+            val positiveGain = (gross.toLong() - acquisitionValueKrw).coerceAtLeast(0L)
+            domesticEtfSaleTaxCalculator.calculate(
+                DomesticEtfSaleTaxRequest(
+                    taxCategory = stock.etfProfile.taxCategory,
+                    grossProceedsKrw = gross.toLong(),
+                    acquisitionValueKrw = acquisitionValueKrw,
+                    taxableStandardGainKrw = round(
+                        positiveGain * stock.etfProfile.taxablePriceGainRatio,
+                    ).toLong(),
+                    soldOn = paidOn,
+                ),
+            )
+        } else {
+            null
+        }
+        val saleTax = taxBreakdown?.totalTax?.amount ?: 0.0
+        cash[stock.currency] = roundCurrency(
+            cash.getValue(stock.currency) + gross - saleTax,
+            stock.currency,
+        )
+        val exchangeRateToKrw = if (stock.currency == Currency.USD) macro.usdKrw else 1.0
+        val fifoSale = fifoCostBasisBook.sell(
+            stockId = stock.id,
+            soldOn = paidOn,
+            quantity = quantity,
+            grossProceedsKrw = round(gross * exchangeRateToKrw).toLong(),
+            directSellingCostsKrw = round(saleTax * exchangeRateToKrw).toLong(),
+        )
+        fifoCostBasisBook = fifoSale.updatedBook
+        val (taxTreatment, assessmentNotes) = assessStockGainTreatment(stock, paidOn, holding)
+        val orderId = nextId("listing-disposition-order")
+        val tradeId = nextId("trade")
+        val accountingSequence = nextSequence++
+        orders += Order(
+            id = orderId,
+            stockId = stock.id,
+            side = OrderSide.SELL,
+            type = OrderType.MARKET,
+            quantity = quantity,
+            createdAt = at,
+            status = OrderStatus.FILLED,
+            filledQuantity = quantity,
+            averageFilledPrice = price,
+            updatedAt = at,
+            timeInForce = TimeInForce.DAY,
+            rejectionReason = reason,
+            isNonMarketDisposition = true,
+        )
+        trades += Trade(
+            id = tradeId,
+            orderId = orderId,
+            stockId = stock.id,
+            side = OrderSide.SELL,
+            quantity = quantity,
+            price = price,
+            currency = stock.currency,
+            executedAt = at,
+            tax = saleTax,
+            settlementKind = TradeSettlementKind.CONTRACTUAL_CASH_SETTLEMENT,
+            settlementDateOverride = paidOn,
+            accountingSequence = accountingSequence,
+        )
+        transactionCosts += TransactionCostRecord(
+            tradeId = tradeId,
+            stockId = stock.id,
+            market = stock.market,
+            paidAt = at,
+            currency = stock.currency,
+            commission = 0.0,
+            saleTax = saleTax,
+            exchangeRateToKrw = exchangeRateToKrw,
+            taxBreakdown = taxBreakdown,
+        )
+        realizedGains += RealizedGainRecord(
+            tradeId = tradeId,
+            stockId = stock.id,
+            market = stock.market,
+            soldAt = at,
+            settlementDate = paidOn,
+            quantity = quantity,
+            proceeds = gross,
+            costBasis = requireNotNull(disposition.entitledCostBasis),
+            commission = 0.0,
+            saleTax = saleTax,
+            currency = stock.currency,
+            exchangeRateToKrw = exchangeRateToKrw,
+            taxTreatment = taxTreatment,
+            assessmentNotes = assessmentNotes + "$reason 지급일의 환율과 원천징수를 처분 원장에 반영했습니다.",
+            taxGrossProceedsKrw = fifoSale.grossProceedsKrw,
+            taxCostBasisKrw = fifoSale.allocatedCostBasisKrw,
+            taxDirectSellingCostsKrw = fifoSale.directSellingCostsKrw,
+            taxGainKrw = fifoSale.realizedGainKrw,
+            taxableFinancialIncomeKrw = if (
+                stock.etfProfile?.taxCategory == EtfTaxCategory.KOREAN_OTHER
+            ) {
+                taxBreakdown?.taxableBase?.minorUnits ?: 0L
+            } else {
+                0L
+            },
+        )
+        taxExchangeRatesByTradeId[tradeId] = exchangeRateToKrw
+        // This record is created on the contractual cash-payment date, so the settlement FX is
+        // already known and must not enter the pending T+ settlement queue.
+        recalculateAnnualTax(paidOn.year)
+    }
+
+    /** A closing-auction/cleanup-period sale uses the same fees and Korean sale taxes as an order. */
+    private fun settleListingMarketSale(
+        stock: StockDefinition,
+        at: Instant,
+        unitPrice: Double,
+        reason: String,
+    ) {
+        val holding = holdings.remove(stock.id) ?: return
+        val price = MarketMicrostructure.roundNearest(
+            stock,
+            unitPrice.coerceAtLeast(MarketMicrostructure.minimumPrice(stock.market)),
+        )
+        val gross = roundCurrency(price * holding.quantity, stock.currency)
+        val tradedOn = marketDate(stock.market, at)
+        val settledOn = settlementDate(stock.market, tradedOn)
+        val feeBreakdown = brokerFeeCalculator.calculate(
+            BrokerFeeRequest(
+                market = stock.market,
+                side = OrderSide.SELL,
+                grossAmount = money(gross, stock.currency),
+                quantity = holding.quantity,
+                tradedOn = tradedOn,
+            ),
+        )
+        val commission = feeBreakdown.totalFees.amount
+        val taxBreakdown = when {
+            !stock.market.isKorean -> null
+            stock.etfProfile != null -> {
+                val acquisitionValueKrw = round(holding.averagePrice * holding.quantity).toLong()
+                val positiveGain = (gross.toLong() - acquisitionValueKrw).coerceAtLeast(0L)
+                domesticEtfSaleTaxCalculator.calculate(
+                    DomesticEtfSaleTaxRequest(
+                        taxCategory = stock.etfProfile.taxCategory,
+                        grossProceedsKrw = gross.toLong(),
+                        acquisitionValueKrw = acquisitionValueKrw,
+                        taxableStandardGainKrw = round(
+                            positiveGain * stock.etfProfile.taxablePriceGainRatio,
+                        ).toLong(),
+                        soldOn = tradedOn,
+                    ),
+                )
+            }
+            else -> domesticSaleTaxCalculator.calculate(
+                DomesticSaleTaxRequest(
+                    market = stock.market,
+                    grossProceedsKrw = gross.toLong(),
+                    soldOn = tradedOn,
+                ),
+            )
+        }
+        val saleTax = taxBreakdown?.totalTax?.amount ?: 0.0
+        cash[stock.currency] = roundCurrency(
+            cash.getValue(stock.currency) + gross - commission - saleTax,
+            stock.currency,
+        )
+        val exchangeRateToKrw = if (stock.currency == Currency.USD) macro.usdKrw else 1.0
+        val fifoSale = fifoCostBasisBook.sell(
+            stockId = stock.id,
+            soldOn = settledOn,
+            quantity = holding.quantity,
+            grossProceedsKrw = round(gross * exchangeRateToKrw).toLong(),
+            directSellingCostsKrw = round((commission + saleTax) * exchangeRateToKrw).toLong(),
+        )
+        fifoCostBasisBook = fifoSale.updatedBook
+        val (taxTreatment, assessmentNotes) = assessStockGainTreatment(stock, tradedOn, holding)
+        val orderId = nextId("listing-market-sale-order")
+        val tradeId = nextId("trade")
+        val accountingSequence = nextSequence++
+        orders += Order(
+            id = orderId,
+            stockId = stock.id,
+            side = OrderSide.SELL,
+            type = OrderType.MARKET,
+            quantity = holding.quantity,
+            createdAt = at,
+            status = OrderStatus.FILLED,
+            filledQuantity = holding.quantity,
+            averageFilledPrice = price,
+            updatedAt = at,
+            timeInForce = TimeInForce.DAY,
+            rejectionReason = reason,
+        )
+        trades += Trade(
+            id = tradeId,
+            orderId = orderId,
+            stockId = stock.id,
+            side = OrderSide.SELL,
+            quantity = holding.quantity,
+            price = price,
+            currency = stock.currency,
+            executedAt = at,
+            commission = commission,
+            tax = saleTax,
+            accountingSequence = accountingSequence,
+        )
+        transactionCosts += TransactionCostRecord(
+            tradeId = tradeId,
+            stockId = stock.id,
+            market = stock.market,
+            paidAt = at,
+            currency = stock.currency,
+            commission = commission,
+            saleTax = saleTax,
+            exchangeRateToKrw = exchangeRateToKrw,
+            feeBreakdown = feeBreakdown,
+            taxBreakdown = taxBreakdown,
+        )
+        realizedGains += RealizedGainRecord(
+            tradeId = tradeId,
+            stockId = stock.id,
+            market = stock.market,
+            soldAt = at,
+            settlementDate = settledOn,
+            quantity = holding.quantity,
+            proceeds = gross,
+            costBasis = holding.averagePrice * holding.quantity,
+            commission = commission,
+            saleTax = saleTax,
+            currency = stock.currency,
+            exchangeRateToKrw = exchangeRateToKrw,
+            taxTreatment = taxTreatment,
+            assessmentNotes = assessmentNotes + "$reason 처분을 일반 매도 원장에 반영했습니다.",
+            taxGrossProceedsKrw = fifoSale.grossProceedsKrw,
+            taxCostBasisKrw = fifoSale.allocatedCostBasisKrw,
+            taxDirectSellingCostsKrw = fifoSale.directSellingCostsKrw,
+            taxGainKrw = fifoSale.realizedGainKrw,
+            taxableFinancialIncomeKrw = if (
+                stock.etfProfile?.taxCategory == EtfTaxCategory.KOREAN_OTHER
+            ) {
+                taxBreakdown?.taxableBase?.minorUnits ?: 0L
+            } else {
+                0L
+            },
+        )
+        taxExchangeRatesByTradeId[tradeId] = exchangeRateToKrw
+        if (stock.market.isUnitedStates) pendingTaxSettlementTradeIds += tradeId
+        recalculateAnnualTax(settledOn.year)
+    }
+
     /** ETN처럼 계약상 만기가 있는 상품은 사전 알림과 실제 상환을 캠페인 원장에 남긴다. */
     private fun processInstrumentLifecycle(at: Instant) {
         for (stock in stocks) {
             if (stock.id in terminatedInstrumentIds) continue
             val maturity = instrumentMaturityDate(stock) ?: continue
-            val marketDate = marketDate(stock.market, at)
-            val milestone = when (marketDate) {
+            val localDate = marketDate(stock.market, at)
+            val effectiveMaturityDate = nextTradingDateOnOrAfter(stock.market, maturity)
+            val milestone = when (localDate) {
                 maturity.minus(5, DateTimeUnit.YEAR) -> "5년"
                 maturity.minus(1, DateTimeUnit.YEAR) -> "1년"
                 maturity.minus(90, DateTimeUnit.DAY) -> "90일"
@@ -899,23 +3073,37 @@ internal class SimulatorRuntime(
                 else -> null
             }
             if (milestone != null) announceMaturityMilestone(stock, maturity, milestone, at)
-            if (marketDate >= maturity) {
-                redeemMaturedInstrument(stock, maturity, at)
-                continue
-            }
-            val earlyTermination = newsEvents.asSequence()
-                .filter { event ->
-                    stock.id in event.affectedStockIds && at >= event.endsAt &&
-                        (event.id.startsWith(ETN_CALL_EVENT_PREFIX) ||
-                            event.id.startsWith(ETN_ACCELERATION_EVENT_PREFIX))
-                }
-                .filter { event ->
-                    !event.id.startsWith(ETN_CALL_EVENT_PREFIX) || stock.identityProfile?.callable == true
-                }
-                .minByOrNull(GameEvent::startsAt)
-            if (earlyTermination != null) {
-                redeemMaturedInstrument(stock, maturity, at, earlyTermination)
-            }
+            if (localDate != effectiveMaturityDate) continue
+            val eventId = "$ETN_MATURITY_EVENT_PREFIX${stock.id}:$maturity"
+            if (newsEvents.any { it.id == eventId }) continue
+            val session = GameCalendar.regularSessionWindow(
+                stock.market,
+                effectiveMaturityDate,
+                runtimeClosedDates(stock.market, effectiveMaturityDate),
+            ) ?: continue
+            if (at >= session.closesAt) continue
+            // Announce during the maturity date, then let the same listing engine used by ETF
+            // liquidations move through scheduled delisting -> cash pending -> payment. This
+            // preserves a final valuation session and prevents midnight auto-payment.
+            val event = GameEvent(
+                id = eventId,
+                title = "${stock.name} 계약상 만기일이에요",
+                description = "$maturity 계약 만기${if (effectiveMaturityDate != maturity) "의 다음 거래일인 $effectiveMaturityDate" else ""} 정규장 종료 뒤 최종 지표가치를 확정하고 현금 상환 절차를 시작합니다.",
+                scope = EventScope.STOCK,
+                type = EventType.FUND_OPERATION,
+                severity = EventSeverity.MAJOR,
+                impact = GameEventImpact(direction = ImpactDirection.NEUTRAL),
+                startsAt = at,
+                durationHours = 24,
+                affectedMarkets = setOf(stock.market),
+                affectedSectors = setOf(stock.sector),
+                affectedStockIds = setOf(stock.id),
+                sourceLabel = "공식 상품조건 기반 캠페인 일정",
+                listingRiskTags = setOf(ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION),
+                listingFinalDispositionHint = ListingFinalDispositionType.CASH_LIQUIDATION,
+            )
+            newsEvents += event
+            activeEvents += event
         }
     }
 
@@ -967,6 +3155,7 @@ internal class SimulatorRuntime(
         terminatedInstrumentIds += stock.id
         pendingCorporateActions.removeAll { it.stockId == stock.id }
         pendingEtfReferenceReturns.remove(stock.id)
+        pendingClosedEventLogReturns.remove(stock.id)
 
         for (index in orders.indices) {
             val order = orders[index]
@@ -979,108 +3168,48 @@ internal class SimulatorRuntime(
             }
         }
 
-        val holding = holdings.remove(stock.id)
-        if (holding != null) {
-            val marketPrice = quotes.getValue(stock.id).price
-            val indicativeValueProxy = history.getValue(stock.id)
-                .filter { it.volume > 0L }
-                .groupBy { marketDate(stock.market, it.endTime) }
-                .toSortedMap()
-                .values
-                .map { it.last().close }
-                .takeLast(5)
-                .takeIf { it.isNotEmpty() }
-                ?.average()
-                ?: marketPrice
-            val redemptionFactor = when {
-                isAcceleration -> {
-                    val recoveryBucket = (PriceEngine.stableHash64(earlyTerminationEvent.id) and Long.MAX_VALUE) % 41L
-                    0.40 + recoveryBucket.toDouble() / 100.0
-                }
-                isIssuerCall -> 1.0
-                else -> 1.0
+        val marketPrice = quotes.getValue(stock.id).price
+        val indicativeValueProxy = history.getValue(stock.id)
+            .filter { it.volume > 0L }
+            .groupBy { marketDate(stock.market, it.endTime) }
+            .toSortedMap()
+            .values
+            .map { it.last().close }
+            .takeLast(5)
+            .takeIf { it.isNotEmpty() }
+            ?.average()
+            ?: marketPrice
+        val redemptionFactor = when {
+            isAcceleration -> {
+                val recoveryBucket = (PriceEngine.stableHash64(earlyTerminationEvent.id) and Long.MAX_VALUE) % 41L
+                0.40 + recoveryBucket.toDouble() / 100.0
             }
-            val redemptionPrice = MarketMicrostructure.roundNearest(
-                stock.market,
-                (indicativeValueProxy * redemptionFactor)
-                    .coerceAtLeast(MarketMicrostructure.minimumPrice(stock.market)),
-            )
-            val gross = roundCurrency(redemptionPrice * holding.quantity, stock.currency)
-            cash[stock.currency] = roundCurrency(cash.getValue(stock.currency) + gross, stock.currency)
-            val tradedOn = marketDate(stock.market, at)
-            val settledOn = settlementDate(stock.market, tradedOn)
-            val exchangeRateToKrw = if (stock.currency == Currency.USD) macro.usdKrw else 1.0
-            val orderId = nextId("lifecycle-order")
-            val tradeId = nextId("trade")
-            val accountingSequence = nextSequence++
-            val fifoSale = fifoCostBasisBook.sell(
-                stockId = stock.id,
-                soldOn = settledOn,
-                quantity = holding.quantity,
-                grossProceedsKrw = round(gross * exchangeRateToKrw).toLong(),
-                directSellingCostsKrw = 0L,
-            )
-            fifoCostBasisBook = fifoSale.updatedBook
-            val (taxTreatment, assessmentNotes) = assessStockGainTreatment(stock, tradedOn, holding)
-            orders += Order(
-                id = orderId,
-                stockId = stock.id,
-                side = OrderSide.SELL,
-                type = OrderType.MARKET,
-                quantity = holding.quantity,
-                createdAt = at,
-                status = OrderStatus.FILLED,
-                filledQuantity = holding.quantity,
-                averageFilledPrice = redemptionPrice,
-                updatedAt = at,
-                timeInForce = TimeInForce.DAY,
-                rejectionReason = reasonLabel,
-            )
-            trades += Trade(
-                id = tradeId,
-                orderId = orderId,
-                stockId = stock.id,
-                side = OrderSide.SELL,
-                quantity = holding.quantity,
-                price = redemptionPrice,
-                currency = stock.currency,
-                executedAt = at,
-                accountingSequence = accountingSequence,
-            )
-            transactionCosts += TransactionCostRecord(
-                tradeId = tradeId,
-                stockId = stock.id,
-                market = stock.market,
-                paidAt = at,
-                currency = stock.currency,
-                commission = 0.0,
-                saleTax = 0.0,
-                exchangeRateToKrw = exchangeRateToKrw,
-            )
-            realizedGains += RealizedGainRecord(
-                tradeId = tradeId,
-                stockId = stock.id,
-                market = stock.market,
-                soldAt = at,
-                settlementDate = settledOn,
-                quantity = holding.quantity,
-                proceeds = gross,
-                costBasis = holding.averagePrice * holding.quantity,
-                commission = 0.0,
-                saleTax = 0.0,
-                currency = stock.currency,
-                exchangeRateToKrw = exchangeRateToKrw,
-                taxTreatment = taxTreatment,
-                assessmentNotes = assessmentNotes + "$reasonLabel 처분을 양도로 반영했습니다.",
-                taxGrossProceedsKrw = fifoSale.grossProceedsKrw,
-                taxCostBasisKrw = fifoSale.allocatedCostBasisKrw,
-                taxDirectSellingCostsKrw = 0L,
-                taxGainKrw = fifoSale.realizedGainKrw,
-            )
-            taxExchangeRatesByTradeId[tradeId] = exchangeRateToKrw
-            if (stock.market.isUnitedStates) pendingTaxSettlementTradeIds += tradeId
-            recalculateAnnualTax(settledOn.year)
+            isIssuerCall -> 1.0
+            else -> 1.0
         }
+        val redemptionPrice = MarketMicrostructure.roundNearest(
+            stock,
+            (indicativeValueProxy * redemptionFactor)
+                .coerceAtLeast(MarketMicrostructure.minimumPrice(stock.market)),
+        )
+        val holding = holdings[stock.id]
+        if (holding != null) {
+            settleListingCashDisposition(
+                stock = stock,
+                at = at,
+                disposition = ListingFinalDisposition(
+                    type = ListingFinalDispositionType.CASH_LIQUIDATION,
+                    effectiveOn = marketDate(stock.market, at),
+                    settlementDueOn = marketDate(stock.market, at),
+                    cashPerUnit = redemptionPrice,
+                    entitledQuantity = holding.quantity,
+                    entitledCostBasis = holding.costBasis,
+                ),
+                reason = reasonLabel,
+            )
+        }
+
+        synchronizeTerminatedListingLifecycle(stock, at, redemptionPrice, reasonLabel)
 
         newsEvents += GameEvent(
             id = eventId,
@@ -1115,12 +3244,80 @@ internal class SimulatorRuntime(
         )
     }
 
+    private fun synchronizeTerminatedListingLifecycle(
+        stock: StockDefinition,
+        at: Instant,
+        redemptionPrice: Double,
+        reasonLabel: String,
+    ) {
+        val previous = listingLifecycleStates.getValue(stock.id)
+        if (previous.status == ListingLifecycleStatus.TERMINATED) return
+        val tradingDate = marketDate(stock.market, at)
+        val disposition = ListingFinalDisposition(
+            type = ListingFinalDispositionType.CASH_LIQUIDATION,
+            effectiveOn = tradingDate,
+            settlementDueOn = tradingDate,
+            cashPerUnit = redemptionPrice,
+        )
+        val sequence = previous.ledgerSequence + 1L
+        val next = previous.copy(
+            status = ListingLifecycleStatus.TERMINATED,
+            activeReason = ListingLifecycleReason.ETN_MATURITY_OR_EARLY_REDEMPTION,
+            designatedOn = previous.designatedOn ?: tradingDate,
+            cureDeadline = null,
+            reviewDeadline = null,
+            scheduledDelistingOn = tradingDate,
+            settlementDueOn = tradingDate,
+            tradingAllowedUntilDelisting = false,
+            finalDisposition = disposition,
+            lastEvaluatedTradingDate = tradingDate,
+            ledgerSequence = sequence,
+        )
+        val ledgerEvent = ListingLifecycleLedgerEvent(
+            id = "${stock.id}:$tradingDate:$sequence:${ListingLifecycleEventKind.TERMINATED.name}",
+            sequence = sequence,
+            stockId = stock.id,
+            tradingDate = tradingDate,
+            kind = ListingLifecycleEventKind.TERMINATED,
+            fromStatus = previous.status,
+            toStatus = ListingLifecycleStatus.TERMINATED,
+            reason = ListingLifecycleReason.ETN_MATURITY_OR_EARLY_REDEMPTION,
+            level = ListingNoticeLevel.INFO,
+            title = "상품 종료",
+            summary = "$reasonLabel 처리가 끝나 상장 상품 생명주기를 종료했습니다.",
+            disposition = disposition,
+        )
+        listingLifecycleStates[stock.id] = next
+        listingLifecycleLedger += ledgerEvent
+
+        val existingHalt = tradingProtectionSnapshot.instrumentTradingHalts[stock.id]
+        if (existingHalt?.status == TradingHaltStatus.ACTIVE) {
+            tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
+                instrumentTradingHalts = tradingProtectionSnapshot.instrumentTradingHalts +
+                    (
+                        stock.id to TradingProtectionEngine.releaseInstrumentTradingHalt(
+                            existingHalt,
+                            at,
+                            "$reasonLabel 처리로 상장 상품이 종료됐습니다.",
+                        )
+                        ),
+            )
+        }
+    }
+
     private fun instrumentMaturityDate(stock: StockDefinition): LocalDate? =
         stock.identityProfile?.maturityDate?.let(LocalDate::parse)
 
+    private fun nextTradingDateOnOrAfter(market: Market, date: LocalDate): LocalDate {
+        var result = date
+        while (!isTradingDate(market, result) && result < LocalDate(2040, 12, 31)) {
+            result = result.plus(1, DateTimeUnit.DAY)
+        }
+        return result
+    }
+
     private fun isInstrumentMatured(stock: StockDefinition, at: Instant): Boolean =
-        stock.id in terminatedInstrumentIds ||
-            instrumentMaturityDate(stock)?.let { maturity -> marketDate(stock.market, at) >= maturity } == true
+        stock.id in terminatedInstrumentIds || listingLifecycleStates[stock.id]?.isTerminal == true
 
     private fun validateCorporateActionState(
         pending: List<PendingCorporateAction>,
@@ -1190,7 +3387,7 @@ internal class SimulatorRuntime(
         val actionAccountingSequence = nextSequence++
         val before = quotes.getValue(stock.id)
         fun adjustedPrice(value: Double): Double = MarketMicrostructure.roundNearest(
-            stock.market,
+            stock,
             (value / multiplier).coerceAtLeast(MarketMicrostructure.minimumPrice(stock.market)),
         )
         val postPrice = adjustedPrice(before.price)
@@ -1224,6 +3421,25 @@ internal class SimulatorRuntime(
             }
             bars.clear()
             bars.addAll(adjustedBars)
+        }
+        dailyTradingSurveillance[stock.id]?.let { points ->
+            val adjustedPoints = points.map { point ->
+                point.copy(
+                    close = adjustedPrice(point.close),
+                    volume = round(point.volume.toDouble() * multiplier).toLong().coerceAtLeast(0L),
+                )
+            }
+            points.clear()
+            points.addAll(adjustedPoints)
+        }
+        tradingProtectionSnapshot.investmentAlerts[stock.id]?.let { alert ->
+            val adjustedAlert = alert.copy(
+                preDesignationClose = alert.preDesignationClose?.let(::adjustedPrice),
+                preReleaseClose = alert.preReleaseClose?.let(::adjustedPrice),
+            )
+            tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
+                investmentAlerts = tradingProtectionSnapshot.investmentAlerts + (stock.id to adjustedAlert),
+            )
         }
         holdings[stock.id]?.let { holding ->
             holdings[stock.id] = holding.copy(
@@ -1439,6 +3655,7 @@ internal class SimulatorRuntime(
     private fun maybeAnnounceCorporateActions(from: Instant, to: Instant) {
         for (stock in stocks) {
             if (isInstrumentMatured(stock, to)) continue
+            if (listingLifecycleStates[stock.id]?.isSettlementPending == true) continue
             val crossedVenueClose = regularTradingFraction(stock.market, from, to) > 0.0 &&
                 regularTradingFraction(stock.market, to, to + 1.hours) == 0.0
             if (!crossedVenueClose) continue
@@ -1611,6 +3828,9 @@ internal class SimulatorRuntime(
             sectorHourlyReturns = sectorReturns,
             regionalEtfHourlyReturns = regionalReturns,
             marketChangeFromPreviousClose = if (resetMarketChange) emptyMap() else macro.marketChangeFromPreviousClose,
+            usCircuitBreakerLevel = tradingProtectionSnapshot.usMarketWideCircuitBreaker?.let { state ->
+                if (state.phase == UsMwcbPhase.NORMAL) 0 else (state.activeLevel?.ordinal?.plus(1) ?: 0)
+            } ?: 0,
         )
     }
 
@@ -1665,8 +3885,14 @@ internal class SimulatorRuntime(
         ScheduledEventOccurrence.isScheduledId(event.id) ||
             event.id.startsWith("instrument-maturity-") ||
             event.id.startsWith("instrument-early-redemption:") ||
+            event.id.startsWith("listing-lifecycle:") ||
+            event.id.startsWith(LISTING_RESOLUTION_EVENT_PREFIX) ||
+            event.id.startsWith("market-protection:") ||
             event.id.startsWith(ETN_CALL_EVENT_PREFIX) ||
             event.id.startsWith(ETN_ACCELERATION_EVENT_PREFIX) ||
+            event.id.startsWith(ETN_MATURITY_EVENT_PREFIX) ||
+            event.id.startsWith("etf_liquidation_approved:") ||
+            event.listingFinalDispositionHint != null ||
             event.id.contains("corporate-action")
 
     private fun applyScheduledMacro(emissions: List<ScheduledEventEmission>) {
@@ -1735,20 +3961,31 @@ internal class SimulatorRuntime(
 
     private fun processOpenOrders(
         bars: Map<String, PriceBar>,
-        fractions: Map<Market, Double>,
-        executedAt: Instant,
+        fractions: Map<String, Double>,
+        firstExecutionTimes: Map<String, Instant>,
+        protectionBeforeObservation: TradingProtectionSnapshot,
+        protectionImpact: TurnProtectionImpact,
     ) {
         for (index in orders.indices) {
             val order = orders[index]
             if (!order.isOpen || order.status == OrderStatus.PENDING) continue
             val stock = stockById.getValue(order.stockId)
-            if (fractions.getValue(stock.market) <= 0.0) continue
+            if (!listingLifecycleStates.getValue(stock.id).isTradable) continue
+            if ((fractions[stock.id] ?: 0.0) <= 0.0) continue
             val bar = bars.getValue(stock.id)
+            if (bar.volume <= 0L) continue
             val fillPrice = when (order.type) {
                 OrderType.MARKET -> bar.open
                 OrderType.LIMIT -> limitFillPrice(order, bar)
             } ?: continue
-            executeOrder(index, fillPrice, executedAt)
+            val executionAt = firstExecutionTimes[stock.id] ?: bar.startTime
+            val newlyRestrictedAt = protectionImpact.firstNewRestrictionAt(stock)
+            val executionSnapshot = if (newlyRestrictedAt != null && executionAt < newlyRestrictedAt) {
+                protectionBeforeObservation
+            } else {
+                tradingProtectionSnapshot
+            }
+            executeOrder(index, fillPrice, executionAt, executionSnapshot)
         }
     }
 
@@ -1761,6 +3998,7 @@ internal class SimulatorRuntime(
     }
 
     private fun tryImmediateExecution(index: Int, stock: StockDefinition) {
+        if (!listingLifecycleStates.getValue(stock.id).isTradable) return
         val session = marketSessionAtCurrentTime(stock.market)
         if (session != MarketSession.REGULAR) return
         // At an hourly opening boundary the ETF quote still represents yesterday's
@@ -1784,10 +4022,26 @@ internal class SimulatorRuntime(
         if (executable) executeOrder(index, price, currentTime)
     }
 
-    private fun executeOrder(index: Int, price: Double, executedAt: Instant) {
+    private fun executeOrder(
+        index: Int,
+        price: Double,
+        executedAt: Instant,
+        protectionSnapshot: TradingProtectionSnapshot = tradingProtectionSnapshot,
+    ) {
         val order = orders[index]
         if (!order.isOpen) return
         val stock = stockById.getValue(order.stockId)
+        val protectionDecision = TradingProtectionEngine.permission(
+            protectionSnapshot,
+            TradingProtectionRequest(
+                market = stock.market,
+                action = TradingProtectionAction.EXECUTE_TRADE,
+                stockId = stock.id,
+                proposedExecutionPrice = price,
+            ),
+            executedAt,
+        )
+        if (!protectionDecision.allowed || !listingLifecycleStates.getValue(stock.id).isTradable) return
         val quantity = order.remainingQuantity
         val gross = roundCurrency(price * quantity, stock.currency)
         val tradedOn = marketDate(stock.market, executedAt)
@@ -2044,6 +4298,7 @@ internal class SimulatorRuntime(
     private fun processScheduledDividends(from: Instant, to: Instant) {
         for (stock in stocks) {
             if (isInstrumentMatured(stock, to)) continue
+            if (listingLifecycleStates[stock.id]?.isSettlementPending == true) continue
             if (stock.dividendYield <= 0.0) continue
             val fromDate = marketDate(stock.market, from)
             val payDate = marketDate(stock.market, to)
@@ -2057,9 +4312,9 @@ internal class SimulatorRuntime(
             if (periodsPerYear <= 0) continue
             val grossPerUnit = quoteBeforeDistribution.price * stock.dividendYield / periodsPerYear
             val adjustedPrice = MarketMicrostructure.roundNearest(
-                stock.market,
+                stock,
                 (quoteBeforeDistribution.price - grossPerUnit)
-                    .coerceAtLeast(MarketMicrostructure.tickSize(stock.market, quoteBeforeDistribution.price)),
+                    .coerceAtLeast(MarketMicrostructure.tickSize(stock, quoteBeforeDistribution.price)),
             )
             quotes[stock.id] = quoteBeforeDistribution.copy(
                 price = adjustedPrice,
@@ -2189,12 +4444,19 @@ internal class SimulatorRuntime(
 
     private fun isTradingDate(market: Market, date: LocalDate): Boolean {
         if (date.dayOfWeek in WEEKEND) return false
-        return date.year !in 2026..2040 || date !in DefaultMarketHolidays.closedDates(market, date.year)
+        return date !in runtimeClosedDates(market, date)
     }
 
     private fun updateHoldingPrices() {
         for ((stockId, holding) in holdings.toMap()) {
-            holdings[stockId] = holding.copy(currentPrice = quotes.getValue(stockId).price)
+            val pendingCashDisposition = listingLifecycleStates[stockId]
+                ?.takeIf { it.status == ListingLifecycleStatus.LIQUIDATION_PENDING }
+                ?.finalDisposition
+                ?.takeIf { it.type == ListingFinalDispositionType.CASH_LIQUIDATION }
+            val contractualUnitValue = pendingCashDisposition?.cashPerUnit
+            holdings[stockId] = holding.copy(
+                currentPrice = contractualUnitValue ?: quotes.getValue(stockId).price,
+            )
         }
     }
 
@@ -2206,7 +4468,8 @@ internal class SimulatorRuntime(
         for (market in Market.entries) {
             if (fractions.getValue(market) <= 0.0) continue
             val marketBars = stocks.filter { stock ->
-                stock.hasCorporateEarnings && if (market.isUnitedStates) {
+                listingLifecycleStates.getValue(stock.id).isIndexEligible &&
+                    stock.hasCorporateEarnings && if (market.isUnitedStates) {
                     stock.market.isUnitedStates
                 } else {
                     stock.market == market
@@ -2225,11 +4488,27 @@ internal class SimulatorRuntime(
         previousClosesByStockId: Map<String, Double>,
         fractions: Map<Market, Double>,
     ) {
+        val calculated = calculateMarketIndices(timestamp, bars, previousClosesByStockId, fractions)
+        marketIndices.clear()
+        marketIndices.putAll(calculated)
+        for ((id, snapshot) in calculated) {
+            val values = marketIndexHistory.getOrPut(id) { ArrayDeque() }
+            values.addLast(snapshot)
+            while (values.size > MAX_INDEX_BARS) values.removeFirst()
+        }
+    }
+
+    private fun calculateMarketIndices(
+        timestamp: Instant,
+        bars: Map<String, PriceBar>,
+        previousClosesByStockId: Map<String, Double>,
+        fractions: Map<Market, Double>,
+    ): Map<MarketIndexId, MarketIndexSnapshot> {
         val hasUsTrading = fractions.any { (market, fraction) -> market.isUnitedStates && fraction > 0.0 }
-        val calculated = marketIndexEngine.calculate(
+        return marketIndexEngine.calculate(
             MarketIndexCalculationInput(
                 timestamp = timestamp,
-                stocks = stocks,
+                stocks = stocks.filter { listingLifecycleStates.getValue(it.id).isIndexEligible },
                 barsByStockId = bars,
                 previousCloseByStockId = previousClosesByStockId,
                 previousIndices = marketIndices,
@@ -2238,13 +4517,1167 @@ internal class SimulatorRuntime(
                 usTradingFraction = if (hasUsTrading) 1.0 else 0.0,
             ),
         )
-        marketIndices.clear()
-        marketIndices.putAll(calculated)
-        for ((id, snapshot) in calculated) {
-            val values = marketIndexHistory.getOrPut(id) { ArrayDeque() }
-            values.addLast(snapshot)
-            while (values.size > MAX_INDEX_BARS) values.removeFirst()
+    }
+
+    private fun marketProtectionTradingFraction(
+        market: Market,
+        from: Instant,
+        to: Instant,
+        ordinaryFraction: Double,
+        additionalBlocks: List<RuntimeTradingInterval> = emptyList(),
+    ): Double {
+        if (ordinaryFraction <= 0.0) return 0.0
+        return runtimeTradingFraction(
+            from,
+            to,
+            runtimeTradableIntervals(
+                market,
+                from,
+                to,
+                marketProtectionBlocks(market, from, to) + additionalBlocks,
+            ),
+        )
+    }
+
+    private fun instrumentProtectionTradingIntervals(
+        stock: StockDefinition,
+        from: Instant,
+        to: Instant,
+        additionalBlocks: List<RuntimeTradingInterval> = emptyList(),
+    ): List<RuntimeTradingInterval> {
+        if (!listingLifecycleStates.getValue(stock.id).isTradable) return emptyList()
+        val blocks = marketProtectionBlocks(stock.market, from, to).toMutableList()
+        tradingProtectionSnapshot.instrumentTradingHalts[stock.id]?.let { halt ->
+            if (halt.status == TradingHaltStatus.ACTIVE) {
+                runtimeTradingBlock(halt.startedAt, halt.scheduledReleaseAt ?: to, from, to)?.let(blocks::add)
+            }
         }
+        tradingProtectionSnapshot.scheduledInstrumentTradingHalts.orEmpty().values
+            .asSequence()
+            .filter { halt -> halt.stockId == stock.id && halt.status == TradingHaltStatus.ACTIVE }
+            .forEach { halt ->
+                runtimeTradingBlock(
+                    halt.startedAt,
+                    halt.scheduledReleaseAt ?: to,
+                    from,
+                    to,
+                )?.let(blocks::add)
+            }
+        tradingProtectionSnapshot.krxVolatilityInterruptions[stock.id]?.let { vi ->
+            if (vi.phase == KrxViPhase.CALL_AUCTION) {
+                runtimeTradingBlock(
+                    vi.triggeredAt ?: from,
+                    requireNotNull(vi.auctionEndsAt),
+                    from,
+                    to,
+                )?.let(blocks::add)
+            }
+        }
+        tradingProtectionSnapshot.usLuldStates[stock.id]?.let { luld ->
+            val luldBlock = when (luld.phase) {
+                UsLuldPhase.NORMAL -> null
+                UsLuldPhase.LIMIT_STATE -> {
+                    val startsAt = requireNotNull(luld.limitStateDeadline)
+                    runtimeTradingBlock(
+                        startsAt,
+                        startsAt + TradingProtectionRules.US_LULD_PAUSE + US_REOPENING_AUCTION_MINUTES.minutes,
+                        from,
+                        to,
+                    )
+                }
+                UsLuldPhase.TRADING_PAUSE -> runtimeTradingBlock(
+                    luld.pauseStartedAt ?: from,
+                    requireNotNull(luld.pauseEndsAt) + US_REOPENING_AUCTION_MINUTES.minutes,
+                    from,
+                    to,
+                )
+                UsLuldPhase.REOPENING_AUCTION -> runtimeTradingBlock(
+                    luld.pauseStartedAt ?: luld.reopeningStartedAt ?: from,
+                    requireNotNull(luld.reopeningStartedAt) + US_REOPENING_AUCTION_MINUTES.minutes,
+                    from,
+                    to,
+                )
+                UsLuldPhase.CLOSING_AUCTION_ONLY,
+                UsLuldPhase.CLOSED_FOR_DAY,
+                -> runtimeTradingBlock(luld.pauseStartedAt ?: from, to, from, to)
+            }
+            luldBlock?.let(blocks::add)
+        }
+        blocks += additionalBlocks
+        return runtimeTradableIntervals(stock.market, from, to, blocks)
+    }
+
+    private fun marketProtectionBlocks(
+        market: Market,
+        from: Instant,
+        to: Instant,
+    ): List<RuntimeTradingInterval> {
+        if (market.isKorean) {
+            val state = tradingProtectionSnapshot.krxCircuitBreakers[market] ?: return emptyList()
+            if (state.tradingDate != marketDate(market, from)) return emptyList()
+            val end = when (state.phase) {
+                KrxCircuitBreakerPhase.NORMAL -> return emptyList()
+                KrxCircuitBreakerPhase.HALTED,
+                KrxCircuitBreakerPhase.REOPENING_CALL_AUCTION,
+                -> requireNotNull(state.reopeningEndsAt)
+                KrxCircuitBreakerPhase.CLOSED_FOR_DAY -> to
+            }
+            return listOfNotNull(runtimeTradingBlock(state.triggeredAt ?: from, end, from, to))
+        }
+
+        val state = tradingProtectionSnapshot.usMarketWideCircuitBreaker ?: return emptyList()
+        if (state.tradingDate != marketDate(market, from) || state.phase == UsMwcbPhase.NORMAL) return emptyList()
+        val venue = state.venueStatuses[market] ?: return emptyList()
+        if (venue.phase == UsMwcbVenuePhase.REOPENED) return emptyList()
+        val end = if (state.phase == UsMwcbPhase.CLOSED_FOR_DAY) {
+            to
+        } else {
+            requireNotNull(state.haltEndsAt) + usVenueReopeningDelayMinutes(market).minutes
+        }
+        return listOfNotNull(runtimeTradingBlock(state.triggeredAt ?: from, end, from, to))
+    }
+
+    private fun runtimeTradingBlock(
+        startsAt: Instant,
+        endsAt: Instant,
+        from: Instant,
+        to: Instant,
+    ): RuntimeTradingInterval? {
+        val start = maxOf(startsAt, from)
+        val end = minOf(endsAt, to)
+        return if (end > start) RuntimeTradingInterval(start, end) else null
+    }
+
+    private fun fractionAfter(
+        from: Instant,
+        to: Instant,
+        resumesAt: Instant,
+        maximum: Double,
+    ): Double {
+        if (resumesAt <= from) return maximum
+        if (resumesAt >= to) return 0.0
+        val wallFraction = (to - resumesAt).inWholeNanoseconds / 3_600_000_000_000.0
+        return minOf(maximum, wallFraction.coerceIn(0.0, 1.0))
+    }
+
+    private fun usVenueReopeningDelayMinutes(market: Market): Int = when (market) {
+        Market.NASDAQ, Market.NYSE_ARCA, Market.CBOE_BZX -> 1
+        Market.NYSE, Market.NYSE_AMERICAN -> 2
+        else -> 1
+    }
+
+    private fun advanceProtectionClock(at: Instant) {
+        val krxCircuitBreakers = tradingProtectionSnapshot.krxCircuitBreakers.toMutableMap()
+        for (market in listOf(Market.KOSPI, Market.KOSDAQ)) {
+            val date = marketDate(market, at)
+            val previous = krxCircuitBreakers[market]
+                ?: TradingProtectionEngine.initialKrxCircuitBreaker(market, date)
+            val next = if (previous.tradingDate != date) {
+                TradingProtectionEngine.initialKrxCircuitBreaker(market, date)
+            } else {
+                TradingProtectionEngine.advanceKrxCircuitBreaker(previous, at).state
+            }
+            krxCircuitBreakers[market] = next
+        }
+
+        val savedUsMwcb = tradingProtectionSnapshot.usMarketWideCircuitBreaker
+        val usDate = marketDate(Market.NYSE, at)
+        var usMwcb = if (savedUsMwcb == null || savedUsMwcb.tradingDate != usDate) {
+            TradingProtectionEngine.initialUsMwcb(usDate, at)
+        } else {
+            TradingProtectionEngine.advanceUsMwcb(savedUsMwcb, at).state
+        }
+        if (usMwcb.phase == UsMwcbPhase.REOPENING_AUCTIONS) {
+            val haltEnd = requireNotNull(usMwcb.haltEndsAt)
+            for (market in usMwcb.venueStatuses.keys.sortedBy(Market::name)) {
+                if (usMwcb.venueStatuses.getValue(market).phase != UsMwcbVenuePhase.REOPENED &&
+                    at >= haltEnd + usVenueReopeningDelayMinutes(market).minutes
+                ) {
+                    usMwcb = TradingProtectionEngine.completeUsMwcbVenueReopening(usMwcb, market, at).state
+                }
+            }
+        }
+
+        val halts = tradingProtectionSnapshot.instrumentTradingHalts.toMutableMap()
+        val scheduledHalts = tradingProtectionSnapshot.scheduledInstrumentTradingHalts.orEmpty().toMutableMap()
+        val releasedStockIds = linkedSetOf<String>()
+        for ((stockId, halt) in halts.toMap()) {
+            if (halt.status == TradingHaltStatus.ACTIVE &&
+                halt.scheduledReleaseAt?.let { at >= it } == true
+            ) {
+                halts[stockId] = TradingProtectionEngine.releaseInstrumentTradingHalt(
+                    halt,
+                    at,
+                    "예정된 거래정지 시간이 끝났습니다.",
+                )
+                releasedStockIds += stockId
+            }
+        }
+        // A future KRX alert halt is stored separately so a disclosure/listing halt can remain the
+        // current source of truth. When intervals overlap, the pending restriction takes over only
+        // for its remaining interval; there is no false resume transition between them.
+        for ((scheduleId, scheduled) in scheduledHalts.toMap().toSortedMap()) {
+            if (listingLifecycleStates[scheduled.stockId]?.isTerminal == true ||
+                scheduled.scheduledReleaseAt?.let { at >= it } == true
+            ) {
+                scheduledHalts.remove(scheduleId)
+                continue
+            }
+            if (at < scheduled.startedAt) continue
+            val current = halts[scheduled.stockId]
+            if (current != null && TradingProtectionEngine.isInstrumentHaltActive(current, at)) continue
+            halts[scheduled.stockId] = scheduled
+            scheduledHalts.remove(scheduleId)
+        }
+        for (stockId in releasedStockIds) {
+            val replacement = halts[stockId]
+            if (replacement != null && TradingProtectionEngine.isInstrumentHaltActive(replacement, at)) continue
+            addProtectionNews(
+                id = "halt-release:$stockId:${at.epochSeconds}",
+                title = "${stockById.getValue(stockId).name} 거래가 다시 시작됐어요",
+                description = "거래정지 사유가 해소돼 정규장 주문과 체결이 재개됩니다.",
+                at = at,
+                stock = stockById.getValue(stockId),
+                severity = EventSeverity.MINOR,
+            )
+        }
+
+        val vis = tradingProtectionSnapshot.krxVolatilityInterruptions.toMutableMap()
+        for ((stockId, vi) in vis.toMap()) {
+            if (vi.phase != KrxViPhase.CALL_AUCTION || at < requireNotNull(vi.auctionEndsAt)) continue
+            val stock = stockById.getValue(stockId)
+            val quote = quotes.getValue(stockId)
+            vis[stockId] = TradingProtectionEngine.evaluateKrxVi(
+                vi,
+                KrxViObservation(
+                    stockId = stockId,
+                    market = stock.market,
+                    observedAt = at,
+                    kind = vi.kind ?: KrxViKind.DYNAMIC,
+                    productClass = krxViProductClass(stock),
+                    session = KrxViSession.CONTINUOUS_AUCTION,
+                    referencePrice = vi.referencePrice ?: quote.price,
+                    potentialExecutionPrice = quote.price.coerceAtLeast(1.0),
+                    circuitBreakerPhase = krxCircuitBreakers.getValue(stock.market).phase,
+                ),
+            ).state
+        }
+
+        val luldStates = tradingProtectionSnapshot.usLuldStates.toMutableMap()
+        for (stock in stocks.filter { it.market.isUnitedStates }) {
+            var luld = luldStates[stock.id]
+            val quote = quotes.getValue(stock.id)
+            val local = GameCalendar.marketLocalDateTime(stock.market, at)
+            if (luld == null || luld.tradingDate != local.date) {
+                luld = TradingProtectionEngine.initialUsLuld(
+                    stock.id,
+                    stock.market,
+                    local.date,
+                    usLuldTier(stock),
+                    quote.previousClose.coerceAtLeast(0.01),
+                    quote.price.coerceAtLeast(0.01),
+                    at,
+                    local.time,
+                )
+            } else {
+                var transition = TradingProtectionEngine.evaluateUsLuld(
+                    luld,
+                    UsLuldObservation(at, local.time),
+                )
+                luld = transition.state
+                if (luld.phase == UsLuldPhase.REOPENING_AUCTION &&
+                    at >= requireNotNull(luld.reopeningStartedAt) + US_REOPENING_AUCTION_MINUTES.minutes
+                ) {
+                    luld = TradingProtectionEngine.completeUsLuldReopening(
+                        luld,
+                        quote.price.coerceAtLeast(0.01),
+                        at,
+                        local.time,
+                    ).state
+                }
+                if (luld.phase == UsLuldPhase.CLOSING_AUCTION_ONLY && local.time >= LocalTime(16, 0)) {
+                    luld = TradingProtectionEngine.closeUsLuldSession(luld).state
+                }
+            }
+            luldStates[stock.id] = luld
+        }
+
+        tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
+            krxCircuitBreakers = krxCircuitBreakers,
+            krxVolatilityInterruptions = vis,
+            instrumentTradingHalts = halts,
+            scheduledInstrumentTradingHalts = scheduledHalts,
+            usMarketWideCircuitBreaker = usMwcb,
+            usLuldStates = luldStates,
+        )
+        syncLegacyUsCircuitBreaker(usMwcb)
+    }
+
+    private fun syncLegacyUsCircuitBreaker(state: com.amond.kmpbook.domain.model.UsMwcbState) {
+        usCircuitBreakerState = UsCircuitBreakerState(
+            tradingDate = state.tradingDate,
+            triggeredLevels = state.triggeredLevels.mapTo(linkedSetOf()) {
+                when (it) {
+                    UsMwcbLevel.LEVEL_1 -> 1
+                    UsMwcbLevel.LEVEL_2 -> 2
+                    UsMwcbLevel.LEVEL_3 -> 3
+                }
+            },
+            haltedForDay = state.phase == UsMwcbPhase.CLOSED_FOR_DAY,
+        )
+    }
+
+    private fun evaluateTradingProtections(
+        from: Instant,
+        to: Instant,
+        bars: Map<String, PriceBar>,
+        previousPrices: Map<String, Double>,
+        provisionalIndices: Map<MarketIndexId, MarketIndexSnapshot>,
+        ordinaryTradingFractions: Map<Market, Double>,
+    ): TurnProtectionImpact {
+        val impact = TurnProtectionImpactBuilder()
+        evaluateKrxMarketProtections(from, to, bars, previousPrices, ordinaryTradingFractions, impact)
+        evaluateKrxVolatilityInterruptions(from, to, bars, ordinaryTradingFractions, impact)
+        evaluateUsMarketWideCircuitBreaker(
+            from,
+            to,
+            bars,
+            previousPrices,
+            provisionalIndices,
+            ordinaryTradingFractions,
+            impact,
+        )
+        evaluateUsLuldProtections(from, to, bars, ordinaryTradingFractions, impact)
+        return impact.build()
+    }
+
+    private fun evaluateKrxMarketProtections(
+        from: Instant,
+        to: Instant,
+        bars: Map<String, PriceBar>,
+        previousPrices: Map<String, Double>,
+        ordinaryTradingFractions: Map<Market, Double>,
+        impact: TurnProtectionImpactBuilder,
+    ) {
+        val cbStates = tradingProtectionSnapshot.krxCircuitBreakers.toMutableMap()
+        val sidecarStates = tradingProtectionSnapshot.krxSidecars.toMutableMap()
+        for (market in listOf(Market.KOSPI, Market.KOSDAQ)) {
+            if (ordinaryTradingFractions.getValue(market) <= 0.0) continue
+            val sessionInterval = runtimeTradableIntervals(market, from, to).firstOrNull() ?: continue
+            val local = GameCalendar.marketLocalDateTime(market, to)
+            val previousRate = krxMarketProxyRate(market, previousPrices)
+            val lowRate = krxMarketProxyRate(market, bars.mapValues { it.value.low })
+            val highRate = krxMarketProxyRate(market, bars.mapValues { it.value.high })
+            var cbState = cbStates[market]
+                ?: TradingProtectionEngine.initialKrxCircuitBreaker(market, local.date)
+            val targetRate = nextKrxCircuitBreakerTargetRate(market, cbState)
+            val crossing = targetRate?.let { threshold ->
+                downwardThresholdCrossing(
+                    sessionInterval.startsAt,
+                    sessionInterval.endsAt,
+                    previousRate,
+                    lowRate,
+                    threshold,
+                )
+            }
+            val conditionSince = when {
+                cbState.pendingLevel != null && targetRate != null && lowRate <= targetRate -> cbState.conditionSince
+                else -> crossing
+            }
+            val observationAt = conditionSince?.let { since ->
+                runtimePersistenceObservationAt(
+                    since,
+                    sessionInterval.endsAt,
+                    TradingProtectionRules.KRX_CB_PERSISTENCE,
+                )
+            } ?: sessionInterval.endsAt
+            val observationLocal = GameCalendar.marketLocalDateTime(market, observationAt)
+            val observedRate = targetRate?.let { minOf(lowRate, it) } ?: lowRate
+            val cbTransition = TradingProtectionEngine.evaluateKrxCircuitBreaker(
+                cbState,
+                KrxCircuitBreakerObservation(
+                    market = market,
+                    tradingDate = local.date,
+                    observedAt = observationAt,
+                    indexValue = KRX_INDEX_BASE.getValue(market) * (1.0 + minOf(previousRate, observedRate)),
+                    previousClose = KRX_INDEX_BASE.getValue(market),
+                    minutesUntilClose = krxMinutesUntilClose(observationLocal.time),
+                    conditionSatisfiedSince = conditionSince,
+                ),
+            )
+            cbState = cbTransition.state
+            cbStates[market] = cbState
+            recordKrxCircuitBreakerTransition(market, cbTransition.event, cbState, observationAt)
+            if (cbTransition.event in setOf(
+                    KrxCircuitBreakerEvent.LEVEL_1_TRIGGERED,
+                    KrxCircuitBreakerEvent.LEVEL_2_TRIGGERED,
+                    KrxCircuitBreakerEvent.LEVEL_3_TRIGGERED,
+                )
+            ) {
+                val blockEnd = cbState.reopeningEndsAt ?: to
+                runtimeTradingBlock(observationAt, blockEnd, from, to)?.let { block ->
+                    impact.addMarketBlock(
+                        market,
+                        block,
+                        temporary = cbTransition.event != KrxCircuitBreakerEvent.LEVEL_3_TRIGGERED,
+                    )
+                }
+            }
+
+            val futuresLow = lowRate * KRX_FUTURES_BETA
+            val futuresHigh = highRate * KRX_FUTURES_BETA
+            val direction = if (abs(futuresLow) >= abs(futuresHigh)) {
+                MarketMoveDirection.DOWN
+            } else {
+                MarketMoveDirection.UP
+            }
+            val futuresRate = if (direction == MarketMoveDirection.DOWN) futuresLow else futuresHigh
+            val spotRate = if (direction == MarketMoveDirection.DOWN) lowRate else highRate
+            val futuresThreshold = if (market == Market.KOSPI) {
+                TradingProtectionRules.KOSPI_SIDECAR_FUTURES_RATE
+            } else {
+                TradingProtectionRules.KOSDAQ_SIDECAR_FUTURES_RATE
+            }
+            val futuresTarget = if (direction == MarketMoveDirection.DOWN) -futuresThreshold else futuresThreshold
+            val futuresCrossing = if (direction == MarketMoveDirection.DOWN) {
+                downwardThresholdCrossing(
+                    sessionInterval.startsAt,
+                    sessionInterval.endsAt,
+                    previousRate * KRX_FUTURES_BETA,
+                    futuresRate,
+                    futuresTarget,
+                )
+            } else {
+                upwardThresholdCrossing(
+                    sessionInterval.startsAt,
+                    sessionInterval.endsAt,
+                    previousRate * KRX_FUTURES_BETA,
+                    futuresRate,
+                    futuresTarget,
+                )
+            }
+            val spotCrossing = if (market == Market.KOSDAQ) {
+                val target = if (direction == MarketMoveDirection.DOWN) {
+                    -TradingProtectionRules.KOSDAQ_SIDECAR_SPOT_RATE
+                } else {
+                    TradingProtectionRules.KOSDAQ_SIDECAR_SPOT_RATE
+                }
+                if (direction == MarketMoveDirection.DOWN) {
+                    downwardThresholdCrossing(
+                        sessionInterval.startsAt,
+                        sessionInterval.endsAt,
+                        previousRate,
+                        spotRate,
+                        target,
+                    )
+                } else {
+                    upwardThresholdCrossing(
+                        sessionInterval.startsAt,
+                        sessionInterval.endsAt,
+                        previousRate,
+                        spotRate,
+                        target,
+                    )
+                }
+            } else {
+                futuresCrossing
+            }
+            val priorSidecar = sidecarStates[market]
+                ?: TradingProtectionEngine.initialKrxSidecar(market, local.date)
+            val freshSidecarSince = listOfNotNull(futuresCrossing, spotCrossing).maxOrNull()
+            val sidecarSince = if (priorSidecar.pendingDirection == direction && freshSidecarSince != null) {
+                minOf(priorSidecar.conditionSince ?: freshSidecarSince, freshSidecarSince)
+            } else {
+                freshSidecarSince
+            }
+            val sidecarObservationAt = sidecarSince?.let { since ->
+                runtimePersistenceObservationAt(
+                    since,
+                    sessionInterval.endsAt,
+                    TradingProtectionRules.KRX_SIDECAR_PERSISTENCE,
+                )
+            } ?: sessionInterval.endsAt
+            val sidecarLocal = GameCalendar.marketLocalDateTime(market, sidecarObservationAt)
+            val sidecarTransition = TradingProtectionEngine.evaluateKrxSidecar(
+                priorSidecar,
+                KrxSidecarObservation(
+                    market = market,
+                    tradingDate = local.date,
+                    observedAt = sidecarObservationAt,
+                    futuresChangeRate = futuresRate,
+                    spotIndexChangeRate = if (market == Market.KOSDAQ) spotRate else null,
+                    minutesAfterOpen = krxMinutesAfterOpen(sidecarLocal.time),
+                    minutesUntilClose = krxMinutesUntilClose(sidecarLocal.time),
+                    circuitBreakerPhase = cbState.phase,
+                    conditionSatisfiedSince = sidecarSince,
+                ),
+            )
+            sidecarStates[market] = sidecarTransition.state
+            recordKrxSidecarTransition(
+                market,
+                sidecarTransition.event,
+                sidecarTransition.state,
+                sidecarObservationAt,
+            )
+        }
+        tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
+            krxCircuitBreakers = cbStates,
+            krxSidecars = sidecarStates,
+        )
+    }
+
+    private fun evaluateKrxVolatilityInterruptions(
+        from: Instant,
+        to: Instant,
+        bars: Map<String, PriceBar>,
+        ordinaryTradingFractions: Map<Market, Double>,
+        impact: TurnProtectionImpactBuilder,
+    ) {
+        val states = tradingProtectionSnapshot.krxVolatilityInterruptions.toMutableMap()
+        for (stock in stocks.filter { it.market.isKorean }) {
+            if (ordinaryTradingFractions.getValue(stock.market) <= 0.0) continue
+            val sessionInterval = runtimeTradableIntervals(stock.market, from, to).firstOrNull() ?: continue
+            val bar = bars.getValue(stock.id)
+            var state = states[stock.id] ?: TradingProtectionEngine.initialKrxVi(stock.id, stock.market)
+            val cbPhase = tradingProtectionSnapshot.krxCircuitBreakers.getValue(stock.market).phase
+            val productClass = krxViProductClass(stock)
+            val isFirstRegularBar = !dailyTrackerSnapshot(
+                stock,
+                from,
+                quotes.getValue(stock.id).price,
+            ).hasRegularTrading
+            val staticReference = quotes.getValue(stock.id).previousClose.coerceAtLeast(1.0)
+            val dynamicReference = bar.open.coerceAtLeast(1.0)
+            val staticMove = extremeMove(staticReference, bar)
+            val dynamicMove = extremeMove(dynamicReference, bar)
+            val dynamicRate = TradingProtectionEngine.krxViRate(
+                KrxViKind.DYNAMIC,
+                productClass,
+                KrxViSession.CONTINUOUS_AUCTION,
+            ) ?: Double.POSITIVE_INFINITY
+            // The hourly opening bar's gap is the already-cleared opening auction price. Applying
+            // continuous-session static VI retroactively would erase that auction gap; intrahour
+            // dynamic VI still protects executions after the open.
+            val staticScore = if (isFirstRegularBar) {
+                Double.NEGATIVE_INFINITY
+            } else {
+                staticMove.absoluteRate / TradingProtectionRules.KRX_VI_STATIC_RATE
+            }
+            val dynamicScore = dynamicMove.absoluteRate / dynamicRate
+            val kind = if (staticScore >= dynamicScore) KrxViKind.STATIC else KrxViKind.DYNAMIC
+            val selected = if (kind == KrxViKind.STATIC) staticMove else dynamicMove
+            val reference = if (kind == KrxViKind.STATIC) staticReference else dynamicReference
+            val rate = if (kind == KrxViKind.STATIC) TradingProtectionRules.KRX_VI_STATIC_RATE else dynamicRate
+            val triggerPrice = reference * (1.0 + if (selected.isUpper) rate else -rate)
+            val crossing = if (selected.absoluteRate >= rate && bar.volume > 0L) {
+                if (selected.isUpper) {
+                    upwardThresholdCrossing(
+                        sessionInterval.startsAt,
+                        sessionInterval.endsAt,
+                        bar.open,
+                        selected.price,
+                        triggerPrice,
+                    )
+                } else {
+                    downwardThresholdCrossing(
+                        sessionInterval.startsAt,
+                        sessionInterval.endsAt,
+                        bar.open,
+                        selected.price,
+                        triggerPrice,
+                    )
+                }
+            } else {
+                null
+            }
+            val observationAt = crossing ?: sessionInterval.endsAt
+            val transition = TradingProtectionEngine.evaluateKrxVi(
+                state,
+                KrxViObservation(
+                    stockId = stock.id,
+                    market = stock.market,
+                    observedAt = observationAt,
+                    kind = kind,
+                    productClass = productClass,
+                    session = KrxViSession.CONTINUOUS_AUCTION,
+                    referencePrice = reference,
+                    potentialExecutionPrice = if (crossing == null) reference else triggerPrice,
+                    circuitBreakerPhase = cbPhase,
+                ),
+            )
+            state = transition.state
+            recordKrxViTransition(stock, transition.event, state, observationAt)
+            if (transition.event == KrxViEvent.TRIGGERED) {
+                val bounds = if (selected.isUpper) {
+                    RuntimePriceBounds(upper = triggerPrice)
+                } else {
+                    RuntimePriceBounds(lower = triggerPrice)
+                }
+                impact.mergePriceBounds(stock.id, bounds)
+                runtimeTradingBlock(
+                    observationAt,
+                    requireNotNull(state.auctionEndsAt),
+                    from,
+                    to,
+                )?.let { impact.addInstrumentBlock(stock.id, it) }
+            }
+            if (state.phase == KrxViPhase.CALL_AUCTION && to >= requireNotNull(state.auctionEndsAt)) {
+                val auctionEndsAt = requireNotNull(state.auctionEndsAt)
+                val completed = TradingProtectionEngine.evaluateKrxVi(
+                    state,
+                    KrxViObservation(
+                        stock.id,
+                        stock.market,
+                        auctionEndsAt,
+                        kind,
+                        productClass,
+                        KrxViSession.CONTINUOUS_AUCTION,
+                        reference,
+                        reference,
+                        circuitBreakerPhase = cbPhase,
+                    ),
+                )
+                state = completed.state
+                recordKrxViTransition(stock, completed.event, state, auctionEndsAt)
+            }
+            states[stock.id] = state
+        }
+        tradingProtectionSnapshot = tradingProtectionSnapshot.copy(krxVolatilityInterruptions = states)
+    }
+
+    private fun evaluateUsMarketWideCircuitBreaker(
+        from: Instant,
+        to: Instant,
+        bars: Map<String, PriceBar>,
+        previousPrices: Map<String, Double>,
+        provisionalIndices: Map<MarketIndexId, MarketIndexSnapshot>,
+        ordinaryTradingFractions: Map<Market, Double>,
+        impact: TurnProtectionImpactBuilder,
+    ) {
+        val snapshot = provisionalIndices[MarketIndexId.SP_500] ?: return
+        if (ordinaryTradingFractions.none { (market, fraction) -> market.isUnitedStates && fraction > 0.0 }) return
+        val sessionInterval = runtimeTradableIntervals(Market.NYSE, from, to).firstOrNull() ?: return
+        var state = tradingProtectionSnapshot.usMarketWideCircuitBreaker
+            ?: TradingProtectionEngine.initialUsMwcb(marketDate(Market.NYSE, to), to)
+        if (state.phase != UsMwcbPhase.NORMAL) impact.usMwcbControlledTurn = true
+        val previousValue = marketIndices[MarketIndexId.SP_500]?.value ?: snapshot.previousClose
+        val intervalLow = sp500IntervalLow(bars, previousPrices, previousValue)
+        val target = when {
+            UsMwcbLevel.LEVEL_1 !in state.triggeredLevels -> 0.07
+            UsMwcbLevel.LEVEL_2 !in state.triggeredLevels -> 0.13
+            UsMwcbLevel.LEVEL_3 !in state.triggeredLevels -> 0.20
+            else -> null
+        }
+        val thresholdValue = target?.let { snapshot.previousClose * (1.0 - it) }
+        val crossing = thresholdValue?.let { threshold ->
+            downwardThresholdCrossing(
+                sessionInterval.startsAt,
+                sessionInterval.endsAt,
+                previousValue,
+                intervalLow,
+                threshold,
+            )
+        }
+        val observedAt = crossing ?: sessionInterval.endsAt
+        val local = GameCalendar.marketLocalDateTime(Market.NYSE, observedAt)
+        val transition = TradingProtectionEngine.evaluateUsMwcb(
+            state,
+            UsMwcbObservation(
+                tradingDate = local.date,
+                observedAt = observedAt,
+                easternTime = local.time,
+                sp500Value = if (crossing == null) snapshot.value else requireNotNull(thresholdValue),
+                previousClose = snapshot.previousClose,
+            ),
+        )
+        state = transition.state
+        recordUsMwcbTransition(transition.event, state, observedAt)
+        if (transition.event in setOf(
+                UsMwcbEvent.LEVEL_1_TRIGGERED,
+                UsMwcbEvent.LEVEL_2_TRIGGERED,
+                UsMwcbEvent.LEVEL_3_TRIGGERED,
+            )
+        ) {
+            macro = macro.copy(
+                usCircuitBreakerLevel = when (transition.event) {
+                    UsMwcbEvent.LEVEL_1_TRIGGERED -> 1
+                    UsMwcbEvent.LEVEL_2_TRIGGERED -> 2
+                    UsMwcbEvent.LEVEL_3_TRIGGERED -> 3
+                    else -> 0
+                },
+            )
+            impact.usMwcbControlledTurn = true
+            for (market in Market.entries.filter(Market::isUnitedStates)) {
+                val blockEnd = if (transition.event == UsMwcbEvent.LEVEL_3_TRIGGERED) {
+                    to
+                } else {
+                    requireNotNull(state.haltEndsAt) + usVenueReopeningDelayMinutes(market).minutes
+                }
+                runtimeTradingBlock(observedAt, blockEnd, from, to)?.let { block ->
+                    impact.addMarketBlock(
+                        market,
+                        block,
+                        temporary = transition.event != UsMwcbEvent.LEVEL_3_TRIGGERED,
+                    )
+                }
+            }
+        }
+        if (state.phase == UsMwcbPhase.HALTED && to >= requireNotNull(state.haltEndsAt)) {
+            state = TradingProtectionEngine.advanceUsMwcb(state, requireNotNull(state.haltEndsAt)).state
+            val haltEnd = requireNotNull(state.haltEndsAt)
+            for (market in state.venueStatuses.keys.sortedBy(Market::name)) {
+                val completesAt = haltEnd + usVenueReopeningDelayMinutes(market).minutes
+                if (to >= completesAt && state.phase == UsMwcbPhase.REOPENING_AUCTIONS) {
+                    val completion = TradingProtectionEngine.completeUsMwcbVenueReopening(state, market, completesAt)
+                    state = completion.state
+                    recordUsMwcbTransition(completion.event, state, completesAt)
+                }
+            }
+        }
+        tradingProtectionSnapshot = tradingProtectionSnapshot.copy(usMarketWideCircuitBreaker = state)
+        syncLegacyUsCircuitBreaker(state)
+    }
+
+    private fun evaluateUsLuldProtections(
+        from: Instant,
+        to: Instant,
+        bars: Map<String, PriceBar>,
+        ordinaryTradingFractions: Map<Market, Double>,
+        impact: TurnProtectionImpactBuilder,
+    ) {
+        val states = tradingProtectionSnapshot.usLuldStates.toMutableMap()
+        if (impact.usMwcbControlledTurn) {
+            for (stock in stocks.filter { it.market.isUnitedStates }) {
+                val bar = bars.getValue(stock.id)
+                val local = GameCalendar.marketLocalDateTime(stock.market, to)
+                val previous = states[stock.id]
+                states[stock.id] = TradingProtectionEngine.initialUsLuld(
+                    stockId = stock.id,
+                    primaryMarket = stock.market,
+                    tradingDate = local.date,
+                    tier = usLuldTier(stock),
+                    previousClose = previous?.previousClose ?: quotes.getValue(stock.id).previousClose.coerceAtLeast(0.01),
+                    referencePrice = bar.close.coerceAtLeast(0.01),
+                    referencePriceEffectiveAt = to,
+                    easternTime = local.time,
+                )
+            }
+            tradingProtectionSnapshot = tradingProtectionSnapshot.copy(usLuldStates = states)
+            return
+        }
+        for (stock in stocks.filter { it.market.isUnitedStates }) {
+            val bar = bars.getValue(stock.id)
+            var state = states[stock.id] ?: continue
+            if (ordinaryTradingFractions.getValue(stock.market) <= 0.0 ||
+                state.tradingDate != marketDate(stock.market, to) || bar.volume == 0L
+            ) {
+                states[stock.id] = state
+                continue
+            }
+            val sessionInterval = runtimeTradableIntervals(stock.market, from, to).firstOrNull() ?: continue
+            val carriedBlock = when (state.phase) {
+                UsLuldPhase.LIMIT_STATE -> {
+                    val deadline = requireNotNull(state.limitStateDeadline)
+                    runtimeTradingBlock(
+                        deadline,
+                        deadline + TradingProtectionRules.US_LULD_PAUSE + US_REOPENING_AUCTION_MINUTES.minutes,
+                        from,
+                        to,
+                    )
+                }
+                UsLuldPhase.TRADING_PAUSE -> runtimeTradingBlock(
+                    state.pauseStartedAt ?: from,
+                    requireNotNull(state.pauseEndsAt) + US_REOPENING_AUCTION_MINUTES.minutes,
+                    from,
+                    to,
+                )
+                UsLuldPhase.REOPENING_AUCTION -> runtimeTradingBlock(
+                    state.pauseStartedAt ?: state.reopeningStartedAt ?: from,
+                    requireNotNull(state.reopeningStartedAt) + US_REOPENING_AUCTION_MINUTES.minutes,
+                    from,
+                    to,
+                )
+                UsLuldPhase.CLOSING_AUCTION_ONLY,
+                UsLuldPhase.CLOSED_FOR_DAY,
+                -> runtimeTradingBlock(state.pauseStartedAt ?: from, to, from, to)
+                UsLuldPhase.NORMAL -> null
+            }
+            carriedBlock?.let { impact.addInstrumentBlock(stock.id, it) }
+            impact.mergePriceBounds(
+                stock.id,
+                RuntimePriceBounds(state.bands.lower.coerceAtLeast(0.01), state.bands.upper),
+            )
+            val upperCross = if (bar.high >= state.bands.upper) {
+                upwardThresholdCrossing(
+                    sessionInterval.startsAt,
+                    sessionInterval.endsAt,
+                    bar.open,
+                    bar.high,
+                    state.bands.upper,
+                )
+            } else null
+            val lowerCross = if (bar.low <= state.bands.lower) {
+                downwardThresholdCrossing(
+                    sessionInterval.startsAt,
+                    sessionInterval.endsAt,
+                    bar.open,
+                    bar.low,
+                    state.bands.lower,
+                )
+            } else null
+            val crossing = listOfNotNull(upperCross, lowerCross).minOrNull()
+            if (state.phase == UsLuldPhase.NORMAL && crossing != null) {
+                val side = if (upperCross != null && (lowerCross == null || upperCross <= lowerCross)) {
+                    UsLuldLimitSide.UPPER
+                } else {
+                    UsLuldLimitSide.LOWER
+                }
+                var transition = TradingProtectionEngine.evaluateUsLuld(
+                    state,
+                    UsLuldObservation(
+                        crossing,
+                        GameCalendar.marketLocalDateTime(stock.market, crossing).time,
+                        limitSide = side,
+                    ),
+                )
+                state = transition.state
+            }
+            if (state.phase == UsLuldPhase.LIMIT_STATE && to >= requireNotNull(state.limitStateDeadline)) {
+                val deadline = requireNotNull(state.limitStateDeadline)
+                val transition = TradingProtectionEngine.evaluateUsLuld(
+                    state,
+                    UsLuldObservation(deadline, GameCalendar.marketLocalDateTime(stock.market, deadline).time),
+                )
+                state = transition.state
+                recordUsLuldTransition(stock, transition.event, state, deadline)
+                val blockEnd = when (state.phase) {
+                    UsLuldPhase.TRADING_PAUSE ->
+                        requireNotNull(state.pauseEndsAt) + US_REOPENING_AUCTION_MINUTES.minutes
+                    UsLuldPhase.CLOSING_AUCTION_ONLY,
+                    UsLuldPhase.CLOSED_FOR_DAY,
+                    -> to
+                    else -> deadline
+                }
+                runtimeTradingBlock(deadline, blockEnd, from, to)?.let {
+                    impact.addInstrumentBlock(stock.id, it)
+                }
+            }
+            if (state.phase == UsLuldPhase.TRADING_PAUSE && to >= requireNotNull(state.pauseEndsAt)) {
+                val pauseEnd = requireNotNull(state.pauseEndsAt)
+                val transition = TradingProtectionEngine.evaluateUsLuld(
+                    state,
+                    UsLuldObservation(pauseEnd, GameCalendar.marketLocalDateTime(stock.market, pauseEnd).time),
+                )
+                state = transition.state
+                recordUsLuldTransition(stock, transition.event, state, pauseEnd)
+            }
+            if (state.phase == UsLuldPhase.REOPENING_AUCTION) {
+                val reopensAt = requireNotNull(state.reopeningStartedAt) + US_REOPENING_AUCTION_MINUTES.minutes
+                if (to >= reopensAt) {
+                    val reopeningPrice = bar.close.coerceIn(
+                        state.bands.lower.coerceAtLeast(0.01),
+                        state.bands.upper,
+                    )
+                    val transition = TradingProtectionEngine.completeUsLuldReopening(
+                        state,
+                        reopeningPrice,
+                        reopensAt,
+                        GameCalendar.marketLocalDateTime(stock.market, reopensAt).time,
+                    )
+                    state = transition.state
+                    recordUsLuldTransition(stock, transition.event, state, reopensAt)
+                }
+            }
+            if (state.phase == UsLuldPhase.NORMAL) {
+                val typical = ((bar.open + bar.high + bar.low + bar.close) / 4.0).coerceAtLeast(0.01)
+                state = TradingProtectionEngine.updateUsLuldReferencePrice(
+                    state,
+                    typical,
+                    sessionInterval.endsAt,
+                    GameCalendar.marketLocalDateTime(stock.market, sessionInterval.endsAt).time,
+                ).state
+            }
+            states[stock.id] = state
+        }
+        tradingProtectionSnapshot = tradingProtectionSnapshot.copy(usLuldStates = states)
+    }
+
+    private fun krxMarketProxyRate(market: Market, prices: Map<String, Double>): Double {
+        val constituents = stocks.filter {
+            it.market == market && it.hasCorporateEarnings &&
+                listingLifecycleStates.getValue(it.id).isIndexEligible && prices[it.id] != null
+        }
+        val weight = constituents.sumOf { it.marketCap }
+        if (weight <= 0.0) return 0.0
+        return constituents.sumOf { stock ->
+            val base = quotes.getValue(stock.id).previousClose
+            val rate = if (base <= 0.0) 0.0 else prices.getValue(stock.id) / base - 1.0
+            rate * stock.marketCap
+        } / weight
+    }
+
+    /** Current-hour low only; daily [MarketIndexSnapshot.low] must never be re-interpolated next hour. */
+    private fun sp500IntervalLow(
+        bars: Map<String, PriceBar>,
+        previousPrices: Map<String, Double>,
+        previousIndexValue: Double,
+    ): Double {
+        val constituents = stocks.filter {
+            it.market.isUnitedStates && it.hasCorporateEarnings &&
+                listingLifecycleStates.getValue(it.id).isIndexEligible &&
+                bars[it.id] != null && previousPrices[it.id]?.let { price -> price > 0.0 } == true
+        }
+        val weight = constituents.sumOf(StockDefinition::marketCap)
+        if (weight <= 0.0) return previousIndexValue
+        val factor = constituents.sumOf { stock ->
+            stock.marketCap * bars.getValue(stock.id).low / previousPrices.getValue(stock.id)
+        } / weight
+        return (previousIndexValue * factor).coerceAtLeast(0.01)
+    }
+
+    private fun nextKrxCircuitBreakerTargetRate(
+        market: Market,
+        state: com.amond.kmpbook.domain.model.KrxCircuitBreakerState,
+    ): Double? {
+        val base = KRX_INDEX_BASE.getValue(market)
+        return when {
+            KrxCircuitBreakerLevel.LEVEL_1 !in state.triggeredLevels ->
+                -TradingProtectionRules.KRX_CB_LEVEL_1_DECLINE
+            KrxCircuitBreakerLevel.LEVEL_2 !in state.triggeredLevels -> minOf(
+                -TradingProtectionRules.KRX_CB_LEVEL_2_DECLINE,
+                requireNotNull(state.triggerIndexValues[KrxCircuitBreakerLevel.LEVEL_1]) / base *
+                    (1.0 - TradingProtectionRules.KRX_CB_ADDITIONAL_DECLINE) - 1.0,
+            )
+            KrxCircuitBreakerLevel.LEVEL_3 !in state.triggeredLevels -> minOf(
+                -TradingProtectionRules.KRX_CB_LEVEL_3_DECLINE,
+                requireNotNull(state.triggerIndexValues[KrxCircuitBreakerLevel.LEVEL_2]) / base *
+                    (1.0 - TradingProtectionRules.KRX_CB_ADDITIONAL_DECLINE) - 1.0,
+            )
+            else -> null
+        }
+    }
+
+    private fun downwardThresholdCrossing(
+        from: Instant,
+        to: Instant,
+        start: Double,
+        end: Double,
+        threshold: Double,
+    ): Instant? = when {
+        start <= threshold -> from
+        end > threshold -> null
+        else -> interpolatePriceCrossing(from, to, start, end, threshold)
+    }
+
+    private fun upwardThresholdCrossing(
+        from: Instant,
+        to: Instant,
+        start: Double,
+        end: Double,
+        threshold: Double,
+    ): Instant? = when {
+        start >= threshold -> from
+        end < threshold -> null
+        else -> interpolatePriceCrossing(from, to, start, end, threshold)
+    }
+
+    private fun interpolatePriceCrossing(
+        from: Instant,
+        to: Instant,
+        start: Double,
+        end: Double,
+        threshold: Double,
+    ): Instant? {
+        if (start == end) return if (start == threshold) from else null
+        val ratio = (threshold - start) / (end - start)
+        if (ratio !in 0.0..1.0) return null
+        return from + ((to - from).inWholeNanoseconds * ratio).toLong().nanoseconds
+    }
+
+    private fun krxMinutesAfterOpen(time: LocalTime): Double =
+        ((time.hour * 3_600 + time.minute * 60 + time.second + time.nanosecond / 1_000_000_000.0) - 9 * 3_600) /
+            60.0
+
+    private fun krxMinutesUntilClose(time: LocalTime): Double =
+        ((15 * 3_600 + 30 * 60) -
+            (time.hour * 3_600 + time.minute * 60 + time.second + time.nanosecond / 1_000_000_000.0)) /
+            60.0
+
+    private data class ExtremeMove(val price: Double, val absoluteRate: Double, val isUpper: Boolean)
+
+    private fun extremeMove(reference: Double, bar: PriceBar): ExtremeMove {
+        val upper = bar.high / reference - 1.0
+        val lower = bar.low / reference - 1.0
+        return if (abs(upper) >= abs(lower)) {
+            ExtremeMove(bar.high, abs(upper), true)
+        } else {
+            ExtremeMove(bar.low, abs(lower), false)
+        }
+    }
+
+    private fun krxViProductClass(stock: StockDefinition): KrxViProductClass = when {
+        stock.isFundLike && (
+            stock.behavior.strategy == com.amond.kmpbook.domain.model.InstrumentStrategy.DAILY_INVERSE ||
+                stock.behavior.strategy == com.amond.kmpbook.domain.model.InstrumentStrategy.TREASURY ||
+                stock.behavior.strategy == com.amond.kmpbook.domain.model.InstrumentStrategy.MONEY_MARKET
+            ) -> KrxViProductClass.CORE_INDEX_INVERSE_OR_BOND_ETP
+        stock.isFundLike -> KrxViProductClass.OTHER_ETP
+        stock.market == Market.KOSPI && stock.marketCap >= KOSPI_200_GAME_MARKET_CAP_FLOOR ->
+            KrxViProductClass.KOSPI200_CONSTITUENT
+        else -> KrxViProductClass.OTHER_EQUITY
+    }
+
+    private fun recordKrxCircuitBreakerTransition(
+        market: Market,
+        event: KrxCircuitBreakerEvent,
+        state: com.amond.kmpbook.domain.model.KrxCircuitBreakerState,
+        at: Instant,
+    ) {
+        val level = state.activeLevel?.let { it.ordinal + 1 }
+        val copy = when (event) {
+            KrxCircuitBreakerEvent.LEVEL_1_TRIGGERED,
+            KrxCircuitBreakerEvent.LEVEL_2_TRIGGERED,
+            -> "국내 시장 거래가 20분간 멈췄어요" to
+                "${market.displayName} 서킷브레이커 ${level}단계가 발동했습니다. 20분 정지 후 10분 단일가로 재개합니다."
+            KrxCircuitBreakerEvent.LEVEL_3_TRIGGERED -> "오늘 국내 시장 거래가 끝났어요" to
+                "${market.displayName} 서킷브레이커 3단계가 발동해 다음 거래일까지 거래를 종료합니다."
+            KrxCircuitBreakerEvent.REOPENING_COMPLETED -> "${market.displayName} 거래가 다시 시작됐어요" to
+                "서킷브레이커 단일가 절차가 끝나 연속매매가 재개됐습니다."
+            else -> return
+        }
+        addProtectionNews(
+            id = "krx-cb:${market.name}:${event.name}:${at.epochSeconds}",
+            title = copy.first,
+            description = copy.second,
+            at = at,
+            markets = setOf(market),
+            severity = if (event == KrxCircuitBreakerEvent.LEVEL_3_TRIGGERED) {
+                EventSeverity.CRITICAL
+            } else {
+                EventSeverity.MAJOR
+            },
+        )
+    }
+
+    private fun recordKrxSidecarTransition(
+        market: Market,
+        event: KrxSidecarEvent,
+        state: com.amond.kmpbook.domain.model.KrxSidecarState,
+        at: Instant,
+    ) {
+        val copy = when (event) {
+            KrxSidecarEvent.ACTIVATED -> "프로그램 매매가 잠시 멈췄어요" to
+                "${market.displayName} 사이드카가 발동했습니다. ${state.suspendedProgramSide?.name ?: "해당"} 방향 프로그램 호가만 5분간 제한되며 일반 주식 주문은 계속됩니다."
+            KrxSidecarEvent.RELEASED -> "${market.displayName} 사이드카가 해제됐어요" to
+                "프로그램매매 호가 제한이 끝났습니다."
+            else -> return
+        }
+        addProtectionNews(
+            id = "krx-sidecar:${market.name}:${event.name}:${at.epochSeconds}",
+            title = copy.first,
+            description = copy.second,
+            at = at,
+            markets = setOf(market),
+            severity = EventSeverity.MODERATE,
+        )
+    }
+
+    private fun recordKrxViTransition(
+        stock: StockDefinition,
+        event: KrxViEvent,
+        state: com.amond.kmpbook.domain.model.KrxViState,
+        at: Instant,
+    ) {
+        if (event != KrxViEvent.TRIGGERED) return
+        val kind = state.kind?.let { if (it == KrxViKind.STATIC) "정적 VI" else "동적 VI" } ?: "VI"
+        addProtectionNews(
+            id = "krx-vi:${stock.id}:${state.triggerCount}:${at.epochSeconds}",
+            title = "${stock.name} 단일가 매매 중이에요",
+            description = "$kind 발동으로 가격 급변을 완화하기 위해 2분간 주문을 모읍니다. 발동 호가는 즉시 체결되지 않습니다.",
+            at = at,
+            stock = stock,
+            severity = EventSeverity.MODERATE,
+        )
+    }
+
+    private fun recordUsMwcbTransition(
+        event: UsMwcbEvent,
+        state: com.amond.kmpbook.domain.model.UsMwcbState,
+        at: Instant,
+    ) {
+        val level = state.activeLevel?.ordinal?.plus(1)
+        val copy = when (event) {
+            UsMwcbEvent.LEVEL_1_TRIGGERED,
+            UsMwcbEvent.LEVEL_2_TRIGGERED,
+            -> "미국 시장 거래가 15분간 멈췄어요" to
+                "S&P 500 기준 미국 시장 서킷브레이커 ${level}단계가 발동했습니다. 각 거래소 재개 경매 후 거래가 이어집니다."
+            UsMwcbEvent.LEVEL_3_TRIGGERED -> "오늘 미국 시장 거래가 끝났어요" to
+                "S&P 500이 20% 하락 기준에 닿아 모든 미국 상장시장의 정규 거래가 종료됐습니다."
+            UsMwcbEvent.ALL_VENUES_REOPENED -> "미국 시장 거래가 다시 시작됐어요" to
+                "거래소별 재개 경매가 모두 끝났습니다."
+            else -> return
+        }
+        addProtectionNews(
+            id = "us-mwcb:${event.name}:${at.epochSeconds}",
+            title = copy.first,
+            description = copy.second,
+            at = at,
+            markets = Market.entries.filterTo(linkedSetOf(), Market::isUnitedStates),
+            severity = if (event == UsMwcbEvent.LEVEL_3_TRIGGERED) EventSeverity.CRITICAL else EventSeverity.MAJOR,
+        )
+    }
+
+    private fun recordUsLuldTransition(
+        stock: StockDefinition,
+        event: UsLuldEvent,
+        state: com.amond.kmpbook.domain.model.UsLuldState,
+        at: Instant,
+    ) {
+        val copy = when (event) {
+            UsLuldEvent.TRADING_PAUSE_STARTED -> "${stock.name} 거래가 잠시 멈췄어요" to
+                "급격한 가격 변동으로 LULD 5분 거래정지가 적용됐습니다. 재개 경매 뒤 체결이 이어집니다."
+            UsLuldEvent.CLOSING_AUCTION_ONLY -> "${stock.name} 종가 경매만 진행해요" to
+                "장 마감 직전 LULD가 발동해 연속매매 없이 종가 경매로 전환됐습니다."
+            UsLuldEvent.REOPENED -> "${stock.name} 거래가 다시 시작됐어요" to
+                "변동성 정지와 재개 경매가 끝났습니다."
+            else -> return
+        }
+        addProtectionNews(
+            id = "us-luld:${stock.id}:${event.name}:${at.epochSeconds}",
+            title = copy.first,
+            description = copy.second,
+            at = at,
+            stock = stock,
+            severity = if (state.phase == UsLuldPhase.CLOSING_AUCTION_ONLY) EventSeverity.MAJOR else EventSeverity.MODERATE,
+        )
+    }
+
+    private fun addProtectionNews(
+        id: String,
+        title: String,
+        description: String,
+        at: Instant,
+        stock: StockDefinition? = null,
+        markets: Set<Market> = stock?.let { setOf(it.market) }.orEmpty(),
+        severity: EventSeverity,
+    ) {
+        val eventId = "market-protection:$id"
+        if (newsEvents.any { it.id == eventId }) return
+        newsEvents += GameEvent(
+            id = eventId,
+            title = title,
+            description = description,
+            scope = if (stock == null) EventScope.MARKET else EventScope.STOCK,
+            type = EventType.REGULATION_POLICY,
+            severity = severity,
+            impact = GameEventImpact(direction = ImpactDirection.NEUTRAL),
+            startsAt = at,
+            durationHours = if (stock == null) 24 else 12,
+            affectedMarkets = markets,
+            affectedSectors = stock?.let { setOf(it.sector) }.orEmpty(),
+            affectedStockIds = stock?.let { setOf(it.id) }.orEmpty(),
+            sourceLabel = "거래소 시장조치 규칙",
+        )
     }
 
     private fun prepareUsCircuitBreaker(time: Instant) {
@@ -2270,7 +5703,10 @@ internal class SimulatorRuntime(
         fractions: Map<Market, Double>,
     ) {
         val returns = stocks.asSequence()
-            .filter { it.hasCorporateEarnings && fractions.getValue(it.market) > 0.0 }
+            .filter {
+                listingLifecycleStates.getValue(it.id).isIndexEligible &&
+                    it.hasCorporateEarnings && fractions.getValue(it.market) > 0.0
+            }
             .map { bars.getValue(it.id) }
             .map { if (it.open == 0.0) 0.0 else it.close / it.open - 1.0 }
             .toList()
@@ -2530,7 +5966,8 @@ internal class SimulatorRuntime(
                     val trade = tradesById.getValue(entry.id)
                     val stock = stockById.getValue(trade.stockId)
                     val rate = taxExchangeRatesByTradeId.getValue(trade.id)
-                    val settledOn = settlementDate(stock.market, marketDate(stock.market, trade.executedAt))
+                    val settledOn = trade.settlementDateOverride
+                        ?: settlementDate(stock.market, marketDate(stock.market, trade.executedAt))
                     val roundedGross = roundCurrency(trade.grossAmount, trade.currency)
                     if (trade.side == OrderSide.BUY) {
                         rebuiltBook = rebuiltBook.addPurchase(
@@ -2594,7 +6031,8 @@ internal class SimulatorRuntime(
         val dueTradeIds = pendingTaxSettlementTradeIds.filter { tradeId ->
             val trade = tradesById.getValue(tradeId)
             val stock = stockById.getValue(trade.stockId)
-            val settledOn = settlementDate(stock.market, marketDate(stock.market, trade.executedAt))
+            val settledOn = trade.settlementDateOverride
+                ?: settlementDate(stock.market, marketDate(stock.market, trade.executedAt))
             marketDate(stock.market, at) >= settledOn
         }
         if (dueTradeIds.isEmpty()) return
@@ -2718,10 +6156,10 @@ internal class SimulatorRuntime(
         val requiredBusinessDays = if (market.isUnitedStates) 1 else 2
         while (days < requiredBusinessDays) {
             date = date.plus(1, DateTimeUnit.DAY)
-            val holidays = if (date.year in 2026..2040) DefaultMarketHolidays.closedDates(market, date.year) else emptySet()
+            val holidays = runtimeClosedDates(market, date)
             if (date.dayOfWeek !in WEEKEND && date !in holidays) days += 1
         }
-        return date.coerceAtMost(LocalDate(2040, 12, 31))
+        return date
     }
 
     private fun enterSettlement() {
@@ -2736,16 +6174,22 @@ internal class SimulatorRuntime(
         updateHoldingPrices()
         updateDrawdown()
         recalculateAnnualTax(2040)
-        recordDailySnapshot(LocalDate(2040, 12, 31), currentTime)
+        recordDailySnapshot(GameCalendar.CAMPAIGN_END_DATE, currentTime)
         lastMessage = GameEndReason.DATE_LIMIT.displayName
     }
 
     private fun marketSessionAtCurrentTime(market: Market): MarketSession {
         val calendarSession = marketSession(market, currentTime)
-        val haltedToday = market.isUnitedStates &&
-            usCircuitBreakerState.haltedForDay &&
-            usCircuitBreakerState.tradingDate == marketDate(market, currentTime)
-        return if (haltedToday) MarketSession.CLOSED else calendarSession
+        val protected = if (market.isKorean) {
+            tradingProtectionSnapshot.krxCircuitBreakers[market]?.phase
+                ?.let { it != KrxCircuitBreakerPhase.NORMAL } == true
+        } else {
+            tradingProtectionSnapshot.usMarketWideCircuitBreaker?.let { state ->
+                state.tradingDate == marketDate(market, currentTime) && state.phase != UsMwcbPhase.NORMAL &&
+                    state.venueStatuses[market]?.phase != UsMwcbVenuePhase.REOPENED
+            } == true
+        }
+        return if (protected) MarketSession.CLOSED else calendarSession
     }
 
     private fun marketSession(market: Market, time: Instant): MarketSession {
@@ -2753,7 +6197,7 @@ internal class SimulatorRuntime(
         return GameCalendar.marketSession(
             market = market,
             time = time,
-            closedDates = DefaultMarketHolidays.closedDates(market, localDate.year),
+            closedDates = runtimeClosedDates(market, localDate),
         )
     }
 
@@ -2763,7 +6207,7 @@ internal class SimulatorRuntime(
         return GameCalendar.regularTradingFraction(
             market = market,
             hourStart = from,
-            closedDates = DefaultMarketHolidays.closedDates(market, date.year),
+            closedDates = runtimeClosedDates(market, date),
         )
     }
 
@@ -2828,7 +6272,7 @@ internal class SimulatorRuntime(
     private fun marketDate(market: Market, time: Instant): LocalDate =
         GameCalendar.marketLocalDateTime(market, time).date
 
-    private fun gameDate(time: Instant): LocalDate = time.toLocalDateTime(GameCalendar.KOREA_TIME_ZONE).date
+    private fun gameDate(time: Instant): LocalDate = GameCalendar.campaignDate(time)
 
     private fun normalizeFxState(value: MacroEnvironment): MacroEnvironment {
         if (value.fxRatesToKrw != null && value.previousFxRatesToKrw != null) return value
@@ -2866,7 +6310,10 @@ internal class SimulatorRuntime(
         /** The full instrument universe stays comfortably below the 64 MiB save limit. */
         const val MAX_RECENT_BARS = 256
         const val MAX_INDEX_BARS = 256
+        const val MAX_DAILY_SURVEILLANCE_POINTS = 140
         const val MAX_NEWS_EVENTS = 1_000
+        /** 축소 게임 유니버스에서 2026 KRX 합산 시총 상위100 제외를 재현하는 기준일 프록시. */
+        const val KRX_TOP_100_MARKET_CAP_PROXY_KRW = 3_000_000_000_000.0
         const val BENCHMARK_START = 100.0
         const val BUY_RESERVE_MULTIPLIER = 1.003
         const val FX_SPREAD_RATE = 0.001
@@ -2887,11 +6334,23 @@ internal class SimulatorRuntime(
         const val CORPORATE_ACTION_BOARD_GATE = 8L
         const val ETN_CALL_EVENT_PREFIX = "etn_issuer_call_decision:"
         const val ETN_ACCELERATION_EVENT_PREFIX = "etn_issuer_acceleration:"
+        const val ETN_MATURITY_EVENT_PREFIX = "instrument-maturity-effective:"
+        const val MAX_TERMINATION_SESSION_SEARCH_DAYS = 370
+        const val LISTING_RESOLUTION_EVENT_PREFIX = "listing-resolution:"
         const val DIVIDEND_DAY = 15
         const val PRICE_EPSILON = 1e-7
         const val QUANTITY_EPSILON = 1e-7
         const val TAX_RATE_EPSILON = 1e-9
         const val CASH_EPSILON = 0.01
+        const val KRX_FUTURES_BETA = 1.08
+        const val KOSPI_200_GAME_MARKET_CAP_FLOOR = 10_000_000_000_000.0
+        const val US_REOPENING_AUCTION_MINUTES = 1
+        const val KRX_MATERIAL_DISCLOSURE_HALT_MINUTES = 30
+        val KRX_INDEX_BASE = mapOf(Market.KOSPI to 2_700.0, Market.KOSDAQ to 900.0)
+        val LISTING_TRADING_HALT_REASONS = setOf(
+            TradingHaltReason.LISTING_MAINTENANCE_REVIEW,
+            TradingHaltReason.DELISTING_PROCESS,
+        )
 
         fun initialFxRates(usdKrw: Double): Map<ReferenceCurrency, Double> {
             val scale = usdKrw / 1_350.0

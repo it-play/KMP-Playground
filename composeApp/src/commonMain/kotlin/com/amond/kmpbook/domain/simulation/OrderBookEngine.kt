@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.simulation
 
-import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.MarketSession
 import com.amond.kmpbook.domain.model.MarketVenueProfiles
 import com.amond.kmpbook.domain.model.OrderBook
@@ -163,9 +162,10 @@ class OrderBookEngine(private val seed: Long) {
     }
 
     private fun generatePrices(input: OrderBookGenerationInput): Pair<List<Double>, List<Double>> {
-        val market = input.stock.market
-        val reference = MarketMicrostructure.roundNearest(market, input.lastPrice)
-        val tick = MarketMicrostructure.tickSize(market, reference)
+        val stock = input.stock
+        val market = stock.market
+        val reference = MarketMicrostructure.roundNearest(stock, input.lastPrice)
+        val tick = MarketMicrostructure.tickSize(stock, reference)
         val sizeScale = normalizedSize(input.stock)
         val liquidityScale = ln(1.0 + input.averageDailyVolume.toDouble()).coerceAtLeast(1.0)
         val venueProfile = MarketVenueProfiles.forMarket(market)
@@ -179,23 +179,23 @@ class OrderBookEngine(private val seed: Long) {
             .coerceIn(1, MAX_SPREAD_TICKS)
 
         var bestBid = MarketMicrostructure.roundDown(
-            market,
+            stock,
             reference - tick * (spreadTicks + 1) / 2.0,
         )
         var bestAsk = MarketMicrostructure.roundUp(
-            market,
+            stock,
             reference + tick * (spreadTicks + 1) / 2.0,
         )
-        if (bestAsk <= bestBid) bestAsk = nextPrice(market, bestBid)
+        if (bestAsk <= bestBid) bestAsk = nextPrice(stock, bestBid)
 
-        val limits = MarketMicrostructure.dailyPriceLimits(market, input.dailyBasePrice)
+        val limits = MarketMicrostructure.dailyPriceLimits(stock, input.dailyBasePrice)
         if (limits != null) {
-            val minimumBestBid = advanceUp(market, limits.lower, BOOK_DEPTH - 1)
-            val maximumBestAsk = advanceDown(market, limits.upper, BOOK_DEPTH - 1)
+            val minimumBestBid = advanceUp(stock, limits.lower, BOOK_DEPTH - 1)
+            val maximumBestAsk = advanceDown(stock, limits.upper, BOOK_DEPTH - 1)
             bestBid = max(bestBid, minimumBestBid)
             bestAsk = minOf(bestAsk, maximumBestAsk)
             if (bestAsk <= bestBid) {
-                bestBid = previousPrice(market, bestAsk)
+                bestBid = previousPrice(stock, bestAsk)
             }
         }
 
@@ -203,14 +203,14 @@ class OrderBookEngine(private val seed: Long) {
             var price = bestBid
             repeat(BOOK_DEPTH) {
                 add(price)
-                price = previousPrice(market, price)
+                price = previousPrice(stock, price)
             }
         }
         val asks = buildList(BOOK_DEPTH) {
             var price = bestAsk
             repeat(BOOK_DEPTH) {
                 add(price)
-                price = nextPrice(market, price)
+                price = nextPrice(stock, price)
             }
         }
         return bids to asks
@@ -253,28 +253,28 @@ class OrderBookEngine(private val seed: Long) {
         return ln(1.0 + stock.marketCap / referenceCapitalization).coerceIn(0.0, 12.0)
     }
 
-    private fun nextPrice(market: Market, current: Double): Double {
-        val probe = current + MarketMicrostructure.minimumPrice(market) * 0.5
-        val tick = MarketMicrostructure.tickSize(market, probe)
-        return MarketMicrostructure.roundNearest(market, current + tick)
+    private fun nextPrice(stock: StockDefinition, current: Double): Double {
+        val probe = current + MarketMicrostructure.minimumPrice(stock.market) * 0.5
+        val tick = MarketMicrostructure.tickSize(stock, probe)
+        return MarketMicrostructure.roundNearest(stock, current + tick)
     }
 
-    private fun previousPrice(market: Market, current: Double): Double {
-        val minimum = MarketMicrostructure.minimumPrice(market)
+    private fun previousPrice(stock: StockDefinition, current: Double): Double {
+        val minimum = MarketMicrostructure.minimumPrice(stock.market)
         val probe = (current - minimum * 0.5).coerceAtLeast(minimum)
-        val tick = MarketMicrostructure.tickSize(market, probe)
-        return MarketMicrostructure.roundNearest(market, (current - tick).coerceAtLeast(minimum))
+        val tick = MarketMicrostructure.tickSize(stock, probe)
+        return MarketMicrostructure.roundNearest(stock, (current - tick).coerceAtLeast(minimum))
     }
 
-    private fun advanceUp(market: Market, start: Double, count: Int): Double {
+    private fun advanceUp(stock: StockDefinition, start: Double, count: Int): Double {
         var value = start
-        repeat(count) { value = nextPrice(market, value) }
+        repeat(count) { value = nextPrice(stock, value) }
         return value
     }
 
-    private fun advanceDown(market: Market, start: Double, count: Int): Double {
+    private fun advanceDown(stock: StockDefinition, start: Double, count: Int): Double {
         var value = start
-        repeat(count) { value = previousPrice(market, value) }
+        repeat(count) { value = previousPrice(stock, value) }
         return value
     }
 

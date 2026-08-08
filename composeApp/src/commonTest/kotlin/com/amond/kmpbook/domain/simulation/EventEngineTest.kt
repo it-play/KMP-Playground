@@ -10,6 +10,8 @@ import com.amond.kmpbook.domain.model.GameEvent
 import com.amond.kmpbook.domain.model.GameEventImpact
 import com.amond.kmpbook.domain.model.ImpactDirection
 import com.amond.kmpbook.domain.model.InstrumentType
+import com.amond.kmpbook.domain.model.ListingFinalDispositionType
+import com.amond.kmpbook.domain.model.ListingRiskTag
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.Sector
 import kotlin.time.Duration.Companion.hours
@@ -71,12 +73,14 @@ class EventEngineTest {
         assertTrue(companyRules.all {
             it.eligibleInstrumentTypes == setOf(InstrumentType.STOCK, InstrumentType.REIT, InstrumentType.ADR)
         })
+        val fundInstrumentTypes = setOf(
+            InstrumentType.ETF,
+            InstrumentType.CLOSED_END_FUND,
+            InstrumentType.ETN,
+        )
         assertTrue(fundRules.all {
-            it.eligibleInstrumentTypes == setOf(
-                InstrumentType.ETF,
-                InstrumentType.CLOSED_END_FUND,
-                InstrumentType.ETN,
-            )
+            it.eligibleInstrumentTypes.isNotEmpty() &&
+                it.eligibleInstrumentTypes.all(fundInstrumentTypes::contains)
         })
 
         val stock = testStock(symbol = "STOCK")
@@ -99,6 +103,37 @@ class EventEngineTest {
 
         assertEquals(setOf(etf.id), fundEvent.affectedStockIds)
         assertEquals(setOf(stock.id), companyEvent.affectedStockIds)
+    }
+
+    @Test
+    fun listingLifecycleTemplatesPropagateStructuredExchangeSignals() {
+        val bankruptcy = DefaultEventTemplates.all.single { it.id == "bankruptcy_filing" }
+            .copy(probabilityPerDay = 1.0)
+        val liquidation = DefaultEventTemplates.all.single { it.id == "etf_liquidation_approved" }
+            .copy(probabilityPerDay = 1.0)
+        val stock = testStock(symbol = "BANKRUPT")
+        val etf = testStock(symbol = "LIQUIDATE").copy(
+            etfProfile = EtfProfile(
+                benchmark = "테스트 지수",
+                assetClass = EtfAssetClass.BROAD_EQUITY,
+                taxCategory = EtfTaxCategory.KOREAN_DOMESTIC_EQUITY,
+                annualExpenseRatio = 0.001,
+            ),
+        )
+
+        val bankruptcyEvent = EventEngine(31L, listOf(bankruptcy))
+            .generate(EventGenerationContext(time, listOf(stock))).newEvents.single()
+        val liquidationEvent = EventEngine(32L, listOf(liquidation))
+            .generate(EventGenerationContext(time, listOf(etf))).newEvents.single()
+
+        assertEquals(setOf(ListingRiskTag.BANKRUPTCY_OR_INSOLVENCY), bankruptcyEvent.listingRiskTags)
+        assertEquals(
+            setOf(ListingRiskTag.BANKRUPTCY_OR_INSOLVENCY),
+            bankruptcyEvent.directListingRiskTags(stock.id),
+        )
+        assertTrue(bankruptcyEvent.directListingRiskTags(etf.id).isEmpty())
+        assertEquals(setOf(ListingRiskTag.ETF_LIQUIDATION_APPROVED), liquidationEvent.listingRiskTags)
+        assertEquals(ListingFinalDispositionType.CASH_LIQUIDATION, liquidationEvent.listingFinalDispositionHint)
     }
 
     @Test

@@ -1,0 +1,961 @@
+package com.amond.kmpbook.domain.simulation
+
+import com.amond.kmpbook.domain.model.DailyListingSurveillanceInput
+import com.amond.kmpbook.domain.model.InstrumentType
+import com.amond.kmpbook.domain.model.ListingFinalDisposition
+import com.amond.kmpbook.domain.model.ListingFinalDispositionType
+import com.amond.kmpbook.domain.model.ListingLifecycleEvaluation
+import com.amond.kmpbook.domain.model.ListingLifecycleEventKind
+import com.amond.kmpbook.domain.model.ListingLifecycleLedgerEvent
+import com.amond.kmpbook.domain.model.ListingLifecycleProfileId
+import com.amond.kmpbook.domain.model.ListingLifecycleReason
+import com.amond.kmpbook.domain.model.ListingLifecycleReplayResult
+import com.amond.kmpbook.domain.model.ListingLifecycleState
+import com.amond.kmpbook.domain.model.ListingLifecycleStatus
+import com.amond.kmpbook.domain.model.ListingNoticeLevel
+import com.amond.kmpbook.domain.model.ListingRecoveryCondition
+import com.amond.kmpbook.domain.model.ListingRiskSeverity
+import com.amond.kmpbook.domain.model.ListingRiskTag
+import com.amond.kmpbook.domain.model.ListingRuleBasis
+import com.amond.kmpbook.domain.model.Market
+import com.amond.kmpbook.domain.model.StockDefinition
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.plus
+
+/**
+ * 종목팩에서 상장 유지 프로필을 선택하는 데 쓰는 불변 정책값.
+ * 금액 단위는 종목 상장통화이며 비율은 0.01 = 1% 형식이다.
+ */
+data class ListingLifecyclePolicyProfile(
+    val id: ListingLifecycleProfileId,
+    val ruleBasis: ListingRuleBasis,
+    val applicableMarkets: Set<Market>,
+    val applicableInstrumentTypes: Set<InstrumentType>,
+    val minimumBidPrice: Double? = null,
+    val bidDeficiencyTradingDays: Int = 0,
+    val bidCureTradingDays: Int = 10,
+    val minimumMarketCapitalization: Double? = null,
+    val marketCapDeficiencyTradingDays: Int = 0,
+    val minimumTurnoverRate: Double? = null,
+    val liquidityDeficiencyTradingDays: Int = 0,
+    val curePeriodCalendarDays: Int,
+    val reviewPeriodCalendarDays: Int,
+    val delistingNoticeCalendarDays: Int,
+    val liquidationSettlementCalendarDays: Int,
+    val officialSourceUrls: List<String>,
+    val gameApproximationExplanation: String? = null,
+) {
+    init {
+        require(applicableMarkets.isNotEmpty() && applicableInstrumentTypes.isNotEmpty())
+        require(minimumBidPrice == null || minimumBidPrice > 0.0 && minimumBidPrice.isFinite())
+        require(minimumBidPrice == null || bidDeficiencyTradingDays > 0)
+        require(bidCureTradingDays > 0)
+        require(
+            minimumMarketCapitalization == null ||
+                minimumMarketCapitalization > 0.0 && minimumMarketCapitalization.isFinite(),
+        )
+        require(minimumMarketCapitalization == null || marketCapDeficiencyTradingDays > 0)
+        require(minimumTurnoverRate == null || minimumTurnoverRate >= 0.0 && minimumTurnoverRate.isFinite())
+        require(minimumTurnoverRate == null || liquidityDeficiencyTradingDays > 0)
+        require(curePeriodCalendarDays > 0)
+        require(reviewPeriodCalendarDays > 0)
+        require(delistingNoticeCalendarDays > 0)
+        require(liquidationSettlementCalendarDays > 0)
+        require(officialSourceUrls.isNotEmpty())
+        require(officialSourceUrls.distinct().size == officialSourceUrls.size)
+        require(officialSourceUrls.all { it.startsWith("https://") })
+        require(
+            ruleBasis == ListingRuleBasis.OFFICIAL_PUBLIC_RULE_SUMMARY ||
+                !gameApproximationExplanation.isNullOrBlank(),
+        ) { "게임 근사가 포함된 프로필은 근사 범위를 설명해야 합니다." }
+    }
+
+    fun supports(state: ListingLifecycleState): Boolean =
+        state.market in applicableMarkets && state.instrumentType in applicableInstrumentTypes
+}
+
+/** 공식 규정 출처와 게임에서 실행할 보수적인 근사를 한곳에 둔다. */
+object ListingLifecyclePolicyCatalog {
+    private const val KRX_TRADING_GUIDE =
+        "https://global.krx.co.kr/contents/GLB/01/0109/0109000000/guide_to_trading_in_the_korean_stock_market.pdf"
+    private const val KRX_KOSDAQ_DELISTING =
+        "https://global.krx.co.kr/contents/GLB/03/0303/0303060600/GLB0303060600.jsp"
+    private const val KRX_ETN_DELISTING =
+        "https://global.krx.co.kr/contents/GLB/03/0303/0303100300/GLB0303100300.jsp"
+    private const val NASDAQ_MINIMUM_BID_FAQ =
+        "https://listingcenter.nasdaq.com/Material_search.aspx?cid=14&criteria=2&materials=354&mcd=LQ"
+    private const val NYSE_CONTINUED_LISTING = "https://www.nyse.com/regulation/continued-listing"
+    private const val CBOE_SUSPENSIONS_AND_DELISTINGS =
+        "https://www.cboe.com/us/equities/listings/listed_products/suspensions_delistings/"
+    private const val SEC_FUND_LIQUIDATION_EXAMPLE =
+        "https://www.sec.gov/Archives/edgar/data/1928561/000121390026050902/ea0288763-01_497.htm"
+
+    private val krxMarkets = setOf(Market.KOSPI, Market.KOSDAQ)
+    private val usMarkets = Market.entries.filterTo(linkedSetOf(), Market::isUnitedStates)
+    private val companyTypes = setOf(InstrumentType.STOCK, InstrumentType.REIT, InstrumentType.ADR)
+
+    val all: Map<ListingLifecycleProfileId, ListingLifecyclePolicyProfile> = listOf(
+        ListingLifecyclePolicyProfile(
+            id = ListingLifecycleProfileId.KRX_EQUITY_GAME_APPROXIMATION,
+            ruleBasis = ListingRuleBasis.GAME_APPROXIMATION,
+            applicableMarkets = krxMarkets,
+            applicableInstrumentTypes = companyTypes + InstrumentType.CLOSED_END_FUND,
+            minimumTurnoverRate = 0.0001,
+            liquidityDeficiencyTradingDays = 20,
+            curePeriodCalendarDays = 30,
+            reviewPeriodCalendarDays = 10,
+            delistingNoticeCalendarDays = 5,
+            liquidationSettlementCalendarDays = 5,
+            officialSourceUrls = listOf(KRX_TRADING_GUIDE, KRX_KOSDAQ_DELISTING),
+            gameApproximationExplanation =
+                "재무제표, 감사의견 원문, 유통주식수와 분기 평균 거래량이 없어 위험 태그와 20일 회전율로 관리종목·심사를 근사합니다.",
+        ),
+        ListingLifecyclePolicyProfile(
+            id = ListingLifecycleProfileId.KRX_ETF_GAME_APPROXIMATION,
+            ruleBasis = ListingRuleBasis.GAME_APPROXIMATION,
+            applicableMarkets = krxMarkets,
+            applicableInstrumentTypes = setOf(InstrumentType.ETF),
+            minimumTurnoverRate = 0.0001,
+            liquidityDeficiencyTradingDays = 20,
+            curePeriodCalendarDays = 30,
+            reviewPeriodCalendarDays = 10,
+            delistingNoticeCalendarDays = 5,
+            liquidationSettlementCalendarDays = 5,
+            officialSourceUrls = listOf(KRX_TRADING_GUIDE),
+            gameApproximationExplanation =
+                "신탁원본액, 순자산, 추적오차와 LP 호가 원자료가 없어 이벤트 태그와 거래 회전율로 ETF 유지 요건을 근사합니다.",
+        ),
+        ListingLifecyclePolicyProfile(
+            id = ListingLifecycleProfileId.KRX_ETN_GAME_APPROXIMATION,
+            ruleBasis = ListingRuleBasis.HYBRID_PUBLIC_RULE_AND_GAME_APPROXIMATION,
+            applicableMarkets = krxMarkets,
+            applicableInstrumentTypes = setOf(InstrumentType.ETN),
+            minimumTurnoverRate = 0.0001,
+            liquidityDeficiencyTradingDays = 20,
+            curePeriodCalendarDays = 30,
+            reviewPeriodCalendarDays = 10,
+            delistingNoticeCalendarDays = 5,
+            liquidationSettlementCalendarDays = 5,
+            officialSourceUrls = listOf(KRX_TRADING_GUIDE, KRX_ETN_DELISTING),
+            gameApproximationExplanation =
+                "공식 ETN 사유 유형은 유지하되 발행사 자격, 지표가치와 LP 교체 여부는 캠페인 위험·회복 태그로 공급합니다.",
+        ),
+        ListingLifecyclePolicyProfile(
+            id = ListingLifecycleProfileId.NASDAQ_EQUITY_PUBLIC_RULE_WITH_GAME_APPROXIMATION,
+            ruleBasis = ListingRuleBasis.HYBRID_PUBLIC_RULE_AND_GAME_APPROXIMATION,
+            applicableMarkets = setOf(Market.NASDAQ),
+            applicableInstrumentTypes = companyTypes,
+            minimumBidPrice = 1.0,
+            bidDeficiencyTradingDays = 30,
+            bidCureTradingDays = 10,
+            minimumMarketCapitalization = 15_000_000.0,
+            marketCapDeficiencyTradingDays = 30,
+            curePeriodCalendarDays = 180,
+            reviewPeriodCalendarDays = 10,
+            delistingNoticeCalendarDays = 7,
+            liquidationSettlementCalendarDays = 5,
+            officialSourceUrls = listOf(NASDAQ_MINIMUM_BID_FAQ),
+            gameApproximationExplanation =
+                "최저 호가의 30일·180일·통상 10일 회복 규칙은 공개 기준을 따르며, 상장 티어를 알 수 없는 시가총액은 1,500만 달러 게임 기준으로 근사합니다.",
+        ),
+        ListingLifecyclePolicyProfile(
+            id = ListingLifecycleProfileId.US_EQUITY_GAME_APPROXIMATION,
+            ruleBasis = ListingRuleBasis.GAME_APPROXIMATION,
+            applicableMarkets = usMarkets - Market.NASDAQ,
+            applicableInstrumentTypes = companyTypes,
+            minimumBidPrice = 1.0,
+            bidDeficiencyTradingDays = 30,
+            bidCureTradingDays = 10,
+            minimumMarketCapitalization = 15_000_000.0,
+            marketCapDeficiencyTradingDays = 30,
+            curePeriodCalendarDays = 180,
+            reviewPeriodCalendarDays = 10,
+            delistingNoticeCalendarDays = 7,
+            liquidationSettlementCalendarDays = 5,
+            officialSourceUrls = listOf(NYSE_CONTINUED_LISTING, CBOE_SUSPENSIONS_AND_DELISTINGS),
+            gameApproximationExplanation =
+                "NYSE·NYSE American·Arca·Cboe의 종목별 상장 구획과 재무자료를 알 수 없어 30일 가격·시가총액 및 180일 개선기간으로 통합 근사합니다.",
+        ),
+        ListingLifecyclePolicyProfile(
+            id = ListingLifecycleProfileId.US_FUND_GAME_APPROXIMATION,
+            ruleBasis = ListingRuleBasis.GAME_APPROXIMATION,
+            applicableMarkets = usMarkets,
+            applicableInstrumentTypes = setOf(InstrumentType.ETF, InstrumentType.CLOSED_END_FUND),
+            minimumTurnoverRate = 0.00005,
+            liquidityDeficiencyTradingDays = 20,
+            curePeriodCalendarDays = 30,
+            reviewPeriodCalendarDays = 5,
+            delistingNoticeCalendarDays = 5,
+            liquidationSettlementCalendarDays = 7,
+            officialSourceUrls = listOf(CBOE_SUSPENSIONS_AND_DELISTINGS, SEC_FUND_LIQUIDATION_EXAMPLE),
+            gameApproximationExplanation =
+                "거래소별 ETP 순자산·보유자 수·마켓메이커 요건 대신 위험 태그를 사용하고, 공시가 없을 때만 5일 거래기간과 7일 현금지급 기간을 적용합니다.",
+        ),
+        ListingLifecyclePolicyProfile(
+            id = ListingLifecycleProfileId.US_ETN_GAME_APPROXIMATION,
+            ruleBasis = ListingRuleBasis.GAME_APPROXIMATION,
+            applicableMarkets = usMarkets,
+            applicableInstrumentTypes = setOf(InstrumentType.ETN),
+            minimumTurnoverRate = 0.00005,
+            liquidityDeficiencyTradingDays = 20,
+            curePeriodCalendarDays = 30,
+            reviewPeriodCalendarDays = 5,
+            delistingNoticeCalendarDays = 5,
+            liquidationSettlementCalendarDays = 7,
+            officialSourceUrls = listOf(CBOE_SUSPENSIONS_AND_DELISTINGS),
+            gameApproximationExplanation =
+                "투자설명서별 만기·조기상환·발행사 사건 조건을 일반화하며 실제 캠페인 공시일이 있으면 입력의 일정을 우선합니다.",
+        ),
+    ).associateBy(ListingLifecyclePolicyProfile::id)
+
+    init {
+        require(all.keys == ListingLifecycleProfileId.entries.toSet())
+    }
+
+    operator fun get(id: ListingLifecycleProfileId): ListingLifecyclePolicyProfile = requireNotNull(all[id])
+
+    fun profileIdFor(market: Market, instrumentType: InstrumentType): ListingLifecycleProfileId = when {
+        market.isKorean && instrumentType == InstrumentType.ETF ->
+            ListingLifecycleProfileId.KRX_ETF_GAME_APPROXIMATION
+        market.isKorean && instrumentType == InstrumentType.ETN ->
+            ListingLifecycleProfileId.KRX_ETN_GAME_APPROXIMATION
+        market.isKorean -> ListingLifecycleProfileId.KRX_EQUITY_GAME_APPROXIMATION
+        instrumentType == InstrumentType.ETN -> ListingLifecycleProfileId.US_ETN_GAME_APPROXIMATION
+        instrumentType in setOf(InstrumentType.ETF, InstrumentType.CLOSED_END_FUND) ->
+            ListingLifecycleProfileId.US_FUND_GAME_APPROXIMATION
+        market == Market.NASDAQ ->
+            ListingLifecycleProfileId.NASDAQ_EQUITY_PUBLIC_RULE_WITH_GAME_APPROXIMATION
+        else -> ListingLifecycleProfileId.US_EQUITY_GAME_APPROXIMATION
+    }
+}
+
+/**
+ * 숨은 시간·난수 없이 하루 입력 하나를 상태 하나로 접는 상장 생명주기 엔진.
+ * 동일 날짜를 재적용하면 아무 일도 하지 않으므로 저장 직후 재시도에도 중복 뉴스가 생기지 않는다.
+ */
+class ListingLifecycleEngine(
+    private val profiles: Map<ListingLifecycleProfileId, ListingLifecyclePolicyProfile> =
+        ListingLifecyclePolicyCatalog.all,
+) {
+    init {
+        require(profiles.keys.containsAll(ListingLifecycleProfileId.entries))
+    }
+
+    fun initialState(stock: StockDefinition): ListingLifecycleState = initialState(
+        stockId = stock.id,
+        market = stock.market,
+        instrumentType = stock.instrumentType,
+    )
+
+    fun initialState(
+        stockId: String,
+        market: Market,
+        instrumentType: InstrumentType,
+    ): ListingLifecycleState = ListingLifecycleState(
+        stockId = stockId,
+        market = market,
+        instrumentType = instrumentType,
+        profileId = ListingLifecyclePolicyCatalog.profileIdFor(market, instrumentType),
+    )
+
+    fun evaluate(
+        current: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+    ): ListingLifecycleEvaluation {
+        require(input.stockId == current.stockId) { "감시 입력과 상장 상태의 종목 ID가 다릅니다." }
+        current.lastEvaluatedTradingDate?.let { lastDate ->
+            require(input.tradingDate >= lastDate) { "상장 감시 입력은 날짜순이어야 합니다." }
+            if (input.tradingDate == lastDate) return ListingLifecycleEvaluation(current, emptyList())
+        }
+        val profile = requireNotNull(profiles[current.profileId])
+        require(profile.supports(current)) { "상장 생명주기 프로필이 종목 시장·유형과 맞지 않습니다." }
+
+        val observed = updateObservationCounters(current, input, profile)
+            .copy(lastEvaluatedTradingDate = input.tradingDate)
+        if (current.isTerminal) return ListingLifecycleEvaluation(observed, emptyList())
+
+        return when (current.status) {
+            ListingLifecycleStatus.LISTED -> evaluateListed(current, observed, input, profile)
+            ListingLifecycleStatus.DEFICIENCY_NOTICE -> evaluateDeficiency(current, observed, input, profile)
+            ListingLifecycleStatus.UNDER_REVIEW -> evaluateReview(current, observed, input, profile)
+            ListingLifecycleStatus.TRADING_SUSPENDED -> evaluateSuspension(current, observed, input, profile)
+            ListingLifecycleStatus.DELISTING_SCHEDULED -> evaluateScheduled(current, observed, input, profile)
+            ListingLifecycleStatus.LIQUIDATION_PENDING -> evaluateLiquidation(current, observed, input, profile)
+            ListingLifecycleStatus.DELISTED,
+            ListingLifecycleStatus.TERMINATED,
+            -> ListingLifecycleEvaluation(observed, emptyList())
+        }
+    }
+
+    fun replay(
+        initial: ListingLifecycleState,
+        inputs: List<DailyListingSurveillanceInput>,
+    ): ListingLifecycleReplayResult {
+        var state = initial
+        val events = mutableListOf<ListingLifecycleLedgerEvent>()
+        inputs.forEach { input ->
+            val result = evaluate(state, input)
+            state = result.state
+            events += result.ledgerEvents
+        }
+        return ListingLifecycleReplayResult(state, events.toList())
+    }
+
+    private fun evaluateListed(
+        previous: ListingLifecycleState,
+        observed: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+    ): ListingLifecycleEvaluation {
+        val reason = detectReason(observed, input, profile) ?: return noTransition(observed)
+        return when {
+            reason.isOrderlyProductTermination() -> scheduleDelisting(
+                previous = previous,
+                observed = observed,
+                input = input,
+                profile = profile,
+                reason = reason,
+                tradingAllowed = input.scheduledDelistingOn?.let { it > input.tradingDate } ?: true,
+            )
+            reason.requiresImmediateSuspension(input.riskSeverity) -> suspend(
+                previous = previous,
+                observed = observed,
+                input = input,
+                profile = profile,
+                reason = reason,
+            )
+            input.riskSeverity.level >= ListingRiskSeverity.HIGH.level &&
+                reason in setOf(
+                    ListingLifecycleReason.AUDIT_OR_DISCLOSURE_FAILURE,
+                    ListingLifecycleReason.SERIOUS_COMPLIANCE_EVENT,
+                    ListingLifecycleReason.CORE_BUSINESS_SUSPENSION,
+                ) -> startReview(previous, observed, input, profile, reason)
+            else -> designateDeficiency(previous, observed, input, profile, reason)
+        }
+    }
+
+    private fun evaluateDeficiency(
+        previous: ListingLifecycleState,
+        observed: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+    ): ListingLifecycleEvaluation {
+        val incoming = detectReason(observed, input, profile)
+        if (incoming?.isOrderlyProductTermination() == true) {
+            return scheduleDelisting(
+                previous,
+                observed,
+                input,
+                profile,
+                incoming,
+                tradingAllowed = input.scheduledDelistingOn?.let { it > input.tradingDate } ?: true,
+            )
+        }
+        if (incoming != null && incoming.requiresImmediateSuspension(input.riskSeverity)) {
+            return suspend(previous, observed, input, profile, incoming)
+        }
+        if (isRecovered(observed, input, profile)) {
+            return release(previous, observed, input, profile, ListingLifecycleEventKind.DEFICIENCY_CURED)
+        }
+        if (observed.cureDeadline?.let { input.tradingDate >= it } == true) {
+            return if (observed.market.isKorean) {
+                startReview(previous, observed, input, profile, requireNotNull(observed.activeReason))
+            } else {
+                scheduleDelisting(
+                    previous,
+                    observed,
+                    input,
+                    profile,
+                    requireNotNull(observed.activeReason),
+                    tradingAllowed = true,
+                )
+            }
+        }
+        return noTransition(observed)
+    }
+
+    private fun evaluateReview(
+        previous: ListingLifecycleState,
+        observed: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+    ): ListingLifecycleEvaluation {
+        val incoming = detectReason(observed, input, profile)
+        if (incoming?.isOrderlyProductTermination() == true) {
+            return scheduleDelisting(
+                previous,
+                observed,
+                input,
+                profile,
+                incoming,
+                tradingAllowed = input.scheduledDelistingOn?.let { it > input.tradingDate } ?: true,
+            )
+        }
+        if (incoming != null && incoming.requiresImmediateSuspension(input.riskSeverity)) {
+            return suspend(previous, observed, input, profile, incoming)
+        }
+        if (isRecovered(observed, input, profile)) {
+            return release(previous, observed, input, profile, ListingLifecycleEventKind.TRADING_RESUMED)
+        }
+        if (observed.reviewDeadline?.let { input.tradingDate >= it } == true) {
+            return suspend(
+                previous,
+                observed,
+                input,
+                profile,
+                requireNotNull(observed.activeReason),
+            )
+        }
+        return noTransition(observed)
+    }
+
+    private fun evaluateSuspension(
+        previous: ListingLifecycleState,
+        observed: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+    ): ListingLifecycleEvaluation {
+        val incoming = detectReason(observed, input, profile)
+        if (incoming?.isOrderlyProductTermination() == true) {
+            return scheduleDelisting(
+                previous,
+                observed,
+                input,
+                profile,
+                incoming,
+                tradingAllowed = false,
+            )
+        }
+        if (isRecovered(observed, input, profile)) {
+            return release(previous, observed, input, profile, ListingLifecycleEventKind.TRADING_RESUMED)
+        }
+        if (observed.reviewDeadline?.let { input.tradingDate >= it } == true) {
+            return scheduleDelisting(
+                previous,
+                observed,
+                input,
+                profile,
+                requireNotNull(observed.activeReason),
+                tradingAllowed = false,
+            )
+        }
+        return noTransition(observed)
+    }
+
+    private fun evaluateScheduled(
+        previous: ListingLifecycleState,
+        observed: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+    ): ListingLifecycleEvaluation {
+        val incoming = detectReason(observed, input, profile)
+        val incomingDate = input.scheduledDelistingOn
+        val storedDate = requireNotNull(observed.scheduledDelistingOn)
+        if (incoming?.isOrderlyProductTermination() == true &&
+            incomingDate != null && incomingDate < storedDate
+        ) {
+            return scheduleDelisting(
+                previous = previous,
+                observed = observed,
+                input = input,
+                profile = profile,
+                reason = incoming,
+                tradingAllowed = observed.tradingAllowedUntilDelisting && incomingDate > input.tradingDate,
+            )
+        }
+        if (observed.activeReason?.canBeCuredAfterSchedule() == true && isRecovered(observed, input, profile)) {
+            return release(previous, observed, input, profile, ListingLifecycleEventKind.TRADING_RESUMED)
+        }
+        if (input.tradingDate < storedDate) return noTransition(observed)
+
+        val dispositionType = chooseDisposition(observed, input)
+        if (dispositionType == ListingFinalDispositionType.CASH_LIQUIDATION) {
+            // 지급 단가가 확정되지 않은 상태를 임의의 마지막 호가로 청산하지 않는다.
+            val cashPerUnit = input.liquidationCashPerUnit ?: return noTransition(observed)
+            val settlementDueOn = input.scheduledSettlementOn
+                ?: input.tradingDate.plus(profile.liquidationSettlementCalendarDays, DateTimeUnit.DAY)
+            val disposition = ListingFinalDisposition(
+                type = dispositionType,
+                effectiveOn = input.tradingDate,
+                settlementDueOn = settlementDueOn,
+                cashPerUnit = cashPerUnit,
+            )
+            val next = observed.copy(
+                status = ListingLifecycleStatus.LIQUIDATION_PENDING,
+                settlementDueOn = settlementDueOn,
+                tradingAllowedUntilDelisting = false,
+                finalDisposition = disposition,
+            )
+            return transition(
+                previous,
+                next,
+                input,
+                profile,
+                ListingLifecycleEventKind.LIQUIDATION_STARTED,
+                ListingNoticeLevel.WARNING,
+                disposition,
+            )
+        }
+
+        val disposition = ListingFinalDisposition(
+            type = dispositionType,
+            effectiveOn = input.tradingDate,
+            cashPerUnit = if (dispositionType == ListingFinalDispositionType.WORTHLESS_DISPOSITION) 0.0 else null,
+        )
+        val terminalStatus = if (observed.instrumentType == InstrumentType.ETN) {
+            ListingLifecycleStatus.TERMINATED
+        } else {
+            ListingLifecycleStatus.DELISTED
+        }
+        val next = observed.copy(
+            status = terminalStatus,
+            tradingAllowedUntilDelisting = false,
+            finalDisposition = disposition,
+        )
+        return transition(
+            previous,
+            next,
+            input,
+            profile,
+            if (terminalStatus == ListingLifecycleStatus.TERMINATED) {
+                ListingLifecycleEventKind.TERMINATED
+            } else {
+                ListingLifecycleEventKind.DELISTED
+            },
+            ListingNoticeLevel.CRITICAL,
+            disposition,
+        )
+    }
+
+    private fun evaluateLiquidation(
+        previous: ListingLifecycleState,
+        observed: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+    ): ListingLifecycleEvaluation {
+        if (observed.settlementDueOn?.let { input.tradingDate >= it } != true) return noTransition(observed)
+        val next = observed.copy(
+            status = ListingLifecycleStatus.TERMINATED,
+            tradingAllowedUntilDelisting = false,
+        )
+        return transition(
+            previous,
+            next,
+            input,
+            profile,
+            ListingLifecycleEventKind.TERMINATED,
+            ListingNoticeLevel.INFO,
+            observed.finalDisposition,
+        )
+    }
+
+    private fun designateDeficiency(
+        previous: ListingLifecycleState,
+        observed: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+        reason: ListingLifecycleReason,
+    ): ListingLifecycleEvaluation {
+        val count = observed.designationCount + 1
+        val deadline = input.tradingDate.plus(profile.curePeriodCalendarDays, DateTimeUnit.DAY)
+        val next = observed.copy(
+            status = ListingLifecycleStatus.DEFICIENCY_NOTICE,
+            activeReason = reason,
+            designatedOn = input.tradingDate,
+            cureDeadline = deadline,
+            reviewDeadline = null,
+            scheduledDelistingOn = null,
+            settlementDueOn = null,
+            consecutiveCureTradingDays = 0,
+            designationCount = count,
+            finalDisposition = null,
+            tradingAllowedUntilDelisting = true,
+        )
+        return transition(
+            previous,
+            next,
+            input,
+            profile,
+            if (count == 1) {
+                ListingLifecycleEventKind.DEFICIENCY_DESIGNATED
+            } else {
+                ListingLifecycleEventKind.DEFICIENCY_REDESIGNATED
+            },
+            ListingNoticeLevel.CAUTION,
+        )
+    }
+
+    private fun startReview(
+        previous: ListingLifecycleState,
+        observed: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+        reason: ListingLifecycleReason,
+    ): ListingLifecycleEvaluation {
+        val deadline = input.tradingDate.plus(profile.reviewPeriodCalendarDays, DateTimeUnit.DAY)
+        val next = observed.copy(
+            status = ListingLifecycleStatus.UNDER_REVIEW,
+            activeReason = reason,
+            designatedOn = observed.designatedOn ?: input.tradingDate,
+            cureDeadline = null,
+            reviewDeadline = deadline,
+            scheduledDelistingOn = null,
+            settlementDueOn = null,
+            consecutiveCureTradingDays = 0,
+            tradingAllowedUntilDelisting = observed.market.isUnitedStates,
+        )
+        return transition(
+            previous,
+            next,
+            input,
+            profile,
+            ListingLifecycleEventKind.REVIEW_STARTED,
+            ListingNoticeLevel.WARNING,
+        )
+    }
+
+    private fun suspend(
+        previous: ListingLifecycleState,
+        observed: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+        reason: ListingLifecycleReason,
+    ): ListingLifecycleEvaluation {
+        val deadline = input.tradingDate.plus(profile.reviewPeriodCalendarDays, DateTimeUnit.DAY)
+        val next = observed.copy(
+            status = ListingLifecycleStatus.TRADING_SUSPENDED,
+            activeReason = reason,
+            designatedOn = observed.designatedOn ?: input.tradingDate,
+            cureDeadline = null,
+            reviewDeadline = deadline,
+            scheduledDelistingOn = null,
+            settlementDueOn = null,
+            consecutiveCureTradingDays = 0,
+            tradingAllowedUntilDelisting = false,
+        )
+        return transition(
+            previous,
+            next,
+            input,
+            profile,
+            ListingLifecycleEventKind.TRADING_SUSPENDED,
+            ListingNoticeLevel.CRITICAL,
+        )
+    }
+
+    private fun scheduleDelisting(
+        previous: ListingLifecycleState,
+        observed: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+        reason: ListingLifecycleReason,
+        tradingAllowed: Boolean,
+    ): ListingLifecycleEvaluation {
+        val date = input.scheduledDelistingOn
+            ?: input.tradingDate.plus(profile.delistingNoticeCalendarDays, DateTimeUnit.DAY)
+        val next = observed.copy(
+            status = ListingLifecycleStatus.DELISTING_SCHEDULED,
+            activeReason = reason,
+            designatedOn = observed.designatedOn ?: input.tradingDate,
+            cureDeadline = null,
+            reviewDeadline = null,
+            scheduledDelistingOn = date,
+            settlementDueOn = null,
+            consecutiveCureTradingDays = 0,
+            tradingAllowedUntilDelisting = tradingAllowed,
+        )
+        val scheduled = transition(
+            previous,
+            next,
+            input,
+            profile,
+            ListingLifecycleEventKind.DELISTING_SCHEDULED,
+            ListingNoticeLevel.CRITICAL,
+        )
+        if (date <= input.tradingDate && reason.isOrderlyProductTermination()) {
+            val liquidation = evaluateScheduled(
+                previous = scheduled.state,
+                observed = scheduled.state,
+                input = input,
+                profile = profile,
+            )
+            if (liquidation.state.status == ListingLifecycleStatus.LIQUIDATION_PENDING) {
+                return ListingLifecycleEvaluation(
+                    state = liquidation.state,
+                    ledgerEvents = scheduled.ledgerEvents + liquidation.ledgerEvents,
+                )
+            }
+        }
+        return scheduled
+    }
+
+    private fun release(
+        previous: ListingLifecycleState,
+        observed: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+        kind: ListingLifecycleEventKind,
+    ): ListingLifecycleEvaluation {
+        val next = observed.copy(
+            status = ListingLifecycleStatus.LISTED,
+            activeReason = null,
+            designatedOn = null,
+            cureDeadline = null,
+            reviewDeadline = null,
+            scheduledDelistingOn = null,
+            settlementDueOn = null,
+            consecutiveLowBidTradingDays = 0,
+            consecutiveLowMarketCapTradingDays = 0,
+            consecutiveLowLiquidityTradingDays = 0,
+            consecutiveCureTradingDays = 0,
+            finalDisposition = null,
+            tradingAllowedUntilDelisting = true,
+        )
+        return transition(previous, next, input, profile, kind, ListingNoticeLevel.INFO)
+    }
+
+    private fun transition(
+        previous: ListingLifecycleState,
+        candidate: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+        kind: ListingLifecycleEventKind,
+        level: ListingNoticeLevel,
+        disposition: ListingFinalDisposition? = null,
+    ): ListingLifecycleEvaluation {
+        val sequence = previous.ledgerSequence + 1L
+        val next = candidate.copy(
+            lastEvaluatedTradingDate = input.tradingDate,
+            ledgerSequence = sequence,
+        )
+        val deadline = when (next.status) {
+            ListingLifecycleStatus.DEFICIENCY_NOTICE -> next.cureDeadline
+            ListingLifecycleStatus.UNDER_REVIEW,
+            ListingLifecycleStatus.TRADING_SUSPENDED,
+            -> next.reviewDeadline
+            ListingLifecycleStatus.DELISTING_SCHEDULED -> next.scheduledDelistingOn
+            ListingLifecycleStatus.LIQUIDATION_PENDING -> next.settlementDueOn
+            else -> null
+        }
+        val reason = next.activeReason ?: previous.activeReason
+        val event = ListingLifecycleLedgerEvent(
+            id = "${next.stockId}:${input.tradingDate}:$sequence:${kind.name}",
+            sequence = sequence,
+            stockId = next.stockId,
+            tradingDate = input.tradingDate,
+            kind = kind,
+            fromStatus = previous.status,
+            toStatus = next.status,
+            reason = reason,
+            level = level,
+            title = titleFor(kind),
+            summary = summaryFor(next, reason, deadline, disposition),
+            deadline = deadline,
+            disposition = disposition,
+            sourceUrls = profile.officialSourceUrls,
+        )
+        return ListingLifecycleEvaluation(next, listOf(event))
+    }
+
+    private fun noTransition(state: ListingLifecycleState): ListingLifecycleEvaluation =
+        ListingLifecycleEvaluation(state, emptyList())
+
+    private fun updateObservationCounters(
+        state: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+    ): ListingLifecycleState {
+        val isLowBid = ListingRiskTag.LOW_BID_PRICE in input.riskTags ||
+            (profile.minimumBidPrice != null && input.close != null && input.close < profile.minimumBidPrice)
+        val isLowMarketCap = ListingRiskTag.LOW_MARKET_CAPITALIZATION in input.riskTags ||
+            (
+                profile.minimumMarketCapitalization != null && input.marketCapitalization != null &&
+                    input.marketCapitalization < profile.minimumMarketCapitalization
+                )
+        val isLowLiquidity = ListingRiskTag.LOW_TRADING_LIQUIDITY in input.riskTags ||
+            (
+                profile.minimumTurnoverRate != null &&
+                    (
+                        input.tradedVolume == 0L ||
+                            input.turnoverRate != null && input.turnoverRate < profile.minimumTurnoverRate
+                        )
+                )
+        val cureHealthy = state.activeReason?.let { reason -> isHealthyObservation(reason, input, profile) } ?: false
+        return state.copy(
+            consecutiveLowBidTradingDays = if (isLowBid) state.consecutiveLowBidTradingDays + 1 else 0,
+            consecutiveLowMarketCapTradingDays =
+                if (isLowMarketCap) state.consecutiveLowMarketCapTradingDays + 1 else 0,
+            consecutiveLowLiquidityTradingDays =
+                if (isLowLiquidity) state.consecutiveLowLiquidityTradingDays + 1 else 0,
+            consecutiveCureTradingDays = if (cureHealthy) state.consecutiveCureTradingDays + 1 else 0,
+        )
+    }
+
+    private fun detectReason(
+        state: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+    ): ListingLifecycleReason? {
+        val tags = input.riskTags
+        return when {
+            ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION in tags &&
+                state.instrumentType == InstrumentType.ETN ->
+                ListingLifecycleReason.ETN_MATURITY_OR_EARLY_REDEMPTION
+            ListingRiskTag.ETF_LIQUIDATION_APPROVED in tags &&
+                state.instrumentType in setOf(InstrumentType.ETF, InstrumentType.CLOSED_END_FUND) ->
+                ListingLifecycleReason.ETF_VOLUNTARY_LIQUIDATION
+            ListingRiskTag.BANKRUPTCY_OR_INSOLVENCY in tags -> ListingLifecycleReason.BANKRUPTCY_OR_INSOLVENCY
+            ListingRiskTag.ISSUER_ELIGIBILITY_FAILURE in tags -> ListingLifecycleReason.ISSUER_ELIGIBILITY_FAILURE
+            ListingRiskTag.UNDERLYING_INDEX_UNAVAILABLE in tags -> ListingLifecycleReason.UNDERLYING_INDEX_UNAVAILABLE
+            ListingRiskTag.LIQUIDITY_PROVIDER_FAILURE in tags -> ListingLifecycleReason.LIQUIDITY_PROVIDER_FAILURE
+            ListingRiskTag.CORE_BUSINESS_SUSPENSION in tags -> ListingLifecycleReason.CORE_BUSINESS_SUSPENSION
+            ListingRiskTag.SERIOUS_COMPLIANCE_EVENT in tags -> ListingLifecycleReason.SERIOUS_COMPLIANCE_EVENT
+            ListingRiskTag.AUDIT_OPINION_FAILURE in tags || ListingRiskTag.DISCLOSURE_VIOLATION in tags ->
+                ListingLifecycleReason.AUDIT_OR_DISCLOSURE_FAILURE
+            ListingRiskTag.ADMINISTRATIVE_ISSUE in tags -> ListingLifecycleReason.KRX_ADMINISTRATIVE_ISSUE
+            ListingRiskTag.LISTING_MAINTENANCE_DEFICIENCY in tags ||
+                ListingRiskTag.QUALITATIVE_LISTING_REVIEW in tags ->
+                if (state.market.isKorean) {
+                    ListingLifecycleReason.KRX_LISTING_MAINTENANCE
+                } else {
+                    ListingLifecycleReason.US_LISTING_MAINTENANCE
+                }
+            profile.minimumBidPrice != null &&
+                state.consecutiveLowBidTradingDays >= profile.bidDeficiencyTradingDays ->
+                ListingLifecycleReason.US_MINIMUM_BID_PRICE
+            profile.minimumMarketCapitalization != null &&
+                state.consecutiveLowMarketCapTradingDays >= profile.marketCapDeficiencyTradingDays ->
+                ListingLifecycleReason.US_MARKET_CAPITALIZATION
+            profile.minimumTurnoverRate != null &&
+                state.consecutiveLowLiquidityTradingDays >= profile.liquidityDeficiencyTradingDays ->
+                ListingLifecycleReason.LOW_TRADING_LIQUIDITY
+            else -> null
+        }
+    }
+
+    private fun isRecovered(
+        state: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+    ): Boolean {
+        val reason = state.activeReason ?: return false
+        if (ListingRecoveryCondition.REGULATORY_CLEARANCE in input.recoveryConditions && reason.canBeExplicitlyCured()) {
+            return true
+        }
+        return when (reason) {
+            ListingLifecycleReason.US_MINIMUM_BID_PRICE ->
+                state.consecutiveCureTradingDays >= profile.bidCureTradingDays ||
+                    ListingRecoveryCondition.BID_PRICE_RESTORED in input.recoveryConditions
+            ListingLifecycleReason.US_MARKET_CAPITALIZATION ->
+                state.consecutiveCureTradingDays >= profile.bidCureTradingDays ||
+                    ListingRecoveryCondition.MARKET_CAPITALIZATION_RESTORED in input.recoveryConditions
+            ListingLifecycleReason.LOW_TRADING_LIQUIDITY ->
+                state.consecutiveCureTradingDays >= profile.bidCureTradingDays ||
+                    ListingRecoveryCondition.LIQUIDITY_RESTORED in input.recoveryConditions
+            ListingLifecycleReason.KRX_LISTING_MAINTENANCE,
+            ListingLifecycleReason.KRX_ADMINISTRATIVE_ISSUE,
+            ListingLifecycleReason.US_LISTING_MAINTENANCE,
+            -> ListingRecoveryCondition.FINANCIAL_DEFICIENCY_RESOLVED in input.recoveryConditions
+            ListingLifecycleReason.AUDIT_OR_DISCLOSURE_FAILURE,
+            ListingLifecycleReason.SERIOUS_COMPLIANCE_EVENT,
+            -> ListingRecoveryCondition.AUDIT_OR_DISCLOSURE_CURED in input.recoveryConditions
+            ListingLifecycleReason.CORE_BUSINESS_SUSPENSION ->
+                ListingRecoveryCondition.BUSINESS_RESUMED in input.recoveryConditions
+            ListingLifecycleReason.ISSUER_ELIGIBILITY_FAILURE ->
+                ListingRecoveryCondition.ISSUER_ELIGIBILITY_RESTORED in input.recoveryConditions
+            ListingLifecycleReason.UNDERLYING_INDEX_UNAVAILABLE ->
+                ListingRecoveryCondition.UNDERLYING_INDEX_RESTORED in input.recoveryConditions
+            ListingLifecycleReason.LIQUIDITY_PROVIDER_FAILURE ->
+                ListingRecoveryCondition.LIQUIDITY_PROVIDER_REPLACED in input.recoveryConditions
+            ListingLifecycleReason.BANKRUPTCY_OR_INSOLVENCY,
+            ListingLifecycleReason.ETF_VOLUNTARY_LIQUIDATION,
+            ListingLifecycleReason.ETN_MATURITY_OR_EARLY_REDEMPTION,
+            -> false
+        }
+    }
+
+    private fun isHealthyObservation(
+        reason: ListingLifecycleReason,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+    ): Boolean = when (reason) {
+        ListingLifecycleReason.US_MINIMUM_BID_PRICE ->
+            profile.minimumBidPrice != null && input.close != null && input.close >= profile.minimumBidPrice &&
+                ListingRiskTag.LOW_BID_PRICE !in input.riskTags
+        ListingLifecycleReason.US_MARKET_CAPITALIZATION ->
+            profile.minimumMarketCapitalization != null && input.marketCapitalization != null &&
+                input.marketCapitalization >= profile.minimumMarketCapitalization &&
+                ListingRiskTag.LOW_MARKET_CAPITALIZATION !in input.riskTags
+        ListingLifecycleReason.LOW_TRADING_LIQUIDITY ->
+            profile.minimumTurnoverRate != null && input.turnoverRate != null &&
+                input.turnoverRate >= profile.minimumTurnoverRate &&
+                ListingRiskTag.LOW_TRADING_LIQUIDITY !in input.riskTags
+        else -> false
+    }
+
+    private fun chooseDisposition(
+        state: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+    ): ListingFinalDispositionType {
+        input.finalDispositionHint?.let { return it }
+        val reason = requireNotNull(state.activeReason)
+        if (reason.isOrderlyProductTermination()) return ListingFinalDispositionType.CASH_LIQUIDATION
+        if (state.instrumentType == InstrumentType.ETN && input.liquidationCashPerUnit != null) {
+            return ListingFinalDispositionType.CASH_LIQUIDATION
+        }
+        if (state.market.isUnitedStates && input.otcTransferAvailable) {
+            return ListingFinalDispositionType.OTC_TRANSFER
+        }
+        return ListingFinalDispositionType.WORTHLESS_DISPOSITION
+    }
+
+    private fun ListingLifecycleReason.isOrderlyProductTermination(): Boolean =
+        this == ListingLifecycleReason.ETF_VOLUNTARY_LIQUIDATION ||
+            this == ListingLifecycleReason.ETN_MATURITY_OR_EARLY_REDEMPTION
+
+    private fun ListingLifecycleReason.requiresImmediateSuspension(severity: ListingRiskSeverity): Boolean = when (this) {
+        ListingLifecycleReason.BANKRUPTCY_OR_INSOLVENCY -> true
+        ListingLifecycleReason.ISSUER_ELIGIBILITY_FAILURE,
+        ListingLifecycleReason.UNDERLYING_INDEX_UNAVAILABLE,
+        -> severity.level >= ListingRiskSeverity.HIGH.level
+        ListingLifecycleReason.LIQUIDITY_PROVIDER_FAILURE,
+        ListingLifecycleReason.SERIOUS_COMPLIANCE_EVENT,
+        -> severity == ListingRiskSeverity.CRITICAL
+        else -> false
+    }
+
+    private fun ListingLifecycleReason.canBeExplicitlyCured(): Boolean =
+        this !in setOf(
+            ListingLifecycleReason.BANKRUPTCY_OR_INSOLVENCY,
+            ListingLifecycleReason.ETF_VOLUNTARY_LIQUIDATION,
+            ListingLifecycleReason.ETN_MATURITY_OR_EARLY_REDEMPTION,
+        )
+
+    private fun ListingLifecycleReason.canBeCuredAfterSchedule(): Boolean = canBeExplicitlyCured()
+
+    private fun titleFor(kind: ListingLifecycleEventKind): String = when (kind) {
+        ListingLifecycleEventKind.DEFICIENCY_DESIGNATED -> "상장 유지 요건 안내"
+        ListingLifecycleEventKind.DEFICIENCY_REDESIGNATED -> "상장 유지 요건 재지정"
+        ListingLifecycleEventKind.REVIEW_STARTED -> "상장 적격성 심사 시작"
+        ListingLifecycleEventKind.TRADING_SUSPENDED -> "거래정지"
+        ListingLifecycleEventKind.DEFICIENCY_CURED -> "상장 유지 요건 회복"
+        ListingLifecycleEventKind.TRADING_RESUMED -> "상장 조치 해제"
+        ListingLifecycleEventKind.DELISTING_SCHEDULED -> "상장폐지 예정"
+        ListingLifecycleEventKind.LIQUIDATION_STARTED -> "청산금 지급 절차"
+        ListingLifecycleEventKind.DELISTED -> "상장폐지 완료"
+        ListingLifecycleEventKind.TERMINATED -> "상품 종료"
+    }
+
+    private fun summaryFor(
+        state: ListingLifecycleState,
+        reason: ListingLifecycleReason?,
+        deadline: LocalDate?,
+        disposition: ListingFinalDisposition?,
+    ): String = buildString {
+        append(state.status.displayName)
+        reason?.let { append(" · ${it.displayName}") }
+        deadline?.let { append(" · $it 예정") }
+        disposition?.let { append(" · ${it.type.displayName}") }
+    }
+}

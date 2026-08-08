@@ -10,6 +10,19 @@ import com.amond.kmpbook.domain.model.GameEventImpact
 import com.amond.kmpbook.domain.model.GamePhase
 import com.amond.kmpbook.domain.model.Holding
 import com.amond.kmpbook.domain.model.ImpactDirection
+import com.amond.kmpbook.domain.model.InstrumentTradingHalt
+import com.amond.kmpbook.domain.model.InvestmentAlertDesignation
+import com.amond.kmpbook.domain.model.InvestmentAlertLevel
+import com.amond.kmpbook.domain.model.KrxCircuitBreakerState
+import com.amond.kmpbook.domain.model.KrxSidecarState
+import com.amond.kmpbook.domain.model.KrxViState
+import com.amond.kmpbook.domain.model.ListingFinalDisposition
+import com.amond.kmpbook.domain.model.ListingFinalDispositionType
+import com.amond.kmpbook.domain.model.ListingLifecycleEventKind
+import com.amond.kmpbook.domain.model.ListingLifecycleLedgerEvent
+import com.amond.kmpbook.domain.model.ListingLifecycleReason
+import com.amond.kmpbook.domain.model.ListingLifecycleStatus
+import com.amond.kmpbook.domain.model.ListingNoticeLevel
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.MarketSession
 import com.amond.kmpbook.domain.model.Order
@@ -24,10 +37,17 @@ import com.amond.kmpbook.domain.model.Sector
 import com.amond.kmpbook.domain.model.StockDefinition
 import com.amond.kmpbook.domain.model.TimeInForce
 import com.amond.kmpbook.domain.model.Trade
+import com.amond.kmpbook.domain.model.TradingDayWindow
+import com.amond.kmpbook.domain.model.TradingHaltOrderPolicy
+import com.amond.kmpbook.domain.model.TradingHaltReason
+import com.amond.kmpbook.domain.model.TradingProtectionSnapshot
 import com.amond.kmpbook.domain.model.TurnStep
+import com.amond.kmpbook.domain.model.UsLuldTier
 import com.amond.kmpbook.domain.simulation.EventEngineSnapshot
+import com.amond.kmpbook.domain.simulation.ListingLifecycleEngine
 import com.amond.kmpbook.domain.simulation.MacroEnvironment
 import com.amond.kmpbook.domain.simulation.OrderBookSnapshot
+import com.amond.kmpbook.domain.simulation.TradingProtectionEngine
 import com.amond.kmpbook.domain.tax.AnnualStockTaxCalculator
 import com.amond.kmpbook.domain.tax.AnnualStockTaxRequest
 import com.amond.kmpbook.domain.tax.BrokerFeeCalculator
@@ -44,6 +64,7 @@ import com.amond.kmpbook.domain.tax.StockGainTaxTreatment
 import com.amond.kmpbook.domain.tax.TaxLiabilityStatus
 import com.amond.kmpbook.presentation.BenchmarkPoint
 import com.amond.kmpbook.presentation.DailyPortfolioStat
+import com.amond.kmpbook.presentation.DailyTradingSurveillancePoint
 import com.amond.kmpbook.presentation.DividendLedgerEntry
 import com.amond.kmpbook.presentation.ForeignExchangeRecord
 import com.amond.kmpbook.presentation.NewGameOptions
@@ -53,8 +74,10 @@ import com.amond.kmpbook.presentation.SimulatorUiState
 import com.amond.kmpbook.presentation.SimulatorViewModel
 import com.amond.kmpbook.presentation.TaxPaymentNotice
 import com.amond.kmpbook.presentation.TransactionCostRecord
+import com.google.gson.JsonParser
 import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -69,6 +92,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Instant
 
@@ -131,7 +155,7 @@ class DesktopGameSaveStorageTest {
     fun completeSimulatorStateRoundTripsThroughVersionedUtf8Envelope(): Unit = runBlocking {
         val file = temporaryDirectory.resolve("nested/savegame.json")
         val storage = GameSaveStorage(file.toString())
-        val original = richState()
+        val original = richStateWithLifecycleAndProtection()
 
         val saved = assertIs<GameSaveResult.Success>(storage.save(original))
         assertTrue(file.exists())
@@ -158,11 +182,43 @@ class DesktopGameSaveStorageTest {
         assertEquals(original.cashByCurrency, loaded.state.cashByCurrency)
         assertEquals(original.macro.marketHourlyReturns, loaded.state.macro.marketHourlyReturns)
         assertEquals(original.macro.sectorHourlyReturns, loaded.state.macro.sectorHourlyReturns)
+        assertEquals(original.listingLifecycleStates, loaded.state.listingLifecycleStates)
+        assertEquals(original.listingLifecycleLedger, loaded.state.listingLifecycleLedger)
+        assertEquals(original.terminatedInstrumentIds, loaded.state.terminatedInstrumentIds)
+        assertEquals(original.tradingProtectionSnapshot, loaded.state.tradingProtectionSnapshot)
+        assertEquals(original.dailyTradingSurveillance, loaded.state.dailyTradingSurveillance)
 
         val leftovers = Files.list(file.parent).use { paths ->
             paths.filter { it.fileName.toString().startsWith(".savegame-") }.count()
         }
         assertEquals(0L, leftovers)
+    }
+
+    @Test
+    fun versionOneEnvelopeMigratesToCurrentSchemaWithAbsentNullableState(): Unit = runBlocking {
+        val file = temporaryDirectory.resolve("v1-savegame.json")
+        val storage = GameSaveStorage(file.toString())
+        assertIs<GameSaveResult.Success>(storage.save(richState()))
+
+        val root = JsonParser.parseString(file.readText(StandardCharsets.UTF_8)).asJsonObject
+        root.addProperty("schemaVersion", 1)
+        val state = root.getAsJsonObject("state")
+        listOf(
+            "terminatedInstrumentIds",
+            "listingLifecycleStates",
+            "listingLifecycleLedger",
+            "tradingProtectionSnapshot",
+            "dailyTradingSurveillance",
+        ).forEach(state::remove)
+        file.writeText(root.toString(), StandardCharsets.UTF_8)
+
+        val loaded = assertIs<GameLoadResult.Success>(storage.load())
+        assertEquals(CURRENT_GAME_SAVE_SCHEMA_VERSION, loaded.metadata.schemaVersion)
+        assertNull(loaded.state.terminatedInstrumentIds)
+        assertNull(loaded.state.listingLifecycleStates)
+        assertNull(loaded.state.listingLifecycleLedger)
+        assertNull(loaded.state.tradingProtectionSnapshot)
+        assertNull(loaded.state.dailyTradingSurveillance)
     }
 
     @Test
@@ -198,19 +254,112 @@ class DesktopGameSaveStorageTest {
     }
 
     @Test
-    fun unsupportedSchemaIsDistinguishedFromCorruptJson(): Unit = runBlocking {
+    fun zeroNegativeAndFutureSchemasAreRejectedAsUnsupported(): Unit = runBlocking {
         val file = temporaryDirectory.resolve("savegame.json")
         val storage = GameSaveStorage(file.toString())
         assertIs<GameSaveResult.Success>(storage.save(richState()))
-        val futureJson = file.readText(StandardCharsets.UTF_8).replace(
-            "\"schemaVersion\": $CURRENT_GAME_SAVE_SCHEMA_VERSION",
-            "\"schemaVersion\": 99",
+        val currentJson = file.readText(StandardCharsets.UTF_8)
+
+        listOf(-1, 0, CURRENT_GAME_SAVE_SCHEMA_VERSION + 1, 99).forEach { version ->
+            val unsupportedJson = currentJson.replace(
+                "\"schemaVersion\": $CURRENT_GAME_SAVE_SCHEMA_VERSION",
+                "\"schemaVersion\": $version",
+            )
+            file.writeText(unsupportedJson, StandardCharsets.UTF_8)
+
+            val failure = assertIs<GameLoadResult.Failure>(storage.load())
+            assertEquals(GameSaveErrorCode.UNSUPPORTED_SCHEMA, failure.error.code)
+            assertTrue(failure.error.message.contains(version.toString()))
+        }
+    }
+
+    @Test
+    fun malformedListingLifecycleStatesAreRejectedBeforeWriting(): Unit = runBlocking {
+        val file = temporaryDirectory.resolve("invalid-listing-savegame.json")
+        val storage = GameSaveStorage(file.toString())
+        val valid = richStateWithLifecycleAndProtection()
+        val stockId = valid.listingLifecycleStates.orEmpty().keys.first()
+        val listing = valid.listingLifecycleStates.orEmpty().getValue(stockId)
+        val event = valid.listingLifecycleLedger.orEmpty().single()
+        val malformedStates = listOf(
+            valid.copy(
+                listingLifecycleStates = valid.listingLifecycleStates.orEmpty() - stockId +
+                    ("NASDAQ:WRONG" to listing),
+            ),
+            valid.copy(
+                listingLifecycleStates = valid.listingLifecycleStates.orEmpty() +
+                    (stockId to listing.copy(lastEvaluatedTradingDate = LocalDate(2041, 1, 1))),
+            ),
+            valid.copy(terminatedInstrumentIds = setOf(stockId)),
+            valid.copy(
+                listingLifecycleStates = valid.listingLifecycleStates.orEmpty() +
+                    (stockId to listing.copy(
+                        status = ListingLifecycleStatus.DELISTED,
+                        finalDisposition = ListingFinalDisposition(
+                            type = ListingFinalDispositionType.WORTHLESS_DISPOSITION,
+                            effectiveOn = valid.currentDate,
+                        ),
+                    )),
+            ),
+            valid.copy(
+                listingLifecycleLedger = listOf(event, event.copy(id = "${event.id}:duplicate")),
+            ),
         )
-        file.writeText(futureJson, StandardCharsets.UTF_8)
+
+        malformedStates.forEach { malformed ->
+            val failure = assertIs<GameSaveResult.Failure>(storage.save(malformed))
+            assertEquals(GameSaveErrorCode.INVALID_STATE, failure.error.code)
+        }
+        assertFalse(file.exists())
+    }
+
+    @Test
+    fun malformedTradingProtectionStatesAreRejectedBeforeWriting(): Unit = runBlocking {
+        val file = temporaryDirectory.resolve("invalid-protection-savegame.json")
+        val storage = GameSaveStorage(file.toString())
+        val valid = richStateWithLifecycleAndProtection()
+        val protection = requireNotNull(valid.tradingProtectionSnapshot)
+        val krxCircuitBreaker = protection.krxCircuitBreakers.getValue(Market.KOSPI)
+        val luldEntry = protection.usLuldStates.entries.single()
+        val mwcb = requireNotNull(protection.usMarketWideCircuitBreaker)
+        val malformedSnapshots = listOf(
+            protection.copy(
+                krxCircuitBreakers = mapOf(Market.KOSDAQ to krxCircuitBreaker),
+            ),
+            protection.copy(
+                usLuldStates = mapOf("NASDAQ:WRONG" to luldEntry.value),
+            ),
+            protection.copy(
+                usMarketWideCircuitBreaker = mwcb.copy(
+                    venueStatuses = mwcb.venueStatuses - Market.NYSE,
+                ),
+            ),
+        )
+
+        malformedSnapshots.forEach { malformed ->
+            val failure = assertIs<GameSaveResult.Failure>(
+                storage.save(valid.copy(tradingProtectionSnapshot = malformed)),
+            )
+            assertEquals(GameSaveErrorCode.INVALID_STATE, failure.error.code)
+        }
+        assertFalse(file.exists())
+    }
+
+    @Test
+    fun malformedProtectionIdentityInJsonIsRejectedOnLoad(): Unit = runBlocking {
+        val file = temporaryDirectory.resolve("corrupted-protection-savegame.json")
+        val storage = GameSaveStorage(file.toString())
+        assertIs<GameSaveResult.Success>(storage.save(richStateWithLifecycleAndProtection()))
+
+        val root = JsonParser.parseString(file.readText(StandardCharsets.UTF_8)).asJsonObject
+        val breakers = root.getAsJsonObject("state")
+            .getAsJsonObject("tradingProtectionSnapshot")
+            .getAsJsonObject("krxCircuitBreakers")
+        breakers.getAsJsonObject("KOSPI").addProperty("market", "KOSDAQ")
+        file.writeText(root.toString(), StandardCharsets.UTF_8)
 
         val failure = assertIs<GameLoadResult.Failure>(storage.load())
-        assertEquals(GameSaveErrorCode.UNSUPPORTED_SCHEMA, failure.error.code)
-        assertTrue(failure.error.message.contains("99"))
+        assertEquals(GameSaveErrorCode.INVALID_STATE, failure.error.code)
     }
 
     @Test
@@ -571,6 +720,104 @@ class DesktopGameSaveStorageTest {
             nextSequence = 88L,
             isAdvancing = false,
             lastMessage = "수동 저장 테스트",
+        )
+    }
+
+    private fun richStateWithLifecycleAndProtection(): SimulatorUiState {
+        val base = richState()
+        val usStock = base.stocks.single { it.market == Market.NASDAQ }
+        val krStock = base.stocks.single { it.market == Market.KOSPI }
+        val usDate = LocalDate(2026, 8, 6)
+        val krDate = base.currentDate
+        val listingEngine = ListingLifecycleEngine()
+        val usListing = listingEngine.initialState(usStock).copy(
+            status = ListingLifecycleStatus.DEFICIENCY_NOTICE,
+            activeReason = ListingLifecycleReason.US_LISTING_MAINTENANCE,
+            designatedOn = usDate,
+            cureDeadline = usDate,
+            designationCount = 1,
+            lastEvaluatedTradingDate = usDate,
+            ledgerSequence = 1L,
+        )
+        val krListing = listingEngine.initialState(krStock)
+        val lifecycleEvent = ListingLifecycleLedgerEvent(
+            id = "listing-save:${usStock.id}:1",
+            sequence = 1L,
+            stockId = usStock.id,
+            tradingDate = usDate,
+            kind = ListingLifecycleEventKind.DEFICIENCY_DESIGNATED,
+            fromStatus = ListingLifecycleStatus.LISTED,
+            toStatus = ListingLifecycleStatus.DEFICIENCY_NOTICE,
+            reason = ListingLifecycleReason.US_LISTING_MAINTENANCE,
+            level = ListingNoticeLevel.CAUTION,
+            title = "상장 유지 요건 안내",
+            summary = "저장 스키마 회귀 테스트",
+            deadline = usDate,
+        )
+        val halt = InstrumentTradingHalt(
+            stockId = usStock.id,
+            reason = TradingHaltReason.MATERIAL_DISCLOSURE,
+            detail = "중요 공시 확인",
+            startedAt = base.currentTime,
+            policy = TradingHaltOrderPolicy(
+                acceptsNewOrders = true,
+                allowsCancellation = true,
+                allowsExecution = false,
+            ),
+        )
+        val alert = InvestmentAlertDesignation(
+            stockId = krStock.id,
+            level = InvestmentAlertLevel.CAUTION,
+            reasonCodes = setOf("PRICE_SURGE"),
+            summary = "단기 가격 급등",
+            designatedAt = base.currentTime,
+            designatedOn = krDate,
+            releaseReviewWindow = TradingDayWindow(krDate, krDate),
+        )
+        val protection = TradingProtectionSnapshot(
+            krxCircuitBreakers = mapOf(
+                Market.KOSPI to KrxCircuitBreakerState(Market.KOSPI, krDate),
+            ),
+            krxSidecars = mapOf(
+                Market.KOSPI to KrxSidecarState(Market.KOSPI, krDate),
+            ),
+            krxVolatilityInterruptions = mapOf(
+                krStock.id to KrxViState(krStock.id, krStock.market),
+            ),
+            instrumentTradingHalts = mapOf(usStock.id to halt),
+            investmentAlerts = mapOf(krStock.id to alert),
+            usMarketWideCircuitBreaker = TradingProtectionEngine.initialUsMwcb(usDate, base.currentTime),
+            usLuldStates = mapOf(
+                usStock.id to TradingProtectionEngine.initialUsLuld(
+                    stockId = usStock.id,
+                    primaryMarket = usStock.market,
+                    tradingDate = usDate,
+                    tier = UsLuldTier.TIER_1,
+                    previousClose = 100.0,
+                    referencePrice = 105.5,
+                    referencePriceEffectiveAt = base.currentTime,
+                    easternTime = LocalTime(10, 0),
+                ),
+            ),
+        )
+        return base.copy(
+            terminatedInstrumentIds = emptySet(),
+            listingLifecycleStates = mapOf(
+                usStock.id to usListing,
+                krStock.id to krListing,
+            ),
+            listingLifecycleLedger = listOf(lifecycleEvent),
+            tradingProtectionSnapshot = protection,
+            dailyTradingSurveillance = mapOf(
+                usStock.id to listOf(
+                    DailyTradingSurveillancePoint(
+                        date = usDate,
+                        close = 105.5,
+                        volume = 123_456L,
+                        turnoverRate = 0.000123456,
+                    ),
+                ),
+            ),
         )
     }
 }

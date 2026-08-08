@@ -6,6 +6,8 @@ import com.amond.kmpbook.domain.model.EventType
 import com.amond.kmpbook.domain.model.ImpactDirection
 import com.amond.kmpbook.domain.model.InstrumentStrategy
 import com.amond.kmpbook.domain.model.InstrumentType
+import com.amond.kmpbook.domain.model.ListingFinalDispositionType
+import com.amond.kmpbook.domain.model.ListingRiskTag
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.Sector
 
@@ -190,7 +192,8 @@ object DefaultEventTemplates {
         company("contract_win", "{company} 대형 계약 수주", "중장기 매출에 기여할 신규 계약이 확정됐다.", EventType.INDUSTRY_SUPPLY_DEMAND, true, 0.009, 48..240, 0.020..0.080),
         company("contract_loss", "{company} 핵심 계약 해지", "주요 고객이 계약을 축소하거나 종료했다.", EventType.INDUSTRY_SUPPLY_DEMAND, false, 0.006, 48..240, -0.085..-0.025),
         company("product_recall", "{company} 제품 리콜", "안전 또는 품질 문제로 대규모 회수가 결정됐다.", EventType.PRODUCT_TECHNOLOGY, false, 0.005, 72..336, -0.110..-0.035, EventSeverity.MAJOR),
-        company("accounting_issue", "{company} 회계 처리 의혹", "재무 보고의 신뢰성에 대한 조사 소식이 전해졌다.", EventType.REGULATION_POLICY, false, 0.0025, 168..720, -0.180..-0.060, EventSeverity.CRITICAL),
+        company("accounting_issue", "{company} 회계 처리 의혹", "재무 보고의 신뢰성에 대한 조사 소식이 전해졌다.", EventType.REGULATION_POLICY, false, 0.0025, 168..720, -0.180..-0.060, EventSeverity.CRITICAL)
+            .copy(listingRiskTags = setOf(ListingRiskTag.AUDIT_OPINION_FAILURE)),
         company("ceo_departure", "{company} 최고경영자 돌연 사임", "경영 공백과 전략 변화 가능성이 제기됐다.", EventType.CORPORATE_ACTION, false, 0.004, 72..240, -0.065..-0.018),
         company("new_ceo", "{company} 신임 경영진 선임", "사업 재편 경험을 갖춘 새 경영진이 선임됐다.", EventType.CORPORATE_ACTION, true, 0.004, 72..240, 0.010..0.045),
         company("patent_win", "{company} 특허 분쟁 승소", "핵심 기술의 권리와 판매 지속성이 확인됐다.", EventType.REGULATION_POLICY, true, 0.005, 48..168, 0.015..0.055),
@@ -207,7 +210,23 @@ object DefaultEventTemplates {
         company("share_buyback", "{company} 자사주 매입", "이사회가 유통 주식 수를 줄이는 매입 계획을 승인했다.", EventType.CORPORATE_ACTION, true, 0.005, 48..240, 0.012..0.050),
         company("merger_offer", "{company} 인수 제안 접수", "경영권 프리미엄을 포함한 인수 제안이 공개됐다.", EventType.CORPORATE_ACTION, true, 0.0025, 72..336, 0.050..0.180, EventSeverity.MAJOR),
         company("spinoff", "{company} 사업 분할 추진", "핵심 사업의 독립 운영과 가치 재평가 계획이 공개됐다.", EventType.CORPORATE_ACTION, ImpactDirection.MIXED, 0.003, 72..240, -0.015..0.040),
-        company("delisting_warning", "{company} 상장 유지 요건 경고", "거래소가 재무 또는 공시 요건 미달 가능성을 통보했다.", EventType.REGULATION_POLICY, false, 0.0015, 168..720, -0.250..-0.090, EventSeverity.CRITICAL),
+        company("delisting_warning", "{company} 상장 유지 요건 경고", "거래소가 재무 또는 공시 요건 미달 가능성을 통보했다.", EventType.REGULATION_POLICY, false, 0.0015, 168..720, -0.250..-0.090, EventSeverity.CRITICAL)
+            .copy(listingRiskTags = setOf(ListingRiskTag.LISTING_MAINTENANCE_DEFICIENCY)),
+        company(
+            "serious_compliance_breach", "{company} 중대한 규정 위반 심사",
+            "거래소와 감독당국이 공시·지배구조 관련 중대한 위반 가능성을 심사하기 시작했다.",
+            EventType.REGULATION_POLICY, false, 0.0003, 336..1_008, -0.350..-0.120, EventSeverity.CRITICAL,
+        ).copy(listingRiskTags = setOf(ListingRiskTag.SERIOUS_COMPLIANCE_EVENT)),
+        company(
+            "core_business_suspension", "{company} 핵심 영업 중단",
+            "주요 허가 취소 또는 운영 차질로 핵심 사업의 영업이 중단됐다.",
+            EventType.REGULATION_POLICY, false, 0.00025, 336..1_440, -0.420..-0.150, EventSeverity.CRITICAL,
+        ).copy(listingRiskTags = setOf(ListingRiskTag.CORE_BUSINESS_SUSPENSION)),
+        company(
+            "bankruptcy_filing", "{company} 회생·파산 절차 신청",
+            "지급불능 위험이 현실화돼 법원에 회생 또는 파산 절차를 신청했다.",
+            EventType.REGULATION_POLICY, false, 0.0002, 720..2_160, -0.850..-0.550, EventSeverity.CRITICAL,
+        ).copy(listingRiskTags = setOf(ListingRiskTag.BANKRUPTCY_OR_INSOLVENCY)),
 
         // ETF-specific flows and fund operations. Ordinary corporate templates above are
         // explicitly stock-only, so funds never receive CEO, earnings-guidance, or recall news.
@@ -269,6 +288,9 @@ object DefaultEventTemplates {
             strategies = setOf(InstrumentStrategy.ETN_LINKED),
             severity = EventSeverity.MAJOR,
             cooldownHours = 8_760,
+        ).copy(
+            listingRiskTags = setOf(ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION),
+            listingFinalDispositionHint = ListingFinalDispositionType.CASH_LIQUIDATION,
         ),
         fund(
             "etn_issuer_acceleration", "{company} 발행사 가속상환 사유 발생",
@@ -277,6 +299,9 @@ object DefaultEventTemplates {
             strategies = setOf(InstrumentStrategy.ETN_LINKED),
             severity = EventSeverity.CRITICAL,
             cooldownHours = 17_520,
+        ).copy(
+            listingRiskTags = setOf(ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION),
+            listingFinalDispositionHint = ListingFinalDispositionType.CASH_LIQUIDATION,
         ),
         fund(
             "commodity_roll_headwind", "{company} 선물 롤오버 비용 증가",
@@ -295,7 +320,41 @@ object DefaultEventTemplates {
             "거래량과 운용자산 감소로 스프레드가 넓어졌다. 운용사는 합병 또는 청산을 검토할 수 있다.",
             ImpactDirection.NEGATIVE, 0.0015, 120..504, -0.050..-0.012,
             severity = EventSeverity.MAJOR,
+        ).copy(listingRiskTags = setOf(ListingRiskTag.LOW_TRADING_LIQUIDITY)),
+        fund(
+            "etf_liquidation_approved", "{company} 자진 청산 승인",
+            "운용사가 이사회 또는 수익자 절차를 거쳐 상품 청산과 현금 분배 일정을 확정했다.",
+            ImpactDirection.MIXED, 0.00035, 720..720, -0.060..0.010,
+            severity = EventSeverity.CRITICAL,
+            cooldownHours = 17_520,
+            instrumentTypes = setOf(InstrumentType.ETF, InstrumentType.CLOSED_END_FUND),
+        ).copy(
+            listingRiskTags = setOf(ListingRiskTag.ETF_LIQUIDATION_APPROVED),
+            listingFinalDispositionHint = ListingFinalDispositionType.CASH_LIQUIDATION,
         ),
+        fund(
+            "issuer_eligibility_failure", "{company} 발행사 자격 요건 위반",
+            "무담보 채무증권 발행사의 신용·자격 요건 위반이 확인돼 거래소 조치가 시작됐다.",
+            ImpactDirection.NEGATIVE, 0.0002, 336..1_008, -0.320..-0.120,
+            strategies = setOf(InstrumentStrategy.ETN_LINKED),
+            severity = EventSeverity.CRITICAL,
+            cooldownHours = 17_520,
+            instrumentTypes = setOf(InstrumentType.ETN),
+        ).copy(listingRiskTags = setOf(ListingRiskTag.ISSUER_ELIGIBILITY_FAILURE)),
+        fund(
+            "underlying_index_unavailable", "{company} 기초지수 산출 중단",
+            "지수사업자가 기초지수 산출을 중단해 대체지수 지정 또는 상품 종료 절차가 필요해졌다.",
+            ImpactDirection.NEGATIVE, 0.00025, 168..720, -0.180..-0.060,
+            severity = EventSeverity.CRITICAL,
+            cooldownHours = 8_760,
+        ).copy(listingRiskTags = setOf(ListingRiskTag.UNDERLYING_INDEX_UNAVAILABLE)),
+        fund(
+            "liquidity_provider_failure", "{company} 유동성공급자 요건 미달",
+            "지정 유동성공급자의 호가 의무 미이행이 이어져 교체 또는 상장 유지 심사가 시작됐다.",
+            ImpactDirection.NEGATIVE, 0.00035, 168..504, -0.120..-0.035,
+            severity = EventSeverity.CRITICAL,
+            cooldownHours = 8_760,
+        ).copy(listingRiskTags = setOf(ListingRiskTag.LIQUIDITY_PROVIDER_FAILURE)),
 
         // Geopolitics, disasters, public health, and infrastructure.
         global("trade_dispute", "무역 분쟁 격화", "주요국이 관세와 수출 통제 범위를 확대했다.", EventType.GEOPOLITICAL, false, 0.002, 168..720, -0.060..-0.018, EventSeverity.MAJOR),
@@ -394,6 +453,11 @@ object DefaultEventTemplates {
         strategies: Set<InstrumentStrategy> = emptySet(),
         severity: EventSeverity = EventSeverity.MINOR,
         cooldownHours: Int = 480,
+        instrumentTypes: Set<InstrumentType> = setOf(
+            InstrumentType.ETF,
+            InstrumentType.CLOSED_END_FUND,
+            InstrumentType.ETN,
+        ),
     ): EventTemplate = rule(
         id = id,
         title = title,
@@ -411,7 +475,7 @@ object DefaultEventTemplates {
         volume = 1.2..2.1,
         liquidity = 0.7..1.2,
         sentiment = -0.15..0.15,
-        instrumentTypes = setOf(InstrumentType.ETF, InstrumentType.CLOSED_END_FUND, InstrumentType.ETN),
+        instrumentTypes = instrumentTypes,
         strategies = strategies,
     )
 

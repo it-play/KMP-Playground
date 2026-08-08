@@ -6,6 +6,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -64,6 +65,20 @@ class GameCalendarTest {
         assertEquals(Instant.parse("2026-07-07T20:00:00Z"), summer.closesAt)
         assertEquals(Instant.parse("2027-01-05T14:30:00Z"), winter.opensAt)
         assertEquals(Instant.parse("2027-01-05T21:00:00Z"), winter.closesAt)
+    }
+
+    @Test
+    fun campaignEndsOnlyAfterEveryMarketsDecemberThirtyFirstSession() {
+        assertEquals(Instant.parse("2040-12-31T21:00:00Z"), GameCalendar.endInstant)
+        assertEquals(
+            LocalDateTime(2040, 12, 31, 16, 0),
+            GameCalendar.endInstant.toLocalDateTime(GameCalendar.NEW_YORK_TIME_ZONE),
+        )
+        assertEquals(
+            LocalDateTime(2041, 1, 1, 6, 0),
+            GameCalendar.END_LOCAL_DATE_TIME,
+        )
+        assertEquals(LocalDate(2040, 12, 31), GameCalendar.campaignDate(GameCalendar.endInstant))
     }
 
     private fun atNewYork(date: LocalDate, hour: Int, minute: Int): Instant =

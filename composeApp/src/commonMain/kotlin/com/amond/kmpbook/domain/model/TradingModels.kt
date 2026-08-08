@@ -45,6 +45,8 @@ data class Order(
     val updatedAt: Instant = createdAt,
     val timeInForce: TimeInForce = TimeInForce.DAY,
     val rejectionReason: String? = null,
+    /** 거래소 주문이 아니라 만기·청산 계약으로 만든 읽기 전용 처분 원장인지 구분한다. */
+    val isNonMarketDisposition: Boolean = false,
 ) {
     init {
         require(id.isNotBlank()) { "주문 ID는 비어 있을 수 없습니다." }
@@ -55,7 +57,10 @@ data class Order(
         require(filledQuantity >= 0.0 && filledQuantity <= quantity + QUANTITY_EPSILON) {
             "체결 수량은 0 이상 주문 수량 이하여야 합니다."
         }
-        require(averageFilledPrice == null || averageFilledPrice > 0.0) { "평균 체결가는 0보다 커야 합니다." }
+        require(
+            averageFilledPrice == null || averageFilledPrice > 0.0 ||
+                isNonMarketDisposition && averageFilledPrice == 0.0,
+        ) { "평균 체결가는 양수여야 하며, 무가치 계약상 처분만 0일 수 있습니다." }
         require(filledQuantity == 0.0 || averageFilledPrice != null) { "체결된 주문에는 평균 체결가가 필요합니다." }
         require(updatedAt >= createdAt) { "주문 갱신 시각은 생성 시각보다 빠를 수 없습니다." }
     }
@@ -73,6 +78,11 @@ data class Order(
     }
 }
 
+enum class TradeSettlementKind {
+    EXCHANGE_TRADE,
+    CONTRACTUAL_CASH_SETTLEMENT,
+}
+
 /** 한 번의 실제 체결. 한 주문은 여러 Trade로 나뉠 수 있다. */
 data class Trade(
     val id: String,
@@ -85,6 +95,10 @@ data class Trade(
     val executedAt: Instant,
     val commission: Double = 0.0,
     val tax: Double = 0.0,
+    /** 구형 저장의 null은 일반 거래소 체결로 해석한다. */
+    val settlementKind: TradeSettlementKind? = TradeSettlementKind.EXCHANGE_TRADE,
+    /** 계약상 지급은 이미 지급일에 기록되므로 T+ 결제일을 다시 계산하지 않는다. */
+    val settlementDateOverride: kotlinx.datetime.LocalDate? = null,
     /** 같은 시각의 체결·분배·기업행동을 저장 전과 동일한 순서로 재생하기 위한 전역 순번. */
     val accountingSequence: Long? = null,
 ) {
@@ -93,8 +107,16 @@ data class Trade(
             "체결·주문·종목 ID는 비어 있을 수 없습니다."
         }
         require(quantity > 0.0) { "체결 수량은 0보다 커야 합니다." }
-        require(price > 0.0) { "체결 가격은 0보다 커야 합니다." }
+        require(
+            price > 0.0 || settlementKind == TradeSettlementKind.CONTRACTUAL_CASH_SETTLEMENT && price == 0.0,
+        ) { "체결 가격은 양수여야 하며, 무가치 계약상 현금정산만 0일 수 있습니다." }
         require(commission >= 0.0 && tax >= 0.0) { "수수료와 세금은 음수일 수 없습니다." }
+        require(
+            settlementKind == TradeSettlementKind.CONTRACTUAL_CASH_SETTLEMENT || settlementDateOverride == null,
+        ) { "일반 거래소 체결에는 결제일을 임의 지정할 수 없습니다." }
+        require(
+            settlementKind != TradeSettlementKind.CONTRACTUAL_CASH_SETTLEMENT || settlementDateOverride != null,
+        ) { "계약상 현금정산에는 실제 지급일이 필요합니다." }
         require(accountingSequence == null || accountingSequence > 0L) {
             "회계 순번은 양수여야 합니다."
         }

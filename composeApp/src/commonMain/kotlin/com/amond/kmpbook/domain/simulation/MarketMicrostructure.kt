@@ -1,6 +1,8 @@
 package com.amond.kmpbook.domain.simulation
 
 import com.amond.kmpbook.domain.model.Market
+import com.amond.kmpbook.domain.model.InstrumentType
+import com.amond.kmpbook.domain.model.StockDefinition
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.round
@@ -17,20 +19,29 @@ data class DailyPriceLimits(
 
 /** Exchange quotation rules shared by the price and order-book engines. */
 object MarketMicrostructure {
-    /** Current KRX equity quotation units, common to KOSPI and KOSDAQ. */
+    /**
+     * 2026 KRX equity quotation units. KOSPI and KOSDAQ intentionally diverge
+     * above KRW 50,000; fund-like exchange products use the instrument overload.
+     */
     fun tickSize(market: Market, price: Double): Double {
         require(price >= 0.0 && price.isFinite()) { "Price must be finite and non-negative" }
         return when (market) {
-            Market.KOSPI,
-            Market.KOSDAQ,
-            -> when {
-                price < 2_000.0 -> 1.0
+            Market.KOSPI -> when {
+                price < 1_000.0 -> 1.0
                 price < 5_000.0 -> 5.0
-                price < 20_000.0 -> 10.0
+                price < 10_000.0 -> 10.0
                 price < 50_000.0 -> 50.0
-                price < 200_000.0 -> 100.0
+                price < 100_000.0 -> 100.0
                 price < 500_000.0 -> 500.0
                 else -> 1_000.0
+            }
+
+            Market.KOSDAQ -> when {
+                price < 1_000.0 -> 1.0
+                price < 5_000.0 -> 5.0
+                price < 10_000.0 -> 10.0
+                price < 50_000.0 -> 50.0
+                else -> 100.0
             }
 
             Market.NASDAQ,
@@ -42,10 +53,22 @@ object MarketMicrostructure {
         }
     }
 
+    /** KRX-listed ETF/ETN quotation unit is KRW 5 at every price level. */
+    fun tickSize(stock: StockDefinition, price: Double): Double = when {
+        stock.market.isKorean && stock.instrumentType in setOf(InstrumentType.ETF, InstrumentType.ETN) -> 5.0
+        else -> tickSize(stock.market, price)
+    }
+
     fun roundDown(market: Market, price: Double): Double {
         val safePrice = price.coerceAtLeast(minimumPrice(market))
         val tick = tickSize(market, safePrice)
         return normalize(market, floor((safePrice + EPSILON) / tick) * tick)
+    }
+
+    fun roundDown(stock: StockDefinition, price: Double): Double {
+        val safePrice = price.coerceAtLeast(minimumPrice(stock.market))
+        val tick = tickSize(stock, safePrice)
+        return normalize(stock.market, floor((safePrice + EPSILON) / tick) * tick)
     }
 
     fun roundUp(market: Market, price: Double): Double {
@@ -54,10 +77,22 @@ object MarketMicrostructure {
         return normalize(market, ceil((safePrice - EPSILON) / tick) * tick)
     }
 
+    fun roundUp(stock: StockDefinition, price: Double): Double {
+        val safePrice = price.coerceAtLeast(minimumPrice(stock.market))
+        val tick = tickSize(stock, safePrice)
+        return normalize(stock.market, ceil((safePrice - EPSILON) / tick) * tick)
+    }
+
     fun roundNearest(market: Market, price: Double): Double {
         val safePrice = price.coerceAtLeast(minimumPrice(market))
         val tick = tickSize(market, safePrice)
         return normalize(market, round(safePrice / tick) * tick)
+    }
+
+    fun roundNearest(stock: StockDefinition, price: Double): Double {
+        val safePrice = price.coerceAtLeast(minimumPrice(stock.market))
+        val tick = tickSize(stock, safePrice)
+        return normalize(stock.market, round(safePrice / tick) * tick)
     }
 
     fun minimumPrice(market: Market): Double = if (market.isKorean) 1.0 else 0.0001
@@ -78,10 +113,29 @@ object MarketMicrostructure {
         return DailyPriceLimits(lower = lower, upper = upper)
     }
 
+    fun dailyPriceLimits(stock: StockDefinition, basePrice: Double): DailyPriceLimits? {
+        require(basePrice > 0.0 && basePrice.isFinite()) { "Base price must be positive and finite" }
+        if (!stock.market.isKorean) return null
+
+        val baseTick = tickSize(stock, basePrice)
+        val limitAmount = floor(basePrice * KRX_LIMIT_RATE / baseTick) * baseTick
+        val upper = roundDown(stock, basePrice + limitAmount)
+        val lower = roundUp(stock, basePrice - limitAmount)
+            .coerceAtLeast(minimumPrice(stock.market))
+        return DailyPriceLimits(lower = lower, upper = upper)
+    }
+
     fun clampToDailyLimits(market: Market, price: Double, basePrice: Double): Double {
         val limits = dailyPriceLimits(market, basePrice)
             ?: return roundNearest(market, price)
         return roundNearest(market, price.coerceIn(limits.lower, limits.upper))
+            .coerceIn(limits.lower, limits.upper)
+    }
+
+    fun clampToDailyLimits(stock: StockDefinition, price: Double, basePrice: Double): Double {
+        val limits = dailyPriceLimits(stock, basePrice)
+            ?: return roundNearest(stock, price)
+        return roundNearest(stock, price.coerceIn(limits.lower, limits.upper))
             .coerceIn(limits.lower, limits.upper)
     }
 

@@ -63,7 +63,7 @@ class PriceEngineTest {
     @Test
     fun krxExtremeMovesStopAtDailyLimitsAndRemainPositive() {
         val stock = testStock(volatility = 0.0)
-        val limits = requireNotNull(MarketMicrostructure.dailyPriceLimits(stock.market, stock.initialPrice))
+        val limits = requireNotNull(MarketMicrostructure.dailyPriceLimits(stock, stock.initialPrice))
         val baseInput = PriceGenerationInput(
             stock = stock,
             startTime = time,

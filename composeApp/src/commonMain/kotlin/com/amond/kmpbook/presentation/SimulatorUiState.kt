@@ -8,6 +8,8 @@ import com.amond.kmpbook.domain.model.Holding
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.MarketIndexId
 import com.amond.kmpbook.domain.model.MarketIndexSnapshot
+import com.amond.kmpbook.domain.model.ListingLifecycleLedgerEvent
+import com.amond.kmpbook.domain.model.ListingLifecycleState
 import com.amond.kmpbook.domain.model.MarketSession
 import com.amond.kmpbook.domain.model.Order
 import com.amond.kmpbook.domain.model.OrderSide
@@ -21,6 +23,7 @@ import com.amond.kmpbook.domain.model.ScheduledEventOccurrence
 import com.amond.kmpbook.domain.model.StockDefinition
 import com.amond.kmpbook.domain.model.TimeInForce
 import com.amond.kmpbook.domain.model.Trade
+import com.amond.kmpbook.domain.model.TradingProtectionSnapshot
 import com.amond.kmpbook.domain.model.TurnStep
 import com.amond.kmpbook.domain.simulation.EventEngineSnapshot
 import com.amond.kmpbook.domain.simulation.MacroEnvironment
@@ -188,6 +191,26 @@ data class BenchmarkPoint(
     val cumulativeReturn: Double,
 )
 
+/** Long-lived daily surveillance series used by KRX alert and listing-maintenance rules. */
+data class DailyTradingSurveillancePoint(
+    val date: LocalDate,
+    val close: Double,
+    val volume: Long,
+    val turnoverRate: Double,
+    /** 같은 거래일 KOSPI/KOSDAQ 유동시가총액 프록시. 구형 저장은 null이다. */
+    val marketProxyClose: Double? = null,
+    /** 같은 거래일 종가 기준 KOSPI·KOSDAQ 보통주 합산 시가총액 순위. */
+    val krxMarketCapRank: Int? = null,
+) {
+    init {
+        require(close >= 0.0 && close.isFinite())
+        require(volume >= 0L)
+        require(turnoverRate >= 0.0 && turnoverRate.isFinite())
+        require(marketProxyClose == null || marketProxyClose > 0.0 && marketProxyClose.isFinite())
+        require(krxMarketCapRank == null || krxMarketCapRank > 0)
+    }
+}
+
 /** 한 시간 턴에서 15분 정지를 0.25 거래비율 감소로 근사하는 미국 공통 MWCB 상태. */
 data class UsCircuitBreakerState(
     val tradingDate: LocalDate? = null,
@@ -302,6 +325,8 @@ data class SimulatorUiState(
     val lastMessage: String? = null,
     /** 해외 기초시장이 상장시장과 어긋나는 ETF의 다음 개장 갭. v1 저장은 null이다. */
     val pendingEtfReferenceReturns: Map<String, Double>? = null,
+    /** 상장시장 폐장 중 발생한 뉴스 충격의 다음 개장 갭. 구형 저장은 null이다. */
+    val pendingClosedEventLogReturns: Map<String, Double>? = null,
     /** 대표 미국 지수 현재값과 최근 시간봉. v1 저장은 null이며 복원 시 현재 시각에 시드한다. */
     val marketIndices: Map<MarketIndexId, MarketIndexSnapshot>? = null,
     val marketIndexHistory: Map<MarketIndexId, List<MarketIndexSnapshot>>? = null,
@@ -318,6 +343,13 @@ data class SimulatorUiState(
     val corporateActionLedger: List<CorporateActionRecord>? = null,
     /** 만기·조기상환·발행사 가속상환으로 거래가 종료된 상품 ID. */
     val terminatedInstrumentIds: Set<String>? = null,
+    /** 거래소 상장 유지 심사·정리매매·상장폐지·청산 상태. 구형 저장은 null이다. */
+    val listingLifecycleStates: Map<String, ListingLifecycleState>? = null,
+    val listingLifecycleLedger: List<ListingLifecycleLedgerEvent>? = null,
+    /** KRX/US market-wide and single-security protection state. */
+    val tradingProtectionSnapshot: TradingProtectionSnapshot? = null,
+    /** 100-day alert/listing checks outlive the bounded intraday chart history. */
+    val dailyTradingSurveillance: Map<String, List<DailyTradingSurveillancePoint>>? = null,
 ) {
     val seed: Long get() = options.seed
     val initialCapitalKrw: Double get() = options.initialCapitalKrw
@@ -345,7 +377,7 @@ data class SimulatorUiState(
     val isAtEnd: Boolean get() = GameCalendar.isFinished(currentTime)
 
     val currentDate: LocalDate
-        get() = currentTime.toLocalDateTime(GameCalendar.KOREA_TIME_ZONE).date
+        get() = GameCalendar.campaignDate(currentTime)
 
     val cashValueKrw: Double
         get() = (cashByCurrency[Currency.KRW] ?: 0.0) +
