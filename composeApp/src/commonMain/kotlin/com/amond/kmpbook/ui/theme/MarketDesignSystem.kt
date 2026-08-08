@@ -46,17 +46,6 @@ object MarketDesignSystem {
     )
 }
 
-@Immutable
-data class MarketDesignReference(
-    val title: String,
-    val url: String,
-) {
-    init {
-        require(title.isNotBlank())
-        require(url.startsWith("https://"))
-    }
-}
-
 /** Desktop shell measurements. Screens consume these instead of redefining the application frame. */
 object MarketLayout {
     val defaultWindowWidth = 1_500.dp
@@ -98,21 +87,6 @@ object MarketTypographyTokens {
     val numberLineHeight = 22.5.sp
     val numberLargeSize = 24.sp
     val numberLargeLineHeight = 34.sp
-}
-
-enum class MarketTrend(val label: String, val sign: String) {
-    RISE("상승", "+"),
-    FALL("하락", "−"),
-    FLAT("보합", "±"),
-}
-
-@Immutable
-data class MarketTrendVisual(
-    val trend: MarketTrend,
-    val color: Color,
-) {
-    val label: String get() = trend.label
-    val sign: String get() = trend.sign
 }
 
 /** Returns both text semantics and colour so a caller never has to infer direction from hue alone. */

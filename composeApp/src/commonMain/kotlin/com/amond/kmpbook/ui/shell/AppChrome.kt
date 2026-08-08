@@ -54,18 +54,6 @@ import com.amond.kmpbook.ui.theme.MarketSpacing
 import com.amond.kmpbook.ui.theme.MarketType
 import kotlin.time.Instant
 
-data class SidebarSummary(
-    val totalAssetsKrw: Double,
-    val returnRate: Double,
-    val unreadEvents: Int,
-)
-
-private data class NavigationItem(
-    val screen: Screen,
-    val shortLabel: String,
-    val marker: String,
-)
-
 private val navigationItems = listOf(
     NavigationItem(Screen.HOME, "상황판", "홈"),
     NavigationItem(Screen.MARKET, "시장·종목", "시"),

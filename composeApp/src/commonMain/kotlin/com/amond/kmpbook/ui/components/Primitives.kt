@@ -57,19 +57,6 @@ fun LedgerPanel(
     }
 }
 
-/** Fill owns the decision; Weak keeps adjacent or reversible actions quiet. */
-enum class MarketButtonVariant {
-    Fill,
-    Weak,
-}
-
-enum class MarketButtonTone {
-    Primary,
-    Rise,
-    Fall,
-    Danger,
-}
-
 @Composable
 fun MarketButton(
     text: String,

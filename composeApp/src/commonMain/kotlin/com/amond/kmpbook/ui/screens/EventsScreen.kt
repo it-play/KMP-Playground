@@ -925,7 +925,7 @@ private fun groupsFor(tab: NewsBrowseTab, projection: NewsUiProjection): List<Ne
     )
 }
 
-private val NewsStoryUi.hasSectorTargets: Boolean
+internal val NewsStoryUi.hasSectorTargets: Boolean
     get() = impactPaths.any { it.sector != null }
 
 private fun NewsStoryUi.targetsIndustry(
@@ -953,34 +953,5 @@ private fun NewsSectorGroupUi.toGroupItem(): NewsGroupItem = NewsGroupItem(
     count = count,
     matches = { story -> story.targetsIndustry(sector, industrySegment) },
 )
-
-private data class NewsGroupItem(
-    val key: String,
-    val label: String,
-    val detail: String?,
-    val count: Int,
-    val matches: (NewsStoryUi) -> Boolean = { true },
-)
-
-internal data class EventNewsFilterState(
-    val tab: NewsBrowseTab = NewsBrowseTab.BRIEFING,
-    val groupKey: String? = null,
-    val selectedEventId: String? = null,
-)
-
-internal enum class NewsBrowseTab(val displayName: String) {
-    BRIEFING("브리핑"),
-    STOCKS("종목"),
-    INDUSTRIES("산업"),
-    SCHEDULES("일정·공시"),
-    ;
-
-    fun matches(story: NewsStoryUi): Boolean = when (this) {
-        BRIEFING -> true
-        STOCKS -> story.relatedStocks.isNotEmpty()
-        INDUSTRIES -> story.hasSectorTargets
-        SCHEDULES -> story.isScheduled || story.isOperational || story.event.type == EventType.CORPORATE_ACTION
-    }
-}
 
 private const val RELATED_STOCK_DETAIL_LIMIT = 12

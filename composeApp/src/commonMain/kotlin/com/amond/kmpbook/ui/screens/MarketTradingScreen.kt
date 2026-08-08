@@ -585,24 +585,6 @@ private fun StockChartPanel(
     }
 }
 
-private enum class IntelligenceTab(val label: String) {
-    IMPACT("영향 경로"),
-    NEWS("관련 뉴스"),
-    STRUCTURE("상품 구조"),
-}
-
-private data class StockNewsSignal(
-    val story: NewsStoryUi,
-    val relation: NewsRelatedStockUi,
-    val pathNodes: List<String>,
-) {
-    val hasCausalTrace: Boolean
-        get() = pathNodes.size >= 2
-
-    val causalPath: String
-        get() = pathNodes.joinToString(" → ")
-}
-
 @Composable
 private fun MarketIntelligenceDeck(
     stock: StockDefinition,
@@ -1386,46 +1368,6 @@ private fun ProtectionDetailUi?.disabledOrderCtaText(): String = when {
         ("상장폐지" in primary.badgeLabel || "상품 종료" in primary.badgeLabel || "청산금" in primary.badgeLabel) ->
         "거래할 수 없는 종목이에요"
     else -> "거래가 멈췄어요"
-}
-
-private enum class InstrumentFilter(val label: String) {
-    ALL("전체"),
-    STOCK("기업"),
-    KOREAN_ETF("국내상품"),
-    US_ETF("미국상품"),
-    ;
-
-    fun matches(stock: StockDefinition): Boolean = when (this) {
-        ALL -> true
-        STOCK -> stock.hasCorporateEarnings
-        KOREAN_ETF -> stock.isFundLike && stock.market.isKorean
-        US_ETF -> stock.isFundLike && stock.market.isUnitedStates
-    }
-}
-
-private enum class VenueFilter(val label: String) {
-    ALL("전체"),
-    KOSPI("코스피"),
-    KOSDAQ("코스닥"),
-    US_ALL("미국"),
-    NASDAQ("Nasdaq"),
-    NYSE("NYSE"),
-    ARCA("Arca"),
-    BZX("BZX"),
-    AMERICAN("Amex"),
-    ;
-
-    fun matches(stock: StockDefinition): Boolean = when (this) {
-        ALL -> true
-        KOSPI -> stock.market == Market.KOSPI
-        KOSDAQ -> stock.market == Market.KOSDAQ
-        US_ALL -> stock.market.isUnitedStates
-        NASDAQ -> stock.market == Market.NASDAQ
-        NYSE -> stock.market == Market.NYSE
-        ARCA -> stock.market == Market.NYSE_ARCA
-        BZX -> stock.market == Market.CBOE_BZX
-        AMERICAN -> stock.market == Market.NYSE_AMERICAN
-    }
 }
 
 @Composable

@@ -36,34 +36,6 @@ import com.amond.kmpbook.ui.theme.MarketLayout
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
 
-data class TaxYearDisplay(
-    val year: Int,
-    val taxableStockGainKrw: Double,
-    val stockLossKrw: Double,
-    val basicDeductionKrw: Double,
-    val capitalGainsTaxKrw: Double,
-    val securitiesTransactionTaxKrw: Double,
-    val ruralSpecialTaxKrw: Double,
-    val financialIncomeGrossKrw: Double,
-    val financialIncomeWithheldKrw: Double,
-    val paidKrw: Double = 0.0,
-)
-
-data class TaxCenterData(
-    val currentYear: Int,
-    val years: List<TaxYearDisplay>,
-    val brokerFeesKrw: Double,
-    val secFinraFeesKrw: Double,
-    val financialIncomeGrossKrw: Double,
-    val highDividendEligibleKrw: Double,
-    val nextDueDate: String,
-) {
-    val current: TaxYearDisplay
-        get() = years.firstOrNull { it.year == currentYear } ?: TaxYearDisplay(
-            currentYear, 0.0, 0.0, 2_500_000.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        )
-}
-
 @Composable
 fun TaxCenterScreen(data: TaxCenterData, modifier: Modifier = Modifier) {
     val current = data.current
