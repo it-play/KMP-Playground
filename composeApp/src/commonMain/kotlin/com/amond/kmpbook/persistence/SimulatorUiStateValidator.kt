@@ -3,6 +3,8 @@ package com.amond.kmpbook.persistence
 import com.amond.kmpbook.domain.model.CorporateActionKind
 import com.amond.kmpbook.domain.model.CorporateActionNewsTransition
 import com.amond.kmpbook.domain.model.CorporateActionSource
+import com.amond.kmpbook.domain.model.CausalEconomicFactor
+import com.amond.kmpbook.domain.model.CausalSignalDirection
 import com.amond.kmpbook.domain.model.EventImpactCoveragePolicy
 import com.amond.kmpbook.domain.model.EventImpactHorizon
 import com.amond.kmpbook.domain.model.EventImpactTargetKind
@@ -1173,8 +1175,10 @@ private fun validateGameEvent(
         return "${event.id}의 뉴스·실제 반영 기간은 양수여야 합니다."
     }
     if (event.sourceLabel.isBlank()) return "${event.id}의 출처 표시는 비어 있을 수 없습니다."
-    if (coveragePolicy == EventImpactCoveragePolicy.EXPLICIT_PATHS_ONLY && event.impactInsights.isEmpty()) {
-        return "${event.id}의 명시 경로 전용 정책에는 하나 이상의 영향 분석이 필요합니다."
+    if (coveragePolicy == EventImpactCoveragePolicy.EXPLICIT_PATHS_ONLY &&
+        event.impactInsights.isEmpty() && event.causalSignals.isEmpty()
+    ) {
+        return "${event.id}의 명시 경로 전용 정책에는 영향 분석 또는 인과 신호가 필요합니다."
     }
     if (event.effectStartsAt < event.startsAt) {
         return "${event.id}의 실제 반영 시작이 발표보다 빠릅니다."
@@ -1229,6 +1233,23 @@ private fun validateGameEvent(
             EventImpactTargetKind.STOCK -> insight.stockId != null && insight.industrySegment == null
         }
         if (!targetIsValid) return "${event.id} 분석 ${index}의 대상 조합이 유효하지 않습니다."
+    }
+    if (event.causalSignals.map { it.factor }.distinct().size != event.causalSignals.size) {
+        return "${event.id}에 같은 경제 요인의 인과 신호가 중복되었습니다."
+    }
+    event.causalSignals.forEachIndexed { index, signal ->
+        val factor = signal.factor as CausalEconomicFactor?
+            ?: return "${event.id} 인과 신호 $index 경제 요인 enum이 유효하지 않습니다."
+        val signalDirection = signal.direction as CausalSignalDirection?
+            ?: return "${event.id} 인과 신호 $index 방향 enum이 유효하지 않습니다."
+        if (factor !in CausalEconomicFactor.entries || signalDirection !in CausalSignalDirection.entries) {
+            return "${event.id} 인과 신호 $index enum이 유효하지 않습니다."
+        }
+        if (!signal.strength.isFinite() || signal.strength <= 0.0 || signal.strength > 1.0 ||
+            !signal.confidence.isFinite() || signal.confidence <= 0.0 || signal.confidence > 1.0
+        ) {
+            return "${event.id} 인과 신호 $index 강도·신뢰도가 유효하지 않습니다."
+        }
     }
     if (event.reportedFacts.any { fact ->
             fact.label.isBlank() || fact.actual.isBlank() || fact.comparison?.isBlank() == true

@@ -3,6 +3,8 @@ package com.amond.kmpbook.persistence
 import com.amond.kmpbook.domain.model.CorporateActionKind
 import com.amond.kmpbook.domain.model.CorporateActionNewsTransition
 import com.amond.kmpbook.domain.model.CorporateActionSource
+import com.amond.kmpbook.domain.model.CausalEconomicFactor
+import com.amond.kmpbook.domain.model.CausalSignalDirection
 import com.amond.kmpbook.domain.model.EventImpactCoveragePolicy
 import com.amond.kmpbook.domain.model.EventImpactHorizon
 import com.amond.kmpbook.domain.model.EventImpactTargetKind
@@ -463,6 +465,19 @@ actual class GameSaveStorage actual constructor() {
                     requiredEnumArray<Sector>("affectedSectors", "$path[$index].affectedSectors")
                     requiredArray("affectedStockIds")
                     required("sourceLabel")
+                    requiredArray("causalSignals").forEachIndexed { signalIndex, signalElement ->
+                        val signalPath = "$path[$index].causalSignals[$signalIndex]"
+                        signalElement.requireObject(signalPath).apply {
+                            requireExactFields(
+                                expected = CAUSAL_SIGNAL_FIELDS,
+                                path = signalPath,
+                            )
+                            requiredEnum<CausalEconomicFactor>("factor", "$signalPath.factor")
+                            requiredEnum<CausalSignalDirection>("direction", "$signalPath.direction")
+                            requiredFiniteDouble("strength", "$signalPath.strength")
+                            requiredFiniteDouble("confidence", "$signalPath.confidence")
+                        }
+                    }
                     required("listingRiskTags")
                     required("listingRecoveryConditions")
                     requireMember("listingFinalDispositionHint")
@@ -747,6 +762,13 @@ actual class GameSaveStorage actual constructor() {
             "lastMessage",
         )
 
+        val CAUSAL_SIGNAL_FIELDS: Set<String> = setOf(
+            "factor",
+            "direction",
+            "strength",
+            "confidence",
+        )
+
         fun createSaveGson(): Gson = GsonBuilder()
             .registerTypeAdapter(Instant::class.java, InstantTypeAdapter().nullSafe())
             .registerTypeAdapter(LocalDate::class.java, LocalDateTypeAdapter().nullSafe())
@@ -803,6 +825,14 @@ private fun JsonObject.required(name: String): JsonElement = get(name)
 
 private fun JsonObject.requireMember(name: String) {
     if (!has(name)) throw JsonParseException("필수 필드 '$name'이 없습니다.")
+}
+
+private fun JsonObject.requireExactFields(expected: Set<String>, path: String) {
+    expected.forEach(::requireMember)
+    val unexpected = keySet() - expected
+    if (unexpected.isNotEmpty()) {
+        throw JsonParseException("필드 '$path'에 현재 스키마에 없는 값이 있습니다: ${unexpected.sorted()}")
+    }
 }
 
 private fun JsonObject.requiredObject(name: String): JsonObject = required(name)
@@ -871,4 +901,15 @@ private fun JsonObject.requiredInt(name: String): Int = try {
 } catch (error: RuntimeException) {
     if (error is JsonParseException) throw error
     throw JsonParseException("필드 '$name'은 정수여야 합니다.", error)
+}
+
+private fun JsonObject.requiredFiniteDouble(name: String, path: String): Double = try {
+    val primitive = required(name).takeIf(JsonElement::isJsonPrimitive)?.asJsonPrimitive
+        ?: throw JsonParseException("필드 '$path'은 숫자여야 합니다.")
+    if (!primitive.isNumber) throw JsonParseException("필드 '$path'은 숫자여야 합니다.")
+    primitive.asDouble.takeIf(Double::isFinite)
+        ?: throw JsonParseException("필드 '$path'은 유한한 숫자여야 합니다.")
+} catch (error: RuntimeException) {
+    if (error is JsonParseException) throw error
+    throw JsonParseException("필드 '$path'은 유한한 숫자여야 합니다.", error)
 }
