@@ -44,6 +44,8 @@ data class CorporateActionRecord(
     val stockId: String,
     val kind: CorporateActionKind,
     val announcedAt: Instant,
+    /** 공시 당시 확정한 최초 효력 가능 시각. 적용 후에도 공시 계보를 정확히 보존한다. */
+    val effectiveNotBefore: Instant,
     val effectiveAt: Instant,
     val quantityMultiplier: Double,
     val preActionPrice: Double,
@@ -55,7 +57,8 @@ data class CorporateActionRecord(
 ) {
     init {
         require(id.isNotBlank() && stockId.isNotBlank() && rationale.isNotBlank())
-        require(effectiveAt >= announcedAt)
+        require(effectiveNotBefore > announcedAt)
+        require(effectiveAt >= effectiveNotBefore)
         require(quantityMultiplier > 0.0 && quantityMultiplier.isFinite())
         require(preActionPrice > 0.0 && postActionPrice > 0.0)
         require(accountingSequence > 0L)
