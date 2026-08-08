@@ -3699,8 +3699,9 @@ internal class SimulatorRuntime(
         }
 
         val allNewEvents = result.newEvents + scheduled.newEvents
-        if (allNewEvents.isNotEmpty()) {
-            val sentiment = allNewEvents.map { it.impact.sentiment }.average()
+        val systemicSentimentEvents = allNewEvents.filter { event -> event.scope == EventScope.GLOBAL }
+        if (systemicSentimentEvents.isNotEmpty()) {
+            val sentiment = systemicSentimentEvents.map { it.impact.sentiment }.average()
             macro = macro.copy(riskSentiment = (macro.riskSentiment + sentiment * 0.15).coerceIn(-1.0, 1.0))
         }
     }
