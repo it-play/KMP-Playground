@@ -6,6 +6,7 @@ import com.amond.kmpbook.domain.model.EventType
 import com.amond.kmpbook.domain.model.CausalEconomicFactor
 import com.amond.kmpbook.domain.model.CausalSignalDirection
 import com.amond.kmpbook.domain.model.CausalSignalSeed
+import com.amond.kmpbook.domain.model.CausalTransmissionProfile
 import com.amond.kmpbook.domain.model.EventImpactHorizon
 import com.amond.kmpbook.domain.model.EventImpactInsight
 import com.amond.kmpbook.domain.model.EventImpactTargetKind
@@ -51,6 +52,15 @@ object DefaultEventTemplates {
                     "먼 미래 현금흐름의 현재가치가 낮아져 고평가 성장주의 밸류에이션 부담이 커진다.", 1.10,
                 ),
             ),
+        ).copy(
+            causalSignals = listOf(
+                causalSignal(
+                    CausalEconomicFactor.CREDIT_AVAILABILITY,
+                    CausalSignalDirection.DECREASE,
+                    strength = 0.82,
+                    confidence = 0.94,
+                ),
+            ),
         ),
         rule(
             "surprise_rate_cut", "{market} 기준금리 깜짝 인하",
@@ -70,6 +80,15 @@ object DefaultEventTemplates {
                 industryInsight(
                     "성장 기술주", Sector.INFORMATION_TECHNOLOGY, ImpactDirection.POSITIVE,
                     "할인율 하락이 장기 성장 현금흐름의 현재가치를 높인다.", 1.10,
+                ),
+            ),
+        ).copy(
+            causalSignals = listOf(
+                causalSignal(
+                    CausalEconomicFactor.CREDIT_AVAILABILITY,
+                    CausalSignalDirection.INCREASE,
+                    strength = 0.72,
+                    confidence = 0.88,
                 ),
             ),
         ),
@@ -151,6 +170,15 @@ object DefaultEventTemplates {
             EventType.CENTRAL_BANK, EventSeverity.MAJOR, ImpactDirection.POSITIVE,
             0.002, 720, 48..168, 0.015..0.045, 0.00005..0.00015, 1.2..1.6, 1.3..2.0,
             1.15..1.5, 0.4..0.75, EventCondition.RISK_OFF,
+        ).copy(
+            causalSignals = listOf(
+                causalSignal(
+                    CausalEconomicFactor.CREDIT_AVAILABILITY,
+                    CausalSignalDirection.INCREASE,
+                    strength = 0.86,
+                    confidence = 0.94,
+                ),
+            ),
         ),
         rule(
             "credit_crunch", "신용시장 경색",
@@ -183,6 +211,23 @@ object DefaultEventTemplates {
         ).copy(
             causalSignals = listOf(
                 causalSignal(CausalEconomicFactor.RISK_APPETITE, CausalSignalDirection.DECREASE, 0.92),
+            ),
+        ),
+        rule(
+            "local_order_book_dislocation", "{market} 호가 공백 확대",
+            "현지 주문 불균형으로 호가 간격이 벌어지고 짧은 기술적 매도가 나타났다.", EventScope.MARKET,
+            EventType.MARKET_SENTIMENT, EventSeverity.MAJOR, ImpactDirection.NEGATIVE,
+            0.003, 168, 3..18, -0.035..-0.012, -0.00008..-0.00001, 1.25..1.75, 1.4..2.4,
+            0.45..0.8, -0.55..-0.25, EventCondition.HIGH_VOLATILITY,
+        ).copy(
+            causalSignals = listOf(
+                causalSignal(
+                    CausalEconomicFactor.RISK_APPETITE,
+                    CausalSignalDirection.DECREASE,
+                    strength = 0.58,
+                    confidence = 0.82,
+                    transmissionProfile = CausalTransmissionProfile.LOCAL_MICROSTRUCTURE,
+                ),
             ),
         ),
 
@@ -970,12 +1015,23 @@ object DefaultEventTemplates {
         direction: CausalSignalDirection,
         strength: Double,
         confidence: Double = 0.90,
+        transmissionProfile: CausalTransmissionProfile = defaultTransmissionProfile(factor),
     ): CausalSignalSeed = CausalSignalSeed(
         factor = factor,
         direction = direction,
         strength = strength,
         confidence = confidence,
+        transmissionProfile = transmissionProfile,
     )
+
+    private fun defaultTransmissionProfile(factor: CausalEconomicFactor): CausalTransmissionProfile = when (factor) {
+        CausalEconomicFactor.CRUDE_OIL_PRICE,
+        CausalEconomicFactor.FREIGHT_RATE,
+        -> CausalTransmissionProfile.GLOBAL_REFERENCE_PRICE
+        CausalEconomicFactor.CREDIT_AVAILABILITY -> CausalTransmissionProfile.FUNDING_STRESS
+        CausalEconomicFactor.RISK_APPETITE -> CausalTransmissionProfile.PORTFOLIO_DELEVERAGING
+        else -> CausalTransmissionProfile.GLOBAL_REAL_ECONOMY
+    }
 
     private fun stockInsight(
         label: String,
