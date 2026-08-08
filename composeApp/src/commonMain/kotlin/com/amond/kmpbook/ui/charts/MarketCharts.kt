@@ -23,7 +23,9 @@ fun CandlestickVolumeChart(
     modifier: Modifier = Modifier,
     showMovingAverages: Boolean = true,
 ) {
-    val visibleBars = bars.takeLast(84)
+    // 기간 선택은 호출자가 소유한다. 차트가 다시 84개로 자르면 3개월 같은 긴 구간이
+    // 조용히 한 달 남짓으로 축소되므로 전달받은 구간 전체를 그린다.
+    val visibleBars = bars
     Box(modifier.background(MarketColors.Paper)) {
         Canvas(Modifier.fillMaxSize()) {
             if (visibleBars.isEmpty()) return@Canvas
@@ -33,7 +35,7 @@ fun CandlestickVolumeChart(
             val rightPadding = 6f
             val candleAreaWidth = size.width - rightPadding
             val slot = candleAreaWidth / visibleBars.size
-            val bodyWidth = max(1.5f, slot * 0.58f)
+            val bodyWidth = max(0.75f, slot * 0.58f)
             val priceLow = visibleBars.minOf { it.low }
             val priceHigh = visibleBars.maxOf { it.high }
             val priceSpan = max(priceHigh - priceLow, priceHigh * 0.005)
@@ -74,7 +76,7 @@ fun CandlestickVolumeChart(
                     color = color,
                     start = Offset(x, highY),
                     end = Offset(x, lowY),
-                    strokeWidth = max(1f, bodyWidth * 0.18f),
+                    strokeWidth = max(0.75f, bodyWidth * 0.18f),
                 )
                 val bodyTop = min(openY, closeY)
                 val bodyHeight = max(1.5f, kotlin.math.abs(closeY - openY))
@@ -83,7 +85,7 @@ fun CandlestickVolumeChart(
                         color = color,
                         topLeft = Offset(x - bodyWidth / 2f, bodyTop),
                         size = Size(bodyWidth, bodyHeight),
-                        style = Stroke(width = max(1f, bodyWidth * 0.22f)),
+                        style = Stroke(width = max(0.75f, bodyWidth * 0.22f)),
                     )
                 } else {
                     drawRect(
@@ -99,7 +101,7 @@ fun CandlestickVolumeChart(
                         color = color.copy(alpha = 0.55f),
                         topLeft = Offset(x - bodyWidth / 2f, size.height - volumeHeight),
                         size = Size(bodyWidth, volumeHeight),
-                        style = Stroke(width = max(1f, bodyWidth * 0.18f)),
+                        style = Stroke(width = max(0.75f, bodyWidth * 0.18f)),
                     )
                 } else {
                     drawRect(

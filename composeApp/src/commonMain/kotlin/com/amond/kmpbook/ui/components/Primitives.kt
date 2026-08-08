@@ -137,7 +137,7 @@ fun SectionHeading(
                 Text(
                     text = eyebrow,
                     style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
-                    color = MarketColors.Primary,
+                    color = MarketColors.PrimaryText,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -196,18 +196,19 @@ fun Metric(
     modifier: Modifier = Modifier,
     valueColor: Color = MarketColors.Ink,
     detail: String? = null,
+    labelColor: Color = MarketColors.InkMuted,
 ) {
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(MarketSpacing.xxs),
     ) {
-        Text(label, style = MarketType.label, color = MarketColors.InkMuted)
+        Text(label, style = MarketType.label, color = labelColor)
         Text(value, style = MarketType.number, color = valueColor, maxLines = 1)
         if (detail != null) {
             Text(
                 detail,
                 style = MarketType.caption,
-                color = MarketColors.InkMuted,
+                color = labelColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

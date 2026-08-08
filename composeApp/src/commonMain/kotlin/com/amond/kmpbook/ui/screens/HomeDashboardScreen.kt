@@ -165,12 +165,14 @@ private fun HeroAssetPanel(snapshot: PortfolioSnapshot, estimatedTaxKrw: Double,
                         formatMoney(snapshot.totalProfitKrw, Currency.KRW),
                         Modifier.weight(1f),
                         deltaColor(snapshot.totalProfitKrw),
+                        labelColor = Color.White.copy(alpha = 0.68f),
                     )
                     Metric(
                         "현금 비중",
                         formatPercent(snapshot.cashWeight, false),
                         Modifier.weight(1f),
                         Color.White,
+                        labelColor = Color.White.copy(alpha = 0.68f),
                     )
                 }
                 Row {
@@ -179,12 +181,14 @@ private fun HeroAssetPanel(snapshot: PortfolioSnapshot, estimatedTaxKrw: Double,
                         formatMoney(snapshot.cumulativeCommissionKrw, Currency.KRW),
                         Modifier.weight(1f),
                         Color.White.copy(alpha = 0.82f),
+                        labelColor = Color.White.copy(alpha = 0.68f),
                     )
                     Metric(
                         "예상 납부세",
                         formatMoney(estimatedTaxKrw, Currency.KRW),
                         Modifier.weight(1f),
                         MarketColors.AmberSoft,
+                        labelColor = Color.White.copy(alpha = 0.68f),
                     )
                 }
             }
