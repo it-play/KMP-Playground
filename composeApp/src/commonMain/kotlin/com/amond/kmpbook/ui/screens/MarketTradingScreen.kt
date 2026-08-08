@@ -2,11 +2,13 @@ package com.amond.kmpbook.ui.screens
 
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,6 +36,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -41,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.amond.kmpbook.domain.model.Currency
 import com.amond.kmpbook.domain.model.Holding
+import com.amond.kmpbook.domain.model.ImpactDirection
 import com.amond.kmpbook.domain.model.InstrumentType
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.OrderBook
@@ -51,6 +56,10 @@ import com.amond.kmpbook.domain.model.Quote
 import com.amond.kmpbook.domain.model.ReferenceCurrency
 import com.amond.kmpbook.domain.model.StockDefinition
 import com.amond.kmpbook.domain.model.TimeInForce
+import com.amond.kmpbook.presentation.NewsEffectState
+import com.amond.kmpbook.presentation.NewsRelatedStockUi
+import com.amond.kmpbook.presentation.NewsStockRelationKind
+import com.amond.kmpbook.presentation.NewsStoryUi
 import com.amond.kmpbook.presentation.ProtectionDetailUi
 import com.amond.kmpbook.presentation.ProtectionStatusBadgeUi
 import com.amond.kmpbook.ui.charts.CandlestickVolumeChart
@@ -97,6 +106,8 @@ fun MarketTradingScreen(
     protectionBadges: Map<String, ProtectionStatusBadgeUi> = emptyMap(),
     selectedProtectionDetail: ProtectionDetailUi? = null,
     orderUnavailableReason: (stockId: String, orderType: OrderType) -> String? = { _, _ -> null },
+    relatedNews: List<NewsStoryUi> = emptyList(),
+    onOpenEvent: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val selectedStock = stocks.firstOrNull { it.id == selectedStockId } ?: stocks.firstOrNull()
@@ -104,58 +115,68 @@ fun MarketTradingScreen(
     val bars = selectedStock?.let { priceHistory[it.id].orEmpty() }.orEmpty()
     var showSelectedProtectionDetail by remember(selectedStock?.id) { mutableStateOf(false) }
 
-    Row(
-        modifier = modifier.fillMaxSize().padding(MarketLayout.screenPadding),
-        horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
-    ) {
-        WatchlistPanel(
-            stocks = stocks,
-            quotes = quotes,
-            selectedStockId = selectedStock?.id,
-            onSelectStock = onSelectStock,
-            watchlistedStockIds = watchlistedStockIds,
-            onToggleWatchlist = onToggleWatchlist,
-            protectionBadges = protectionBadges,
-            modifier = Modifier.width(252.dp).fillMaxHeight(),
-        )
-        if (selectedStock != null && quote != null) {
-            StockChartPanel(
-                stock = selectedStock,
-                quote = quote,
-                bars = bars,
-                holding = holding,
-                watched = selectedStock.id in watchlistedStockIds,
-                onToggleWatchlist = { onToggleWatchlist(selectedStock.id) },
-                protectionBadge = protectionBadges[selectedStock.id],
-                onOpenProtectionDetail = { showSelectedProtectionDetail = true },
-                modifier = Modifier.weight(1f).fillMaxHeight(),
+    BoxWithConstraints(modifier = modifier.fillMaxSize().padding(MarketLayout.screenPadding)) {
+        val compactColumns = maxWidth < 1_140.dp
+        val explorerWidth = if (compactColumns) 220.dp else 252.dp
+        val tradingWidth = if (compactColumns) 280.dp else 304.dp
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+        ) {
+            WatchlistPanel(
+                stocks = stocks,
+                quotes = quotes,
+                selectedStockId = selectedStock?.id,
+                onSelectStock = onSelectStock,
+                watchlistedStockIds = watchlistedStockIds,
+                onToggleWatchlist = onToggleWatchlist,
+                protectionBadges = protectionBadges,
+                modifier = Modifier.width(explorerWidth).fillMaxHeight(),
             )
-            Column(
-                modifier = Modifier.width(304.dp).fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
-            ) {
-                OrderBookPanel(
+            if (selectedStock != null && quote != null) {
+                val selectedNews = relatedNews.filter { story ->
+                    story.relatedStocks.any { it.stockId == selectedStock.id }
+                }
+                StockChartPanel(
                     stock = selectedStock,
                     quote = quote,
-                    orderBook = orderBook,
-                    modifier = Modifier.fillMaxWidth().weight(0.95f),
-                )
-                OrderTicketPanel(
-                    stock = selectedStock,
-                    quote = quote,
+                    bars = bars,
                     holding = holding,
-                    cashKrw = cashKrw,
-                    cashUsd = cashUsd,
-                    protectionDetail = selectedProtectionDetail,
-                    orderUnavailableReason = { type -> orderUnavailableReason(selectedStock.id, type) },
-                    onSubmitOrder = onSubmitOrder,
-                    modifier = Modifier.fillMaxWidth().weight(1.05f),
+                    relatedNews = selectedNews,
+                    onOpenEvent = onOpenEvent,
+                    watched = selectedStock.id in watchlistedStockIds,
+                    onToggleWatchlist = { onToggleWatchlist(selectedStock.id) },
+                    protectionBadge = protectionBadges[selectedStock.id],
+                    onOpenProtectionDetail = { showSelectedProtectionDetail = true },
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
                 )
-            }
-        } else {
-            LedgerPanel(Modifier.weight(1f).fillMaxHeight()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("표시할 종목이 없습니다.", style = MarketType.body, color = MarketColors.InkMuted)
+                Column(
+                    modifier = Modifier.width(tradingWidth).fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+                ) {
+                    OrderBookPanel(
+                        stock = selectedStock,
+                        quote = quote,
+                        orderBook = orderBook,
+                        modifier = Modifier.fillMaxWidth().weight(0.88f),
+                    )
+                    OrderTicketPanel(
+                        stock = selectedStock,
+                        quote = quote,
+                        holding = holding,
+                        cashKrw = cashKrw,
+                        cashUsd = cashUsd,
+                        protectionDetail = selectedProtectionDetail,
+                        orderUnavailableReason = { type -> orderUnavailableReason(selectedStock.id, type) },
+                        onSubmitOrder = onSubmitOrder,
+                        modifier = Modifier.fillMaxWidth().weight(1.12f),
+                    )
+                }
+            } else {
+                LedgerPanel(Modifier.weight(1f).fillMaxHeight()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("표시할 종목이 없습니다.", style = MarketType.body, color = MarketColors.InkMuted)
+                    }
                 }
             }
         }
@@ -224,22 +245,24 @@ private fun WatchlistPanel(
                     FilterCell("★ 관심 ${watchlistedStockIds.size}", watchlistOnly) { watchlistOnly = true }
                 }
                 Spacer(Modifier.height(5.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    InstrumentFilter.entries.forEach { filter ->
-                        FilterCell(filter.label, instrumentFilter == filter) { instrumentFilter = filter }
+                val instrumentRows = InstrumentFilter.entries.chunked(2)
+                instrumentRows.forEachIndexed { index, filters ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        filters.forEach { filter ->
+                            FilterCell(filter.label, instrumentFilter == filter) { instrumentFilter = filter }
+                        }
                     }
+                    if (index != instrumentRows.lastIndex) Spacer(Modifier.height(4.dp))
                 }
                 Spacer(Modifier.height(5.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    VenueFilter.entries.take(4).forEach { filter ->
-                        FilterCell(filter.label, venueFilter == filter) { venueFilter = filter }
+                val venueRows = VenueFilter.entries.chunked(3)
+                venueRows.forEachIndexed { index, filters ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        filters.forEach { filter ->
+                            FilterCell(filter.label, venueFilter == filter) { venueFilter = filter }
+                        }
                     }
-                }
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    VenueFilter.entries.drop(4).forEach { filter ->
-                        FilterCell(filter.label, venueFilter == filter) { venueFilter = filter }
-                    }
+                    if (index != venueRows.lastIndex) Spacer(Modifier.height(4.dp))
                 }
             }
             LedgerDivider()
@@ -306,7 +329,7 @@ private fun WatchlistRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(if (selected) MarketColors.PrimaryWeak else Color.Transparent)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -319,8 +342,9 @@ private fun WatchlistRow(
         Box(
             Modifier
                 .clip(RoundedCornerShape(MarketRadii.pill))
-                .clickable(onClick = onToggleWatchlist)
-                .padding(horizontal = 3.dp, vertical = 4.dp),
+                .size(MarketComponentSize.minimumInteractiveTarget)
+                .clickable(role = Role.Button, onClick = onToggleWatchlist),
+            contentAlignment = Alignment.Center,
         ) {
             Text(
                 if (watched) "★" else "☆",
@@ -342,6 +366,7 @@ private fun WatchlistRow(
                 style = MarketType.caption,
                 color = MarketColors.InkMuted,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             ProtectionStatusBadge(
                 model = protectionBadge,
@@ -369,6 +394,8 @@ private fun StockChartPanel(
     quote: Quote,
     bars: List<PriceBar>,
     holding: Holding?,
+    relatedNews: List<NewsStoryUi>,
+    onOpenEvent: (String) -> Unit,
     watched: Boolean,
     onToggleWatchlist: () -> Unit,
     protectionBadge: ProtectionStatusBadgeUi?,
@@ -391,21 +418,27 @@ private fun StockChartPanel(
         )
     LedgerPanel(modifier, padding = 0.dp) {
         Column(Modifier.fillMaxSize()) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 13.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                Text(
+                    "MARKET SIGNAL  /  시세",
+                    style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                    color = MarketColors.Signal,
+                )
+                Spacer(Modifier.height(2.dp))
                 Row(verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f)) {
                         Text(
                             stock.name,
                             style = MarketType.display.copy(fontSize = 24.sp),
                             color = MarketColors.Ink,
-                            maxLines = 2,
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             "${stock.symbol} · ${stock.englishName}",
                             style = MarketType.label,
                             color = MarketColors.InkMuted,
-                            maxLines = 2,
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
@@ -423,7 +456,7 @@ private fun StockChartPanel(
                         )
                     }
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -434,13 +467,13 @@ private fun StockChartPanel(
                     StatusLabel(stock.behavior.strategy.displayName, MarketColors.Primary)
                 }
                 if (protectionBadge != null) {
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(2.dp))
                     ProtectionStatusBadge(
                         model = protectionBadge,
                         onClick = onOpenProtectionDetail,
                     )
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(2.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -457,8 +490,10 @@ private fun StockChartPanel(
                         Modifier
                             .clip(RoundedCornerShape(MarketRadii.pill))
                             .background(if (watched) MarketColors.Amber.copy(alpha = 0.12f) else MarketColors.PaperMuted)
-                            .clickable(onClick = onToggleWatchlist)
-                            .padding(horizontal = 9.dp, vertical = 4.dp),
+                            .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
+                            .clickable(role = Role.Button, onClick = onToggleWatchlist)
+                            .padding(horizontal = 9.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             if (watched) "★ 관심" else "☆ 관심 추가",
@@ -470,14 +505,16 @@ private fun StockChartPanel(
                         Box(
                             Modifier
                                 .clip(RoundedCornerShape(MarketRadii.pill))
-                                .clickable { uriHandler.openUri(identity.officialSourceUrl) }
-                                .padding(horizontal = 7.dp, vertical = 4.dp),
+                                .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
+                                .clickable(role = Role.Button) { uriHandler.openUri(identity.officialSourceUrl) }
+                                .padding(horizontal = 7.dp),
+                            contentAlignment = Alignment.Center,
                         ) {
                             Text("공식 자료 ↗", style = MarketType.caption, color = MarketColors.Primary)
                         }
                     }
                 }
-                Spacer(Modifier.height(7.dp))
+                Spacer(Modifier.height(3.dp))
                 Text(
                     buildString {
                         append(stock.sector.displayName)
@@ -485,10 +522,10 @@ private fun StockChartPanel(
                     },
                     style = MarketType.label,
                     color = MarketColors.InkMuted,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(13.dp))
+                Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth()) {
                     Metric("시가", formatPrice(quote.open, stock.currency), Modifier.weight(1f))
                     Metric("고가", formatPrice(quote.high, stock.currency), Modifier.weight(1f), MarketColors.Rise)
@@ -506,19 +543,24 @@ private fun StockChartPanel(
             }
             LedgerDivider()
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("캔들", style = MarketType.label.copy(fontWeight = FontWeight.SemiBold), color = MarketColors.Ink)
-                Spacer(Modifier.width(10.dp))
-                LegendDot(MarketColors.Rise, "상승")
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "가격·거래량",
+                        style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                        color = MarketColors.Ink,
+                    )
+                    Text(
+                        "상승 빨강 · 하락 파랑 · 이동평균 5/20",
+                        style = MarketType.caption,
+                        color = MarketColors.InkMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Spacer(Modifier.width(8.dp))
-                LegendDot(MarketColors.Fall, "하락")
-                Spacer(Modifier.width(8.dp))
-                LegendDot(MarketColors.Amber, "MA 5")
-                Spacer(Modifier.width(8.dp))
-                LegendDot(MarketColors.Primary, "MA 20")
-                Spacer(Modifier.weight(1f))
                 listOf("1일", "1주", "1개월", "3개월").forEach { item ->
                     FilterCell(item, item == range) { range = item }
                     Spacer(Modifier.width(3.dp))
@@ -529,13 +571,421 @@ private fun StockChartPanel(
                 modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp),
             )
             LedgerDivider()
-            ProductStructurePanel(
+            MarketIntelligenceDeck(
                 stock = stock,
                 holding = holding,
-                modifier = Modifier.fillMaxWidth().height(190.dp),
+                relatedNews = relatedNews,
+                onOpenEvent = onOpenEvent,
+                modifier = Modifier.fillMaxWidth().height(224.dp),
             )
         }
     }
+}
+
+private enum class IntelligenceTab(val label: String) {
+    IMPACT("영향 경로"),
+    NEWS("관련 뉴스"),
+    STRUCTURE("상품 구조"),
+}
+
+private data class StockNewsSignal(
+    val story: NewsStoryUi,
+    val relation: NewsRelatedStockUi,
+    val pathNodes: List<String>,
+) {
+    val causalPath: String
+        get() = pathNodes.joinToString(" → ")
+}
+
+@Composable
+private fun MarketIntelligenceDeck(
+    stock: StockDefinition,
+    holding: Holding?,
+    relatedNews: List<NewsStoryUi>,
+    onOpenEvent: (String) -> Unit,
+    modifier: Modifier,
+) {
+    var selectedTab by remember(stock.id) { mutableStateOf(IntelligenceTab.IMPACT) }
+    val signals = relatedNews.mapNotNull { story -> story.signalFor(stock) }
+
+    Column(modifier.background(MarketColors.Grey50)) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "WHY IT MOVES",
+                    style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                    color = MarketColors.Signal,
+                )
+                Text(
+                    "왜 움직이는가",
+                    style = MarketType.heading,
+                    color = MarketColors.Ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            IntelligenceTab.entries.forEach { tab ->
+                IntelligenceTabButton(
+                    text = if (tab == IntelligenceTab.NEWS && signals.isNotEmpty()) {
+                        "${tab.label} ${signals.size}"
+                    } else {
+                        tab.label
+                    },
+                    selected = selectedTab == tab,
+                    onClick = { selectedTab = tab },
+                )
+            }
+        }
+        LedgerDivider()
+        when (selectedTab) {
+            IntelligenceTab.IMPACT -> ImpactPathPanel(
+                stock = stock,
+                signals = signals,
+                onOpenEvent = onOpenEvent,
+                modifier = Modifier.fillMaxSize(),
+            )
+            IntelligenceTab.NEWS -> RelatedNewsPanel(
+                stock = stock,
+                signals = signals,
+                onOpenEvent = onOpenEvent,
+                modifier = Modifier.fillMaxSize(),
+            )
+            IntelligenceTab.STRUCTURE -> ProductStructurePanel(
+                stock = stock,
+                holding = holding,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun IntelligenceTabButton(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            style = MarketType.caption.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium),
+            color = if (selected) MarketColors.Signal else MarketColors.InkMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (selected) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .background(MarketColors.SignalLine),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ImpactPathPanel(
+    stock: StockDefinition,
+    signals: List<StockNewsSignal>,
+    onOpenEvent: (String) -> Unit,
+    modifier: Modifier,
+) {
+    val featured = signals.maxWithOrNull(
+        compareBy<StockNewsSignal> { it.story.activityPriority }
+            .thenBy { it.relation.relativeSensitivity }
+            .thenBy { it.relation.confidence },
+    )
+    if (featured == null) {
+        ConnectedNewsEmptyState(stock.name, modifier)
+        return
+    }
+    val directionColor = impactDirectionColor(featured.relation.direction)
+    Column(
+        modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "가장 강한 연결 신호",
+                modifier = Modifier.weight(1f),
+                style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                color = MarketColors.InkMuted,
+            )
+            Text(
+                "${featured.story.status.label} · ${impactDirectionLabel(featured.relation.direction)} · " +
+                    relationTierLabel(featured.relation),
+                style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                color = directionColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        ImpactPathRibbon(featured, onOpenEvent)
+        Text(
+            "핵심 근거 · ${featured.relation.reason}",
+            style = MarketType.caption,
+            color = MarketColors.InkMuted,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun ImpactPathRibbon(
+    signal: StockNewsSignal,
+    onOpenEvent: (String) -> Unit,
+) {
+    val pathParts = if (signal.pathNodes.size <= 4) {
+        signal.pathNodes
+    } else {
+        listOf(
+            signal.pathNodes.first(),
+            signal.pathNodes.drop(1).dropLast(1).joinToString(" → "),
+            signal.pathNodes.last(),
+        )
+    }
+    val directionColor = impactDirectionColor(signal.relation.direction)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .semantics { contentDescription = "영향 경로 ${signal.causalPath}" }
+            .border(1.dp, MarketColors.SignalLine, RoundedCornerShape(MarketRadii.medium))
+            .background(MarketColors.SignalSoft, RoundedCornerShape(MarketRadii.medium))
+            .clickable(role = Role.Button) { onOpenEvent(signal.story.event.id) }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        pathParts.take(3).forEachIndexed { index, part ->
+            Column(Modifier.weight(1f)) {
+                Text(
+                    when (index) {
+                        0 -> "요인"
+                        pathParts.lastIndex -> "종목"
+                        else -> "전달"
+                    },
+                    style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                    color = if (index == pathParts.lastIndex) directionColor else MarketColors.Signal,
+                )
+                Text(
+                    part,
+                    style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                    color = MarketColors.Ink,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (index < pathParts.take(3).lastIndex) {
+                Text(
+                    "→",
+                    modifier = Modifier.padding(horizontal = 6.dp),
+                    style = MarketType.heading,
+                    color = MarketColors.Signal,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RelatedNewsPanel(
+    stock: StockDefinition,
+    signals: List<StockNewsSignal>,
+    onOpenEvent: (String) -> Unit,
+    modifier: Modifier,
+) {
+    if (signals.isEmpty()) {
+        ConnectedNewsEmptyState(stock.name, modifier)
+        return
+    }
+    LazyColumn(modifier) {
+        items(signals, key = { it.story.event.id }) { signal ->
+            RelatedNewsRow(signal) { onOpenEvent(signal.story.event.id) }
+            LedgerDivider()
+        }
+    }
+}
+
+@Composable
+private fun RelatedNewsRow(signal: StockNewsSignal, onClick: () -> Unit) {
+    val directionColor = impactDirectionColor(signal.relation.direction)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                signal.story.status.label,
+                style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                color = newsStatusColor(signal.story.status.state),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                impactDirectionLabel(signal.relation.direction),
+                style = MarketType.caption.copy(fontWeight = FontWeight.Bold),
+                color = directionColor,
+            )
+            Text(
+                relationTierLabel(signal.relation),
+                modifier = Modifier.weight(1f),
+                style = MarketType.caption,
+                color = MarketColors.InkMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text("뉴스 열기 →", style = MarketType.caption, color = MarketColors.Signal)
+        }
+        Text(
+            signal.story.event.title,
+            style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+            color = MarketColors.Ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            "핵심 근거 · ${signal.relation.reason}",
+            style = MarketType.caption,
+            color = MarketColors.InkMuted,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            signal.causalPath,
+            style = MarketType.caption.copy(fontWeight = FontWeight.Medium),
+            color = MarketColors.Signal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun ConnectedNewsEmptyState(stockName: String, modifier: Modifier) {
+    Box(modifier.padding(16.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                "연결된 뉴스가 아직 없습니다",
+                style = MarketType.body.copy(fontWeight = FontWeight.SemiBold),
+                color = MarketColors.Ink,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "${stockName}과 직접·산업·시장 범위가 겹치는 뉴스만 표시합니다.",
+                style = MarketType.caption,
+                color = MarketColors.InkMuted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** 새 인과 필드가 추가돼도 덱의 표시 구조와 분리해 이 변환만 확장한다. */
+private fun NewsStoryUi.signalFor(stock: StockDefinition): StockNewsSignal? {
+    val relation = relatedStocks.firstOrNull { it.stockId == stock.id } ?: return null
+    val path = when (relation.relationKind) {
+        NewsStockRelationKind.DIRECT_TARGET -> impactPaths.firstOrNull { it.stockId == stock.id }
+        NewsStockRelationKind.UNDERLYING_EXPOSURE -> {
+            val underlyingIds = stock.identityProfile?.underlyingInstrumentIds.orEmpty()
+            impactPaths.firstOrNull { path -> path.stockId?.let(underlyingIds::contains) == true }
+        }
+        NewsStockRelationKind.CAUSAL_CHAIN -> impactPaths.firstOrNull { it.stockId == stock.id }
+        NewsStockRelationKind.INDUSTRY_SEGMENT -> impactPaths.firstOrNull { path ->
+            path.industrySegment?.let(stock.industrySegments::contains) == true
+        }
+        NewsStockRelationKind.INDUSTRY -> {
+            val exposedSectors = stock.identityProfile?.exposedSectors.orEmpty().ifEmpty { setOf(stock.sector) }
+            impactPaths.firstOrNull { path -> path.sector?.let(exposedSectors::contains) == true }
+        }
+        NewsStockRelationKind.MARKET_CONTEXT -> {
+            val marketPaths = impactPaths.filter { path ->
+                path.stockId == null && path.sector == null && path.industrySegment == null
+            }
+            marketPaths.firstOrNull { path ->
+                stock.market.displayName in path.label || stock.market.countryName in path.label
+            } ?: marketPaths.singleOrNull()
+        }
+    }
+    val traceLabels = relation.causalTraceLabels
+        .filter(String::isNotBlank)
+        .fold(emptyList<String>()) { labels, label ->
+            if (labels.lastOrNull() == label) labels else labels + label
+        }
+    val fallbackRoute = path?.label
+        ?.takeUnless { it == relation.name || it == relation.symbol }
+        ?: relation.relationKind.displayName
+    val causalNodes = when {
+        traceLabels.isEmpty() -> listOf(event.title, fallbackRoute, relation.name)
+        traceLabels.last() == relation.name -> traceLabels
+        else -> traceLabels + relation.name
+    }
+    return StockNewsSignal(
+        story = this,
+        relation = relation,
+        pathNodes = causalNodes,
+    )
+}
+
+private fun relationTierLabel(relation: NewsRelatedStockUi): String = when (relation.relationKind) {
+    NewsStockRelationKind.DIRECT_TARGET -> "직접 관계"
+    NewsStockRelationKind.UNDERLYING_EXPOSURE -> "직접 관계 · 기초자산"
+    NewsStockRelationKind.CAUSAL_CHAIN -> when (relation.specificity) {
+        4 -> "직접 관계 · 인과 경로"
+        2, 3 -> "산업 관계 · 인과 경로"
+        else -> "시장 관계 · 인과 경로"
+    }
+    NewsStockRelationKind.INDUSTRY_SEGMENT,
+    NewsStockRelationKind.INDUSTRY,
+    -> "산업 관계"
+    NewsStockRelationKind.MARKET_CONTEXT -> "시장 관계"
+}
+
+private fun impactDirectionLabel(direction: ImpactDirection): String = when (direction) {
+    ImpactDirection.POSITIVE -> "긍정"
+    ImpactDirection.NEGATIVE -> "부정"
+    ImpactDirection.MIXED -> "혼조"
+    ImpactDirection.NEUTRAL -> "중립"
+}
+
+private fun impactDirectionColor(direction: ImpactDirection): Color = when (direction) {
+    ImpactDirection.POSITIVE -> MarketColors.RiseText
+    ImpactDirection.NEGATIVE -> MarketColors.FallText
+    ImpactDirection.MIXED -> MarketColors.AmberText
+    ImpactDirection.NEUTRAL -> MarketColors.InkMuted
+}
+
+private fun newsStatusColor(state: NewsEffectState): Color = when (state) {
+    NewsEffectState.UPCOMING,
+    NewsEffectState.WAITING_FOR_MARKET,
+    NewsEffectState.PROCESS_ACTIVE,
+    -> MarketColors.Signal
+    NewsEffectState.MARKET_ACTIVE -> MarketColors.AmberText
+    NewsEffectState.RESTRICTION_ACTIVE -> MarketColors.NavyRaised
+    NewsEffectState.MARKET_ENDED,
+    NewsEffectState.RESOLVED,
+    NewsEffectState.INFORMATION,
+    -> MarketColors.InkMuted
 }
 
 @Composable
@@ -595,6 +1045,8 @@ private fun ProductStructurePanel(
             identity?.strategySummary ?: stock.description,
             style = MarketType.caption,
             color = MarketColors.Ink,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
         )
         ProductInfoLine(
             label = "기본 구조",
@@ -612,6 +1064,7 @@ private fun ProductStructurePanel(
         identity?.let {
             ProductInfoLine("운용·발행", it.issuerOrManager)
             ProductInfoLine("분배", it.distributionNotes)
+            ProductInfoLine("공식 확인", "${it.legalName} · ${it.verifiedOn} 검증")
         }
         if (contractFacts.isNotEmpty()) {
             ProductInfoLine("계약", contractFacts.joinToString(" · "))
@@ -624,7 +1077,7 @@ private fun ProductStructurePanel(
 }
 
 @Composable
-private fun ProductInfoLine(label: String, value: String) {
+private fun ProductInfoLine(label: String, value: String, maxLines: Int = 2) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         Text(
             label,
@@ -637,6 +1090,8 @@ private fun ProductInfoLine(label: String, value: String) {
             modifier = Modifier.weight(1f),
             style = MarketType.caption,
             color = MarketColors.Ink,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -669,14 +1124,6 @@ private fun fxExposureLabel(stock: StockDefinition): String? {
         "다중통화"
     }
     return "$currencyLabel/KRW 환노출"
-}
-
-@Composable
-private fun LegendDot(color: Color, text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(Modifier.size(6.dp).background(color, RoundedCornerShape(50)))
-        Text(text, style = MarketType.caption, color = MarketColors.InkMuted)
-    }
 }
 
 @Composable
@@ -719,7 +1166,11 @@ private fun OrderBookPanel(
                             color = deltaColor(quote.change),
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text(formatPercent(quote.changeRate), style = MarketType.number, color = deltaColor(quote.change))
+                        Text(
+                            formatPercent(quote.changeRate),
+                            style = MarketType.number,
+                            color = deltaColor(quote.change),
+                        )
                     }
                 }
                 val bids = orderBook?.bids.orEmpty().take(10)
@@ -734,9 +1185,17 @@ private fun OrderBookPanel(
                 }
             }
             Row(Modifier.fillMaxWidth().padding(8.dp)) {
-                Text("매수 ${formatQuantity(orderBook?.totalBidQuantity ?: 0.0)}", style = MarketType.label, color = MarketColors.Fall)
+                Text(
+                    "매수 ${formatQuantity(orderBook?.totalBidQuantity ?: 0.0)}",
+                    style = MarketType.label,
+                    color = MarketColors.Fall,
+                )
                 Spacer(Modifier.weight(1f))
-                Text("매도 ${formatQuantity(orderBook?.totalAskQuantity ?: 0.0)}", style = MarketType.label, color = MarketColors.Rise)
+                Text(
+                    "매도 ${formatQuantity(orderBook?.totalAskQuantity ?: 0.0)}",
+                    style = MarketType.label,
+                    color = MarketColors.Rise,
+                )
             }
         }
     }
@@ -751,7 +1210,10 @@ private fun OrderBookRow(
     color: Color,
 ) {
     Row(
-        Modifier.fillMaxWidth().background(color.copy(alpha = 0.055f)).padding(horizontal = 10.dp, vertical = 4.dp),
+        Modifier
+            .fillMaxWidth()
+            .background(color.copy(alpha = 0.055f))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
     ) {
         Text(formatQuantity(quantity), Modifier.weight(1f), style = MarketType.number, color = MarketColors.InkMuted)
         Text(formatPrice(price, currency), Modifier.weight(1f), style = MarketType.number, color = color)
@@ -775,7 +1237,7 @@ private fun OrderTicketPanel(
     var type by remember(stock.id) { mutableStateOf(OrderType.MARKET) }
     var timeInForce by remember(stock.id) { mutableStateOf(TimeInForce.DAY) }
     var quantityText by remember(stock.id) { mutableStateOf("1") }
-    var limitPriceText by remember(stock.id, quote.price) {
+    var limitPriceText by remember(stock.id) {
         mutableStateOf(formatPrice(quote.price, stock.currency, includeCurrency = false).replace(",", ""))
     }
     val quantity = quantityText.toDoubleOrNull() ?: 0.0
@@ -784,9 +1246,10 @@ private fun OrderTicketPanel(
     val expectedAmount = quantity * expectedPrice
     val availableCash = if (stock.currency == Currency.KRW) cashKrw else cashUsd
     val protectionBlockReason = orderUnavailableReason(type)
+    val scrollState = remember(stock.id, type) { ScrollState(initial = 0) }
 
     LedgerPanel(modifier, padding = 12.dp) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().verticalScroll(scrollState)) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 SideTab("매수", side == OrderSide.BUY, MarketColors.Rise, Modifier.weight(1f)) { side = OrderSide.BUY }
                 SideTab("매도", side == OrderSide.SELL, MarketColors.Fall, Modifier.weight(1f)) { side = OrderSide.SELL }
@@ -824,7 +1287,7 @@ private fun OrderTicketPanel(
                     suffix = stock.currency.symbol,
                     onValueChange = { limitPriceText = it.filter { c -> c.isDigit() || c == '.' } },
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
             }
             TicketField(
                 label = "주문 수량",
@@ -870,7 +1333,7 @@ private fun OrderTicketPanel(
                     color = MarketColors.Ink,
                 )
             }
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(12.dp))
             protectionDetail?.let { detail ->
                 Text(
                     text = protectionBlockReason ?: detail.primary.orderImpact,
@@ -996,7 +1459,7 @@ private fun TicketField(label: String, value: String, suffix: String, onValueCha
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier.weight(1f).height(42.dp),
+            modifier = Modifier.weight(1f).height(MarketComponentSize.minimumInteractiveTarget),
             textStyle = MarketType.number,
             singleLine = true,
             suffix = { Text(suffix, style = MarketType.label, color = MarketColors.InkMuted) },
