@@ -10,7 +10,6 @@ import com.amond.kmpbook.domain.model.TurnStep
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlin.time.Instant
 
 class SimulatorViewModel(
     initialOptions: NewGameOptions = NewGameOptions(),
@@ -141,11 +140,6 @@ class SimulatorViewModel(
 
     fun finishSettlement() {
         runtime.finishSettlement()
-        publish()
-    }
-
-    internal fun setTimeForTesting(time: Instant) {
-        runtime.setTimeForTesting(time)
         publish()
     }
 

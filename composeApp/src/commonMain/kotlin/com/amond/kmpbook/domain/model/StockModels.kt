@@ -115,20 +115,17 @@ data class EtfProfile(
     val assetClass: EtfAssetClass,
     val taxCategory: EtfTaxCategory,
     val annualExpenseRatio: Double,
+    /** 상장통화 대비 기초자산의 구조화된 다중통화 환노출. */
+    val fxProfile: EtfFxProfile,
     val leverage: Double = 1.0,
     val taxablePriceGainRatio: Double = 1.0,
     val exposureRegion: EtfExposureRegion = EtfExposureRegion.KOREA,
-    /** 구조화된 다중통화 환노출. null이면 이전 저장과 사용자 종목팩을 위해 아래 값을 쓴다. */
-    val fxProfile: EtfFxProfile? = null,
-    /** 이전 저장·사용자 종목팩 호환용 USD/KRW 로그수익률 민감도. */
-    val usdKrwSensitivity: Double = 0.0,
 ) {
     init {
         require(benchmark.isNotBlank()) { "ETF 기초지수·전략은 비어 있을 수 없습니다." }
         require(annualExpenseRatio in 0.0..0.05) { "ETF 연 보수는 0% 이상 5% 이하여야 합니다." }
         require(leverage in -3.0..3.0 && leverage != 0.0) { "ETF 배율은 -3배 이상 3배 이하의 0이 아닌 값이어야 합니다." }
         require(taxablePriceGainRatio in 0.0..1.0) { "ETF 게임 과표 반영률은 0 이상 1 이하여야 합니다." }
-        require(usdKrwSensitivity in -2.0..2.0) { "ETF 환율 민감도는 -2 이상 2 이하여야 합니다." }
     }
 
     fun isExposedTo(market: Market): Boolean = when (exposureRegion) {

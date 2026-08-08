@@ -26,7 +26,7 @@ object EarningsCalendarCatalog {
 
     fun occurrencesForYear(
         year: Int,
-        stocks: List<StockDefinition> = StockCatalog.all,
+        stocks: List<StockDefinition> = StockCatalog.definitions,
     ): List<ScheduledEventOccurrence> {
         if (year !in EconomicReleaseCatalog.FIRST_YEAR..EconomicReleaseCatalog.LAST_YEAR) return emptyList()
         require(stocks.map(StockDefinition::id).distinct().size == stocks.size) {
@@ -80,7 +80,7 @@ object EarningsCalendarCatalog {
     fun occurrencesBetween(
         from: Instant,
         to: Instant,
-        stocks: List<StockDefinition> = StockCatalog.all,
+        stocks: List<StockDefinition> = StockCatalog.definitions,
     ): List<ScheduledEventOccurrence> {
         require(to >= from) { "Scheduled event interval cannot run backwards" }
         if (from == to) return emptyList()
@@ -97,7 +97,7 @@ object EarningsCalendarCatalog {
 
     fun upcoming(
         from: Instant,
-        stocks: List<StockDefinition> = StockCatalog.all,
+        stocks: List<StockDefinition> = StockCatalog.definitions,
         limit: Int = 12,
     ): List<ScheduledEventOccurrence> {
         require(limit >= 0)
@@ -120,7 +120,7 @@ object EarningsCalendarCatalog {
     fun eventsBetween(
         from: Instant,
         to: Instant,
-        stocks: List<StockDefinition> = StockCatalog.all,
+        stocks: List<StockDefinition> = StockCatalog.definitions,
     ): List<ScheduledEventOccurrence> = occurrencesBetween(from, to, stocks)
 
     private fun fiscalPeriod(releaseYear: Int, releaseIndex: Int): Pair<Int, Int> = when (releaseIndex) {

@@ -75,9 +75,6 @@ object StockCatalog {
         stockDefinitions + enrichedBaseEtfs + requestedDefinitions
     }
 
-    /** 기존 호출부에서 간결하게 사용할 수 있는 별칭. */
-    val all: List<StockDefinition> get() = definitions
-
     /** 기업 실적 이벤트가 적용되는 개별주식·REIT·ADR. */
     val stocks: List<StockDefinition> get() = definitions.filter(StockDefinition::hasCorporateEarnings)
 

@@ -181,7 +181,6 @@ object RequestedKoreanInstrumentCatalog {
                     },
                     exposureRegion = exposureRegion,
                     fxProfile = requireNotNull(fxProfile),
-                    usdKrwSensitivity = 0.0,
                 )
             } else {
                 null

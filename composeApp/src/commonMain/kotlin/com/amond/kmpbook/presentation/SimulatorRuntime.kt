@@ -154,7 +154,7 @@ import kotlin.time.Duration.Companion.nanoseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 
-internal data class RuntimeTradingInterval(
+private data class RuntimeTradingInterval(
     val startsAt: Instant,
     val endsAt: Instant,
 ) {
@@ -163,7 +163,7 @@ internal data class RuntimeTradingInterval(
     }
 }
 
-internal data class RuntimePriceBounds(
+private data class RuntimePriceBounds(
     val lower: Double? = null,
     val upper: Double? = null,
 ) {
@@ -179,14 +179,14 @@ internal data class RuntimePriceBounds(
     )
 }
 
-internal data class ListingTerminationControl(
+private data class ListingTerminationControl(
     val event: GameEvent,
     /** Unclamped contractual/effective date used to choose one controlling notice. */
     val rawEffectiveOn: LocalDate,
 )
 
 /** Uses the real persistence deadline when it fits in this turn; otherwise leaves a pending observation at turn-end. */
-internal fun runtimePersistenceObservationAt(
+private fun runtimePersistenceObservationAt(
     conditionSince: Instant,
     turnEnd: Instant,
     persistence: kotlin.time.Duration,
@@ -199,7 +199,7 @@ internal fun runtimePersistenceObservationAt(
  * 2041-01-01 06:00 KST and legal T+1/T+2 dates can fall a few days into 2041.
  * Only New Year's Day needs an explicit closure in that short settlement tail.
  */
-internal fun runtimeClosedDates(market: Market, date: LocalDate): Set<LocalDate> = when {
+private fun runtimeClosedDates(market: Market, date: LocalDate): Set<LocalDate> = when {
     date.year in GameCalendar.START_LOCAL_DATE_TIME.year..GameCalendar.CAMPAIGN_END_DATE.year ->
         DefaultMarketHolidays.closedDates(market, date.year)
     date == LocalDate(GameCalendar.CAMPAIGN_END_DATE.year + 1, 1, 1) -> setOf(date)
@@ -207,7 +207,7 @@ internal fun runtimeClosedDates(market: Market, date: LocalDate): Set<LocalDate>
 }
 
 /** Exact regular-session intersection minus half-open protection intervals. */
-internal fun runtimeTradableIntervals(
+private fun runtimeTradableIntervals(
     market: Market,
     from: Instant,
     to: Instant,
@@ -250,7 +250,7 @@ internal fun runtimeTradableIntervals(
     }
 }
 
-internal fun runtimeTradingFraction(
+private fun runtimeTradingFraction(
     from: Instant,
     to: Instant,
     intervals: List<RuntimeTradingInterval>,
@@ -262,7 +262,7 @@ internal fun runtimeTradingFraction(
 }
 
 /** VI triggering quotations and LULD out-of-band quotations are observations, not executable OHLC prices. */
-internal fun runtimeClampBarToBounds(bar: PriceBar, bounds: RuntimePriceBounds): PriceBar {
+private fun runtimeClampBarToBounds(bar: PriceBar, bounds: RuntimePriceBounds): PriceBar {
     fun bounded(value: Double): Double = value
         .let { bounds.lower?.let { lower -> it.coerceAtLeast(lower) } ?: it }
         .let { bounds.upper?.let { upper -> it.coerceAtMost(upper) } ?: it }
@@ -273,7 +273,7 @@ internal fun runtimeClampBarToBounds(bar: PriceBar, bounds: RuntimePriceBounds):
     return bar.copy(open = open, high = high, low = low, close = close)
 }
 
-internal fun krxInvestmentAlertReleaseCriteriaCleared(
+private fun krxInvestmentAlertReleaseCriteriaCleared(
     designation: InvestmentAlertDesignation,
     points: List<DailyTradingSurveillancePoint>,
 ): Boolean {
@@ -309,11 +309,11 @@ internal fun krxInvestmentAlertReleaseCriteriaCleared(
     }
 }
 
-internal fun krxInvestmentAlertReleaseRule(
+private fun krxInvestmentAlertReleaseRule(
     designation: InvestmentAlertDesignation,
 ): InvestmentAlertReleaseRule = designation.releaseRule
 
-internal fun krxRelativeMarketRiseMultipleSatisfied(
+private fun krxRelativeMarketRiseMultipleSatisfied(
     points: List<DailyTradingSurveillancePoint>,
     days: Int,
     multiple: Double,
@@ -343,14 +343,14 @@ private fun krxAlertIsHighest15(points: List<DailyTradingSurveillancePoint>): Bo
     points.size >= 15 && points.last().close >= points.takeLast(15)
         .maxOf(DailyTradingSurveillancePoint::close)
 
-internal fun krxOutsideTop100AtPreviousClose(
+private fun krxOutsideTop100AtPreviousClose(
     points: List<DailyTradingSurveillancePoint>,
 ): Boolean = points.getOrNull(points.lastIndex - 1)
     ?.krxMarketCapRank
     ?.let { it > 100 }
     ?: false
 
-internal fun krxWarningNoticeReasonCodes(
+private fun krxWarningNoticeReasonCodes(
     points: List<DailyTradingSurveillancePoint>,
 ): Set<String> = buildSet {
     // 지정예고는 가격상승률만 적출한다. 최고가·시장대비배수·시총순위는 예고 후
@@ -360,7 +360,7 @@ internal fun krxWarningNoticeReasonCodes(
     if ((krxAlertRise(points, 15) ?: Double.NEGATIVE_INFINITY) >= 1.00) add("WARNING_NOTICE_15D_100")
 }
 
-internal fun krxWarningDesignationReasonCodes(
+private fun krxWarningDesignationReasonCodes(
     designation: InvestmentAlertDesignation?,
     points: List<DailyTradingSurveillancePoint>,
     market: Market = Market.KOSDAQ,
@@ -396,7 +396,7 @@ internal fun krxWarningDesignationReasonCodes(
     }
 }
 
-internal fun krxDangerNoticeReasonCodes(
+private fun krxDangerNoticeReasonCodes(
     points: List<DailyTradingSurveillancePoint>,
 ): Set<String> = buildSet {
     // 지정예고는 가격상승률만 적출한다. 최근 15일 최고가와 시장지수 대비 배수는
@@ -412,7 +412,7 @@ internal fun krxDangerNoticeReasonCodes(
     }
 }
 
-internal fun krxDangerDesignationReasonCodes(
+private fun krxDangerDesignationReasonCodes(
     designation: InvestmentAlertDesignation?,
     points: List<DailyTradingSurveillancePoint>,
 ): Set<String> = buildSet {
@@ -444,7 +444,7 @@ internal fun krxDangerDesignationReasonCodes(
     }
 }
 
-internal fun krxEscalationNoticeJudgmentOpen(
+private fun krxEscalationNoticeJudgmentOpen(
     designation: InvestmentAlertDesignation,
     points: List<DailyTradingSurveillancePoint>,
 ): Boolean {
@@ -453,7 +453,7 @@ internal fun krxEscalationNoticeJudgmentOpen(
     return observations.isNotEmpty() && observations.size <= 10 && points.last().date >= noticeOn
 }
 
-internal fun krxWarningRedesignationCriteriaSatisfied(
+private fun krxWarningRedesignationCriteriaSatisfied(
     designation: InvestmentAlertDesignation,
     points: List<DailyTradingSurveillancePoint>,
 ): Boolean {
@@ -475,7 +475,7 @@ internal fun krxWarningRedesignationCriteriaSatisfied(
         current.close + SimulatorRuntime.PRICE_EPSILON >= twoDaysBefore.close * 1.40
 }
 
-internal fun krxInvestmentAlertObservedTradingDays(
+private fun krxInvestmentAlertObservedTradingDays(
     designation: InvestmentAlertDesignation,
     points: List<DailyTradingSurveillancePoint>,
 ): Int = when (designation.level) {
@@ -485,7 +485,7 @@ internal fun krxInvestmentAlertObservedTradingDays(
     -> points.count { it.date > designation.designatedOn }
 }
 
-internal fun krxWarningAdditionalRiseEvaluationDate(
+private fun krxWarningAdditionalRiseEvaluationDate(
     designation: InvestmentAlertDesignation,
     points: List<DailyTradingSurveillancePoint>,
 ): LocalDate? {
@@ -529,7 +529,7 @@ internal class SimulatorRuntime(
     private val baseStockDefinitions: List<StockDefinition> = if (options.usFractionalTrading) {
         StockCatalog.withUsFractionalTrading()
     } else {
-        StockCatalog.all
+        StockCatalog.definitions
     }
     private val baseStockById = baseStockDefinitions.associateBy(StockDefinition::id)
     private val mutableStocks = baseStockDefinitions.toMutableList()
@@ -1121,14 +1121,6 @@ internal class SimulatorRuntime(
                 },
             )
         }
-    }
-
-    internal fun setTimeForTesting(time: Instant) {
-        currentTime = GameCalendar.clamp(time)
-        turn = GameCalendar.turnAt(currentTime)
-        phase = if (GameCalendar.isFinished(currentTime)) GamePhase.SETTLEMENT else GamePhase.PLAYING
-        screen = if (phase == GamePhase.SETTLEMENT) Screen.ENDING else screen
-        lastMessage = null
     }
 
     private fun initializeMarketData() {

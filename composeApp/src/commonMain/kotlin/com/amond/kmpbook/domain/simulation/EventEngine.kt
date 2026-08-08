@@ -338,7 +338,7 @@ class EventEngine(
     companion object {
         private const val SECONDS_PER_HOUR: Long = 3_600L
 
-        internal fun probabilityForInterval(probabilityPerDay: Double, hours: Int): Double {
+        private fun probabilityForInterval(probabilityPerDay: Double, hours: Int): Double {
             if (probabilityPerDay == 0.0) return 0.0
             if (probabilityPerDay == 1.0) return 1.0
             return 1.0 - (1.0 - probabilityPerDay).pow(hours / 24.0)

@@ -108,7 +108,6 @@ object RequestedUsInstrumentCatalog {
                     taxablePriceGainRatio = 1.0,
                     exposureRegion = exposureRegion,
                     fxProfile = fxProfileOverride ?: USD_ONLY_FX_PROFILE,
-                    usdKrwSensitivity = 0.0,
                 )
             } else {
                 null

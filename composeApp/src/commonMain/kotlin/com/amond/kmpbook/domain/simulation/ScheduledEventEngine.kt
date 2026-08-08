@@ -44,14 +44,14 @@ class ScheduledEventEngine(private val seed: Long) {
 
     fun occurrencesForYear(
         year: Int,
-        stocks: List<StockDefinition> = StockCatalog.all,
+        stocks: List<StockDefinition> = StockCatalog.definitions,
     ): List<ScheduledEventOccurrence> = annualCalendar(year, stocks)
 
     /** Returns every occurrence in the half-open interval [from, to), without an emission cap. */
     fun occurrencesBetween(
         from: Instant,
         to: Instant,
-        stocks: List<StockDefinition> = StockCatalog.all,
+        stocks: List<StockDefinition> = StockCatalog.definitions,
     ): List<ScheduledEventOccurrence> {
         require(to >= from) { "Scheduled event interval cannot run backwards" }
         if (from == to) return emptyList()
@@ -69,7 +69,7 @@ class ScheduledEventEngine(private val seed: Long) {
     fun generate(
         from: Instant,
         to: Instant,
-        stocks: List<StockDefinition> = StockCatalog.all,
+        stocks: List<StockDefinition> = StockCatalog.definitions,
     ): ScheduledEventGenerationResult = ScheduledEventGenerationResult(
         emissions = occurrencesBetween(from, to, stocks).map { emissionFor(it, stocks) },
     )
@@ -80,7 +80,7 @@ class ScheduledEventEngine(private val seed: Long) {
      */
     fun upcoming(
         from: Instant,
-        stocks: List<StockDefinition> = StockCatalog.all,
+        stocks: List<StockDefinition> = StockCatalog.definitions,
         limit: Int = 12,
     ): List<ScheduledEventOccurrence> {
         require(limit >= 0)
@@ -102,7 +102,7 @@ class ScheduledEventEngine(private val seed: Long) {
 
     fun outcomeFor(
         occurrence: ScheduledEventOccurrence,
-        stocks: List<StockDefinition> = StockCatalog.all,
+        stocks: List<StockDefinition> = StockCatalog.definitions,
     ): ScheduledEventOutcome {
         val random = DeterministicRandom.keyed(seed, occurrence.id)
         return if (occurrence.kind == ScheduledEventKind.EARNINGS) {
@@ -114,7 +114,7 @@ class ScheduledEventEngine(private val seed: Long) {
 
     fun emissionFor(
         occurrence: ScheduledEventOccurrence,
-        stocks: List<StockDefinition> = StockCatalog.all,
+        stocks: List<StockDefinition> = StockCatalog.definitions,
     ): ScheduledEventEmission {
         val outcome = outcomeFor(occurrence, stocks)
         val impactStartsAt = nextImpactStart(occurrence)
@@ -151,7 +151,7 @@ class ScheduledEventEngine(private val seed: Long) {
     fun impactEventsBetween(
         from: Instant,
         to: Instant,
-        stocks: List<StockDefinition> = StockCatalog.all,
+        stocks: List<StockDefinition> = StockCatalog.definitions,
     ): List<GameEvent> {
         require(to >= from) { "Scheduled impact interval cannot run backwards" }
         if (from == to) return emptyList()
@@ -166,7 +166,7 @@ class ScheduledEventEngine(private val seed: Long) {
 
     fun activeImpactEventsAt(
         time: Instant,
-        stocks: List<StockDefinition> = StockCatalog.all,
+        stocks: List<StockDefinition> = StockCatalog.definitions,
     ): List<GameEvent> = impactEventsBetween(time - 1.hours, time + 1.hours, stocks)
         .filter { it.isActiveAt(time) }
 

@@ -42,9 +42,6 @@ enum class Screen(val displayName: String) {
     ENDING("정산 결과"),
 }
 
-/** UI 코드가 GameScreen이라는 이름을 선호할 때 사용할 호환 별칭. */
-typealias GameScreen = Screen
-
 enum class GameEndReason(val displayName: String) {
     DATE_LIMIT("2040년 12월 31일 도달"),
     BANKRUPTCY("파산"),

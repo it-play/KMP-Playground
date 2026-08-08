@@ -124,7 +124,6 @@ object EtfCatalog {
                 },
                 exposureRegion = exposureRegion,
                 fxProfile = fxProfile,
-                usdKrwSensitivity = 0.0,
             )
             return StockDefinition(
                 symbol = symbol,

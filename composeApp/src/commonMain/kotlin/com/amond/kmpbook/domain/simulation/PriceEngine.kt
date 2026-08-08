@@ -2,6 +2,7 @@ package com.amond.kmpbook.domain.simulation
 
 import com.amond.kmpbook.domain.model.Currency
 import com.amond.kmpbook.domain.model.EtfExposureRegion
+import com.amond.kmpbook.domain.model.EtfFxProfile
 import com.amond.kmpbook.domain.model.InstrumentStrategy
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.MarketSession
@@ -161,8 +162,7 @@ data class PriceGenerationInput(
                 .toLong()
 
         fun defaultFxSensitivity(stock: StockDefinition): Double = when {
-            stock.etfProfile?.fxProfile != null -> 0.0
-            stock.etfProfile != null -> stock.etfProfile.usdKrwSensitivity
+            stock.etfProfile != null -> 0.0
             stock.market.isUnitedStates -> -0.10
             stock.sector in EXPORT_HEAVY_SECTORS -> 0.25
             stock.sector in IMPORT_HEAVY_SECTORS -> -0.15
@@ -271,17 +271,18 @@ class PriceEngine(private val seed: Long) {
             strategyParticipation(behavior, sectorFactor) * sectorFactor * referenceFraction
         val ratesAndInflation = instrumentRateReturn(stock, input.macro)
         val growthAndSentiment = instrumentGrowthAndCreditReturn(stock, input.macro)
-        val fxReturn = structuredFxReturn(stock, input.macro, input.fxSensitivity) *
+        val fxReturn = foreignExchangeReturn(stock, input.macro, input.fxSensitivity) *
             fairValueFraction
         val resetVolatilityDrag = dailyResetVolatilityDrag(stock, hoursPerTradingYear)
         // 분배 재원은 NAV에 먼저 적립된 뒤 배당락일에 빠진다. 커버드콜·ETN의
         // coverage<1 부분은 이 적립에서 제외되므로 반복 분배가 원금을 잠식할 수 있다.
         val earnedDistributionCarry = stock.dividendYield * behavior.distributionCoverageRatio /
             hoursPerTradingYear * fairValueFraction
+        val annualFundCosts = stock.etfProfile?.let { profile ->
+            profile.annualExpenseRatio + profile.fxProfile.annualHedgeCostRate
+        } ?: 0.0
         val fundCosts = earnedDistributionCarry - (
-            (stock.etfProfile?.annualExpenseRatio ?: 0.0) +
-                (stock.etfProfile?.fxProfile?.annualHedgeCostRate ?: 0.0) +
-                behavior.annualStructuralDrag
+            annualFundCosts + behavior.annualStructuralDrag
             ) /
             hoursPerTradingYear * fairValueFraction + resetVolatilityDrag * fairValueFraction
         val randomComponent = -0.5 * hourlyVolatility * hourlyVolatility +
@@ -434,7 +435,7 @@ class PriceEngine(private val seed: Long) {
         val ratesAndInflation = leverage * instrumentRateReturn(stock, macro) * referenceTradingFraction
         val growthAndSentiment = leverage * instrumentGrowthAndCreditReturn(stock, macro) *
             referenceTradingFraction
-        val fx = structuredFxReturn(stock, macro, profile.usdKrwSensitivity) * fxTradingFraction
+        val fx = structuredFxReturn(stock, macro, profile.fxProfile) * fxTradingFraction
         val event = eventLogReturn(stock, eventImpulse, referenceTradingFraction, fxTradingFraction)
         // Expense and hedge-cost accrual belongs to the listing's regular-session NAV
         // path. Including it here would charge a foreign-market ETF once while its
@@ -461,10 +462,36 @@ class PriceEngine(private val seed: Long) {
             ln(1.0 + eventImpulse.directProductReturnRate) * fairValueFraction
     }
 
+    private fun foreignExchangeReturn(
+        stock: StockDefinition,
+        macro: MacroEnvironment,
+        stockFxSensitivity: Double,
+    ): Double {
+        val profile = stock.etfProfile
+        if (profile != null) return structuredFxReturn(stock, macro, profile.fxProfile)
+
+        val listingCurrency = when (stock.currency) {
+            Currency.KRW -> ReferenceCurrency.KRW
+            Currency.USD -> ReferenceCurrency.USD
+        }
+        val listingReturn = ln(
+            macro.rateToKrw(listingCurrency) / macro.rateToKrw(listingCurrency, previous = true),
+        )
+        val referenceCurrency = stock.behavior.referenceCurrency
+        if (referenceCurrency != null) {
+            val referenceReturn = ln(
+                macro.rateToKrw(referenceCurrency) /
+                    macro.rateToKrw(referenceCurrency, previous = true),
+            )
+            return stock.behavior.referenceCurrencySensitivity * (referenceReturn - listingReturn)
+        }
+        return ln(macro.usdKrw / macro.previousUsdKrw) * stockFxSensitivity
+    }
+
     private fun structuredFxReturn(
         stock: StockDefinition,
         macro: MacroEnvironment,
-        fallbackUsdKrwSensitivity: Double,
+        fxProfile: EtfFxProfile,
     ): Double {
         val listingCurrency = when (stock.currency) {
             Currency.KRW -> ReferenceCurrency.KRW
@@ -473,18 +500,6 @@ class PriceEngine(private val seed: Long) {
         val listingReturn = ln(
             macro.rateToKrw(listingCurrency) / macro.rateToKrw(listingCurrency, previous = true),
         )
-        val fxProfile = stock.etfProfile?.fxProfile
-        if (fxProfile == null) {
-            val referenceCurrency = stock.behavior.referenceCurrency
-            if (referenceCurrency != null) {
-                val referenceReturn = ln(
-                    macro.rateToKrw(referenceCurrency) /
-                        macro.rateToKrw(referenceCurrency, previous = true),
-                )
-                return stock.behavior.referenceCurrencySensitivity * (referenceReturn - listingReturn)
-            }
-            return ln(macro.usdKrw / macro.previousUsdKrw) * fallbackUsdKrwSensitivity
-        }
         return fxProfile.legs.sumOf { leg ->
             val legReturn = ln(
                 macro.rateToKrw(leg.currency) / macro.rateToKrw(leg.currency, previous = true),
