@@ -3,6 +3,7 @@ package com.amond.kmpbook.domain.simulation
 import com.amond.kmpbook.domain.model.EventScope
 import com.amond.kmpbook.domain.model.EventSeverity
 import com.amond.kmpbook.domain.model.EventType
+import com.amond.kmpbook.domain.model.CausalMarketRegimeSnapshot
 import com.amond.kmpbook.domain.model.CausalSignalSeed
 import com.amond.kmpbook.domain.model.EventImpactInsight
 import com.amond.kmpbook.domain.model.EventImpactCoveragePolicy
@@ -20,6 +21,7 @@ import com.amond.kmpbook.domain.model.ListingFinalDispositionType
 import com.amond.kmpbook.domain.model.ListingRecoveryCondition
 import com.amond.kmpbook.domain.model.ListingRiskTag
 import com.amond.kmpbook.domain.model.Market
+import com.amond.kmpbook.domain.model.MIN_CAUSAL_SIGNAL_STRENGTH
 import com.amond.kmpbook.domain.model.Sector
 import com.amond.kmpbook.domain.model.StockDefinition
 import com.amond.kmpbook.domain.model.isDirectProductImpactFor
@@ -165,6 +167,9 @@ data class EventTemplate(
         require(causalSignals.map(CausalSignalSeed::factor).distinct().size == causalSignals.size) {
             "Event templates cannot declare the same causal factor twice"
         }
+        require(causalSignals.all { it.strength >= MIN_CAUSAL_SIGNAL_STRENGTH }) {
+            "Event template causal strengths must be at least $MIN_CAUSAL_SIGNAL_STRENGTH"
+        }
         require(
             scope !in setOf(EventScope.COUNTRY, EventScope.MARKET) ||
                 causalSignals.map(CausalSignalSeed::transmissionProfile).distinct().size <= 1,
@@ -221,6 +226,15 @@ data class EventGenerationResult(
     val snapshot: EventEngineSnapshot,
 )
 
+private fun MacroEnvironment.toCausalMarketRegimeSnapshot(): CausalMarketRegimeSnapshot =
+    CausalMarketRegimeSnapshot(
+        riskSentiment = riskSentiment,
+        volatilityRegime = volatilityRegime,
+        usdKrwChangeRate = (usdKrw / previousUsdKrw - 1.0).coerceIn(-0.25, 0.25),
+        marketHourlyReturns = marketHourlyReturns.toMap(),
+        marketChangeFromPreviousClose = marketChangeFromPreviousClose.toMap(),
+    )
+
 /**
  * Rule-driven, seeded event generator. Active and cooldown state is isolated by
  * the selected target, while one-shot templates retain campaign-wide state.
@@ -268,7 +282,7 @@ class EventEngine(
 
             val target = random.choose(availableTargets)
             val key = triggerKey(template, target)
-            val event = instantiate(template, target, context.timestamp)
+            val event = instantiate(template, target, context.timestamp, context.macro)
             generatedActiveEvents += event
             newEvents += event
             activeTriggerKeys += key
@@ -353,6 +367,7 @@ class EventEngine(
             target = matchingTargets.single(),
             timestamp = event.startsAt,
             samples = samples,
+            marketRegimeSnapshot = event.marketRegimeSnapshot,
         )
         return generatedPayloadMismatch(expected = expected, actual = event)?.let { field ->
             "Generated event '${event.id}' $field does not match template '$templateId'"
@@ -402,6 +417,7 @@ class EventEngine(
         template: EventTemplate,
         target: SelectedEventTarget,
         timestamp: Instant,
+        macro: MacroEnvironment,
     ): GameEvent {
         val duration = template.durationHours.first +
             random.nextInt(template.durationHours.last - template.durationHours.first + 1)
@@ -425,6 +441,7 @@ class EventEngine(
             target = target,
             timestamp = timestamp,
             samples = samples,
+            marketRegimeSnapshot = macro.toCausalMarketRegimeSnapshot(),
         )
     }
 
@@ -435,6 +452,7 @@ class EventEngine(
         target: SelectedEventTarget,
         timestamp: Instant,
         samples: GeneratedEventSamples,
+        marketRegimeSnapshot: CausalMarketRegimeSnapshot,
     ): GameEvent = GameEvent(
         id = id,
         generatorTemplateId = template.id,
@@ -464,6 +482,7 @@ class EventEngine(
         sourceLabel = template.sourceLabel,
         impactInsights = materializeImpactInsights(template, target),
         causalSignals = template.causalSignals,
+        marketRegimeSnapshot = marketRegimeSnapshot,
         reportedFacts = emptyList(),
         marketAction = null,
         instrumentTermination = materializeInstrumentTermination(template, timestamp, samples),
@@ -930,17 +949,23 @@ object EventShockCalculator {
         }
         val transmissions = resolved.causalImpact?.marketTransmissionsByFactor.orEmpty().values
         val transmissionScale = transmissions.takeIf { it.isNotEmpty() }?.fold(1.0) { survival, trace ->
-            survival * (1.0 - trace.reach)
-        }?.let { survival -> 1.0 - survival } ?: 1.0
-        fun transmittedMultiplier(value: Double): Double =
-            1.0 + (value - 1.0) * transmissionScale
+            survival * (1.0 - trace.responseIntensity / MarketContagionEngine.MAX_RESPONSE_INTENSITY)
+        }?.let { survival ->
+            MarketContagionEngine.MAX_RESPONSE_INTENSITY * (1.0 - survival)
+        } ?: 1.0
+        /** 로그 공간에서 포화해 큰 유한 입력도 Infinity/NaN으로 바뀌지 않게 한다. */
+        fun transmittedMultiplier(value: Double, upperBound: Double): Double {
+            if (value == 0.0) return 0.0
+            val boundedLog = (ln(value) * transmissionScale).coerceAtMost(ln(upperBound))
+            return exp(boundedLog).coerceIn(0.0, upperBound)
+        }
         return impact.copy(
             shockReturn = directional(impact.shockReturn).coerceAtLeast(-0.95),
             hourlyDrift = directional(impact.hourlyDrift),
-            volatilityMultiplier = transmittedMultiplier(impact.volatilityMultiplier),
-            volumeMultiplier = transmittedMultiplier(impact.volumeMultiplier),
-            liquidityMultiplier = transmittedMultiplier(impact.liquidityMultiplier),
-            sentiment = impact.sentiment * transmissionScale,
+            volatilityMultiplier = transmittedMultiplier(impact.volatilityMultiplier, 20.0),
+            volumeMultiplier = transmittedMultiplier(impact.volumeMultiplier, 100.0),
+            liquidityMultiplier = transmittedMultiplier(impact.liquidityMultiplier, 20.0),
+            sentiment = (impact.sentiment * transmissionScale).coerceIn(-1.0, 1.0),
         )
     }
 
