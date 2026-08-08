@@ -1,6 +1,7 @@
 package com.amond.kmpbook.domain.model
 
 import com.amond.kmpbook.domain.simulation.CausalMarketEngine
+import com.amond.kmpbook.domain.simulation.MarketContagionEngine
 
 /** 뉴스 분석에서 영향 경로가 가리키는 대상의 정밀도다. */
 enum class EventImpactTargetKind(val displayName: String) {
@@ -113,11 +114,25 @@ internal data class EventImpactCoverageMatch(
 internal fun GameEvent.impactCoverageFor(stock: StockDefinition): EventImpactCoverageMatch {
     val applicableInsights = impactInsights.filter { it.appliesTo(stock) }
     val causalImpact = causalSignals
-        .takeIf {
-            applicableInsights.isEmpty() && it.isNotEmpty() && isCausalPropagationEligible(stock)
+        .takeIf { applicableInsights.isEmpty() && it.isNotEmpty() }
+        ?.let { signals ->
+            when (scope) {
+                EventScope.GLOBAL,
+                EventScope.SECTOR,
+                -> CausalMarketEngine.impactFor(signals, stock)
+                EventScope.COUNTRY,
+                EventScope.MARKET,
+                -> MarketContagionEngine.impactFor(
+                    seeds = signals,
+                    sourceMarkets = affectedMarkets,
+                    stock = stock,
+                )
+                EventScope.STOCK -> signals
+                    .takeIf { affectsByScope(stock) }
+                    ?.let { directSignals -> CausalMarketEngine.impactFor(directSignals, stock) }
+            }
         }
-        ?.let { signals -> CausalMarketEngine.impactFor(signals, stock) }
-    val usesScopeFallback = applicableInsights.isEmpty() && causalImpact == null &&
+    val usesScopeFallback = applicableInsights.isEmpty() && causalImpact == null && causalSignals.isEmpty() &&
         impactCoveragePolicy == EventImpactCoveragePolicy.SCOPE_FALLBACK_WITH_OVERRIDES &&
         affectsByScope(stock)
     return EventImpactCoverageMatch(
@@ -125,20 +140,6 @@ internal fun GameEvent.impactCoverageFor(stock: StockDefinition): EventImpactCov
         causalImpact = causalImpact,
         usesScopeFallback = usesScopeFallback,
     )
-}
-
-/**
- * 시장·국가·개별 종목 사건은 선언된 경계 밖으로 새지 않는다. 산업 사건만은 공급망의
- * 본질상 다른 산업으로 전파할 수 있고, 글로벌 사건은 전 시장을 시작점으로 사용한다.
- */
-private fun GameEvent.isCausalPropagationEligible(stock: StockDefinition): Boolean = when (scope) {
-    EventScope.GLOBAL,
-    EventScope.SECTOR,
-    -> true
-    EventScope.COUNTRY,
-    EventScope.MARKET,
-    EventScope.STOCK,
-    -> affectsByScope(stock)
 }
 
 /** 실제로 발표·보도된 수치만 뉴스에 싣기 위한 표시용 사실 데이터다. */
