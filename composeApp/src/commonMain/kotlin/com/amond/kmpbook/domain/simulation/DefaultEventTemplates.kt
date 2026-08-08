@@ -275,10 +275,6 @@ object DefaultEventTemplates {
             ),
             impactInsights = listOf(
                 industryInsight(
-                    "종합 석유·가스", Sector.ENERGY, ImpactDirection.POSITIVE,
-                    "판매가격 상승이 상류·정유 기업의 현금흐름 기대를 높인다.", 1.20,
-                ),
-                industryInsight(
                     "항공·운송", Sector.TRANSPORTATION_LOGISTICS, ImpactDirection.NEGATIVE,
                     "연료비 상승이 운송 원가와 수익성을 압박한다.", 1.05,
                 ),
@@ -301,10 +297,6 @@ object DefaultEventTemplates {
                 causalSignal(CausalEconomicFactor.CRUDE_OIL_PRICE, CausalSignalDirection.DECREASE, 0.94),
             ),
             impactInsights = listOf(
-                industryInsight(
-                    "종합 석유·가스", Sector.ENERGY, ImpactDirection.NEGATIVE,
-                    "판매단가 하락이 생산자와 정유사의 이익 전망을 낮춘다.", 1.20,
-                ),
                 industryInsight(
                     "항공·운송", Sector.TRANSPORTATION_LOGISTICS, ImpactDirection.POSITIVE,
                     "연료비 하락이 운송 원가와 마진을 개선한다.", 1.00,
