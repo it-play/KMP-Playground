@@ -19,6 +19,8 @@ import com.amond.kmpbook.domain.model.ListingRiskTag
 import com.amond.kmpbook.domain.model.ListingRuleBasis
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.StockDefinition
+import com.amond.kmpbook.domain.model.blocksOrderlyProductTermination
+import com.amond.kmpbook.domain.model.preemptsOrderlyProductTermination
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
@@ -309,6 +311,7 @@ class ListingLifecycleEngine(
         profile: ListingLifecyclePolicyProfile,
     ): ListingLifecycleEvaluation {
         val reason = detectReason(observed, input, profile) ?: return noTransition(observed)
+        beginPreemptingProcedure(previous, observed, input, profile, reason)?.let { return it }
         return when {
             reason.isOrderlyProductTermination() -> scheduleDelisting(
                 previous = previous,
@@ -318,19 +321,6 @@ class ListingLifecycleEngine(
                 reason = reason,
                 tradingAllowed = input.scheduledDelistingOn?.let { it > input.tradingDate } ?: true,
             )
-            reason.requiresImmediateSuspension(input.riskSeverity) -> suspend(
-                previous = previous,
-                observed = observed,
-                input = input,
-                profile = profile,
-                reason = reason,
-            )
-            input.riskSeverity.level >= ListingRiskSeverity.HIGH.level &&
-                reason in setOf(
-                    ListingLifecycleReason.AUDIT_OR_DISCLOSURE_FAILURE,
-                    ListingLifecycleReason.SERIOUS_COMPLIANCE_EVENT,
-                    ListingLifecycleReason.CORE_BUSINESS_SUSPENSION,
-                ) -> startReview(previous, observed, input, profile, reason)
             else -> designateDeficiency(previous, observed, input, profile, reason)
         }
     }
@@ -342,6 +332,9 @@ class ListingLifecycleEngine(
         profile: ListingLifecyclePolicyProfile,
     ): ListingLifecycleEvaluation {
         val incoming = detectReason(observed, input, profile)
+        incoming?.let { reason ->
+            beginPreemptingProcedure(previous, observed, input, profile, reason)?.let { return it }
+        }
         if (incoming?.isOrderlyProductTermination() == true) {
             return scheduleDelisting(
                 previous,
@@ -351,9 +344,6 @@ class ListingLifecycleEngine(
                 incoming,
                 tradingAllowed = input.scheduledDelistingOn?.let { it > input.tradingDate } ?: true,
             )
-        }
-        if (incoming != null && incoming.requiresImmediateSuspension(input.riskSeverity)) {
-            return suspend(previous, observed, input, profile, incoming)
         }
         if (isRecovered(observed, input, profile)) {
             return release(previous, observed, input, profile, ListingLifecycleEventKind.DEFICIENCY_CURED)
@@ -382,7 +372,15 @@ class ListingLifecycleEngine(
         profile: ListingLifecyclePolicyProfile,
     ): ListingLifecycleEvaluation {
         val incoming = detectReason(observed, input, profile)
-        if (incoming?.isOrderlyProductTermination() == true) {
+        incoming?.let { reason ->
+            beginPreemptingProcedure(previous, observed, input, profile, reason)?.let { return it }
+        }
+        if (isRecovered(observed, input, profile)) {
+            return release(previous, observed, input, profile, ListingLifecycleEventKind.TRADING_RESUMED)
+        }
+        if (incoming?.isOrderlyProductTermination() == true &&
+            observed.activeReason?.blocksOrderlyProductTermination() != true
+        ) {
             return scheduleDelisting(
                 previous,
                 observed,
@@ -391,12 +389,6 @@ class ListingLifecycleEngine(
                 incoming,
                 tradingAllowed = input.scheduledDelistingOn?.let { it > input.tradingDate } ?: true,
             )
-        }
-        if (incoming != null && incoming.requiresImmediateSuspension(input.riskSeverity)) {
-            return suspend(previous, observed, input, profile, incoming)
-        }
-        if (isRecovered(observed, input, profile)) {
-            return release(previous, observed, input, profile, ListingLifecycleEventKind.TRADING_RESUMED)
         }
         if (observed.reviewDeadline?.let { input.tradingDate >= it } == true) {
             return suspend(
@@ -417,7 +409,15 @@ class ListingLifecycleEngine(
         profile: ListingLifecyclePolicyProfile,
     ): ListingLifecycleEvaluation {
         val incoming = detectReason(observed, input, profile)
-        if (incoming?.isOrderlyProductTermination() == true) {
+        incoming?.let { reason ->
+            beginPreemptingProcedure(previous, observed, input, profile, reason)?.let { return it }
+        }
+        if (isRecovered(observed, input, profile)) {
+            return release(previous, observed, input, profile, ListingLifecycleEventKind.TRADING_RESUMED)
+        }
+        if (incoming?.isOrderlyProductTermination() == true &&
+            observed.activeReason?.blocksOrderlyProductTermination() != true
+        ) {
             return scheduleDelisting(
                 previous,
                 observed,
@@ -426,9 +426,6 @@ class ListingLifecycleEngine(
                 incoming,
                 tradingAllowed = false,
             )
-        }
-        if (isRecovered(observed, input, profile)) {
-            return release(previous, observed, input, profile, ListingLifecycleEventKind.TRADING_RESUMED)
         }
         if (observed.reviewDeadline?.let { input.tradingDate >= it } == true) {
             return scheduleDelisting(
@@ -450,19 +447,39 @@ class ListingLifecycleEngine(
         profile: ListingLifecyclePolicyProfile,
     ): ListingLifecycleEvaluation {
         val incoming = detectReason(observed, input, profile)
+        incoming?.let { reason ->
+            beginPreemptingProcedure(previous, observed, input, profile, reason)?.let { return it }
+        }
         val incomingDate = input.scheduledDelistingOn
         val storedDate = requireNotNull(observed.scheduledDelistingOn)
-        if (incoming?.isOrderlyProductTermination() == true &&
-            incomingDate != null && incomingDate < storedDate
-        ) {
+        val incomingRawEffectiveOn = input.controllingTerminationRawEffectiveOn
+        val storedRawEffectiveOn = observed.controllingTerminationRawEffectiveOn
+        val incomingPreempts = incoming?.isOrderlyProductTermination() == true &&
+            incomingRawEffectiveOn != null && (
+            storedRawEffectiveOn == null && requireNotNull(incomingDate) < storedDate ||
+                storedRawEffectiveOn != null && (
+                    incomingRawEffectiveOn < storedRawEffectiveOn ||
+                        incomingRawEffectiveOn == storedRawEffectiveOn &&
+                        requireNotNull(input.controllingTerminationNoticePriority) <
+                        requireNotNull(observed.controllingTerminationNoticePriority)
+                    )
+            )
+        if (incomingPreempts) {
             return scheduleDelisting(
                 previous = previous,
                 observed = observed,
                 input = input,
                 profile = profile,
                 reason = incoming,
-                tradingAllowed = observed.tradingAllowedUntilDelisting && incomingDate > input.tradingDate,
+                tradingAllowed = observed.tradingAllowedUntilDelisting &&
+                    requireNotNull(incomingDate) > input.tradingDate,
             )
+        }
+        if (observed.activeReason?.isOrderlyProductTermination() == true &&
+            input.controllingTerminationOccurrenceId != observed.controllingTerminationOccurrenceId
+        ) {
+            // A later/losing notice must never supply the winner's valuation or settlement terms.
+            return noTransition(observed)
         }
         if (observed.activeReason?.canBeCuredAfterSchedule() == true && isRecovered(observed, input, profile)) {
             return release(previous, observed, input, profile, ListingLifecycleEventKind.TRADING_RESUMED)
@@ -571,6 +588,9 @@ class ListingLifecycleEngine(
             designationCount = count,
             finalDisposition = null,
             tradingAllowedUntilDelisting = true,
+            controllingTerminationOccurrenceId = null,
+            controllingTerminationNoticePriority = null,
+            controllingTerminationRawEffectiveOn = null,
         )
         return transition(
             previous,
@@ -604,6 +624,9 @@ class ListingLifecycleEngine(
             settlementDueOn = null,
             consecutiveCureTradingDays = 0,
             tradingAllowedUntilDelisting = observed.market.isUnitedStates,
+            controllingTerminationOccurrenceId = null,
+            controllingTerminationNoticePriority = null,
+            controllingTerminationRawEffectiveOn = null,
         )
         return transition(
             previous,
@@ -633,6 +656,9 @@ class ListingLifecycleEngine(
             settlementDueOn = null,
             consecutiveCureTradingDays = 0,
             tradingAllowedUntilDelisting = false,
+            controllingTerminationOccurrenceId = null,
+            controllingTerminationNoticePriority = null,
+            controllingTerminationRawEffectiveOn = null,
         )
         return transition(
             previous,
@@ -654,6 +680,23 @@ class ListingLifecycleEngine(
     ): ListingLifecycleEvaluation {
         val date = input.scheduledDelistingOn
             ?: input.tradingDate.plus(profile.delistingNoticeCalendarDays, DateTimeUnit.DAY)
+        val controllingTerminationOccurrenceId = if (reason.isOrderlyProductTermination()) {
+            requireNotNull(input.controllingTerminationOccurrenceId) {
+                "상품 종료 일정에는 이를 공급한 정확한 공시 ID가 필요합니다."
+            }
+        } else {
+            null
+        }
+        val controllingTerminationNoticePriority = if (reason.isOrderlyProductTermination()) {
+            requireNotNull(input.controllingTerminationNoticePriority)
+        } else {
+            null
+        }
+        val controllingTerminationRawEffectiveOn = if (reason.isOrderlyProductTermination()) {
+            requireNotNull(input.controllingTerminationRawEffectiveOn)
+        } else {
+            null
+        }
         val next = observed.copy(
             status = ListingLifecycleStatus.DELISTING_SCHEDULED,
             activeReason = reason,
@@ -664,6 +707,9 @@ class ListingLifecycleEngine(
             settlementDueOn = null,
             consecutiveCureTradingDays = 0,
             tradingAllowedUntilDelisting = tradingAllowed,
+            controllingTerminationOccurrenceId = controllingTerminationOccurrenceId,
+            controllingTerminationNoticePriority = controllingTerminationNoticePriority,
+            controllingTerminationRawEffectiveOn = controllingTerminationRawEffectiveOn,
         )
         val scheduled = transition(
             previous,
@@ -711,6 +757,9 @@ class ListingLifecycleEngine(
             consecutiveCureTradingDays = 0,
             finalDisposition = null,
             tradingAllowedUntilDelisting = true,
+            controllingTerminationOccurrenceId = null,
+            controllingTerminationNoticePriority = null,
+            controllingTerminationRawEffectiveOn = null,
         )
         return transition(previous, next, input, profile, kind, ListingNoticeLevel.INFO)
     }
@@ -753,6 +802,9 @@ class ListingLifecycleEngine(
             summary = summaryFor(next, reason, deadline, disposition),
             deadline = deadline,
             disposition = disposition,
+            controllingTerminationOccurrenceId = next.controllingTerminationOccurrenceId,
+            controllingTerminationNoticePriority = next.controllingTerminationNoticePriority,
+            controllingTerminationRawEffectiveOn = next.controllingTerminationRawEffectiveOn,
             sourceUrls = profile.officialSourceUrls,
         )
         return ListingLifecycleEvaluation(next, listOf(event))
@@ -798,6 +850,47 @@ class ListingLifecycleEngine(
         profile: ListingLifecyclePolicyProfile,
     ): ListingLifecycleReason? {
         val tags = input.riskTags
+        val nonOrderlyReasons = buildList {
+            if (ListingRiskTag.BANKRUPTCY_OR_INSOLVENCY in tags) {
+                add(ListingLifecycleReason.BANKRUPTCY_OR_INSOLVENCY)
+            }
+            if (ListingRiskTag.ISSUER_ELIGIBILITY_FAILURE in tags) {
+                add(ListingLifecycleReason.ISSUER_ELIGIBILITY_FAILURE)
+            }
+            if (ListingRiskTag.UNDERLYING_INDEX_UNAVAILABLE in tags) {
+                add(ListingLifecycleReason.UNDERLYING_INDEX_UNAVAILABLE)
+            }
+            if (ListingRiskTag.LIQUIDITY_PROVIDER_FAILURE in tags) {
+                add(ListingLifecycleReason.LIQUIDITY_PROVIDER_FAILURE)
+            }
+            if (ListingRiskTag.CORE_BUSINESS_SUSPENSION in tags) {
+                add(ListingLifecycleReason.CORE_BUSINESS_SUSPENSION)
+            }
+            if (ListingRiskTag.SERIOUS_COMPLIANCE_EVENT in tags) {
+                add(ListingLifecycleReason.SERIOUS_COMPLIANCE_EVENT)
+            }
+            if (ListingRiskTag.AUDIT_OPINION_FAILURE in tags || ListingRiskTag.DISCLOSURE_VIOLATION in tags) {
+                add(ListingLifecycleReason.AUDIT_OR_DISCLOSURE_FAILURE)
+            }
+            if (ListingRiskTag.ADMINISTRATIVE_ISSUE in tags) {
+                add(ListingLifecycleReason.KRX_ADMINISTRATIVE_ISSUE)
+            }
+            if (ListingRiskTag.LISTING_MAINTENANCE_DEFICIENCY in tags ||
+                ListingRiskTag.QUALITATIVE_LISTING_REVIEW in tags
+            ) {
+                add(
+                    if (state.market.isKorean) {
+                        ListingLifecycleReason.KRX_LISTING_MAINTENANCE
+                    } else {
+                        ListingLifecycleReason.US_LISTING_MAINTENANCE
+                    },
+                )
+            }
+        }
+        nonOrderlyReasons.firstOrNull { reason ->
+            reason.preemptsOrderlyProductTermination(input.severityFor(reason))
+        }?.let { return it }
+
         return when {
             ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION in tags &&
                 state.instrumentType == InstrumentType.ETN ->
@@ -805,22 +898,7 @@ class ListingLifecycleEngine(
             ListingRiskTag.ETF_LIQUIDATION_APPROVED in tags &&
                 state.instrumentType in setOf(InstrumentType.ETF, InstrumentType.CLOSED_END_FUND) ->
                 ListingLifecycleReason.ETF_VOLUNTARY_LIQUIDATION
-            ListingRiskTag.BANKRUPTCY_OR_INSOLVENCY in tags -> ListingLifecycleReason.BANKRUPTCY_OR_INSOLVENCY
-            ListingRiskTag.ISSUER_ELIGIBILITY_FAILURE in tags -> ListingLifecycleReason.ISSUER_ELIGIBILITY_FAILURE
-            ListingRiskTag.UNDERLYING_INDEX_UNAVAILABLE in tags -> ListingLifecycleReason.UNDERLYING_INDEX_UNAVAILABLE
-            ListingRiskTag.LIQUIDITY_PROVIDER_FAILURE in tags -> ListingLifecycleReason.LIQUIDITY_PROVIDER_FAILURE
-            ListingRiskTag.CORE_BUSINESS_SUSPENSION in tags -> ListingLifecycleReason.CORE_BUSINESS_SUSPENSION
-            ListingRiskTag.SERIOUS_COMPLIANCE_EVENT in tags -> ListingLifecycleReason.SERIOUS_COMPLIANCE_EVENT
-            ListingRiskTag.AUDIT_OPINION_FAILURE in tags || ListingRiskTag.DISCLOSURE_VIOLATION in tags ->
-                ListingLifecycleReason.AUDIT_OR_DISCLOSURE_FAILURE
-            ListingRiskTag.ADMINISTRATIVE_ISSUE in tags -> ListingLifecycleReason.KRX_ADMINISTRATIVE_ISSUE
-            ListingRiskTag.LISTING_MAINTENANCE_DEFICIENCY in tags ||
-                ListingRiskTag.QUALITATIVE_LISTING_REVIEW in tags ->
-                if (state.market.isKorean) {
-                    ListingLifecycleReason.KRX_LISTING_MAINTENANCE
-                } else {
-                    ListingLifecycleReason.US_LISTING_MAINTENANCE
-                }
+            nonOrderlyReasons.isNotEmpty() -> nonOrderlyReasons.first()
             profile.minimumBidPrice != null &&
                 state.consecutiveLowBidTradingDays >= profile.bidDeficiencyTradingDays ->
                 ListingLifecycleReason.US_MINIMUM_BID_PRICE
@@ -832,6 +910,67 @@ class ListingLifecycleEngine(
                 ListingLifecycleReason.LOW_TRADING_LIQUIDITY
             else -> null
         }
+    }
+
+    private fun beginPreemptingProcedure(
+        previous: ListingLifecycleState,
+        observed: ListingLifecycleState,
+        input: DailyListingSurveillanceInput,
+        profile: ListingLifecyclePolicyProfile,
+        reason: ListingLifecycleReason,
+    ): ListingLifecycleEvaluation? {
+        val severity = input.severityFor(reason)
+        if (!reason.preemptsOrderlyProductTermination(severity)) return null
+        val suspendImmediately = reason.requiresImmediateSuspension(severity)
+        val targetStatus = if (suspendImmediately) {
+            ListingLifecycleStatus.TRADING_SUSPENDED
+        } else {
+            ListingLifecycleStatus.UNDER_REVIEW
+        }
+        if (observed.status == targetStatus && observed.activeReason == reason) return null
+        return if (suspendImmediately) {
+            suspend(previous, observed, input, profile, reason)
+        } else {
+            startReview(previous, observed, input, profile, reason)
+        }
+    }
+
+    private fun DailyListingSurveillanceInput.severityFor(
+        reason: ListingLifecycleReason,
+    ): ListingRiskSeverity {
+        val tags = when (reason) {
+            ListingLifecycleReason.BANKRUPTCY_OR_INSOLVENCY ->
+                setOf(ListingRiskTag.BANKRUPTCY_OR_INSOLVENCY)
+            ListingLifecycleReason.ISSUER_ELIGIBILITY_FAILURE ->
+                setOf(ListingRiskTag.ISSUER_ELIGIBILITY_FAILURE)
+            ListingLifecycleReason.UNDERLYING_INDEX_UNAVAILABLE ->
+                setOf(ListingRiskTag.UNDERLYING_INDEX_UNAVAILABLE)
+            ListingLifecycleReason.LIQUIDITY_PROVIDER_FAILURE ->
+                setOf(ListingRiskTag.LIQUIDITY_PROVIDER_FAILURE)
+            ListingLifecycleReason.CORE_BUSINESS_SUSPENSION ->
+                setOf(ListingRiskTag.CORE_BUSINESS_SUSPENSION)
+            ListingLifecycleReason.SERIOUS_COMPLIANCE_EVENT ->
+                setOf(ListingRiskTag.SERIOUS_COMPLIANCE_EVENT)
+            ListingLifecycleReason.AUDIT_OR_DISCLOSURE_FAILURE -> setOf(
+                ListingRiskTag.AUDIT_OPINION_FAILURE,
+                ListingRiskTag.DISCLOSURE_VIOLATION,
+            )
+            ListingLifecycleReason.KRX_ADMINISTRATIVE_ISSUE -> setOf(ListingRiskTag.ADMINISTRATIVE_ISSUE)
+            ListingLifecycleReason.KRX_LISTING_MAINTENANCE,
+            ListingLifecycleReason.US_LISTING_MAINTENANCE,
+            -> setOf(ListingRiskTag.LISTING_MAINTENANCE_DEFICIENCY, ListingRiskTag.QUALITATIVE_LISTING_REVIEW)
+            ListingLifecycleReason.ETF_VOLUNTARY_LIQUIDATION -> setOf(ListingRiskTag.ETF_LIQUIDATION_APPROVED)
+            ListingLifecycleReason.ETN_MATURITY_OR_EARLY_REDEMPTION ->
+                setOf(ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION)
+            ListingLifecycleReason.US_MINIMUM_BID_PRICE,
+            ListingLifecycleReason.US_MARKET_CAPITALIZATION,
+            ListingLifecycleReason.LOW_TRADING_LIQUIDITY,
+            -> emptySet()
+        }
+        return tags.maxOfOrNull { tag ->
+            riskSeverityByTag[tag]?.level ?: ListingRiskSeverity.NONE.level
+        }?.let { level -> ListingRiskSeverity.entries.first { it.level == level } }
+            ?: ListingRiskSeverity.NONE
     }
 
     private fun isRecovered(
