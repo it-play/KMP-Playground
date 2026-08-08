@@ -1,0 +1,274 @@
+package com.amond.kmpbook.domain.data
+
+import com.amond.kmpbook.domain.model.CausalEconomicFactor
+import com.amond.kmpbook.domain.model.CausalTraceNodeKind
+import com.amond.kmpbook.domain.model.IndustrySegment
+import com.amond.kmpbook.domain.model.Market
+import com.amond.kmpbook.domain.model.Sector
+import com.amond.kmpbook.domain.model.StockDefinition
+
+/**
+ * 경제 요인에서 산업·종목으로 이어지는 마지막 노출 간선이다.
+ *
+ * StockDefinition에 저장 필드를 추가하지 않아 저장 payload를 키우지 않는다. 명시적 회사
+ * override가 같은 요인에 있으면 일반 산업 규칙을 대체하며 ETF 배율은 절대 곱하지 않는다.
+ */
+data class CausalStockExposure(
+    val factor: CausalEconomicFactor,
+    val weight: Double,
+    val targetKind: CausalTraceNodeKind,
+    val targetLabel: String,
+    val rationale: String,
+    val sector: Sector? = null,
+    val industrySegment: IndustrySegment? = null,
+    val explicitCompanyOverride: Boolean = false,
+) {
+    init {
+        require(weight.isFinite() && weight != 0.0 && kotlin.math.abs(weight) <= 1.0) {
+            "인과 종목 노출 가중치의 절댓값은 1 이하여야 합니다."
+        }
+        require(targetLabel.isNotBlank() && rationale.isNotBlank())
+        require(targetKind in setOf(
+            CausalTraceNodeKind.INDUSTRY,
+            CausalTraceNodeKind.INDUSTRY_SEGMENT,
+            CausalTraceNodeKind.STOCK,
+        ))
+    }
+
+    val specificity: Int
+        get() = when (targetKind) {
+            CausalTraceNodeKind.INDUSTRY -> 2
+            CausalTraceNodeKind.INDUSTRY_SEGMENT -> 3
+            CausalTraceNodeKind.STOCK -> 4
+            CausalTraceNodeKind.ECONOMIC_FACTOR -> 1
+        }
+}
+
+object CausalExposureCatalog {
+    /** 회사별 사업구성 차이. 키의 시장 접두사까지 포함해 동명이인·동일 티커 충돌을 막는다. */
+    private val companyOverrides: Map<String, Map<CausalEconomicFactor, Double>> = mapOf(
+        "${Market.KOSDAQ.name}:293490" to mapOf(
+            CausalEconomicFactor.GAME_SOFTWARE_DEMAND to 1.00,
+        ),
+        "${Market.NASDAQ.name}:MSFT" to mapOf(
+            CausalEconomicFactor.GAME_SOFTWARE_DEMAND to 0.35,
+            CausalEconomicFactor.COMPUTING_HARDWARE_DEMAND to 0.22,
+            CausalEconomicFactor.BUSINESS_INVESTMENT to 0.72,
+        ),
+        "${Market.KOSPI.name}:005930" to mapOf(
+            CausalEconomicFactor.COMPUTING_HARDWARE_DEMAND to 0.32,
+            CausalEconomicFactor.SEMICONDUCTOR_DEMAND to 0.78,
+            CausalEconomicFactor.BUSINESS_INVESTMENT to 0.56,
+        ),
+        "${Market.NASDAQ.name}:AAPL" to mapOf(
+            CausalEconomicFactor.COMPUTING_HARDWARE_DEMAND to 0.88,
+            CausalEconomicFactor.CONSUMER_DEMAND to 0.68,
+        ),
+        "${Market.NASDAQ.name}:NVDA" to mapOf(
+            CausalEconomicFactor.SEMICONDUCTOR_DEMAND to 0.96,
+            CausalEconomicFactor.BUSINESS_INVESTMENT to 0.82,
+        ),
+        "${Market.NYSE.name}:XOM" to mapOf(
+            CausalEconomicFactor.CRUDE_OIL_PRICE to 0.98,
+        ),
+    )
+
+    fun exposuresFor(stock: StockDefinition): List<CausalStockExposure> {
+        val overrides = companyOverrides[stock.id].orEmpty()
+        val generic = genericExposures(stock).filterNot { it.factor in overrides }
+        val explicit = overrides.entries
+            .sortedBy { it.key.ordinal }
+            .map { (factor, weight) ->
+                CausalStockExposure(
+                    factor = factor,
+                    weight = weight,
+                    targetKind = CausalTraceNodeKind.STOCK,
+                    targetLabel = stock.name,
+                    rationale = companyOverrideRationale(stock, factor),
+                    explicitCompanyOverride = true,
+                )
+            }
+        return (generic + explicit).sortedWith(
+            compareBy<CausalStockExposure> { it.factor.ordinal }
+                .thenBy { it.targetKind.ordinal }
+                .thenBy { it.targetLabel },
+        )
+    }
+
+    private fun genericExposures(stock: StockDefinition): List<CausalStockExposure> = buildList {
+        fun industry(
+            factor: CausalEconomicFactor,
+            sector: Sector,
+            weight: Double,
+            rationale: String,
+        ) {
+            if (stock.isExposedTo(sector)) {
+                add(
+                    CausalStockExposure(
+                        factor = factor,
+                        weight = weight,
+                        targetKind = CausalTraceNodeKind.INDUSTRY,
+                        targetLabel = sector.displayName,
+                        rationale = rationale,
+                        sector = sector,
+                    ),
+                )
+            }
+        }
+
+        fun segment(
+            factor: CausalEconomicFactor,
+            segment: IndustrySegment,
+            weight: Double,
+            rationale: String,
+        ) {
+            if (segment in stock.industrySegments) {
+                add(
+                    CausalStockExposure(
+                        factor = factor,
+                        weight = weight,
+                        targetKind = CausalTraceNodeKind.INDUSTRY_SEGMENT,
+                        targetLabel = segment.displayName,
+                        rationale = rationale,
+                        sector = segment.parentSector,
+                        industrySegment = segment,
+                    ),
+                )
+            }
+        }
+
+        industry(
+            CausalEconomicFactor.CRUDE_OIL_PRICE,
+            Sector.ENERGY,
+            0.82,
+            "원유 판매가격 변화가 에너지 생산자의 매출과 현금흐름에 연결됩니다.",
+        )
+        industry(
+            CausalEconomicFactor.TRANSPORT_FUEL_COST,
+            Sector.TRANSPORTATION_LOGISTICS,
+            -0.88,
+            "연료비는 해운·항공·물류 기업의 핵심 변동비입니다.",
+        )
+        industry(
+            CausalEconomicFactor.PETROCHEMICAL_INPUT_COST,
+            Sector.MATERIALS_CHEMICALS,
+            -0.62,
+            "나프타 등 석유계 원료비가 화학 제품의 제조 마진을 압박합니다.",
+        )
+        listOf(Sector.CONSUMER_DISCRETIONARY, Sector.CONSUMER_STAPLES, Sector.RETAIL_ECOMMERCE)
+            .forEach { sector ->
+                industry(
+                    CausalEconomicFactor.PLASTIC_PACKAGING_COST,
+                    sector,
+                    -0.42,
+                    "플라스틱 부품과 포장재 비용이 소비재의 단위 원가를 높입니다.",
+                )
+            }
+        industry(
+            CausalEconomicFactor.CONSUMER_DEMAND,
+            Sector.CONSUMER_DISCRETIONARY,
+            0.92,
+            "가계의 선택 소비 변화가 매출 수요에 직접 연결됩니다.",
+        )
+        industry(
+            CausalEconomicFactor.CONSUMER_DEMAND,
+            Sector.RETAIL_ECOMMERCE,
+            0.72,
+            "소비 지출 변화가 유통 거래액과 재고 회전에 연결됩니다.",
+        )
+        industry(
+            CausalEconomicFactor.CONSUMER_DEMAND,
+            Sector.GAMING,
+            0.46,
+            "선택 소비 여력 변화가 게임 결제와 콘텐츠 구매 수요에 연결됩니다.",
+        )
+        segment(
+            CausalEconomicFactor.GAME_SOFTWARE_DEMAND,
+            IndustrySegment.GAME_SOFTWARE,
+            0.90,
+            "게임 이용자와 결제 수요가 소프트웨어 매출에 직접 연결됩니다.",
+        )
+        segment(
+            CausalEconomicFactor.COMPUTING_HARDWARE_DEMAND,
+            IndustrySegment.COMPUTER_HARDWARE,
+            0.84,
+            "완제품 교체 수요가 컴퓨터 하드웨어 출하에 연결됩니다.",
+        )
+        industry(
+            CausalEconomicFactor.SEMICONDUCTOR_DEMAND,
+            Sector.SEMICONDUCTOR,
+            0.88,
+            "최종 기기 수요가 반도체 주문과 가동률에 후행해 연결됩니다.",
+        )
+        segment(
+            CausalEconomicFactor.FREIGHT_RATE,
+            IndustrySegment.MARITIME_SHIPPING,
+            0.94,
+            "운임 상승이 해운사의 단기 매출 단가와 마진에 연결됩니다.",
+        )
+        listOf(Sector.RETAIL_ECOMMERCE, Sector.INDUSTRIALS, Sector.AUTOMOTIVE).forEach { sector ->
+            industry(
+                CausalEconomicFactor.LOGISTICS_INPUT_COST,
+                sector,
+                -0.66,
+                "조달·운송비 상승이 재고와 생산 원가를 높입니다.",
+            )
+        }
+        industry(
+            CausalEconomicFactor.CREDIT_AVAILABILITY,
+            Sector.FINANCIALS,
+            0.54,
+            "신용 공급 여건이 대출 성장과 신용비용 기대에 연결됩니다.",
+        )
+        listOf(
+            Sector.INFORMATION_TECHNOLOGY,
+            Sector.SEMICONDUCTOR,
+            Sector.INDUSTRIALS,
+            Sector.ROBOTICS,
+            Sector.BATTERY,
+        ).forEach { sector ->
+            industry(
+                CausalEconomicFactor.BUSINESS_INVESTMENT,
+                sector,
+                0.64,
+                "기업 설비·기술 투자가 수주와 장비 수요에 연결됩니다.",
+            )
+        }
+
+        // 시장 심리는 개별주 베타만큼만 노출한다. ETF 레버리지는 PriceEngine에서 한 번 적용된다.
+        val riskWeight = (0.30 + stock.beta * 0.36).coerceIn(0.25, 0.95)
+        add(
+            CausalStockExposure(
+                factor = CausalEconomicFactor.RISK_APPETITE,
+                weight = riskWeight,
+                targetKind = CausalTraceNodeKind.STOCK,
+                targetLabel = stock.name,
+                rationale = "시장 위험선호 변화가 종목 베타와 자금 수급을 통해 가격 기대에 연결됩니다.",
+            ),
+        )
+    }
+
+    private fun StockDefinition.isExposedTo(target: Sector): Boolean {
+        val explicit = identityProfile?.exposedSectors.orEmpty()
+        return when {
+            explicit.isNotEmpty() -> target in explicit
+            !isFundLike -> sector == target
+            etfProfile?.assetClass == com.amond.kmpbook.domain.model.EtfAssetClass.SECTOR_EQUITY ->
+                sector == target
+            else -> false
+        }
+    }
+
+    private fun companyOverrideRationale(
+        stock: StockDefinition,
+        factor: CausalEconomicFactor,
+    ): String = when (stock.id) {
+        "${Market.KOSDAQ.name}:293490" -> "게임 퍼블리싱·개발 비중이 높아 게임 수요 변화에 직접 노출됩니다."
+        "${Market.NASDAQ.name}:MSFT" -> "게임·클라우드·업무 소프트웨어가 섞여 있어 단일 사업 충격이 완화됩니다."
+        "${Market.KOSPI.name}:005930" -> "메모리·파운드리와 완제품 사업이 함께 있어 단계별 수요 노출이 분산됩니다."
+        "${Market.NASDAQ.name}:AAPL" -> "소비자 기기 매출 비중이 높아 하드웨어와 소비 수요 변화에 민감합니다."
+        "${Market.NASDAQ.name}:NVDA" -> "GPU 중심 사업구조로 반도체·컴퓨팅 투자 수요에 높은 민감도를 가집니다."
+        "${Market.NYSE.name}:XOM" -> "상류 생산과 정유를 함께 보유해 원유 판매가격 변화가 현금흐름에 직접 반영됩니다."
+        else -> "${stock.name}의 사업구성에 맞춘 ${factor.displayName} 노출입니다."
+    }
+}
