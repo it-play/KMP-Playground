@@ -4,6 +4,7 @@ import com.amond.kmpbook.domain.data.CausalExposureCatalog
 import com.amond.kmpbook.domain.data.CausalStockExposure
 import com.amond.kmpbook.domain.model.CausalEconomicFactor
 import com.amond.kmpbook.domain.model.CausalImpactTrace
+import com.amond.kmpbook.domain.model.CausalSignalDirection
 import com.amond.kmpbook.domain.model.CausalSignalSeed
 import com.amond.kmpbook.domain.model.CausalStockImpact
 import com.amond.kmpbook.domain.model.CausalTraceNode
@@ -158,17 +159,16 @@ object CausalMarketEngine {
                 edgeProduct = 1.0,
                 visited = linkedSetOf(seed.factor),
                 factorPath = listOf(seed.factor),
+                factorDirections = listOf(seed.direction),
                 exposuresByFactor = exposuresByFactor,
                 tracesByStockId = tracesByStockId,
             )
         }
 
         val impacts = stocks.sortedBy(StockDefinition::id).mapNotNull { stock ->
-            val traces = tracesByStockId[stock.id].orEmpty()
-                .sortedWith(
-                    compareByDescending<CausalImpactTrace> { abs(it.contribution) }
-                        .thenBy { it.nodes.joinToString("|") { node -> node.label } },
-                )
+            val traceComparator = compareByDescending<CausalImpactTrace> { abs(it.contribution) }
+                .thenBy { it.nodes.joinToString("|") { node -> node.displayLabel } }
+            val traces = tracesByStockId[stock.id].orEmpty().sortedWith(traceComparator)
             if (traces.isEmpty()) return@mapNotNull null
             val rawSigned = traces.sumOf(CausalImpactTrace::contribution)
             val signed = rawSigned.coerceIn(-MAX_STOCK_SENSITIVITY, MAX_STOCK_SENSITIVITY)
@@ -178,6 +178,14 @@ object CausalMarketEngine {
                 traces.sumOf { abs(it.contribution) * it.confidence } / totalAbsolute
             }
             val direction = if (signed > 0.0) ImpactDirection.POSITIVE else ImpactDirection.NEGATIVE
+            val retainedTraces = traces.take(MAX_TRACES_PER_STOCK).let { strongest ->
+                if (strongest.any { it.contribution * signed > 0.0 }) {
+                    strongest
+                } else {
+                    val explanatory = traces.first { it.contribution * signed > 0.0 }
+                    (strongest.dropLast(1) + explanatory).sortedWith(traceComparator)
+                }
+            }
             stock.id to CausalStockImpact(
                 stockId = stock.id,
                 direction = direction,
@@ -185,7 +193,7 @@ object CausalMarketEngine {
                 relativeSensitivity = abs(signed),
                 confidence = confidence.coerceIn(0.0, 1.0),
                 specificity = traces.maxOf { trace -> trace.nodes.last().kind.specificity },
-                traces = traces.take(MAX_TRACES_PER_STOCK),
+                traces = retainedTraces,
                 contributingFactors = traces.mapNotNullTo(linkedSetOf()) { trace ->
                     trace.nodes.firstOrNull()?.factor
                 },
@@ -206,6 +214,7 @@ object CausalMarketEngine {
         edgeProduct: Double,
         visited: LinkedHashSet<CausalEconomicFactor>,
         factorPath: List<CausalEconomicFactor>,
+        factorDirections: List<CausalSignalDirection>,
         exposuresByFactor: Map<CausalEconomicFactor, List<StockExposure>>,
         tracesByStockId: MutableMap<String, MutableList<CausalImpactTrace>>,
     ) {
@@ -217,11 +226,13 @@ object CausalMarketEngine {
                     seed.signedStrength * DECAY.pow(exposureDepth) * edgeProduct * terminal.exposure.weight
                     ).coerceIn(-MAX_PATH_CONTRIBUTION, MAX_PATH_CONTRIBUTION)
                 if (abs(contribution) < MIN_PATH_CONTRIBUTION) return@forEach
-                val nodes = factorPath.map { factor ->
+                check(factorPath.size == factorDirections.size)
+                val nodes = factorPath.zip(factorDirections).map { (factor, direction) ->
                     CausalTraceNode(
                         kind = CausalTraceNodeKind.ECONOMIC_FACTOR,
                         label = factor.displayName,
                         factor = factor,
+                        factorDirection = direction,
                     )
                 } + terminal.exposure.toTraceNode(terminal.stock)
                 tracesByStockId.getOrPut(terminal.stock.id, ::mutableListOf) += CausalImpactTrace(
@@ -229,6 +240,7 @@ object CausalMarketEngine {
                     confidence = (seed.confidence * CONFIDENCE_DECAY.pow(exposureDepth)).coerceIn(0.0, 1.0),
                     nodes = nodes,
                     rationale = terminal.exposure.rationale,
+                    exposureMechanism = terminal.exposure.mechanism,
                 )
             }
 
@@ -240,6 +252,11 @@ object CausalMarketEngine {
                 return@forEach
             }
             val nextVisited = LinkedHashSet(visited).apply { add(edge.to) }
+            val nextDirection = if (edge.weight > 0.0) {
+                factorDirections.last()
+            } else {
+                factorDirections.last().opposite()
+            }
             walk(
                 seed = seed,
                 current = edge.to,
@@ -247,6 +264,7 @@ object CausalMarketEngine {
                 edgeProduct = nextProduct,
                 visited = nextVisited,
                 factorPath = factorPath + edge.to,
+                factorDirections = factorDirections + nextDirection,
                 exposuresByFactor = exposuresByFactor,
                 tracesByStockId = tracesByStockId,
             )
@@ -269,6 +287,7 @@ object CausalMarketEngine {
             kind = targetKind,
             label = targetLabel,
             stockId = stock.id,
+            companySpecificExposure = explicitCompanyOverride,
         )
         CausalTraceNodeKind.ECONOMIC_FACTOR -> error("경제 요인은 종목 노출의 최종 대상일 수 없습니다.")
     }
@@ -277,6 +296,11 @@ object CausalMarketEngine {
         val stock: StockDefinition,
         val exposure: CausalStockExposure,
     )
+}
+
+private fun CausalSignalDirection.opposite(): CausalSignalDirection = when (this) {
+    CausalSignalDirection.INCREASE -> CausalSignalDirection.DECREASE
+    CausalSignalDirection.DECREASE -> CausalSignalDirection.INCREASE
 }
 
 private val CausalTraceNodeKind.specificity: Int
