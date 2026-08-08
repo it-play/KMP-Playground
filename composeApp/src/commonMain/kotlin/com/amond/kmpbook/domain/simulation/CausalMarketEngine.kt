@@ -186,6 +186,9 @@ object CausalMarketEngine {
                 confidence = confidence.coerceIn(0.0, 1.0),
                 specificity = traces.maxOf { trace -> trace.nodes.last().kind.specificity },
                 traces = traces.take(MAX_TRACES_PER_STOCK),
+                contributingFactors = traces.mapNotNullTo(linkedSetOf()) { trace ->
+                    trace.nodes.firstOrNull()?.factor
+                },
             )
         }.toMap(linkedMapOf())
         return CausalPropagationResult(impacts, DECAY, MAX_FACTOR_DEPTH)
