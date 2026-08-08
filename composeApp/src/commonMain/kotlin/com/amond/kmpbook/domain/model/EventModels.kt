@@ -194,6 +194,12 @@ data class GameEvent(
         require(causalSignals.map(CausalSignalSeed::factor).distinct().size == causalSignals.size) {
             "한 이벤트에는 같은 경제 요인의 인과 신호를 중복 선언할 수 없습니다."
         }
+        require(
+            scope !in setOf(EventScope.COUNTRY, EventScope.MARKET) ||
+                causalSignals.map(CausalSignalSeed::transmissionProfile).distinct().size <= 1,
+        ) {
+            "국가·시장 이벤트 하나에는 하나의 시장 전염 프로필만 선언할 수 있습니다."
+        }
         require((recordKind == EventRecordKind.MARKET_ACTION) == (marketAction != null)) {
             "거래소 조치 기록과 시장조치 참조는 항상 함께 존재해야 합니다."
         }
