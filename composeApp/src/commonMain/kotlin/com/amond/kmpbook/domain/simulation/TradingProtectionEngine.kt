@@ -487,6 +487,7 @@ object TradingProtectionEngine {
     )
 
     fun startInstrumentTradingHalt(
+        occurrenceId: String,
         stockId: String,
         reason: TradingHaltReason,
         detail: String,
@@ -494,6 +495,7 @@ object TradingProtectionEngine {
         scheduledReleaseAt: Instant? = null,
         policy: TradingHaltOrderPolicy = defaultTradingHaltPolicy(reason),
     ): InstrumentTradingHalt = InstrumentTradingHalt(
+        occurrenceId = occurrenceId,
         stockId = stockId,
         reason = reason,
         detail = detail,

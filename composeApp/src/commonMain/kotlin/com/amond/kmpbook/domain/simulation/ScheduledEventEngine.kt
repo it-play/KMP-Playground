@@ -2,16 +2,22 @@ package com.amond.kmpbook.domain.simulation
 
 import com.amond.kmpbook.domain.data.StockCatalog
 import com.amond.kmpbook.domain.model.Currency
+import com.amond.kmpbook.domain.model.EventImpactHorizon
+import com.amond.kmpbook.domain.model.EventImpactInsight
+import com.amond.kmpbook.domain.model.EventImpactTargetKind
 import com.amond.kmpbook.domain.model.EventSeverity
+import com.amond.kmpbook.domain.model.EventRecordKind
 import com.amond.kmpbook.domain.model.GameEvent
 import com.amond.kmpbook.domain.model.GameEventImpact
 import com.amond.kmpbook.domain.model.ImpactDirection
 import com.amond.kmpbook.domain.model.Market
+import com.amond.kmpbook.domain.model.ReportedFact
 import com.amond.kmpbook.domain.model.ScheduledEventEmission
 import com.amond.kmpbook.domain.model.ScheduledEventKind
 import com.amond.kmpbook.domain.model.ScheduledEventMetric
 import com.amond.kmpbook.domain.model.ScheduledEventOccurrence
 import com.amond.kmpbook.domain.model.ScheduledEventOutcome
+import com.amond.kmpbook.domain.model.ScheduledEventReference
 import com.amond.kmpbook.domain.model.ScheduledOutcomeComparison
 import com.amond.kmpbook.domain.model.StockDefinition
 import com.amond.kmpbook.domain.time.DefaultMarketHolidays
@@ -39,8 +45,19 @@ data class ScheduledEventGenerationResult(
  * narrow queries produce identical figures and impacts without a sequence counter or save field.
  */
 class ScheduledEventEngine(private val seed: Long) {
-    private var cachedStockIds: List<String> = emptyList()
+    private var cachedStocks: List<StockDefinition> = emptyList()
     private val yearCache = mutableMapOf<Int, List<ScheduledEventOccurrence>>()
+    private var occurrenceIndexCache: Map<String, ScheduledEventOccurrence>? = null
+    /**
+     * 중앙은행 경로는 질의 순서가 아닌 전체 불변 일정에 기반한다. 임의의 구간을 먼저
+     * 조회해도 각 회의의 예상치·결정치가 달라지지 않는다.
+     */
+    private val centralBankMeetingsByKind: Map<ScheduledEventKind, List<ScheduledEventOccurrence>> =
+        (EconomicReleaseCatalog.FIRST_YEAR..EconomicReleaseCatalog.LAST_YEAR)
+            .flatMap(EconomicReleaseCatalog::occurrencesForYear)
+            .filter { it.kind == ScheduledEventKind.US_FOMC || it.kind == ScheduledEventKind.KR_BOK }
+            .sortedWith(OCCURRENCE_ORDER)
+            .groupBy(ScheduledEventOccurrence::kind)
 
     fun occurrencesForYear(
         year: Int,
@@ -132,9 +149,21 @@ class ScheduledEventEngine(private val seed: Long) {
             impact = outcome.impact,
             startsAt = occurrence.scheduledAt,
             durationHours = delayHoursCeiling + effectDuration,
+            recordKind = EventRecordKind.SCHEDULED_RELEASE,
+            scheduledEventReference = ScheduledEventReference.from(occurrence),
+            effectStartsAt = impactStartsAt,
+            effectDurationHours = effectDuration,
             affectedMarkets = occurrence.affectedMarkets,
             affectedStockIds = occurrence.affectedStockIds,
             sourceLabel = occurrence.labels.joinToString(" · "),
+            impactInsights = impactInsightsFor(occurrence, outcome, stocks),
+            reportedFacts = outcome.metrics.map { metric ->
+                ReportedFact(
+                    label = metric.label,
+                    actual = "${formatMetric(metric.actual, metric.decimalPlaces)}${metric.unit}",
+                    comparison = "예상 ${formatMetric(metric.consensus, metric.decimalPlaces)}${metric.unit}",
+                )
+            },
         )
         return ScheduledEventEmission(
             occurrence = occurrence,
@@ -145,6 +174,35 @@ class ScheduledEventEngine(private val seed: Long) {
                 durationHours = effectDuration,
             ),
         )
+    }
+
+    /**
+     * 구조화 참조를 현재 일정 카탈로그와 종목 정의에서 찾아 canonical 뉴스를 재생성한다.
+     * ID의 접두사·날짜·종목 부분을 해석하지 않고, 정확한 ID와 종류가 모두 일치할 때만
+     * 결과를 반환한다.
+     */
+    internal fun canonicalNewsEventFor(
+        reference: ScheduledEventReference,
+        stocks: List<StockDefinition> = StockCatalog.definitions,
+    ): GameEvent? {
+        val occurrence = occurrenceIndex(stocks)[reference.occurrenceId]
+            ?.takeIf { it.kind == reference.kind }
+            ?: return null
+        return emissionFor(occurrence, stocks).newsEvent
+    }
+
+    /**
+     * 저장된 정기 발표를 현재 seed·일정 카탈로그·종목으로 재생성한 canonical 뉴스와
+     * [GameEvent.equals]로 전체 비교한다. 이 비교는 발표 실제치·예상치가 든 본문과 reportedFacts,
+     * 방향·충격, 실제 반영 구간, 영향 경로를 포함한 모든 필드를 엄격히 검증한다.
+     */
+    internal fun isCanonicalNewsEvent(
+        event: GameEvent,
+        stocks: List<StockDefinition> = StockCatalog.definitions,
+    ): Boolean {
+        if (event.recordKind != EventRecordKind.SCHEDULED_RELEASE) return false
+        val reference = event.scheduledEventReference ?: return false
+        return canonicalNewsEventFor(reference, stocks) == event
     }
 
     /** Scheduled shocks overlapping [from, to), including releases from an earlier closed session. */
@@ -171,11 +229,13 @@ class ScheduledEventEngine(private val seed: Long) {
         .filter { it.isActiveAt(time) }
 
     private fun annualCalendar(year: Int, stocks: List<StockDefinition>): List<ScheduledEventOccurrence> {
-        val stockIds = stocks.map(StockDefinition::id)
+        val stockSnapshot = stocks.toList()
+        val stockIds = stockSnapshot.map(StockDefinition::id)
         require(stockIds.distinct().size == stockIds.size) { "Scheduled event stocks must have unique ids" }
-        if (stockIds != cachedStockIds) {
-            cachedStockIds = stockIds.toList()
+        if (stockSnapshot != cachedStocks) {
+            cachedStocks = stockSnapshot
             yearCache.clear()
+            occurrenceIndexCache = null
         }
         return yearCache.getOrPut(year) {
             (EconomicReleaseCatalog.occurrencesForYear(year) +
@@ -184,21 +244,38 @@ class ScheduledEventEngine(private val seed: Long) {
         }
     }
 
+    private fun occurrenceIndex(stocks: List<StockDefinition>): Map<String, ScheduledEventOccurrence> {
+        // annualCalendar owns cache invalidation for the complete stock definitions, not just IDs.
+        annualCalendar(EconomicReleaseCatalog.FIRST_YEAR, stocks)
+        occurrenceIndexCache?.let { return it }
+        val occurrences = (EconomicReleaseCatalog.FIRST_YEAR..EconomicReleaseCatalog.LAST_YEAR)
+            .flatMap { annualCalendar(it, stocks) }
+        val index = occurrences.associateBy(ScheduledEventOccurrence::id)
+        require(index.size == occurrences.size) { "Scheduled occurrence ids must be unique across the campaign" }
+        occurrenceIndexCache = index
+        return index
+    }
+
     private fun economicOutcome(
         occurrence: ScheduledEventOccurrence,
         random: DeterministicRandom,
     ): ScheduledEventOutcome {
+        if (occurrence.kind == ScheduledEventKind.US_FOMC || occurrence.kind == ScheduledEventKind.KR_BOK) {
+            val metric = centralBankRateMetric(occurrence)
+            val surprise = (
+                (metric.actual - metric.consensus) / DOUBLE_RATE_STEP_PERCENT
+            ).coerceIn(-1.0, 1.0)
+            return outcome(
+                occurrence = occurrence,
+                surprise = surprise,
+                metrics = listOf(metric),
+            )
+        }
         val rawSurprise = (random.nextGaussian() / SURPRISE_NORMALIZER).coerceIn(-1.0, 1.0)
         val metric = economicMetric(occurrence.kind, rawSurprise, random)
-        val surprise = when (occurrence.kind) {
-            ScheduledEventKind.US_FOMC, ScheduledEventKind.KR_BOK -> {
-                ((metric.actual - metric.consensus) / RATE_STEP_PERCENT).coerceIn(-1.0, 1.0)
-            }
-            else -> rawSurprise
-        }
         return outcome(
             occurrence = occurrence,
-            surprise = surprise,
+            surprise = rawSurprise,
             metrics = listOf(metric),
         )
     }
@@ -268,7 +345,9 @@ class ScheduledEventEngine(private val seed: Long) {
             ScheduledEventKind.US_GDP -> metric(
                 "GDP 연율", random.nextDouble(0.5, 3.6), 1.15, "%", 1,
             )
-            ScheduledEventKind.US_FOMC -> rateMetric("연방기금금리", random, surprise)
+            ScheduledEventKind.US_FOMC,
+            ScheduledEventKind.KR_BOK,
+            -> error("Central-bank rates use the continuous meeting series")
             ScheduledEventKind.US_RETAIL_SALES -> metric(
                 "소매판매 전월비", random.nextDouble(-0.3, 1.0), 0.85, "%", 1,
             )
@@ -281,7 +360,6 @@ class ScheduledEventEngine(private val seed: Long) {
             ScheduledEventKind.KR_EMPLOYMENT -> metric(
                 "취업자 증감", random.nextDouble(100.0, 420.0), 120.0, "천명", 0,
             )
-            ScheduledEventKind.KR_BOK -> rateMetric("한국 기준금리", random, surprise)
             ScheduledEventKind.KR_GDP -> metric(
                 "GDP 전년비", random.nextDouble(0.8, 3.4), 0.90, "%", 1,
             )
@@ -289,18 +367,74 @@ class ScheduledEventEngine(private val seed: Long) {
         }
     }
 
-    private fun rateMetric(
-        label: String,
-        random: DeterministicRandom,
-        surprise: Double,
-    ): ScheduledEventMetric {
-        val consensus = round(random.nextDouble(1.5, 5.0) * 4.0).toLong() / 4.0
-        val step = when {
-            surprise >= RATE_SURPRISE_THRESHOLD -> RATE_STEP_PERCENT
-            surprise <= -RATE_SURPRISE_THRESHOLD -> -RATE_STEP_PERCENT
+    /**
+     * 이전 회의의 결정치를 다음 회의 예상치로 이어 붙인다. 모든 의사결정 무작위는
+     * 발생 ID와 캠페인 시드에만 묶이므로 넓은 구간·좁은 구간 조회가 같은 결과를 낸다.
+     */
+    private fun centralBankRateMetric(occurrence: ScheduledEventOccurrence): ScheduledEventMetric {
+        val specification = CentralBankRateSpecification.forKind(occurrence.kind)
+        var state = CentralBankRateState(actual = specification.initialRate)
+        for (meeting in centralBankMeetingsByKind.getValue(occurrence.kind)) {
+            if (OCCURRENCE_ORDER.compare(meeting, occurrence) >= 0) break
+            state = applyCentralBankDecision(meeting, state, specification)
+        }
+        val consensus = state.actual
+        val decided = applyCentralBankDecision(occurrence, state, specification)
+        return ScheduledEventMetric(
+            label = specification.metricLabel,
+            actual = decided.actual,
+            consensus = consensus,
+            unit = "%",
+            decimalPlaces = 2,
+        )
+    }
+
+    /**
+     * 동결이 대부분이고, 변경은 25bp가 표준이며 50bp는 드물다. 중립금리로의 완만한
+     * 회귀와 직전 비동결 방향의 약한 연속성을 두어 무작위 직지그재그보다 긴축·완화
+     * 주기에 가까운 경로를 만든다.
+     */
+    private fun applyCentralBankDecision(
+        meeting: ScheduledEventOccurrence,
+        previous: CentralBankRateState,
+        specification: CentralBankRateSpecification,
+    ): CentralBankRateState {
+        val random = DeterministicRandom.keyed(seed, "central-bank-rate:${meeting.id}")
+        val distanceFromNeutralSteps = abs(previous.actual - specification.neutralRate) / RATE_STEP_PERCENT
+        val moveProbability = (
+            BASE_RATE_MOVE_PROBABILITY + distanceFromNeutralSteps * DISTANCE_MOVE_PROBABILITY
+        ).coerceIn(BASE_RATE_MOVE_PROBABILITY, MAX_RATE_MOVE_PROBABILITY)
+        if (!random.nextBoolean(moveProbability)) return previous
+
+        val magnitude = if (random.nextBoolean(RARE_DOUBLE_STEP_PROBABILITY)) {
+            DOUBLE_RATE_STEP_PERCENT
+        } else {
+            RATE_STEP_PERCENT
+        }
+        val equilibriumBias = (
+            (specification.neutralRate - previous.actual) / RATE_STEP_PERCENT * EQUILIBRIUM_DIRECTION_BIAS
+        )
+        val momentumBias = when {
+            previous.lastPolicyMove > 0.0 -> POLICY_MOMENTUM_BIAS
+            previous.lastPolicyMove < 0.0 -> -POLICY_MOMENTUM_BIAS
             else -> 0.0
         }
-        return ScheduledEventMetric(label, consensus + step, consensus, "%", 2)
+        val upwardProbability = (0.5 + equilibriumBias + momentumBias).coerceIn(
+            MIN_DIRECTION_PROBABILITY,
+            MAX_DIRECTION_PROBABILITY,
+        )
+        val direction = when {
+            previous.actual <= specification.minimumRate -> 1.0
+            previous.actual >= specification.maximumRate -> -1.0
+            random.nextBoolean(upwardProbability) -> 1.0
+            else -> -1.0
+        }
+        val actual = (previous.actual + direction * magnitude)
+            .coerceIn(specification.minimumRate, specification.maximumRate)
+        return CentralBankRateState(
+            actual = actual,
+            lastPolicyMove = actual - previous.actual,
+        )
     }
 
     private fun outcome(
@@ -383,6 +517,47 @@ class ScheduledEventEngine(private val seed: Long) {
         append(". 모든 발표값은 실제 자료가 아닌 occurrence-keyed 게임 수치입니다.")
     }
 
+    private fun impactInsightsFor(
+        occurrence: ScheduledEventOccurrence,
+        outcome: ScheduledEventOutcome,
+        stocks: List<StockDefinition>,
+    ): List<EventImpactInsight> {
+        val rationale = "${outcome.comparison.displayName}으로 발표된 결과가 단기 기대와 위험선호에 반영된다."
+        if (occurrence.kind == ScheduledEventKind.EARNINGS) {
+            val stockId = occurrence.affectedStockIds.single()
+            val stock = stocks.firstOrNull { it.id == stockId }
+                ?: error("Earnings occurrence references unknown stock '$stockId'")
+            return listOf(
+                EventImpactInsight(
+                    targetKind = EventImpactTargetKind.STOCK,
+                    targetLabel = "${stock.name} (${stock.symbol})",
+                    direction = outcome.direction,
+                    rationale = rationale,
+                    sector = stock.sector,
+                    markets = setOf(stock.market),
+                    stockId = stock.id,
+                    horizon = EventImpactHorizon.IMMEDIATE,
+                ),
+            )
+        }
+        val markets = occurrence.affectedMarkets
+        val targetLabel = when {
+            markets.all(Market::isKorean) -> "대한민국 주식시장"
+            markets.all(Market::isUnitedStates) -> "미국 주식시장"
+            else -> markets.sortedBy(Market::name).joinToString("·", transform = Market::displayName)
+        }
+        return listOf(
+            EventImpactInsight(
+                targetKind = EventImpactTargetKind.MARKET,
+                targetLabel = targetLabel,
+                direction = outcome.direction,
+                rationale = rationale,
+                markets = markets,
+                horizon = EventImpactHorizon.IMMEDIATE,
+            ),
+        )
+    }
+
     private fun nextImpactStart(occurrence: ScheduledEventOccurrence): Instant =
         occurrence.affectedMarkets.minOf { market -> nextRegularTradingInstant(market, occurrence.scheduledAt) }
 
@@ -430,15 +605,60 @@ class ScheduledEventEngine(private val seed: Long) {
         return (if (scaled < 0) "-" else "") + "$whole.$fraction"
     }
 
-    private companion object {
-        val OCCURRENCE_ORDER = compareBy(ScheduledEventOccurrence::scheduledAt, ScheduledEventOccurrence::id)
-        const val NANOS_PER_HOUR: Long = 3_600_000_000_000L
-        const val IMPACT_LOOKBACK_HOURS: Int = 24 * 10
-        const val MAX_SESSION_SEARCH_DAYS: Int = 16
-        const val SURPRISE_NORMALIZER: Double = 2.25
-        const val COMPARISON_THRESHOLD: Double = 0.10
-        const val DIRECTION_THRESHOLD: Double = 0.08
-        const val RATE_SURPRISE_THRESHOLD: Double = 0.52
-        const val RATE_STEP_PERCENT: Double = 0.25
+    companion object {
+        /** Stable substream shared by runtime, projections, and current-save validation. */
+        const val STREAM_ID: Long = 0x5343484544554C45L
+
+        private val OCCURRENCE_ORDER = compareBy(ScheduledEventOccurrence::scheduledAt, ScheduledEventOccurrence::id)
+        private const val NANOS_PER_HOUR: Long = 3_600_000_000_000L
+        private const val IMPACT_LOOKBACK_HOURS: Int = 24 * 10
+        private const val MAX_SESSION_SEARCH_DAYS: Int = 16
+        private const val SURPRISE_NORMALIZER: Double = 2.25
+        private const val COMPARISON_THRESHOLD: Double = 0.10
+        private const val DIRECTION_THRESHOLD: Double = 0.08
+        private const val RATE_STEP_PERCENT: Double = 0.25
+        private const val DOUBLE_RATE_STEP_PERCENT: Double = 0.50
+        private const val BASE_RATE_MOVE_PROBABILITY: Double = 0.34
+        private const val DISTANCE_MOVE_PROBABILITY: Double = 0.025
+        private const val MAX_RATE_MOVE_PROBABILITY: Double = 0.58
+        private const val RARE_DOUBLE_STEP_PROBABILITY: Double = 0.06
+        private const val EQUILIBRIUM_DIRECTION_BIAS: Double = 0.04
+        private const val POLICY_MOMENTUM_BIAS: Double = 0.08
+        private const val MIN_DIRECTION_PROBABILITY: Double = 0.15
+        private const val MAX_DIRECTION_PROBABILITY: Double = 0.85
+    }
+
+    private data class CentralBankRateState(
+        val actual: Double,
+        val lastPolicyMove: Double = 0.0,
+    )
+
+    private data class CentralBankRateSpecification(
+        val metricLabel: String,
+        val initialRate: Double,
+        val neutralRate: Double,
+        val minimumRate: Double,
+        val maximumRate: Double,
+    ) {
+        companion object {
+            /** 2026 경로의 시작점이며 실시간 정책금리 예측이 아닌 게임 기준치다. */
+            fun forKind(kind: ScheduledEventKind): CentralBankRateSpecification = when (kind) {
+                ScheduledEventKind.US_FOMC -> CentralBankRateSpecification(
+                    metricLabel = "연방기금금리",
+                    initialRate = 3.75,
+                    neutralRate = 2.75,
+                    minimumRate = 0.0,
+                    maximumRate = 6.5,
+                )
+                ScheduledEventKind.KR_BOK -> CentralBankRateSpecification(
+                    metricLabel = "한국 기준금리",
+                    initialRate = 2.50,
+                    neutralRate = 2.50,
+                    minimumRate = 0.50,
+                    maximumRate = 5.0,
+                )
+                else -> error("$kind is not a central-bank decision")
+            }
+        }
     }
 }

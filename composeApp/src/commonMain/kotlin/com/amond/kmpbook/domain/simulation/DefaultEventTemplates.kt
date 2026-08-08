@@ -3,13 +3,23 @@ package com.amond.kmpbook.domain.simulation
 import com.amond.kmpbook.domain.model.EventScope
 import com.amond.kmpbook.domain.model.EventSeverity
 import com.amond.kmpbook.domain.model.EventType
+import com.amond.kmpbook.domain.model.EventImpactHorizon
+import com.amond.kmpbook.domain.model.EventImpactInsight
+import com.amond.kmpbook.domain.model.EventImpactTargetKind
+import com.amond.kmpbook.domain.model.EventImpactCoveragePolicy
+import com.amond.kmpbook.domain.model.EventRecordKind
+import com.amond.kmpbook.domain.model.EventTradingHaltDirective
+import com.amond.kmpbook.domain.model.EventTradingHaltKind
 import com.amond.kmpbook.domain.model.ImpactDirection
+import com.amond.kmpbook.domain.model.IndustrySegment
+import com.amond.kmpbook.domain.model.InstrumentTerminationKind
+import com.amond.kmpbook.domain.model.InstrumentTerminationValuationMethod
 import com.amond.kmpbook.domain.model.InstrumentStrategy
 import com.amond.kmpbook.domain.model.InstrumentType
-import com.amond.kmpbook.domain.model.ListingFinalDispositionType
 import com.amond.kmpbook.domain.model.ListingRiskTag
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.Sector
+import com.amond.kmpbook.domain.model.TradingHaltReason
 
 /**
  * Built-in rules are deliberately data-only. Adding a stock requires no event
@@ -24,6 +34,20 @@ object DefaultEventTemplates {
             EventType.CENTRAL_BANK, EventSeverity.MAJOR, ImpactDirection.NEGATIVE,
             0.003, 720, 24..96, -0.045..-0.018, -0.00020..-0.00005, 1.35..1.75, 1.3..2.0,
             0.55..0.85, -0.8..-0.45, EventCondition.INFLATION_HIGH,
+            insights = listOf(
+                industryInsight(
+                    "은행·보험", Sector.FINANCIALS, ImpactDirection.POSITIVE,
+                    "대출·운용자산의 재가격이 조달비용보다 먼저 반영되면 단기 이자마진이 개선될 수 있다.", 0.65,
+                ),
+                industryInsight(
+                    "부동산", Sector.REAL_ESTATE, ImpactDirection.NEGATIVE,
+                    "할인율과 차입비용 상승이 부동산 가치와 개발 사업의 자금조달 여건을 압박한다.", 1.25,
+                ),
+                industryInsight(
+                    "성장 기술주", Sector.INFORMATION_TECHNOLOGY, ImpactDirection.NEGATIVE,
+                    "먼 미래 현금흐름의 현재가치가 낮아져 고평가 성장주의 밸류에이션 부담이 커진다.", 1.10,
+                ),
+            ),
         ),
         rule(
             "surprise_rate_cut", "{market} 기준금리 깜짝 인하",
@@ -31,6 +55,20 @@ object DefaultEventTemplates {
             EventType.CENTRAL_BANK, EventSeverity.MAJOR, ImpactDirection.POSITIVE,
             0.003, 720, 24..96, 0.018..0.050, 0.00004..0.00020, 1.25..1.65, 1.25..1.9,
             0.65..0.90, 0.45..0.8, EventCondition.GROWTH_NEGATIVE,
+            insights = listOf(
+                industryInsight(
+                    "은행·보험", Sector.FINANCIALS, ImpactDirection.NEGATIVE,
+                    "예대금리차 축소 기대가 이자이익 전망을 낮춘다.", 0.55,
+                ),
+                industryInsight(
+                    "부동산", Sector.REAL_ESTATE, ImpactDirection.POSITIVE,
+                    "차입비용과 자본환원율 부담이 낮아져 자산가치와 거래 여건이 개선된다.", 1.20,
+                ),
+                industryInsight(
+                    "성장 기술주", Sector.INFORMATION_TECHNOLOGY, ImpactDirection.POSITIVE,
+                    "할인율 하락이 장기 성장 현금흐름의 현재가치를 높인다.", 1.10,
+                ),
+            ),
         ),
         rule(
             "inflation_hot", "소비자물가 예상 상회",
@@ -63,18 +101,46 @@ object DefaultEventTemplates {
         rule(
             "krw_weakens", "원화 가치 급락",
             "달러-원 환율이 급등해 외국인 수급과 수입 비용 우려가 커졌다.", EventScope.COUNTRY,
-            EventType.CURRENCY, EventSeverity.MAJOR, ImpactDirection.MIXED,
+            EventType.CURRENCY, EventSeverity.MAJOR, ImpactDirection.NEGATIVE,
             0.005, 336, 24..120, -0.030..-0.008, -0.00008..0.00002, 1.35..1.75, 1.25..1.8,
             0.55..0.8, -0.65..-0.3, EventCondition.KRW_WEAK,
             markets = setOf(Market.KOSPI, Market.KOSDAQ),
+            insights = listOf(
+                industryInsight(
+                    "수출 반도체", Sector.SEMICONDUCTOR, ImpactDirection.POSITIVE,
+                    "달러 매출의 원화 환산액이 늘어 수출기업의 원화 실적에 완충 요인이 된다.", 0.80,
+                ),
+                industryInsight(
+                    "수출 자동차", Sector.AUTOMOTIVE, ImpactDirection.POSITIVE,
+                    "해외 판매대금의 원화 환산과 가격 경쟁력이 개선될 수 있다.", 0.75,
+                ),
+                industryInsight(
+                    "수입 유통", Sector.RETAIL_ECOMMERCE, ImpactDirection.NEGATIVE,
+                    "수입 상품과 해외 물류비의 원화 부담이 늘어 마진을 압박한다.", 1.15,
+                ),
+            ),
         ),
         rule(
             "krw_strengthens", "원화 가치 빠른 회복",
             "달러-원 환율 하락으로 외국인 자금 유입 기대가 높아졌다.", EventScope.COUNTRY,
-            EventType.CURRENCY, EventSeverity.MODERATE, ImpactDirection.MIXED,
+            EventType.CURRENCY, EventSeverity.MODERATE, ImpactDirection.POSITIVE,
             0.004, 336, 24..96, 0.004..0.020, 0.00001..0.00008, 1.15..1.45, 1.1..1.5,
             0.75..0.95, 0.2..0.5, EventCondition.KRW_STRONG,
             markets = setOf(Market.KOSPI, Market.KOSDAQ),
+            insights = listOf(
+                industryInsight(
+                    "수출 반도체", Sector.SEMICONDUCTOR, ImpactDirection.NEGATIVE,
+                    "달러 매출의 원화 환산액이 줄어 수출기업 실적의 환율 우호성이 약해진다.", 0.70,
+                ),
+                industryInsight(
+                    "수출 자동차", Sector.AUTOMOTIVE, ImpactDirection.NEGATIVE,
+                    "해외 가격 경쟁력과 외화 매출의 원화 환산 효과가 약해질 수 있다.", 0.65,
+                ),
+                industryInsight(
+                    "수입 유통", Sector.RETAIL_ECOMMERCE, ImpactDirection.POSITIVE,
+                    "수입 상품과 해외 운송비의 원화 원가가 낮아져 마진에 도움이 된다.", 1.05,
+                ),
+            ),
         ),
         rule(
             "liquidity_injection", "대규모 유동성 공급",
@@ -109,6 +175,22 @@ object DefaultEventTemplates {
         industry(
             "chip_shortage", "{sector} 공급 부족", "첨단 공정 공급이 수요를 따라가지 못해 가격 협상력이 높아졌다.",
             Sector.SEMICONDUCTOR, true, 0.006, 168..720, 0.018..0.055,
+        ).copy(
+            impactInsights = listOf(
+                industryInsight(
+                    "반도체 제조", Sector.SEMICONDUCTOR, ImpactDirection.POSITIVE,
+                    "공급 부족이 판매가격과 가동률에 우호적으로 작용한다.", 1.15,
+                ),
+                industryInsight(
+                    "자동차", Sector.AUTOMOTIVE, ImpactDirection.NEGATIVE,
+                    "차량용 반도체 조달 차질이 생산량과 납기를 제약한다.", 0.90,
+                ),
+                industryInsight(
+                    "컴퓨터 하드웨어", Sector.INFORMATION_TECHNOLOGY, ImpactDirection.NEGATIVE,
+                    "핵심 부품 원가와 완제품 생산 지연 위험이 커진다.", 0.85,
+                    industrySegment = IndustrySegment.COMPUTER_HARDWARE,
+                ),
+            ),
         ),
         industry(
             "chip_inventory_glut", "반도체 재고 조정", "고객사 재고가 누적되며 출하와 가격 전망이 하향됐다.",
@@ -126,10 +208,42 @@ object DefaultEventTemplates {
         industry(
             "oil_supply_shock", "에너지 공급 차질", "주요 산유 지역의 공급 차질로 에너지 가격이 급등했다.",
             Sector.ENERGY, true, 0.004, 72..336, 0.020..0.065, severity = EventSeverity.MAJOR,
+            type = EventType.COMMODITY,
+        ).copy(
+            impactInsights = listOf(
+                industryInsight(
+                    "종합 석유·가스", Sector.ENERGY, ImpactDirection.POSITIVE,
+                    "판매가격 상승이 상류·정유 기업의 현금흐름 기대를 높인다.", 1.20,
+                ),
+                industryInsight(
+                    "항공·운송", Sector.TRANSPORTATION_LOGISTICS, ImpactDirection.NEGATIVE,
+                    "연료비 상승이 운송 원가와 수익성을 압박한다.", 1.05,
+                ),
+                industryInsight(
+                    "경기소비재", Sector.CONSUMER_DISCRETIONARY, ImpactDirection.NEGATIVE,
+                    "에너지 지출 증가가 가계의 선택 소비 여력을 줄인다.", 0.70,
+                ),
+            ),
         ),
         industry(
             "oil_price_collapse", "에너지 가격 급락", "수요 둔화와 증산이 겹치며 에너지 가격이 하락했다.",
             Sector.ENERGY, false, 0.004, 72..336, -0.065..-0.020, severity = EventSeverity.MAJOR,
+            type = EventType.COMMODITY,
+        ).copy(
+            impactInsights = listOf(
+                industryInsight(
+                    "종합 석유·가스", Sector.ENERGY, ImpactDirection.NEGATIVE,
+                    "판매단가 하락이 생산자와 정유사의 이익 전망을 낮춘다.", 1.20,
+                ),
+                industryInsight(
+                    "항공·운송", Sector.TRANSPORTATION_LOGISTICS, ImpactDirection.POSITIVE,
+                    "연료비 하락이 운송 원가와 마진을 개선한다.", 1.00,
+                ),
+                industryInsight(
+                    "경기소비재", Sector.CONSUMER_DISCRETIONARY, ImpactDirection.POSITIVE,
+                    "가계 에너지 부담 완화가 선택 소비 여력을 높인다.", 0.65,
+                ),
+            ),
         ),
         industry(
             "battery_demand", "이차전지 수요 회복", "전기차 판매와 저장장치 발주가 예상보다 빠르게 회복됐다.",
@@ -138,6 +252,22 @@ object DefaultEventTemplates {
         industry(
             "battery_material_shortage", "배터리 원재료 공급 부족", "핵심 광물 조달 차질로 원가 부담이 확대됐다.",
             Sector.BATTERY, false, 0.004, 96..336, -0.050..-0.016,
+        ).copy(
+            impactInsights = listOf(
+                industryInsight(
+                    "배터리 셀", Sector.BATTERY, ImpactDirection.NEGATIVE,
+                    "리튬·니켈 등 투입 원가 상승과 생산 차질이 수익성을 압박한다.", 1.15,
+                ),
+                industryInsight(
+                    "핵심 광물·소재", Sector.MATERIALS_CHEMICALS, ImpactDirection.POSITIVE,
+                    "공급 부족이 광물과 양극재 가격 협상력을 높인다.", 0.85,
+                    industrySegment = IndustrySegment.CRITICAL_MINERALS,
+                ),
+                industryInsight(
+                    "전기차", Sector.AUTOMOTIVE, ImpactDirection.NEGATIVE,
+                    "배터리 조달비 상승이 전기차 원가와 생산 계획에 부담을 준다.", 0.75,
+                ),
+            ),
         ),
         industry(
             "biotech_breakthrough", "바이오 임상 성과", "주요 치료 영역에서 유의미한 임상 데이터가 발표됐다.",
@@ -155,6 +285,22 @@ object DefaultEventTemplates {
         industry(
             "freight_rate_surge", "운임 지수 급등", "선복 부족과 항로 차질로 운임이 빠르게 상승했다.",
             Sector.TRANSPORTATION_LOGISTICS, true, 0.004, 72..336, 0.015..0.050,
+        ).copy(
+            impactInsights = listOf(
+                industryInsight(
+                    "해상 운송", Sector.TRANSPORTATION_LOGISTICS, ImpactDirection.POSITIVE,
+                    "높은 현물 운임이 선사의 단기 매출과 마진을 끌어올린다.", 1.15,
+                    industrySegment = IndustrySegment.MARITIME_SHIPPING,
+                ),
+                industryInsight(
+                    "유통·전자상거래", Sector.RETAIL_ECOMMERCE, ImpactDirection.NEGATIVE,
+                    "입고 지연과 국제 운송비 상승이 재고 운용과 마진을 압박한다.", 0.90,
+                ),
+                industryInsight(
+                    "산업재", Sector.INDUSTRIALS, ImpactDirection.NEGATIVE,
+                    "부품 조달비와 납기 불확실성이 생산 계획에 부담을 준다.", 0.70,
+                ),
+            ),
         ),
         industry(
             "consumer_slowdown", "소비 심리 위축", "고금리와 생활비 부담으로 선택 소비 지출이 둔화됐다.",
@@ -167,6 +313,47 @@ object DefaultEventTemplates {
         industry(
             "property_downturn", "부동산 거래 위축", "거래량과 가격 지표 하락으로 관련 자산 우려가 커졌다.",
             Sector.REAL_ESTATE, false, 0.005, 168..720, -0.050..-0.016,
+        ).copy(
+            impactInsights = listOf(
+                industryInsight(
+                    "부동산·리츠", Sector.REAL_ESTATE, ImpactDirection.NEGATIVE,
+                    "거래 감소와 자산가격 약세가 평가가치와 개발 수익을 낮춘다.", 1.20,
+                ),
+                industryInsight(
+                    "금융", Sector.FINANCIALS, ImpactDirection.NEGATIVE,
+                    "담보가치 하락과 프로젝트금융 부실 가능성이 신용비용을 높인다.", 0.85,
+                ),
+                industryInsight(
+                    "건설 자재", Sector.MATERIALS_CHEMICALS, ImpactDirection.NEGATIVE,
+                    "착공과 거래 위축이 건설용 소재 수요를 낮춘다.", 0.65,
+                    horizon = EventImpactHorizon.MEDIUM_TERM,
+                    industrySegment = IndustrySegment.CONSTRUCTION_MATERIALS,
+                ),
+            ),
+        ),
+        industry(
+            "physical_game_media_exit", "게임 패키지 디스크 생산 중단",
+            "주요 유통사가 물리 패키지 생산을 종료하고 다운로드 유통으로 일원화한다고 발표했다.",
+            Sector.GAMING, true, 0.0025, 168..504, 0.008..0.032,
+            type = EventType.PRODUCT_TECHNOLOGY,
+        ).copy(
+            direction = ImpactDirection.MIXED,
+            oneShot = true,
+            impactCoveragePolicy = EventImpactCoveragePolicy.EXPLICIT_PATHS_ONLY,
+            impactInsights = listOf(
+                industryInsight(
+                    "게임 소프트웨어", Sector.GAMING, ImpactDirection.POSITIVE,
+                    "패키지 제작·재고·반품 비용이 줄고 온라인 배포로 출시 운영이 단순해진다.", 1.05,
+                    horizon = EventImpactHorizon.STRUCTURAL,
+                    industrySegment = IndustrySegment.GAME_SOFTWARE,
+                ),
+                industryInsight(
+                    "컴퓨터 하드웨어", Sector.INFORMATION_TECHNOLOGY, ImpactDirection.NEGATIVE,
+                    "광학 드라이브와 물리 매체 생산·유통 수요가 구조적으로 줄어든다.", 0.75,
+                    horizon = EventImpactHorizon.STRUCTURAL,
+                    industrySegment = IndustrySegment.COMPUTER_HARDWARE,
+                ),
+            ),
         ),
         industry(
             "game_hit_cycle", "신작 흥행 기대", "주요 신작의 초기 이용자와 매출 지표가 강하게 나타났다.",
@@ -193,13 +380,18 @@ object DefaultEventTemplates {
         company("contract_loss", "{company} 핵심 계약 해지", "주요 고객이 계약을 축소하거나 종료했다.", EventType.INDUSTRY_SUPPLY_DEMAND, false, 0.006, 48..240, -0.085..-0.025),
         company("product_recall", "{company} 제품 리콜", "안전 또는 품질 문제로 대규모 회수가 결정됐다.", EventType.PRODUCT_TECHNOLOGY, false, 0.005, 72..336, -0.110..-0.035, EventSeverity.MAJOR),
         company("accounting_issue", "{company} 회계 처리 의혹", "재무 보고의 신뢰성에 대한 조사 소식이 전해졌다.", EventType.REGULATION_POLICY, false, 0.0025, 168..720, -0.180..-0.060, EventSeverity.CRITICAL)
-            .copy(listingRiskTags = setOf(ListingRiskTag.AUDIT_OPINION_FAILURE)),
+            .copy(
+                listingRiskTags = setOf(ListingRiskTag.AUDIT_OPINION_FAILURE),
+                tradingHaltDirective = materialDisclosureHaltDirective(),
+            ),
         company("ceo_departure", "{company} 최고경영자 돌연 사임", "경영 공백과 전략 변화 가능성이 제기됐다.", EventType.CORPORATE_ACTION, false, 0.004, 72..240, -0.065..-0.018),
         company("new_ceo", "{company} 신임 경영진 선임", "사업 재편 경험을 갖춘 새 경영진이 선임됐다.", EventType.CORPORATE_ACTION, true, 0.004, 72..240, 0.010..0.045),
         company("patent_win", "{company} 특허 분쟁 승소", "핵심 기술의 권리와 판매 지속성이 확인됐다.", EventType.REGULATION_POLICY, true, 0.005, 48..168, 0.015..0.055),
-        company("major_lawsuit", "{company} 대형 소송 제기", "손해배상과 사업 제한 가능성이 불확실성을 높였다.", EventType.REGULATION_POLICY, false, 0.005, 72..336, -0.080..-0.022),
+        company("major_lawsuit", "{company} 대형 소송 제기", "손해배상과 사업 제한 가능성이 불확실성을 높였다.", EventType.REGULATION_POLICY, false, 0.005, 72..336, -0.080..-0.022)
+            .copy(tradingHaltDirective = materialDisclosureHaltDirective()),
         company("cyber_breach", "{company} 고객 정보 침해", "서비스 장애와 정보 유출 정황이 확인됐다.", EventType.PRODUCT_TECHNOLOGY, false, 0.004, 48..240, -0.075..-0.020),
-        company("factory_accident", "{company} 주요 설비 가동 중단", "사고 조사와 복구를 위해 핵심 설비가 멈췄다.", EventType.INDUSTRY_SUPPLY_DEMAND, false, 0.004, 48..240, -0.080..-0.025),
+        company("factory_accident", "{company} 주요 설비 가동 중단", "사고 조사와 복구를 위해 핵심 설비가 멈췄다.", EventType.INDUSTRY_SUPPLY_DEMAND, false, 0.004, 48..240, -0.080..-0.025)
+            .copy(tradingHaltDirective = materialDisclosureHaltDirective()),
         company("technology_breakthrough", "{company} 핵심 기술 성과", "성능과 원가를 개선한 기술 검증 결과가 공개됐다.", EventType.PRODUCT_TECHNOLOGY, true, 0.007, 48..240, 0.022..0.085),
 
         // Corporate actions. Splits and reverse splits are intentionally absent here:
@@ -230,10 +422,30 @@ object DefaultEventTemplates {
 
         // ETF-specific flows and fund operations. Ordinary corporate templates above are
         // explicitly stock-only, so funds never receive CEO, earnings-guidance, or recall news.
-        fund("etf_rebalance", "{company} 정기 리밸런싱", "기초지수 정기변경에 맞춘 편입·편출 수급이 발생했다.", ImpactDirection.MIXED, 0.006, 24..96, -0.012..0.012),
-        fund("etf_inflow", "{company} 대규모 자금 유입", "설정 좌수와 거래량이 늘며 기초자산 매수 수요가 확대됐다.", ImpactDirection.POSITIVE, 0.008, 12..72, 0.003..0.018),
-        fund("etf_outflow", "{company} 대규모 환매 수요", "환매와 유동성 수요가 겹치며 기준가격 대비 할인 압력이 커졌다.", ImpactDirection.NEGATIVE, 0.006, 12..72, -0.020..-0.004),
-        fund("etf_tracking_error", "{company} 추적오차 확대", "시장 변동성과 거래비용으로 기초지수 대비 추적오차가 일시적으로 확대됐다.", ImpactDirection.NEGATIVE, 0.003, 12..48, -0.012..-0.002),
+        fund(
+            "etf_rebalance", "{company} 정기 리밸런싱",
+            "기초지수 정기변경에 맞춘 편입·편출 수급이 발생했다.",
+            ImpactDirection.MIXED, 0.006, 24..96, -0.012..0.012,
+            instrumentTypes = setOf(InstrumentType.ETF),
+        ),
+        fund(
+            "etf_inflow", "{company} 대규모 자금 유입",
+            "설정 좌수와 거래량이 늘며 기초자산 매수 수요가 확대됐다.",
+            ImpactDirection.POSITIVE, 0.008, 12..72, 0.003..0.018,
+            instrumentTypes = setOf(InstrumentType.ETF),
+        ),
+        fund(
+            "etf_outflow", "{company} 대규모 환매 수요",
+            "환매와 유동성 수요가 겹치며 기준가격 대비 할인 압력이 커졌다.",
+            ImpactDirection.NEGATIVE, 0.006, 12..72, -0.020..-0.004,
+            instrumentTypes = setOf(InstrumentType.ETF),
+        ),
+        fund(
+            "etf_tracking_error", "{company} 추적오차 확대",
+            "시장 변동성과 거래비용으로 기초지수 대비 추적오차가 일시적으로 확대됐다.",
+            ImpactDirection.NEGATIVE, 0.003, 12..48, -0.012..-0.002,
+            instrumentTypes = setOf(InstrumentType.ETF),
+        ),
         fund(
             "covered_call_roc_spike", "{company} 원금환급 비중 확대",
             "이번 분배금에서 옵션 프리미엄으로 충당하지 못한 원금환급 추정 비중이 커져 주당 순자산 침식 우려가 높아졌다.",
@@ -289,8 +501,11 @@ object DefaultEventTemplates {
             severity = EventSeverity.MAJOR,
             cooldownHours = 8_760,
         ).copy(
-            listingRiskTags = setOf(ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION),
-            listingFinalDispositionHint = ListingFinalDispositionType.CASH_LIQUIDATION,
+            recordKind = EventRecordKind.INSTRUMENT_LIFECYCLE,
+            terminationTemplate = EventTerminationTemplate(
+                kind = InstrumentTerminationKind.OPTIONAL_CALL,
+                valuationMethod = InstrumentTerminationValuationMethod.FINAL_INDICATIVE_VALUE_PROXY,
+            ),
         ),
         fund(
             "etn_issuer_acceleration", "{company} 발행사 가속상환 사유 발생",
@@ -300,8 +515,13 @@ object DefaultEventTemplates {
             severity = EventSeverity.CRITICAL,
             cooldownHours = 17_520,
         ).copy(
-            listingRiskTags = setOf(ListingRiskTag.ETN_MATURITY_OR_EARLY_REDEMPTION),
-            listingFinalDispositionHint = ListingFinalDispositionType.CASH_LIQUIDATION,
+            recordKind = EventRecordKind.INSTRUMENT_LIFECYCLE,
+            terminationTemplate = EventTerminationTemplate(
+                kind = InstrumentTerminationKind.ISSUER_ACCELERATION,
+                valuationMethod =
+                    InstrumentTerminationValuationMethod.TRAILING_FIVE_SESSION_AVERAGE_WITH_RECOVERY,
+                accelerationRecoveryRate = 0.40..0.80,
+            ),
         ),
         fund(
             "commodity_roll_headwind", "{company} 선물 롤오버 비용 증가",
@@ -320,7 +540,10 @@ object DefaultEventTemplates {
             "거래량과 운용자산 감소로 스프레드가 넓어졌다. 운용사는 합병 또는 청산을 검토할 수 있다.",
             ImpactDirection.NEGATIVE, 0.0015, 120..504, -0.050..-0.012,
             severity = EventSeverity.MAJOR,
-        ).copy(listingRiskTags = setOf(ListingRiskTag.LOW_TRADING_LIQUIDITY)),
+        ).copy(
+            recordKind = EventRecordKind.INSTRUMENT_LIFECYCLE,
+            listingRiskTags = setOf(ListingRiskTag.LOW_TRADING_LIQUIDITY),
+        ),
         fund(
             "etf_liquidation_approved", "{company} 자진 청산 승인",
             "운용사가 이사회 또는 수익자 절차를 거쳐 상품 청산과 현금 분배 일정을 확정했다.",
@@ -329,8 +552,11 @@ object DefaultEventTemplates {
             cooldownHours = 17_520,
             instrumentTypes = setOf(InstrumentType.ETF, InstrumentType.CLOSED_END_FUND),
         ).copy(
-            listingRiskTags = setOf(ListingRiskTag.ETF_LIQUIDATION_APPROVED),
-            listingFinalDispositionHint = ListingFinalDispositionType.CASH_LIQUIDATION,
+            recordKind = EventRecordKind.INSTRUMENT_LIFECYCLE,
+            terminationTemplate = EventTerminationTemplate(
+                kind = InstrumentTerminationKind.FUND_LIQUIDATION,
+                valuationMethod = InstrumentTerminationValuationMethod.FINAL_NET_ASSET_VALUE_PROXY,
+            ),
         ),
         fund(
             "issuer_eligibility_failure", "{company} 발행사 자격 요건 위반",
@@ -340,31 +566,123 @@ object DefaultEventTemplates {
             severity = EventSeverity.CRITICAL,
             cooldownHours = 17_520,
             instrumentTypes = setOf(InstrumentType.ETN),
-        ).copy(listingRiskTags = setOf(ListingRiskTag.ISSUER_ELIGIBILITY_FAILURE)),
+        ).copy(
+            recordKind = EventRecordKind.INSTRUMENT_LIFECYCLE,
+            listingRiskTags = setOf(ListingRiskTag.ISSUER_ELIGIBILITY_FAILURE),
+        ),
         fund(
             "underlying_index_unavailable", "{company} 기초지수 산출 중단",
             "지수사업자가 기초지수 산출을 중단해 대체지수 지정 또는 상품 종료 절차가 필요해졌다.",
             ImpactDirection.NEGATIVE, 0.00025, 168..720, -0.180..-0.060,
             severity = EventSeverity.CRITICAL,
             cooldownHours = 8_760,
-        ).copy(listingRiskTags = setOf(ListingRiskTag.UNDERLYING_INDEX_UNAVAILABLE)),
+        ).copy(
+            recordKind = EventRecordKind.INSTRUMENT_LIFECYCLE,
+            listingRiskTags = setOf(ListingRiskTag.UNDERLYING_INDEX_UNAVAILABLE),
+        ),
         fund(
             "liquidity_provider_failure", "{company} 유동성공급자 요건 미달",
             "지정 유동성공급자의 호가 의무 미이행이 이어져 교체 또는 상장 유지 심사가 시작됐다.",
             ImpactDirection.NEGATIVE, 0.00035, 168..504, -0.120..-0.035,
             severity = EventSeverity.CRITICAL,
             cooldownHours = 8_760,
-        ).copy(listingRiskTags = setOf(ListingRiskTag.LIQUIDITY_PROVIDER_FAILURE)),
+        ).copy(
+            recordKind = EventRecordKind.INSTRUMENT_LIFECYCLE,
+            listingRiskTags = setOf(ListingRiskTag.LIQUIDITY_PROVIDER_FAILURE),
+        ),
 
         // Geopolitics, disasters, public health, and infrastructure.
         global("trade_dispute", "무역 분쟁 격화", "주요국이 관세와 수출 통제 범위를 확대했다.", EventType.GEOPOLITICAL, false, 0.002, 168..720, -0.060..-0.018, EventSeverity.MAJOR),
         global("new_sanctions", "경제 제재 확대", "금융·기술·원자재 거래를 제한하는 추가 제재가 발표됐다.", EventType.GEOPOLITICAL, false, 0.0015, 168..720, -0.065..-0.020, EventSeverity.MAJOR),
-        global("military_conflict", "군사적 충돌 발생", "주요 지역의 무력 충돌로 위험 회피와 공급망 우려가 확산됐다.", EventType.GEOPOLITICAL, false, 0.0008, 240..1_008, -0.120..-0.045, EventSeverity.CRITICAL),
-        global("ceasefire", "휴전 합의 진전", "분쟁 당사자 간 휴전과 협상 재개 소식이 전해졌다.", EventType.GEOPOLITICAL, true, 0.001, 96..480, 0.020..0.065, EventSeverity.MAJOR),
+        global("military_conflict", "군사적 충돌 발생", "주요 지역의 무력 충돌로 위험 회피와 공급망 우려가 확산됐다.", EventType.GEOPOLITICAL, false, 0.0008, 240..1_008, -0.120..-0.045, EventSeverity.CRITICAL)
+            .copy(
+                impactInsights = listOf(
+                    industryInsight(
+                        "방산", Sector.AEROSPACE_DEFENSE, ImpactDirection.POSITIVE,
+                        "긴급 조달과 국방비 증액 기대가 수주 전망을 높인다.", 1.10,
+                    ),
+                    industryInsight(
+                        "에너지", Sector.ENERGY, ImpactDirection.POSITIVE,
+                        "공급 차질 위험 프리미엄이 원유·가스 가격과 생산자 수익 기대를 높인다.", 0.85,
+                    ),
+                    industryInsight(
+                        "항공·운송", Sector.TRANSPORTATION_LOGISTICS, ImpactDirection.NEGATIVE,
+                        "항로 우회, 보험료와 연료비 상승이 운송 비용을 높인다.", 1.15,
+                    ),
+                    industryInsight(
+                        "경기소비재", Sector.CONSUMER_DISCRETIONARY, ImpactDirection.NEGATIVE,
+                        "불확실성과 생활비 상승이 선택 소비 심리를 위축시킨다.", 0.80,
+                    ),
+                ),
+            ),
+        global("ceasefire", "휴전 합의 진전", "분쟁 당사자 간 휴전과 협상 재개 소식이 전해졌다.", EventType.GEOPOLITICAL, true, 0.001, 96..480, 0.020..0.065, EventSeverity.MAJOR)
+            .copy(
+                impactInsights = listOf(
+                    industryInsight(
+                        "방산", Sector.AEROSPACE_DEFENSE, ImpactDirection.NEGATIVE,
+                        "긴급 조달과 지정학적 위험 프리미엄이 낮아질 수 있다.", 0.70,
+                    ),
+                    industryInsight(
+                        "에너지", Sector.ENERGY, ImpactDirection.NEGATIVE,
+                        "공급 차질 우려가 완화되며 에너지 가격의 위험 프리미엄이 축소된다.", 0.70,
+                    ),
+                    industryInsight(
+                        "항공·운송", Sector.TRANSPORTATION_LOGISTICS, ImpactDirection.POSITIVE,
+                        "항로 정상화와 보험·연료 부담 완화가 운송 수익성에 도움을 준다.", 1.00,
+                    ),
+                    industryInsight(
+                        "경기소비재", Sector.CONSUMER_DISCRETIONARY, ImpactDirection.POSITIVE,
+                        "불확실성 완화가 소비 심리와 여행 수요 회복을 돕는다.", 0.75,
+                    ),
+                ),
+            ),
         global("major_earthquake", "대규모 지진 발생", "산업 시설과 물류 인프라의 피해 여부를 확인 중이다.", EventType.NATURAL_DISASTER, false, 0.0008, 72..336, -0.075..-0.025, EventSeverity.MAJOR),
         global("typhoon_disruption", "초강력 태풍 접근", "생산·운송 시설의 예방적 가동 중단이 이어졌다.", EventType.NATURAL_DISASTER, false, 0.0015, 24..168, -0.040..-0.012),
-        global("pandemic_alert", "신종 감염병 경보", "국제 보건 당국이 확산 위험과 대응 지침을 상향했다.", EventType.HEALTH_CRISIS, false, 0.0005, 336..1_440, -0.140..-0.050, EventSeverity.CRITICAL),
-        global("supply_chain_blockage", "글로벌 물류 병목", "핵심 항로와 항만 운영 차질로 납기와 운임 부담이 커졌다.", EventType.INDUSTRY_SUPPLY_DEMAND, false, 0.002, 120..504, -0.055..-0.018, EventSeverity.MAJOR),
+        global("pandemic_alert", "신종 감염병 경보", "국제 보건 당국이 확산 위험과 대응 지침을 상향했다.", EventType.HEALTH_CRISIS, false, 0.0005, 336..1_440, -0.140..-0.050, EventSeverity.CRITICAL)
+            .copy(
+                impactInsights = listOf(
+                    industryInsight(
+                        "백신·진단", Sector.HEALTHCARE_BIO, ImpactDirection.POSITIVE,
+                        "진단·치료·백신 수요와 연구개발 지원 기대가 높아진다.", 0.95,
+                        industrySegment = IndustrySegment.VACCINES_DIAGNOSTICS,
+                    ),
+                    industryInsight(
+                        "온라인 플랫폼", Sector.INTERNET_PLATFORM, ImpactDirection.POSITIVE,
+                        "비대면 업무와 온라인 소비 전환이 플랫폼 이용 수요를 높인다.", 0.70,
+                    ),
+                    industryInsight(
+                        "항공·여행", Sector.TRANSPORTATION_LOGISTICS, ImpactDirection.NEGATIVE,
+                        "이동 제한과 예약 취소가 여객 수요를 급격히 위축시킨다.", 1.30,
+                        industrySegment = IndustrySegment.AIR_TRAVEL,
+                    ),
+                    industryInsight(
+                        "오프라인 소비", Sector.CONSUMER_DISCRETIONARY, ImpactDirection.NEGATIVE,
+                        "대면 서비스와 오프라인 활동 감소가 매출을 압박한다.", 1.00,
+                    ),
+                ),
+            ),
+        global("supply_chain_blockage", "글로벌 물류 병목", "핵심 항로와 항만 운영 차질로 납기와 운임 부담이 커졌다.", EventType.INDUSTRY_SUPPLY_DEMAND, false, 0.002, 120..504, -0.055..-0.018, EventSeverity.MAJOR)
+            .copy(
+                impactInsights = listOf(
+                    industryInsight(
+                        "해상 운송", Sector.TRANSPORTATION_LOGISTICS, ImpactDirection.POSITIVE,
+                        "선복 부족이 현물 운임과 운송사의 가격 협상력을 높인다.", 0.85,
+                        industrySegment = IndustrySegment.MARITIME_SHIPPING,
+                    ),
+                    industryInsight(
+                        "산업재", Sector.INDUSTRIALS, ImpactDirection.NEGATIVE,
+                        "부품 납기 지연과 긴급 조달비가 생산 효율을 낮춘다.", 1.00,
+                    ),
+                    industryInsight(
+                        "유통·전자상거래", Sector.RETAIL_ECOMMERCE, ImpactDirection.NEGATIVE,
+                        "재고 부족과 운송비 상승이 판매 기회와 마진을 줄인다.", 0.90,
+                    ),
+                    industryInsight(
+                        "자동차", Sector.AUTOMOTIVE, ImpactDirection.NEGATIVE,
+                        "부품 조달 차질이 완성차 생산과 인도 일정을 제약한다.", 0.90,
+                    ),
+                ),
+            ),
         global("infrastructure_cyberattack", "금융 인프라 사이버 공격", "복수 기관의 결제·거래 시스템이 일시적인 장애를 겪었다.", EventType.GEOPOLITICAL, false, 0.0008, 12..72, -0.065..-0.020, EventSeverity.MAJOR),
     )
 
@@ -374,7 +692,34 @@ object DefaultEventTemplates {
         check(all.none { it.id == "earnings_beat" || it.id == "earnings_miss" }) {
             "Reported earnings beat/miss must be generated by the scheduled quarterly calendar"
         }
+        check(
+            all.filter { template ->
+                template.type == EventType.FUND_OPERATION && template.hasListingLifecycleSignal
+            }.all { it.recordKind == EventRecordKind.INSTRUMENT_LIFECYCLE },
+        ) {
+            "Fund templates with listing lifecycle signals must declare INSTRUMENT_LIFECYCLE"
+        }
+        check(
+            all.filter { it.recordKind == EventRecordKind.INSTRUMENT_LIFECYCLE }
+                .all { it.type == EventType.FUND_OPERATION && it.hasListingLifecycleSignal },
+        ) {
+            "Instrument lifecycle templates must carry a structured fund listing signal"
+        }
     }
+
+    private val EventTemplate.hasListingLifecycleSignal: Boolean
+        get() = listingRiskTags.isNotEmpty() ||
+            listingRecoveryConditions.isNotEmpty() ||
+            listingFinalDispositionHint != null ||
+            terminationTemplate != null
+
+    private fun materialDisclosureHaltDirective(): EventTradingHaltDirective = EventTradingHaltDirective(
+        kind = EventTradingHaltKind.MATERIAL_DISCLOSURE,
+        reason = TradingHaltReason.MATERIAL_DISCLOSURE,
+        eligibleMarkets = setOf(Market.KOSPI, Market.KOSDAQ),
+        durationMinutes = 30,
+        detail = "중요정보 공시 확인",
+    )
 
     private fun industry(
         id: String,
@@ -521,6 +866,7 @@ object DefaultEventTemplates {
         sectors: Set<Sector> = emptySet(),
         instrumentTypes: Set<InstrumentType> = emptySet(),
         strategies: Set<InstrumentStrategy> = emptySet(),
+        insights: List<EventImpactInsight> = emptyList(),
     ): EventTemplate = EventTemplate(
         id = id,
         titleTemplate = title,
@@ -543,5 +889,29 @@ object DefaultEventTemplates {
         eligibleSectors = sectors,
         eligibleInstrumentTypes = instrumentTypes,
         eligibleStrategies = strategies,
+        impactInsights = insights,
+    )
+
+    private fun industryInsight(
+        label: String,
+        sector: Sector,
+        direction: ImpactDirection,
+        rationale: String,
+        sensitivity: Double = 1.0,
+        horizon: EventImpactHorizon = EventImpactHorizon.SHORT_TERM,
+        industrySegment: IndustrySegment? = null,
+    ): EventImpactInsight = EventImpactInsight(
+        targetKind = if (industrySegment == null) {
+            EventImpactTargetKind.INDUSTRY
+        } else {
+            EventImpactTargetKind.INDUSTRY_SEGMENT
+        },
+        targetLabel = label,
+        direction = direction,
+        rationale = rationale,
+        sector = sector,
+        industrySegment = industrySegment,
+        horizon = horizon,
+        relativeSensitivity = sensitivity,
     )
 }
