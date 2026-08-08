@@ -8,29 +8,6 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
 
-enum class ListingRemediationDecisionStatus {
-    NOT_APPLICABLE,
-    PENDING,
-    CURED,
-    NOT_CURED,
-}
-
-/**
- * 질적 상장 사유의 개선 공시를 결정하는 저장 독립적 결과다. 가격·시가총액·유동성처럼
- * 관측값으로 직접 회복을 증명할 수 있는 사유는 상장 생애주기 엔진이 자체 판단한다.
- */
-data class ListingRemediationDecision(
-    val status: ListingRemediationDecisionStatus,
-    val dueOn: LocalDate? = null,
-    val recoveryCondition: ListingRecoveryCondition? = null,
-    val successProbability: Double? = null,
-) {
-    init {
-        require(status == ListingRemediationDecisionStatus.CURED || recoveryCondition == null)
-        require(successProbability == null || successProbability in 0.0..1.0)
-    }
-}
-
 /**
  * 이벤트 기간 만료를 곧바로 결함 해소로 보지 않는다. 소스 위험이 끝난 뒤에도 별도
  * 개선 심사일과 결정론적 성공·미해소 결과를 거쳐야 회복 조건을 발행한다.

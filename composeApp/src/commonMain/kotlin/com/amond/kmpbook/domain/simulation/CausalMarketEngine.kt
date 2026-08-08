@@ -14,27 +14,6 @@ import com.amond.kmpbook.domain.model.StockDefinition
 import kotlin.math.abs
 import kotlin.math.pow
 
-data class CausalFactorEdge(
-    val from: CausalEconomicFactor,
-    val to: CausalEconomicFactor,
-    val weight: Double,
-) {
-    init {
-        require(from != to) { "인과 그래프의 자기 간선은 허용하지 않습니다." }
-        require(weight.isFinite() && weight != 0.0 && abs(weight) <= 1.0) {
-            "인과 간선 가중치의 절댓값은 1 이하여야 합니다."
-        }
-    }
-}
-
-data class CausalPropagationResult(
-    val impactsByStockId: Map<String, CausalStockImpact>,
-    val decay: Double,
-    val maxDepth: Int,
-) {
-    fun impactFor(stockId: String): CausalStockImpact? = impactsByStockId[stockId]
-}
-
 /**
  * 상태·시계·난수를 갖지 않는 감쇠 가중 전파기다.
  *

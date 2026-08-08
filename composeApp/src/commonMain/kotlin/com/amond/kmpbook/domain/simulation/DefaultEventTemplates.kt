@@ -32,13 +32,13 @@ import com.amond.kmpbook.domain.model.TradingHaltReason
 object DefaultEventTemplates {
     val all: List<EventTemplate> = listOf(
         // Monetary policy, prices, currency, and the business cycle.
-        rule(
+        EventTemplate(
             "surprise_rate_hike", "{market} 기준금리 깜짝 인상",
             "물가 압력에 대응해 예상보다 강한 긴축이 발표됐다.", EventScope.COUNTRY,
             EventType.CENTRAL_BANK, EventSeverity.MAJOR, ImpactDirection.NEGATIVE,
             0.003, 720, 24..96, -0.045..-0.018, -0.00020..-0.00005, 1.35..1.75, 1.3..2.0,
             0.55..0.85, -0.8..-0.45, EventCondition.INFLATION_HIGH,
-            insights = listOf(
+            impactInsights = listOf(
                 industryInsight(
                     "은행·보험", Sector.FINANCIALS, ImpactDirection.POSITIVE,
                     "대출·운용자산의 재가격이 조달비용보다 먼저 반영되면 단기 이자마진이 개선될 수 있다.", 0.65,
@@ -62,13 +62,13 @@ object DefaultEventTemplates {
                 ),
             ),
         ),
-        rule(
+        EventTemplate(
             "surprise_rate_cut", "{market} 기준금리 깜짝 인하",
             "경기 하방 위험에 대응한 완화 조치가 위험자산 선호를 높였다.", EventScope.COUNTRY,
             EventType.CENTRAL_BANK, EventSeverity.MAJOR, ImpactDirection.POSITIVE,
             0.003, 720, 24..96, 0.018..0.050, 0.00004..0.00020, 1.25..1.65, 1.25..1.9,
             0.65..0.90, 0.45..0.8, EventCondition.GROWTH_NEGATIVE,
-            insights = listOf(
+            impactInsights = listOf(
                 industryInsight(
                     "은행·보험", Sector.FINANCIALS, ImpactDirection.NEGATIVE,
                     "예대금리차 축소 기대가 이자이익 전망을 낮춘다.", 0.55,
@@ -92,42 +92,42 @@ object DefaultEventTemplates {
                 ),
             ),
         ),
-        rule(
+        EventTemplate(
             "inflation_hot", "소비자물가 예상 상회",
             "핵심 물가가 시장 예상보다 높아 금리 경로 불확실성이 커졌다.", EventScope.GLOBAL,
             EventType.ECONOMIC_INDICATOR, EventSeverity.MODERATE, ImpactDirection.NEGATIVE,
             0.006, 240, 12..48, -0.025..-0.008, -0.00012..-0.00003, 1.2..1.5, 1.1..1.55,
             0.7..0.95, -0.55..-0.25, EventCondition.INFLATION_HIGH,
         ),
-        rule(
+        EventTemplate(
             "inflation_cools", "물가 상승세 둔화",
             "소비자물가가 예상보다 안정되며 긴축 우려가 완화됐다.", EventScope.GLOBAL,
             EventType.ECONOMIC_INDICATOR, EventSeverity.MODERATE, ImpactDirection.POSITIVE,
             0.006, 240, 12..48, 0.008..0.026, 0.00003..0.00012, 1.1..1.35, 1.05..1.45,
             0.8..1.0, 0.25..0.55, EventCondition.INFLATION_COOLING,
         ),
-        rule(
+        EventTemplate(
             "growth_recession", "경기 침체 신호 확대",
             "생산과 소비 지표가 동시에 둔화하며 실적 전망이 낮아졌다.", EventScope.GLOBAL,
             EventType.ECONOMIC_INDICATOR, EventSeverity.MAJOR, ImpactDirection.NEGATIVE,
             0.004, 720, 72..336, -0.055..-0.022, -0.00018..-0.00006, 1.35..1.8, 1.15..1.65,
             0.55..0.8, -0.8..-0.45, EventCondition.GROWTH_NEGATIVE,
         ),
-        rule(
+        EventTemplate(
             "growth_rebound", "경기 선행지표 반등",
             "신규 주문과 소비 심리가 개선되며 연착륙 기대가 커졌다.", EventScope.GLOBAL,
             EventType.ECONOMIC_INDICATOR, EventSeverity.MODERATE, ImpactDirection.POSITIVE,
             0.005, 480, 48..168, 0.012..0.034, 0.00005..0.00015, 1.1..1.4, 1.1..1.5,
             0.75..1.0, 0.35..0.65, EventCondition.GROWTH_STRONG,
         ),
-        rule(
+        EventTemplate(
             "krw_weakens", "원화 가치 급락",
             "달러-원 환율이 급등해 외국인 수급과 수입 비용 우려가 커졌다.", EventScope.COUNTRY,
             EventType.CURRENCY, EventSeverity.MAJOR, ImpactDirection.NEGATIVE,
             0.005, 336, 24..120, -0.030..-0.008, -0.00008..0.00002, 1.35..1.75, 1.25..1.8,
             0.55..0.8, -0.65..-0.3, EventCondition.KRW_WEAK,
-            markets = setOf(Market.KOSPI, Market.KOSDAQ),
-            insights = listOf(
+            eligibleMarkets = setOf(Market.KOSPI, Market.KOSDAQ),
+            impactInsights = listOf(
                 industryInsight(
                     "수출 반도체", Sector.SEMICONDUCTOR, ImpactDirection.POSITIVE,
                     "달러 매출의 원화 환산액이 늘어 수출기업의 원화 실적에 완충 요인이 된다.", 0.80,
@@ -142,14 +142,14 @@ object DefaultEventTemplates {
                 ),
             ),
         ),
-        rule(
+        EventTemplate(
             "krw_strengthens", "원화 가치 빠른 회복",
             "달러-원 환율 하락으로 외국인 자금 유입 기대가 높아졌다.", EventScope.COUNTRY,
             EventType.CURRENCY, EventSeverity.MODERATE, ImpactDirection.POSITIVE,
             0.004, 336, 24..96, 0.004..0.020, 0.00001..0.00008, 1.15..1.45, 1.1..1.5,
             0.75..0.95, 0.2..0.5, EventCondition.KRW_STRONG,
-            markets = setOf(Market.KOSPI, Market.KOSDAQ),
-            insights = listOf(
+            eligibleMarkets = setOf(Market.KOSPI, Market.KOSDAQ),
+            impactInsights = listOf(
                 industryInsight(
                     "수출 반도체", Sector.SEMICONDUCTOR, ImpactDirection.NEGATIVE,
                     "달러 매출의 원화 환산액이 줄어 수출기업 실적의 환율 우호성이 약해진다.", 0.70,
@@ -164,7 +164,7 @@ object DefaultEventTemplates {
                 ),
             ),
         ),
-        rule(
+        EventTemplate(
             "liquidity_injection", "대규모 유동성 공급",
             "금융당국의 시장 안정 조치로 단기 자금 경색이 완화됐다.", EventScope.COUNTRY,
             EventType.CENTRAL_BANK, EventSeverity.MAJOR, ImpactDirection.POSITIVE,
@@ -180,7 +180,7 @@ object DefaultEventTemplates {
                 ),
             ),
         ),
-        rule(
+        EventTemplate(
             "credit_crunch", "신용시장 경색",
             "회사채 스프레드가 확대되고 자금 조달 여건이 빠르게 악화됐다.", EventScope.GLOBAL,
             EventType.MARKET_SENTIMENT, EventSeverity.CRITICAL, ImpactDirection.NEGATIVE,
@@ -191,7 +191,7 @@ object DefaultEventTemplates {
                 causalSignal(CausalEconomicFactor.CREDIT_AVAILABILITY, CausalSignalDirection.DECREASE, 0.95),
             ),
         ),
-        rule(
+        EventTemplate(
             "risk_on_rally", "위험자산 선호 확산",
             "변동성 하락과 자금 유입이 주요 시장 전반의 매수세를 강화했다.", EventScope.GLOBAL,
             EventType.MARKET_SENTIMENT, EventSeverity.MODERATE, ImpactDirection.POSITIVE,
@@ -202,7 +202,7 @@ object DefaultEventTemplates {
                 causalSignal(CausalEconomicFactor.RISK_APPETITE, CausalSignalDirection.INCREASE, 0.82),
             ),
         ),
-        rule(
+        EventTemplate(
             "capitulation", "투매성 매도 출현",
             "손절과 반대매매가 겹치며 시장 변동성이 급격히 확대됐다.", EventScope.MARKET,
             EventType.MARKET_SENTIMENT, EventSeverity.CRITICAL, ImpactDirection.NEGATIVE,
@@ -213,7 +213,7 @@ object DefaultEventTemplates {
                 causalSignal(CausalEconomicFactor.RISK_APPETITE, CausalSignalDirection.DECREASE, 0.92),
             ),
         ),
-        rule(
+        EventTemplate(
             "local_order_book_dislocation", "{market} 호가 공백 확대",
             "현지 주문 불균형으로 호가 간격이 벌어지고 짧은 기술적 매도가 나타났다.", EventScope.MARKET,
             EventType.MARKET_SENTIMENT, EventSeverity.MAJOR, ImpactDirection.NEGATIVE,
@@ -819,14 +819,14 @@ object DefaultEventTemplates {
         shock: ClosedFloatingPointRange<Double>,
         severity: EventSeverity = EventSeverity.MODERATE,
         type: EventType = EventType.INDUSTRY_SUPPLY_DEMAND,
-    ): EventTemplate = rule(
+    ): EventTemplate = EventTemplate(
         id, title, description, EventScope.SECTOR, type, severity,
         if (positive) ImpactDirection.POSITIVE else ImpactDirection.NEGATIVE,
         probability, 480, duration, shock,
         if (positive) 0.00003..0.00013 else -0.00013..-0.00003,
         1.2..1.65, 1.15..1.8, 0.65..0.95,
         if (positive) 0.25..0.65 else -0.65..-0.25,
-        sectors = setOf(sector),
+        eligibleSectors = setOf(sector),
     )
 
     private fun company(
@@ -856,7 +856,7 @@ object DefaultEventTemplates {
         shock: ClosedFloatingPointRange<Double>,
         severity: EventSeverity = EventSeverity.MODERATE,
     ): EventTemplate {
-        return rule(
+        return EventTemplate(
             id, title, description, EventScope.STOCK, type, severity, direction,
             probability, 240, duration, shock,
             when (direction) {
@@ -870,7 +870,7 @@ object DefaultEventTemplates {
                 ImpactDirection.NEGATIVE -> -0.85..-0.3
                 else -> -0.2..0.2
             },
-            instrumentTypes = setOf(InstrumentType.STOCK, InstrumentType.REIT, InstrumentType.ADR),
+            eligibleInstrumentTypes = setOf(InstrumentType.STOCK, InstrumentType.REIT, InstrumentType.ADR),
         )
     }
 
@@ -890,25 +890,25 @@ object DefaultEventTemplates {
             InstrumentType.CLOSED_END_FUND,
             InstrumentType.ETN,
         ),
-    ): EventTemplate = rule(
+    ): EventTemplate = EventTemplate(
         id = id,
-        title = title,
-        description = description,
+        titleTemplate = title,
+        descriptionTemplate = description,
         scope = EventScope.STOCK,
         type = EventType.FUND_OPERATION,
         severity = severity,
         direction = direction,
-        probability = probability,
-        cooldown = cooldownHours,
-        duration = duration,
-        shock = shock,
-        drift = -0.00004..0.00004,
-        volatility = 1.05..1.35,
-        volume = 1.2..2.1,
-        liquidity = 0.7..1.2,
+        probabilityPerDay = probability,
+        cooldownHours = cooldownHours,
+        durationHours = duration,
+        shockReturn = shock,
+        hourlyDrift = -0.00004..0.00004,
+        volatilityMultiplier = 1.05..1.35,
+        volumeMultiplier = 1.2..2.1,
+        liquidityMultiplier = 0.7..1.2,
         sentiment = -0.15..0.15,
-        instrumentTypes = instrumentTypes,
-        strategies = strategies,
+        eligibleInstrumentTypes = instrumentTypes,
+        eligibleStrategies = strategies,
     )
 
     private fun global(
@@ -921,62 +921,13 @@ object DefaultEventTemplates {
         duration: IntRange,
         shock: ClosedFloatingPointRange<Double>,
         severity: EventSeverity = EventSeverity.MODERATE,
-    ): EventTemplate = rule(
+    ): EventTemplate = EventTemplate(
         id, title, description, EventScope.GLOBAL, type, severity,
         if (positive) ImpactDirection.POSITIVE else ImpactDirection.NEGATIVE,
         probability, 1_440, duration, shock,
         if (positive) 0.00003..0.00012 else -0.00016..-0.00004,
         1.35..2.1, 1.25..2.2, 0.45..0.85,
         if (positive) 0.3..0.7 else -0.9..-0.4,
-    )
-
-    @Suppress("LongParameterList")
-    private fun rule(
-        id: String,
-        title: String,
-        description: String,
-        scope: EventScope,
-        type: EventType,
-        severity: EventSeverity,
-        direction: ImpactDirection,
-        probability: Double,
-        cooldown: Int,
-        duration: IntRange,
-        shock: ClosedFloatingPointRange<Double>,
-        drift: ClosedFloatingPointRange<Double> = 0.0..0.0,
-        volatility: ClosedFloatingPointRange<Double> = 1.0..1.0,
-        volume: ClosedFloatingPointRange<Double> = 1.0..1.0,
-        liquidity: ClosedFloatingPointRange<Double> = 1.0..1.0,
-        sentiment: ClosedFloatingPointRange<Double> = 0.0..0.0,
-        condition: EventCondition = EventCondition.ALWAYS,
-        markets: Set<Market> = emptySet(),
-        sectors: Set<Sector> = emptySet(),
-        instrumentTypes: Set<InstrumentType> = emptySet(),
-        strategies: Set<InstrumentStrategy> = emptySet(),
-        insights: List<EventImpactInsight> = emptyList(),
-    ): EventTemplate = EventTemplate(
-        id = id,
-        titleTemplate = title,
-        descriptionTemplate = description,
-        scope = scope,
-        type = type,
-        severity = severity,
-        direction = direction,
-        probabilityPerDay = probability,
-        cooldownHours = cooldown,
-        durationHours = duration,
-        shockReturn = shock,
-        hourlyDrift = drift,
-        volatilityMultiplier = volatility,
-        volumeMultiplier = volume,
-        liquidityMultiplier = liquidity,
-        sentiment = sentiment,
-        condition = condition,
-        eligibleMarkets = markets,
-        eligibleSectors = sectors,
-        eligibleInstrumentTypes = instrumentTypes,
-        eligibleStrategies = strategies,
-        impactInsights = insights,
     )
 
     private fun industryInsight(

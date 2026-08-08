@@ -33,12 +33,6 @@ import kotlin.math.round
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
 
-data class ScheduledEventGenerationResult(
-    val emissions: List<ScheduledEventEmission>,
-) {
-    val newEvents: List<GameEvent> get() = emissions.map(ScheduledEventEmission::newsEvent)
-}
-
 /**
  * Stateless-by-contract scheduled event generator. Its caches only memoize the pure calendar;
  * schedule and ids do not use [seed]. Outcome streams are keyed by occurrence id, so broad and
