@@ -31,85 +31,6 @@ import kotlinx.datetime.plus
 import kotlin.math.roundToInt
 import kotlin.time.Instant
 
-/** TDS Badge의 정보 강도에 대응하는 보호장치 색상 역할. */
-enum class ProtectionUiTone {
-    INFO,
-    CAUTION,
-    CRITICAL,
-}
-
-/** Weak는 알아둘 상태, Fill은 현재 주문·체결을 막거나 되돌릴 수 없는 상태에만 쓴다. */
-enum class ProtectionBadgeEmphasis {
-    WEAK,
-    FILL,
-}
-
-/**
- * 엔진 상태를 화면 문구로 바꾼 불변 모델이다. UI가 거래소 enum을 다시 해석하지 않도록
- * 주문 영향과 재개 조건까지 한곳에서 결정한다.
- */
-data class ProtectionUiStatus(
-    val id: String,
-    val badgeLabel: String,
-    val title: String,
-    val summary: String,
-    val orderImpact: String,
-    val resumeGuidance: String,
-    val ruleExplanation: String,
-    val tone: ProtectionUiTone,
-    val emphasis: ProtectionBadgeEmphasis,
-    val priority: Int,
-    val stockId: String? = null,
-    val markets: Set<Market> = emptySet(),
-    val endsAt: Instant? = null,
-) {
-    init {
-        require(id.isNotBlank())
-        require(badgeLabel.isNotBlank() && title.isNotBlank() && summary.isNotBlank())
-        require(orderImpact.isNotBlank() && resumeGuidance.isNotBlank() && ruleExplanation.isNotBlank())
-        require(priority >= 0)
-    }
-}
-
-data class ProtectionStatusBadgeUi(
-    val text: String,
-    val tone: ProtectionUiTone,
-    val emphasis: ProtectionBadgeEmphasis,
-    val additionalCount: Int,
-    val stateDescription: String,
-) {
-    init {
-        require(text.isNotBlank() && stateDescription.isNotBlank())
-        require(additionalCount >= 0)
-    }
-}
-
-data class ProtectionDetailUi(
-    val contextLabel: String,
-    val primary: ProtectionUiStatus,
-    val additional: List<ProtectionUiStatus> = emptyList(),
-) {
-    init {
-        require(contextLabel.isNotBlank())
-        require(additional.none { it.id == primary.id })
-        require((listOf(primary) + additional).map(ProtectionUiStatus::id).distinct().size == additional.size + 1)
-    }
-
-    val statuses: List<ProtectionUiStatus> get() = listOf(primary) + additional
-    val additionalCount: Int get() = additional.size
-    val badge: ProtectionStatusBadgeUi get() = statuses.toBadge()
-}
-
-data class MarketProtectionStripUi(
-    val title: String,
-    val summary: String,
-    val detail: ProtectionDetailUi,
-    val stateDescription: String,
-) {
-    val badge: ProtectionStatusBadgeUi get() = detail.badge
-    val additionalCount: Int get() = detail.additionalCount
-}
-
 data class ProtectionUiProjection(
     val marketStrip: MarketProtectionStripUi?,
     /** 시장 전체 상태를 매 행에 반복하지 않고, 해당 종목 자체의 가장 강한 상태만 표시한다. */
@@ -738,27 +659,6 @@ private fun com.amond.kmpbook.domain.model.ListingFinalDisposition?.dispositionC
     null -> "상장 종료 처리가 완료됐어요."
 }
 
-private data class AlertUiValues(
-    val label: String,
-    val title: String,
-    val summary: String,
-    val tone: ProtectionUiTone,
-    val emphasis: ProtectionBadgeEmphasis,
-    val priority: Int,
-)
-
-private data class ListingUiValues(
-    val badgeLabel: String,
-    val title: String,
-    val summary: String,
-    val orderImpact: String,
-    val resumeGuidance: String,
-    val ruleExplanation: String,
-    val tone: ProtectionUiTone,
-    val emphasis: ProtectionBadgeEmphasis,
-    val priority: Int,
-)
-
 private fun List<ProtectionUiStatus>.sortedForDisplay(): List<ProtectionUiStatus> =
     sortedWith(compareByDescending<ProtectionUiStatus> { it.priority }.thenBy { it.id })
 
@@ -771,7 +671,7 @@ private fun List<ProtectionUiStatus>.toDetailOrNull(contextLabel: String): Prote
         )
     }
 
-private fun List<ProtectionUiStatus>.toBadge(): ProtectionStatusBadgeUi {
+internal fun List<ProtectionUiStatus>.toBadge(): ProtectionStatusBadgeUi {
     require(isNotEmpty())
     val sorted = sortedForDisplay()
     val primary = sorted.first()

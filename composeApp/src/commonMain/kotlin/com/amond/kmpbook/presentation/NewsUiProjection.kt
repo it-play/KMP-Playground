@@ -48,133 +48,6 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.number
 import kotlin.time.Instant
 
-/** 뉴스가 지금 사용자에게 어떤 상태로 보여야 하는지 나타내는 UI 전용 상태다. */
-enum class NewsEffectState {
-    UPCOMING,
-    WAITING_FOR_MARKET,
-    PROCESS_ACTIVE,
-    MARKET_ACTIVE,
-    MARKET_ENDED,
-    RESTRICTION_ACTIVE,
-    RESOLVED,
-    INFORMATION,
-}
-
-data class NewsEffectStatusUi(
-    val state: NewsEffectState,
-    val label: String,
-    val summary: String,
-)
-
-/** 예상 등락률 대신 대상, 방향, 근거와 분석 시간축만 전달하는 뉴스 영향 경로다. */
-data class NewsImpactPathUi(
-    val id: String,
-    val label: String,
-    val categoryLabel: String,
-    val direction: ImpactDirection,
-    val reason: String,
-    val sector: Sector? = null,
-    val industrySegment: IndustrySegment? = null,
-    val stockId: String? = null,
-    val held: Boolean = false,
-    val watched: Boolean = false,
-    val horizonLabel: String,
-)
-
-enum class NewsStockRelationKind(val displayName: String) {
-    DIRECT_TARGET("직접 대상"),
-    UNDERLYING_EXPOSURE("기초자산 연결"),
-    CAUSAL_CHAIN("인과 경로"),
-    INDUSTRY_SEGMENT("세부 산업 연결"),
-    INDUSTRY("산업 연결"),
-    MARKET_CONTEXT("시장 연결"),
-}
-
-data class NewsRelatedStockUi(
-    val stockId: String,
-    val name: String,
-    val symbol: String,
-    val direction: ImpactDirection,
-    val reason: String,
-    val held: Boolean,
-    val watched: Boolean,
-    val directTarget: Boolean,
-    val specificity: Int,
-    val relationKind: NewsStockRelationKind,
-    val causalTraceLabels: List<String>,
-    val relativeSensitivity: Double,
-    val confidence: Double,
-)
-
-enum class NewsInstrumentTerminationStageUi {
-    SCHEDULED,
-    BLOCKED_BY_FORCED_REVIEW,
-    AWAITING_VALUATION,
-    SETTLEMENT_IN_PROGRESS,
-    COMPLETED,
-    SUPERSEDED,
-}
-
-/** 상품 종료 공시의 계약 조건과 상장 원장 진행 상태를 합친 UI 읽기 모델이다. */
-data class NewsInstrumentTerminationUi(
-    val stage: NewsInstrumentTerminationStageUi,
-    val kindLabel: String,
-    val scheduleLabel: String,
-    val scheduleValue: String,
-    val valuationLabel: String,
-    val valuationDescription: String,
-    val settlementValue: String? = null,
-    val status: NewsEffectStatusUi,
-)
-
-data class NewsStoryUi(
-    val event: GameEvent,
-    val status: NewsEffectStatusUi,
-    val marketEffectStatus: NewsEffectStatusUi?,
-    val operationalStatus: NewsEffectStatusUi?,
-    val relevance: NewsRelevance,
-    val personalDirection: ImpactDirection,
-    val impactPaths: List<NewsImpactPathUi>,
-    val relatedStocks: List<NewsRelatedStockUi>,
-    val instrumentTermination: NewsInstrumentTerminationUi?,
-    val isUnread: Boolean,
-    val isMarketAction: Boolean,
-    val isScheduled: Boolean,
-    val isOperational: Boolean,
-) {
-    val secondaryStatus: NewsEffectStatusUi?
-        get() = listOfNotNull(operationalStatus, marketEffectStatus)
-            .distinct()
-            .firstOrNull { it != status }
-
-    val activityPriority: Int
-        get() = listOfNotNull(operationalStatus, marketEffectStatus)
-            .maxOfOrNull { it.state.activityPriority }
-            ?: status.state.activityPriority
-}
-
-data class NewsStockGroupUi(
-    val key: String,
-    val stockId: String,
-    val label: String,
-    val detail: String,
-    val count: Int,
-    val held: Boolean,
-    val watched: Boolean,
-    val directTarget: Boolean,
-    val specificity: Int,
-    val relationKind: NewsStockRelationKind,
-)
-
-data class NewsSectorGroupUi(
-    val key: String,
-    val sector: Sector,
-    val industrySegment: IndustrySegment? = null,
-    val label: String,
-    val count: Int,
-    val personalCount: Int,
-)
-
 data class NewsUiProjection(
     val stories: List<NewsStoryUi>,
     val stockGroups: List<NewsStockGroupUi>,
@@ -1417,14 +1290,6 @@ private fun StockDefinition.hasNewsSectorExposure(target: Sector): Boolean {
 private fun StockDefinition.hasNewsMarketExposure(target: Market): Boolean =
     market == target || etfProfile?.isExposedTo(target) == true
 
-private data class NewsIndustryKey(
-    val sector: Sector,
-    val segment: IndustrySegment?,
-) {
-    val key: String
-        get() = segment?.let { "segment:${it.name}" } ?: "sector:${sector.name}"
-}
-
 private fun NewsStoryUi.targetsIndustry(industry: NewsIndustryKey): Boolean = impactPaths.any { path ->
     if (industry.segment == null) {
         path.sector == industry.sector
@@ -1453,7 +1318,7 @@ private fun List<ImpactDirection>.combinedDirection(): ImpactDirection {
     }
 }
 
-private val NewsEffectState.activityPriority: Int
+internal val NewsEffectState.activityPriority: Int
     get() = when (this) {
         NewsEffectState.MARKET_ACTIVE -> 3
         NewsEffectState.RESTRICTION_ACTIVE -> 2

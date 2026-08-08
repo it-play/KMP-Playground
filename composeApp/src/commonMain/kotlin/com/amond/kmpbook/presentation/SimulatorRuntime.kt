@@ -170,31 +170,6 @@ import kotlin.time.Duration.Companion.nanoseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 
-private data class RuntimeTradingInterval(
-    val startsAt: Instant,
-    val endsAt: Instant,
-) {
-    init {
-        require(endsAt > startsAt) { "거래 가능 구간의 종료 시각은 시작 시각보다 뒤여야 합니다." }
-    }
-}
-
-private data class RuntimePriceBounds(
-    val lower: Double? = null,
-    val upper: Double? = null,
-) {
-    init {
-        require(lower == null || lower >= 0.0 && lower.isFinite())
-        require(upper == null || upper >= 0.0 && upper.isFinite())
-        require(lower == null || upper == null || lower <= upper)
-    }
-
-    fun merge(other: RuntimePriceBounds): RuntimePriceBounds = RuntimePriceBounds(
-        lower = listOfNotNull(lower, other.lower).maxOrNull(),
-        upper = listOfNotNull(upper, other.upper).minOrNull(),
-    )
-}
-
 /** Uses the real persistence deadline when it fits in this turn; otherwise leaves a pending observation at turn-end. */
 private fun runtimePersistenceObservationAt(
     conditionSince: Instant,

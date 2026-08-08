@@ -13,13 +13,6 @@ import com.amond.kmpbook.domain.model.directionFor
 import com.amond.kmpbook.domain.model.isDirectProductImpactFor
 import kotlin.math.abs
 
-/** 실제 인과 trace와 함께 생성된 종목별 설명이다. 합성 경로나 제목 기반 추론은 만들지 않는다. */
-internal data class StockCausalNarrative(
-    val trace: CausalImpactTrace,
-    val text: String,
-    val productDirectionInverted: Boolean,
-)
-
 /** 합성 순방향과 같은 부호를 가진 실제 경로 중 가장 설명력이 큰 경로를 고른다. */
 internal fun CausalStockImpact.explanatoryTraceOrNull(): CausalImpactTrace? = traces
     .asSequence()
@@ -125,12 +118,6 @@ private fun GameEvent.productRelativeSensitivity(
     val leverage = if (isDirectProductImpactFor(stock)) 1.0 else abs(stock.etfProfile?.leverage ?: 1.0)
     return underlyingSensitivity * leverage
 }
-
-/** 서술기 밖으로 노출되지 않는 두 형태의 문장 조각을 같은 렌더링 규칙 옆에 둔다. */
-private data class FactorMovement(
-    val connective: String,
-    val final: String,
-)
 
 private fun List<FactorMovement>.toNarrativeClause(): String = when (size) {
     0 -> ""
