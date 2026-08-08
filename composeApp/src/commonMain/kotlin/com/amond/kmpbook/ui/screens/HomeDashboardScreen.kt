@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,13 +23,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amond.kmpbook.domain.model.Currency
-import com.amond.kmpbook.domain.model.EventSeverity
-import com.amond.kmpbook.domain.model.GameEvent
 import com.amond.kmpbook.domain.model.Holding
 import com.amond.kmpbook.domain.model.ImpactDirection
 import com.amond.kmpbook.domain.model.Market
@@ -36,6 +36,9 @@ import com.amond.kmpbook.domain.model.MarketIndexId
 import com.amond.kmpbook.domain.model.MarketIndexSnapshot
 import com.amond.kmpbook.domain.model.PortfolioSnapshot
 import com.amond.kmpbook.domain.model.StockDefinition
+import com.amond.kmpbook.presentation.NewsEffectState
+import com.amond.kmpbook.presentation.NewsStoryUi
+import com.amond.kmpbook.presentation.NewsUiProjection
 import com.amond.kmpbook.ui.charts.AllocationDonut
 import com.amond.kmpbook.ui.charts.LineAreaChart
 import com.amond.kmpbook.ui.components.LedgerDivider
@@ -49,7 +52,9 @@ import com.amond.kmpbook.ui.format.formatPercent
 import com.amond.kmpbook.ui.format.formatPrice
 import com.amond.kmpbook.ui.format.formatQuantity
 import com.amond.kmpbook.ui.theme.MarketColors
+import com.amond.kmpbook.ui.theme.MarketComponentSize
 import com.amond.kmpbook.ui.theme.MarketLayout
+import com.amond.kmpbook.ui.theme.MarketSpacing
 import com.amond.kmpbook.ui.theme.MarketType
 
 @Composable
@@ -58,12 +63,12 @@ fun HomeDashboardScreen(
     history: List<PortfolioSnapshot>,
     stocks: List<StockDefinition>,
     marketIndices: Map<MarketIndexId, MarketIndexSnapshot>,
-    events: List<GameEvent>,
+    news: NewsUiProjection,
     estimatedTaxKrw: Double,
     usdKrw: Double,
     maxDrawdown: Double,
     onOpenStock: (String) -> Unit,
-    onOpenEvents: () -> Unit,
+    onOpenEvents: (String?) -> Unit,
     onOpenTax: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -117,7 +122,7 @@ fun HomeDashboardScreen(
                     modifier = Modifier.fillMaxWidth().height(220.dp),
                 )
                 NewsPanel(
-                    events = events.take(8),
+                    stories = news.homeStories,
                     onOpenEvents = onOpenEvents,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
@@ -375,30 +380,35 @@ private fun AllocationPanel(
 }
 
 @Composable
-private fun NewsPanel(events: List<GameEvent>, onOpenEvents: () -> Unit, modifier: Modifier) {
+private fun NewsPanel(stories: List<NewsStoryUi>, onOpenEvents: (String?) -> Unit, modifier: Modifier) {
     LedgerPanel(modifier, padding = 0.dp) {
         Column(Modifier.fillMaxSize()) {
             SectionHeading(
                 "시장 뉴스",
-                eyebrow = "EVENT FEED",
-                modifier = Modifier.padding(12.dp),
+                eyebrow = "내 종목과 시장 연결",
+                modifier = Modifier.padding(MarketSpacing.sm),
                 action = {
-                    Text(
-                        "전체 보기 →",
-                        modifier = Modifier.clickable(onClick = onOpenEvents),
-                        style = MarketType.label,
-                        color = MarketColors.Primary,
-                    )
+                    Box(
+                        Modifier
+                            .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
+                            .clickable(role = Role.Button) { onOpenEvents(null) }
+                            .padding(horizontal = MarketSpacing.xs),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("전체 보기 →", style = MarketType.label, color = MarketColors.Primary)
+                    }
                 },
             )
             LedgerDivider()
-            if (events.isEmpty()) {
+            if (stories.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("아직 발생한 이벤트가 없습니다.", style = MarketType.label, color = MarketColors.InkMuted)
                 }
             } else {
                 LazyColumn(Modifier.weight(1f)) {
-                    items(events, key = { it.id }) { event -> EventFeedRow(event) }
+                    items(stories, key = { it.event.id }) { story ->
+                        EventFeedRow(story) { onOpenEvents(story.event.id) }
+                    }
                 }
             }
         }
@@ -406,48 +416,115 @@ private fun NewsPanel(events: List<GameEvent>, onOpenEvents: () -> Unit, modifie
 }
 
 @Composable
-private fun EventFeedRow(event: GameEvent) {
-    val color = when (event.impact.direction) {
-        ImpactDirection.POSITIVE -> MarketColors.Rise
-        ImpactDirection.NEGATIVE -> MarketColors.Fall
-        ImpactDirection.MIXED -> MarketColors.Amber
-        ImpactDirection.NEUTRAL -> MarketColors.InkMuted
+private fun EventFeedRow(story: NewsStoryUi, onClick: () -> Unit) {
+    val statusColor = when (story.status.state) {
+        NewsEffectState.UPCOMING,
+        NewsEffectState.WAITING_FOR_MARKET,
+        NewsEffectState.PROCESS_ACTIVE,
+        -> MarketColors.PrimaryText
+        NewsEffectState.MARKET_ACTIVE -> MarketColors.AmberText
+        NewsEffectState.RESTRICTION_ACTIVE -> MarketColors.NavyRaised
+        NewsEffectState.INFORMATION -> MarketColors.InkMuted
+        NewsEffectState.MARKET_ENDED,
+        NewsEffectState.RESOLVED,
+        -> MarketColors.InkMuted
     }
-    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.Top) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
         Box(
             Modifier
                 .size(8.dp)
-                .background(
-                    if (event.severity >= EventSeverity.MAJOR) color else color.copy(alpha = 0.45f),
-                    RoundedCornerShape(50),
-                ),
+                .background(statusColor, RoundedCornerShape(50)),
         )
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
-            Text(event.title, style = MarketType.body.copy(fontWeight = FontWeight.Medium), color = MarketColors.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                story.event.title,
+                style = MarketType.body.copy(fontWeight = FontWeight.Medium),
+                color = MarketColors.Ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    event.impact.direction.feedLabel,
+                    buildString {
+                        append(story.status.label)
+                        story.secondaryStatus?.let { append(" · ${it.label}") }
+                    },
                     style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
-                    color = color,
+                    color = statusColor,
                 )
                 Text(
-                    " · ${event.type.displayName} · ${event.severity.displayName} · ${event.durationHours}시간",
+                    " · ${story.event.type.displayName}",
+                    modifier = Modifier.weight(1f),
                     style = MarketType.caption,
                     color = MarketColors.InkMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+            }
+            val paths = story.impactPaths.take(2)
+            if (paths.isEmpty()) {
+                Text(
+                    story.personalDirection.newsDirectionLabel,
+                    style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                    color = story.personalDirection.newsDirectionColor,
+                )
+            } else {
+                paths.forEach { path ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(MarketSpacing.xxs),
+                    ) {
+                        Box(
+                            Modifier.size(5.dp).background(
+                                path.direction.newsDirectionColor,
+                                RoundedCornerShape(50),
+                            ),
+                        )
+                        Text(
+                            path.label,
+                            modifier = Modifier.weight(1f),
+                            style = MarketType.caption,
+                            color = MarketColors.InkMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            path.direction.newsDirectionLabel,
+                            style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                            color = path.direction.newsDirectionColor,
+                        )
+                    }
+                }
+                if (story.impactPaths.size > paths.size) {
+                    Text(
+                        "외 ${story.impactPaths.size - paths.size}개 영향 경로",
+                        style = MarketType.caption,
+                        color = MarketColors.InkMuted,
+                    )
+                }
             }
         }
     }
 }
 
-private val ImpactDirection.feedLabel: String
+private val ImpactDirection.newsDirectionLabel: String
     get() = when (this) {
-        ImpactDirection.POSITIVE -> "호재"
-        ImpactDirection.NEGATIVE -> "악재"
-        ImpactDirection.MIXED,
-        ImpactDirection.NEUTRAL,
-        -> "소식"
+        ImpactDirection.POSITIVE -> "긍정"
+        ImpactDirection.NEGATIVE -> "부정"
+        ImpactDirection.MIXED -> "엇갈림"
+        ImpactDirection.NEUTRAL -> "중립"
+    }
+
+private val ImpactDirection.newsDirectionColor: Color
+    get() = when (this) {
+        ImpactDirection.POSITIVE -> MarketColors.RiseText
+        ImpactDirection.NEGATIVE -> MarketColors.FallText
+        ImpactDirection.MIXED -> MarketColors.AmberText
+        ImpactDirection.NEUTRAL -> MarketColors.InkMuted
     }
 
 @Composable

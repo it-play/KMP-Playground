@@ -299,7 +299,7 @@ data class SimulatorUiState(
     /** Pure calendar projection: intentionally not a constructor field or save-schema member. */
     val upcomingScheduledEvents: List<ScheduledEventOccurrence>
         get() = ScheduledEventEngine(
-            DeterministicRandom.mixSeed(seed, SimulatorRuntime.SCHEDULED_EVENT_STREAM_ID),
+            DeterministicRandom.mixSeed(seed, ScheduledEventEngine.STREAM_ID),
         ).upcoming(currentTime, stocks, UPCOMING_EVENT_LIMIT)
     val progress: Double get() = GameCalendar.progress(currentTime)
     val isAtEnd: Boolean get() = GameCalendar.isFinished(currentTime)
