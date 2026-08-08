@@ -126,6 +126,7 @@ internal fun GameEvent.impactCoverageFor(stock: StockDefinition): EventImpactCov
                     seeds = signals,
                     sourceMarkets = affectedMarkets,
                     stock = stock,
+                    regimeSnapshot = marketRegimeSnapshot,
                 )
                 EventScope.STOCK -> signals
                     .takeIf { affectsByScope(stock) }
