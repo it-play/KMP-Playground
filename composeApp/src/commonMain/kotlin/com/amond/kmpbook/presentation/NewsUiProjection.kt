@@ -1,11 +1,9 @@
 package com.amond.kmpbook.presentation
 
 import com.amond.kmpbook.domain.model.EtfAssetClass
-import com.amond.kmpbook.domain.model.CausalImpactTrace
 import com.amond.kmpbook.domain.model.EventImpactResolutionSource
 import com.amond.kmpbook.domain.model.EventScope
 import com.amond.kmpbook.domain.model.EventImpactTargetKind
-import com.amond.kmpbook.domain.model.EventImpactCoveragePolicy
 import com.amond.kmpbook.domain.model.EventRecordKind
 import com.amond.kmpbook.domain.model.CorporateActionNewsReference
 import com.amond.kmpbook.domain.model.CorporateActionNewsTransition
@@ -1180,7 +1178,11 @@ private fun GameEvent.impactPaths(
             label = insight.targetLabel,
             categoryLabel = insight.targetKind.displayName,
             direction = targetStock?.let(::directionFor) ?: insight.direction,
-            reason = targetStock?.let { it.enrichImpactReason(insight.rationale) } ?: insight.rationale,
+            reason = targetStock?.let { stock ->
+                stock.enrichImpactReason(
+                    authoredNarrativeFor(stock, insight.rationale, insight.relativeSensitivity),
+                )
+            } ?: insight.rationale,
             sector = insight.sector ?: targetStock?.sector,
             industrySegment = insight.industrySegment,
             stockId = insight.stockId,
@@ -1194,14 +1196,18 @@ private fun GameEvent.impactPaths(
         .sortedBy(StockDefinition::id)
         .mapNotNull { stock ->
             val causal = resolvedImpactFor(stock).causalImpact ?: return@mapNotNull null
-            val trace = causal.primaryTrace
+            val narrative = causalNarrativeFor(stock, causal) ?: return@mapNotNull null
+            val trace = narrative.trace
             val terminal = trace.nodes.last()
             NewsImpactPathUi(
                 id = "$id:causal:${stock.id}",
                 label = stock.name,
                 categoryLabel = "인과 전파",
                 direction = directionFor(stock),
-                reason = stock.enrichImpactReason(trace.asNewsReason(stock.name)),
+                reason = stock.enrichImpactReason(
+                    base = narrative.text,
+                    includeInverseStructure = !narrative.productDirectionInverted,
+                ),
                 sector = terminal.sector ?: stock.sector,
                 industrySegment = terminal.industrySegment,
                 stockId = stock.id,
@@ -1223,108 +1229,8 @@ private fun GameEvent.impactPaths(
         .map(Pair<NewsImpactPathUi, com.amond.kmpbook.domain.model.CausalStockImpact>::first)
         .toList()
 
-    if (impactCoveragePolicy == EventImpactCoveragePolicy.EXPLICIT_PATHS_ONLY) {
-        return explicitPaths + causalPaths
-    }
-
-    val fallbackStocks = stockById.values.filter { stock ->
-        impactCoverageFor(stock).usesScopeFallback
-    }
-    if (fallbackStocks.isEmpty()) return explicitPaths + causalPaths
-
-    fun List<StockDefinition>.containsHolding(): Boolean = any { it.id in holdingIds }
-    fun List<StockDefinition>.containsWatched(): Boolean = any { it.id in watchlistIds }
-    fun fallbackLabel(label: String): String = if (explicitPaths.isEmpty()) label else "기타 $label"
-
-    val fallbackPaths = when (scope) {
-        EventScope.GLOBAL -> listOf(
-            fallbackImpactPath(
-                suffix = "global",
-                label = fallbackLabel("글로벌 시장"),
-                categoryLabel = "시장",
-                reason = "세계 위험선호와 국가 간 자금 흐름을 통해 여러 시장에 전달될 수 있어요.",
-                held = fallbackStocks.containsHolding(),
-                watched = fallbackStocks.containsWatched(),
-            ),
-        )
-        EventScope.COUNTRY -> {
-            val countryName = affectedMarkets.first().countryName
-            listOf(
-                fallbackImpactPath(
-                    suffix = "country:$countryName",
-                    label = fallbackLabel("$countryName 시장"),
-                    categoryLabel = "국가",
-                    reason = "해당 국가의 정책과 경기 변화가 현지 시장과 노출 상품에 전달돼요.",
-                    held = fallbackStocks.containsHolding(),
-                    watched = fallbackStocks.containsWatched(),
-                ),
-            )
-        }
-        EventScope.MARKET -> affectedMarkets.sortedBy(Market::displayName).mapNotNull { market ->
-            val relatedStocks = fallbackStocks.filter { it.hasNewsMarketExposure(market) }
-            if (relatedStocks.isEmpty()) return@mapNotNull null
-            fallbackImpactPath(
-                suffix = "market:${market.name}",
-                label = fallbackLabel(market.displayName),
-                categoryLabel = "시장",
-                reason = "해당 시장의 위험선호와 수급을 거쳐 상장 종목과 노출 상품에 전달돼요.",
-                held = relatedStocks.containsHolding(),
-                watched = relatedStocks.containsWatched(),
-            )
-        }
-        EventScope.SECTOR -> affectedSectors.sortedBy(Sector::displayName).mapNotNull { sector ->
-            val relatedStocks = fallbackStocks.filter { it.hasNewsSectorExposure(sector) }
-            if (relatedStocks.isEmpty()) return@mapNotNull null
-            fallbackImpactPath(
-                suffix = "sector:${sector.name}",
-                label = fallbackLabel(sector.displayName),
-                categoryLabel = "산업군",
-                reason = "수요, 비용과 경쟁 환경의 변화가 이 산업의 실적 기대에 연결돼요.",
-                sector = sector,
-                held = relatedStocks.containsHolding(),
-                watched = relatedStocks.containsWatched(),
-            )
-        }
-        EventScope.STOCK -> fallbackStocks.map { stock ->
-            fallbackImpactPath(
-                suffix = "stock:${stock.id}",
-                label = stock.name,
-                categoryLabel = "종목",
-                reason = stock.enrichImpactReason("공시나 사업 변화가 이 종목의 기대 현금흐름에 직접 연결돼요."),
-                sector = stock.sector,
-                stockId = stock.id,
-                direction = directionFor(stock),
-                held = stock.id in holdingIds,
-                watched = stock.id in watchlistIds,
-            )
-        }
-    }
-
-    return explicitPaths + causalPaths + fallbackPaths
+    return explicitPaths + causalPaths
 }
-
-private fun GameEvent.fallbackImpactPath(
-    suffix: String,
-    label: String,
-    categoryLabel: String,
-    reason: String,
-    sector: Sector? = null,
-    stockId: String? = null,
-    direction: ImpactDirection = impact.direction,
-    held: Boolean,
-    watched: Boolean,
-): NewsImpactPathUi = NewsImpactPathUi(
-    id = "$id:impact:$suffix",
-    label = label,
-    categoryLabel = categoryLabel,
-    direction = direction,
-    reason = reason,
-    sector = sector,
-    stockId = stockId,
-    held = held,
-    watched = watched,
-    horizonLabel = "단기",
-)
 
 private fun GameEvent.relatedStocks(
     stockById: Map<String, StockDefinition>,
@@ -1340,6 +1246,7 @@ private fun GameEvent.relatedStocks(
             val resolvedImpact = resolvedImpactFor(stock)
             val resolvedInsights = resolvedImpact.insights
             val causalImpact = resolvedImpact.causalImpact
+            val causalNarrative = causalImpact?.let { impact -> causalNarrativeFor(stock, impact) }
             val directInsightExposure = resolvedInsights.any { insight ->
                 insight.targetKind == EventImpactTargetKind.STOCK && insight.stockId == stock.id
             }
@@ -1373,11 +1280,16 @@ private fun GameEvent.relatedStocks(
                     NewsStockRelationKind.INDUSTRY
                 else -> NewsStockRelationKind.MARKET_CONTEXT
             }
-            val analysisReason = causalImpact?.primaryTrace?.asNewsReason(stock.name) ?: resolvedInsights
+            val authoredRationale = resolvedInsights
                 .map { it.rationale }
                 .distinct()
                 .joinToString(" ")
-                .ifBlank { fallbackStockReason(stock) }
+            val analysisReason = causalNarrative?.text
+                ?: causalImpact?.primaryTrace?.rationale
+                ?: authoredRationale.takeIf(String::isNotBlank)?.let { rationale ->
+                    authoredNarrativeFor(stock, rationale, resolvedImpact.relativeSensitivity)
+                }
+                ?: fallbackStockReason(stock)
             val relationAwareReason = if (
                 relationKind == NewsStockRelationKind.UNDERLYING_EXPOSURE && resolvedInsights.isNotEmpty()
             ) {
@@ -1390,14 +1302,21 @@ private fun GameEvent.relatedStocks(
                 name = stock.name,
                 symbol = stock.symbol,
                 direction = directionFor(stock),
-                reason = stock.enrichImpactReason(relationAwareReason),
+                reason = stock.enrichImpactReason(
+                    base = relationAwareReason,
+                    includeInverseStructure = causalNarrative?.productDirectionInverted != true,
+                ),
                 held = stock.id in holdingIds,
                 watched = stock.id in watchlistIds,
                 directTarget = directTarget,
                 specificity = specificity,
                 relationKind = relationKind,
-                causalTraceLabels = causalImpact?.primaryTrace?.labels.orEmpty().let { labels ->
-                    if (causalImpact == null || labels.lastOrNull() == stock.name) labels else labels + stock.name
+                causalTraceLabels = causalNarrative?.presentationTraceLabels(stock).orEmpty().let { labels ->
+                    if (resolvedImpact.source != EventImpactResolutionSource.CAUSAL_GRAPH || labels.isEmpty()) {
+                        emptyList()
+                    } else {
+                        labels
+                    }
                 },
                 relativeSensitivity = resolvedImpact.relativeSensitivity,
                 confidence = causalImpact?.confidence ?: when (resolvedImpact.source) {
@@ -1417,11 +1336,6 @@ private fun GameEvent.relatedStocks(
                 .thenBy { it.name }
                 .thenBy { it.stockId },
         )
-}
-
-private fun CausalImpactTrace.asNewsReason(stockName: String): String {
-    val displayedLabels = if (labels.lastOrNull() == stockName) labels else labels + stockName
-    return "${displayedLabels.joinToString(" → ")} 경로로 영향이 전달됩니다. $rationale"
 }
 
 private fun GameEvent.fallbackStockReason(stock: StockDefinition): String = when (scope) {
@@ -1456,12 +1370,26 @@ private fun GameEvent.fallbackStockReason(stock: StockDefinition): String = when
     EventScope.GLOBAL -> "글로벌 위험선호와 자금 흐름을 통해 영향을 받아요."
 }
 
-private fun StockDefinition.enrichImpactReason(base: String): String {
+private fun StockCausalNarrative.presentationTraceLabels(stock: StockDefinition): List<String> {
+    val labels = trace.labels
+    if (!productDirectionInverted) {
+        return if (labels.lastOrNull() == stock.name) labels else labels + stock.name
+    }
+    val underlyingPath = if (labels.lastOrNull() == stock.name) labels.dropLast(1) else labels
+    return underlyingPath + "기초자산 가격" + "일일 인버스 구조" + stock.name
+}
+
+private fun StockDefinition.enrichImpactReason(
+    base: String,
+    includeInverseStructure: Boolean = true,
+): String {
     val structureNotes = buildList {
-        if (behavior.strategy == InstrumentStrategy.DAILY_INVERSE) {
+        if (includeInverseStructure && behavior.strategy == InstrumentStrategy.DAILY_INVERSE) {
             add("인버스 상품이라 기초자산과 반대 방향으로 반응하고, 일일 재조정 때문에 장기 성과는 단순 역수익률과 달라질 수 있어요.")
         }
-        if (behavior.strategy == InstrumentStrategy.COVERED_CALL) {
+        val hasCoveredCallOverlay = behavior.strategy == InstrumentStrategy.COVERED_CALL ||
+            identityProfile?.eventRiskTags?.contains("commodity_option") == true
+        if (hasCoveredCallOverlay) {
             add("커버드콜 구조라 옵션 프리미엄을 받는 대신 강한 상승에서는 참여 폭이 제한될 수 있어요.")
         }
         if (etfProfile?.fxProfile?.isFullyHedged == true) {
