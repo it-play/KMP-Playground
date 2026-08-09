@@ -1,0 +1,7 @@
+package com.amond.kmpbook.domain.model.corporateaction
+
+
+enum class CorporateActionKind(val displayName: String) {
+    FORWARD_SPLIT("주식분할"),
+    REVERSE_SPLIT("주식병합"),
+}

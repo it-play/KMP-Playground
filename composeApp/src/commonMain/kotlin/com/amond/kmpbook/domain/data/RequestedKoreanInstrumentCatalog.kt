@@ -1,22 +1,22 @@
 package com.amond.kmpbook.domain.data
 
-import com.amond.kmpbook.domain.model.CurrencyExposureLeg
-import com.amond.kmpbook.domain.model.DistributionFrequency
-import com.amond.kmpbook.domain.model.EtfAssetClass
-import com.amond.kmpbook.domain.model.EtfExposureRegion
-import com.amond.kmpbook.domain.model.EtfFxProfile
-import com.amond.kmpbook.domain.model.EtfProfile
-import com.amond.kmpbook.domain.model.EtfTaxCategory
-import com.amond.kmpbook.domain.model.InstrumentBehaviorProfile
-import com.amond.kmpbook.domain.model.InstrumentIdentityProfile
-import com.amond.kmpbook.domain.model.InstrumentStrategy
-import com.amond.kmpbook.domain.model.InstrumentType
-import com.amond.kmpbook.domain.model.IndustrySegment
-import com.amond.kmpbook.domain.model.Market
-import com.amond.kmpbook.domain.model.PrincipalRisk
-import com.amond.kmpbook.domain.model.ReferenceCurrency
-import com.amond.kmpbook.domain.model.Sector
-import com.amond.kmpbook.domain.model.StockDefinition
+import com.amond.kmpbook.domain.model.instrument.CurrencyExposureLeg
+import com.amond.kmpbook.domain.model.instrument.DistributionFrequency
+import com.amond.kmpbook.domain.model.instrument.EtfAssetClass
+import com.amond.kmpbook.domain.model.instrument.EtfExposureRegion
+import com.amond.kmpbook.domain.model.instrument.EtfFxProfile
+import com.amond.kmpbook.domain.model.instrument.EtfProfile
+import com.amond.kmpbook.domain.model.instrument.EtfTaxCategory
+import com.amond.kmpbook.domain.model.instrument.InstrumentBehaviorProfile
+import com.amond.kmpbook.domain.model.instrument.InstrumentIdentityProfile
+import com.amond.kmpbook.domain.model.instrument.InstrumentStrategy
+import com.amond.kmpbook.domain.model.instrument.InstrumentType
+import com.amond.kmpbook.domain.model.instrument.PrincipalRisk
+import com.amond.kmpbook.domain.model.instrument.StockDefinition
+import com.amond.kmpbook.domain.model.market.IndustrySegment
+import com.amond.kmpbook.domain.model.market.Market
+import com.amond.kmpbook.domain.model.market.ReferenceCurrency
+import com.amond.kmpbook.domain.model.market.Sector
 
 /**
  * 2026-08-07에 별도 요청·검증한 국내 상장 상품 중 기존 기본 카탈로그에 없던 종목이다.
@@ -122,8 +122,7 @@ object RequestedKoreanInstrumentCatalog {
                 keyword in instrument.englishName.lowercase() ||
                 instrument.industrySegments.any { keyword in it.displayName.lowercase() } ||
                 instrument.identityProfile?.let { identity ->
-                    keyword in identity.legalName.lowercase() ||
-                        identity.aliases.any { keyword in it.lowercase() } ||
+                    identity.aliases.any { keyword in it.lowercase() } ||
                         identity.eventRiskTags.any { keyword in it.lowercase() }
                 } == true
         }
@@ -138,7 +137,6 @@ object RequestedKoreanInstrumentCatalog {
         val strategySummary: String,
         val officialSourceUrl: String,
         val distributionFrequency: DistributionFrequency,
-        val distributionNotes: String,
         val eventRiskTags: Set<String>,
         val aliases: Set<String> = emptySet(),
         val benchmark: String? = null,
@@ -210,13 +208,10 @@ object RequestedKoreanInstrumentCatalog {
                 behaviorProfile = behaviorProfile(this),
                 industrySegments = industrySegments,
                 identityProfile = InstrumentIdentityProfile(
-                    legalName = name,
                     aliases = aliases,
                     issuerOrManager = issuerOrManager,
                     strategySummary = strategySummary,
                     officialSourceUrl = officialSourceUrl,
-                    verifiedOn = IDENTITY_SNAPSHOT_DATE,
-                    distributionNotes = distributionNotes,
                     eventRiskTags = eventRiskTags,
                     underlyingInstrumentIds = underlyingInstrumentIds,
                     exposedSectors = when {
@@ -241,7 +236,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "KOSPI 200 금융주에서 고ROE·고배당·주주환원 기준으로 10종목을 선별하는 국내주식 패시브 ETF.",
             officialSourceUrl = "https://www.samsungfund.com/etf/product/view.do?id=2ETFS1",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 15일 기준. 이익과 운용상황에 따라 분배금이 변동되거나 지급되지 않을 수 있음.",
             eventRiskTags = setOf("금융업 집중", "10종목 집중", "금리·규제 민감", "배당 삭감", "유동성"),
             assetClass = EtfAssetClass.SECTOR_EQUITY,
             strategy = InstrumentStrategy.DIVIDEND_EQUITY,
@@ -256,7 +250,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "재무건전성·ROE·배당수익률·배당성장을 반영해 국내 품질 배당주 30종목을 담는 패시브 ETF.",
             officialSourceUrl = "https://investments.miraeasset.com/tigeretf/ko/product/search/detail/index.do?ksdFund=KR70052D0006",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 15일 기준. 지급액과 지급 여부는 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("배당·가치 팩터", "업종 쏠림", "배당 삭감", "추적오차", "유동성"),
             strategy = InstrumentStrategy.DIVIDEND_EQUITY,
         ),
@@ -270,7 +263,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "미국 고배당·배당성장 기업 30종목을 추종하며 USD 환노출을 유지하는 패시브 ETF.",
             officialSourceUrl = "https://1qetf.com/pages/ETFproducts/ETF_info.view.php?etf_no=12",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 마지막 영업일 및 회계기간 종료일 기준. 분배는 보장되지 않음.",
             eventRiskTags = setOf("미국주식", "30종목 집중", "배당 삭감", "USD 환율", "추적오차"),
             aliases = setOf("1Q 미국배당30"),
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -288,7 +280,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "CD와 잔존만기 3개월 안팎의 초단기채권·단기금융상품으로 비교지수 대비 초과성과를 추구하는 액티브 ETF.",
             officialSourceUrl = "https://www.aceetf.co.kr/fund/K55101EC8482",
             distributionFrequency = DistributionFrequency.ANNUAL,
-            distributionNotes = "공식 상품정보상 매년 지급. 실제 분배 여부와 금액은 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("예금자보호 대상 아님", "단기금리", "신용스프레드", "유동성", "액티브 운용"),
             assetClass = EtfAssetClass.MONEY_MARKET,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -306,7 +297,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "장외파생상품으로 달러 SOFR 일일 총수익을 추종하며 USD 환노출을 유지하는 합성 ETF.",
             officialSourceUrl = "https://www.aceetf.co.kr/fund/K55101E19692",
             distributionFrequency = DistributionFrequency.ANNUAL,
-            distributionNotes = "공식 상품정보상 매년 지급. 실제 분배 여부와 금액은 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("USD 환율", "SOFR 하락", "스왑 거래상대방", "담보", "조기종료", "추적오차"),
             assetClass = EtfAssetClass.MONEY_MARKET,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -326,7 +316,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "이익성장과 수익성 기준을 통과한 미국 퀄리티 배당주를 배당금 가중으로 추종하는 패시브 ETF.",
             officialSourceUrl = "https://www.aceetf.co.kr/fund/K55101EK7278",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "공식 상품정보상 월 지급. 월중 기준일과 실제 지급액은 운용사 공시를 확인해야 함.",
             eventRiskTags = setOf("미국주식", "퀄리티·성장 팩터", "배당 삭감", "USD 환율", "지수방법론 변경"),
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
             exposureRegion = EtfExposureRegion.UNITED_STATES,
@@ -343,7 +332,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "싱가포르 상장 REIT에 재간접 투자하며 SGD 환노출을 유지하는 부동산 인컴 ETF.",
             officialSourceUrl = "https://www.aceetf.co.kr/fund/K55101CG5254",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "공식 월분배 정책. 실제 지급 여부와 금액은 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("싱가포르 부동산", "금리", "공실", "SGD 환율", "재간접 비용", "평가시차"),
             assetClass = EtfAssetClass.REAL_ESTATE,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -361,7 +349,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "고배당·저PBR 기준으로 국내 금융·지주회사 20종목을 선별하는 패시브 ETF.",
             officialSourceUrl = "https://asset.daishin.com/ko/?FUND_CODE=48005&m=view&pages=etf&sub=etf5010",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 마지막 영업일 및 회계기간 종료일 기준. 분배는 보장되지 않음.",
             eventRiskTags = setOf("금융·지주 집중", "20종목 집중", "금리·규제", "지배구조", "배당 삭감", "짧은 운용이력"),
             assetClass = EtfAssetClass.SECTOR_EQUITY,
             strategy = InstrumentStrategy.DIVIDEND_EQUITY,
@@ -376,7 +363,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "배당수익률과 ROE로 선별한 국내 증권주 10종목을 유동시가총액 가중하는 패시브 ETF.",
             officialSourceUrl = "https://www.hanaroetf.com/fund/8B788EE0BB4342A9",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 마지막 영업일 및 회계기간 종료일 기준. 분배는 보장되지 않음.",
             eventRiskTags = setOf("증권업 집중", "상위종목 집중", "거래대금", "금리·시장사이클", "배당 삭감", "유동성"),
             assetClass = EtfAssetClass.SECTOR_EQUITY,
             strategy = InstrumentStrategy.DIVIDEND_EQUITY,
@@ -391,7 +377,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "2038년 전 S&P500 75%·미국배당 25%에서 단계 전환해 2040년부터 25%·75%를 유지하는 패시브 ETF.",
             officialSourceUrl = "https://www.kiwoometf.com/service/etf/KO02010200M?gcode=0127T0",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 마지막 영업일 기준. 분배는 운용 결과에 따라 유보될 수 있음.",
             eventRiskTags = setOf("미국주식", "USD 환율", "글라이드패스", "순서위험", "배당 삭감", "추적오차"),
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
             exposureRegion = EtfExposureRegion.UNITED_STATES,
@@ -408,7 +393,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "한국 고배당주 15종목 70%와 미국 AI 기술주 10종목 30%를 결합하는 패시브 ETF.",
             officialSourceUrl = "https://www.kiwoometf.com/service/etf/KO02010200M?gcode=0097L0",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 마지막 영업일 기준. 분배는 운용 결과에 따라 유보될 수 있음.",
             eventRiskTags = setOf("AI 기술주 집중", "10종목 집중", "국내 배당주 집중", "USD 환율", "리밸런싱"),
             assetClass = EtfAssetClass.SECTOR_EQUITY,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -426,7 +410,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "iShares TIPS Bond ETF 등을 통해 미국 물가연동국채에 투자하는 액티브 재간접 ETF.",
             officialSourceUrl = "https://www.samsungfund.com/etf/product/view.do?id=2ETFK9",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 마지막 영업일 기준. 실제 분배 여부와 금액은 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("실질금리", "듀레이션", "USD 환율", "재간접 비용", "추적오차"),
             assetClass = EtfAssetClass.FIXED_INCOME,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -446,7 +429,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "잔존만기 1년 미만 국채·통안증권 중심으로 짧은 듀레이션을 유지하는 국내채권 ETF.",
             officialSourceUrl = "https://www.samsungfund.com/etf/product/view.do?id=2ETF35",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 15일 기준. 실제 분배 여부와 금액은 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("단기금리", "채권 가격", "신용", "괴리율", "예금자보호 대상 아님"),
             assetClass = EtfAssetClass.FIXED_INCOME,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -464,7 +446,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "미국 배당성장주를 보유하고 목표 수준의 옵션 프리미엄을 위해 콜옵션을 부분 매도하는 ETF.",
             officialSourceUrl = "https://www.samsungfund.com/etf/product/view.do?id=2ETFN1",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 마지막 영업일 기준. 옵션 프리미엄과 분배금은 보장되지 않음.",
             eventRiskTags = setOf("상승 참여 제한", "옵션 베이시스", "USD 환율", "배당 삭감", "분배금 원금잠식"),
             aliases = setOf("KODEX 미국배당다우존스타켓커버드콜"),
             assetClass = EtfAssetClass.ALTERNATIVE,
@@ -484,7 +465,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "아시아 국채·준정부채·우량 회사채 중 ESG 요소를 반영한 USD 표시 채권에 투자하는 액티브 ETF.",
             officialSourceUrl = "https://www.samsungfund.com/etf/product/view.do?id=2ETFG4",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 마지막 영업일 기준. 실제 분배 여부와 금액은 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("아시아 신용", "USD 환율", "듀레이션", "유동성", "ESG 판단", "액티브 운용"),
             assetClass = EtfAssetClass.FIXED_INCOME,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -504,7 +484,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "국내 배당성장주 30%와 3년 국채 70%를 결합하는 채권혼합 ETF.",
             officialSourceUrl = "https://www.samsungfund.com/etf/product/view.do?id=2ETF58",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 15일 기준. 실제 분배 여부와 금액은 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("국내주식", "배당 삭감", "국채 금리", "자산배분", "추적오차"),
             assetClass = EtfAssetClass.MULTI_ASSET,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -522,7 +501,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "국내 상장 REIT와 인프라 자산에 투자하며 개별 인프라 종목 집중 한도를 두는 패시브 ETF.",
             officialSourceUrl = "https://www.samsungfund.com/etf/product/view.do?id=2ETFM4",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 15일 기준. 실제 분배 여부와 금액은 임대·배당 및 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("부동산 가격", "금리", "공실", "인프라 종목 집중", "유동성"),
             assetClass = EtfAssetClass.REAL_ESTATE,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -538,7 +516,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "고배당과 자사주 매입을 함께 평가해 국내 주주환원 우수기업 30종목을 선별하는 패시브 ETF.",
             officialSourceUrl = "https://www.plusetf.co.kr/product/detail?n=006392",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 15일 기준. 배당과 자사주 정책 및 운용 결과에 따라 분배금이 달라질 수 있음.",
             eventRiskTags = setOf("주주환원 정책 변경", "배당 삭감", "가치함정", "30종목 집중", "유동성"),
             strategy = InstrumentStrategy.DIVIDEND_EQUITY,
         ),
@@ -552,7 +529,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "미국 S&P 500 30%, 국내채권 55%, 금 15%를 기준으로 글로벌 주식·채권·금에 분산하는 액티브 ETF.",
             officialSourceUrl = "https://www.riseetf.co.kr/prod/finderDetail/44E8",
             distributionFrequency = DistributionFrequency.ANNUAL,
-            distributionNotes = "매년 4월 마지막 영업일 및 회계기간 종료일 기준. 실제 분배 여부와 금액은 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("자산배분", "재간접 비용", "USD 환율", "금리", "금 가격", "액티브 운용"),
             aliases = setOf("KBSTAR 글로벌자산배분액티브"),
             assetClass = EtfAssetClass.MULTI_ASSET,
@@ -573,7 +549,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "미국 50%, 미국 외 선진국 30%, 신흥국 20%를 기준으로 지역별 주식 ETF에 분산하는 액티브 재간접 ETF.",
             officialSourceUrl = "https://www.riseetf.co.kr/prod/finderDetail/44E7",
             distributionFrequency = DistributionFrequency.QUARTERLY,
-            distributionNotes = "매년 1·4·7·10월 마지막 영업일 및 회계기간 종료일 기준. 분배는 보장되지 않음.",
             eventRiskTags = setOf("글로벌주식", "재간접 비용", "다중통화 환율", "신흥국", "액티브 운용", "추적오차"),
             aliases = setOf("KBSTAR 글로벌주식분산액티브"),
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -591,7 +566,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "CD 50%, 채권 25%, CP 15%, 콜 10%를 기준으로 잔존만기 3개월 이하 단기금융자산에 투자하는 액티브 ETF.",
             officialSourceUrl = "https://www.soletf.com/ko/fund/etf/211074",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 마지막 영업일 기준. 실제 분배 여부와 금액은 단기금리와 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("예금자보호 대상 아님", "CD금리", "신용스프레드", "CP 유동성", "액티브 운용"),
             assetClass = EtfAssetClass.MONEY_MARKET,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -609,7 +583,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "미국 배당성장·재무건전성 우수기업 100종목을 추종하고 USD/KRW 환율 변동을 전액 헤지하는 패시브 ETF.",
             officialSourceUrl = "https://www.soletf.com/ko/fund/etf/210972",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 마지막 영업일 기준. 분배금은 보장되지 않으며 환헤지 비용이 성과에 반영됨.",
             eventRiskTags = setOf("미국주식", "배당 삭감", "환헤지 베이시스", "환헤지 비용", "추적오차"),
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
             exposureRegion = EtfExposureRegion.UNITED_STATES,
@@ -626,7 +599,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "국내 기업의 배당성향·현금흐름·밸류에이션을 평가해 배당 확대 가능성이 높은 종목을 선별하는 액티브 ETF.",
             officialSourceUrl = "https://www.soletf.com/ko/fund/etf/211104",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 마지막 영업일 기준. 기업 배당과 운용 결과에 따라 분배금이 달라지거나 지급되지 않을 수 있음.",
             eventRiskTags = setOf("액티브 운용", "배당 삭감", "가치 팩터", "종목 집중", "짧은 운용이력"),
             strategy = InstrumentStrategy.DIVIDEND_EQUITY,
         ),
@@ -640,7 +612,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "S&P 500 구성종목을 동일 비중으로 보유하고 정기 리밸런싱하는 미국 대형주 패시브 ETF.",
             officialSourceUrl = "https://www.tigeretf.com/upload/etf/20241007064934002420.pdf",
             distributionFrequency = DistributionFrequency.QUARTERLY,
-            distributionNotes = "매년 1·4·7·10월 마지막 영업일 기준. 실제 분배 여부와 금액은 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("미국주식", "USD 환율", "동일가중 팩터", "리밸런싱 회전율", "추적오차"),
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
             exposureRegion = EtfExposureRegion.UNITED_STATES,
@@ -657,7 +628,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "S&P 500에서 장기간 배당을 늘려 온 배당귀족 기업을 동일 비중으로 추종하는 패시브 ETF.",
             officialSourceUrl = "https://www.tigeretf.com/upload/etf/20250312103659008936.pdf",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 마지막 영업일 기준. 실제 분배 여부와 금액은 기업 배당과 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("미국주식", "배당 삭감", "USD 환율", "동일가중 팩터", "추적오차"),
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
             exposureRegion = EtfExposureRegion.UNITED_STATES,
@@ -674,7 +644,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "잔존만기 3개월 이하 미국 국채를 추종하고 USD 환노출을 유지하는 초단기채권 ETF.",
             officialSourceUrl = "https://www.tigeretf.com/upload/etf/20250708095820001461.pdf",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 마지막 영업일 기준. 실제 분배 여부와 금액은 달러 단기금리와 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("USD 환율", "미국 단기금리", "재투자 위험", "추적오차", "예금자보호 대상 아님"),
             assetClass = EtfAssetClass.FIXED_INCOME,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -694,7 +663,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "국내 AI 반도체 주식을 보유하면서 KOSPI 200 위클리 콜옵션을 고정 30% 비중으로 매도하는 ETF.",
             officialSourceUrl = "https://kind.krx.co.kr/common/disclsviewer.do?acptNo=20260406001143&method=searchInitInfo",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 마지막 영업일 기준. 옵션 프리미엄과 분배금은 보장되지 않음.",
             eventRiskTags = setOf("AI 반도체 집중", "상승 참여 제한", "위클리 옵션", "옵션 베이시스", "분배금 원금잠식"),
             assetClass = EtfAssetClass.ALTERNATIVE,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -711,7 +679,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "KOSPI를 비교지수로 국내 유가증권시장 종목을 선별해 초과성과를 추구하는 액티브 ETF.",
             officialSourceUrl = "https://kind.krx.co.kr/external/2026/06/19/000555/20260619001089/68152.htm",
             distributionFrequency = DistributionFrequency.QUARTERLY,
-            distributionNotes = "매년 1·4·7·10월 마지막 영업일 및 회계기간 종료일 기준. 분배는 보장되지 않음.",
             eventRiskTags = setOf("국내주식", "액티브 운용", "종목 선택", "KOSPI 괴리", "짧은 운용이력"),
             strategy = InstrumentStrategy.BROAD_EQUITY,
         ),
@@ -725,7 +692,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "KOSPI 200 선물지수의 일간 수익률을 -1배로 추종하며 매일 노출을 재조정하는 인버스 ETF.",
             officialSourceUrl = "https://www.samsungfund.com/etf/product/view.do?id=2ETF20",
             distributionFrequency = DistributionFrequency.ANNUAL,
-            distributionNotes = "회계기간 종료일 기준이나 통상 분배 목적 상품이 아니며, 분배금이 지급되지 않을 수 있음.",
             eventRiskTags = setOf("일일 재조정", "변동성 누적손실", "선물 베이시스", "롤오버", "장기 역수익 불일치"),
             assetClass = EtfAssetClass.ALTERNATIVE,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -744,7 +710,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "중국을 제외한 한국·대만·일본의 AI 반도체 밸류체인 기업을 선별하는 액티브 ETF.",
             officialSourceUrl = "https://www.samsungfund.com/etf/product/view.do?id=2ETFI1",
             distributionFrequency = DistributionFrequency.QUARTERLY,
-            distributionNotes = "매년 1·4·7·10월 마지막 영업일 기준. 실제 분배 여부와 금액은 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("반도체 사이클", "AI 테마", "대만·일본 환율", "지정학", "액티브 운용"),
             aliases = setOf("KODEX 아시아반도체공급망exChina액티브"),
             assetClass = EtfAssetClass.SECTOR_EQUITY,
@@ -763,7 +728,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "글로벌 AI 반도체 핵심기업에 투자하면서 한국 반도체 비중을 약 20%로 기울이는 액티브 ETF.",
             officialSourceUrl = "https://www.soletf.com/ko/fund/etf/210908",
             distributionFrequency = DistributionFrequency.ANNUAL,
-            distributionNotes = "매년 4월 마지막 영업일 및 회계기간 종료일 기준. 분배는 보장되지 않음.",
             eventRiskTags = setOf("글로벌 반도체", "AI 테마", "다중통화 환율", "국가·종목 집중", "액티브 운용"),
             aliases = setOf("SOL 한국형글로벌반도체액티브"),
             assetClass = EtfAssetClass.SECTOR_EQUITY,
@@ -782,7 +746,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "KOSDAQ을 비교지수로 코스닥시장 성장주를 선별해 초과성과를 추구하는 액티브 ETF.",
             officialSourceUrl = "https://kind.krx.co.kr/external/2026/07/10/000227/20260710000406/68152.htm",
             distributionFrequency = DistributionFrequency.QUARTERLY,
-            distributionNotes = "매년 1·4·7·10월 마지막 영업일 및 회계기간 종료일 기준. 분배는 보장되지 않음.",
             eventRiskTags = setOf("코스닥 변동성", "중소형주", "액티브 운용", "종목 선택", "짧은 운용이력"),
             strategy = InstrumentStrategy.BROAD_EQUITY,
         ),
@@ -796,7 +759,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "유가증권시장 대표 200종목으로 구성된 KOSPI 200을 추종하는 국내주식 패시브 ETF.",
             officialSourceUrl = "https://kind.krx.co.kr/common/disclsviewer.do?acptno=20240909000516&method=search",
             distributionFrequency = DistributionFrequency.QUARTERLY,
-            distributionNotes = "매년 1·4·7·10월 마지막 영업일 및 회계기간 종료일 기준. 분배는 보장되지 않음.",
             eventRiskTags = setOf("국내 대형주", "상위종목 집중", "추적오차", "괴리율", "유동성"),
             strategy = InstrumentStrategy.BROAD_EQUITY,
         ),
@@ -810,7 +772,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "신용등급 AA- 이상 국내 국채·특수채·금융채·회사채에 투자해 비교지수 대비 초과성과를 추구하는 액티브 ETF.",
             officialSourceUrl = "https://kind.krx.co.kr/common/disclsviewer.do?acptNo=20231124000244&method=searchInitInfo",
             distributionFrequency = DistributionFrequency.ANNUAL,
-            distributionNotes = "회계기간 종료일 기준. 실제 분배 여부와 금액은 채권 이자와 운용 결과에 따라 달라질 수 있음.",
             eventRiskTags = setOf("금리", "듀레이션", "AA- 신용", "신용스프레드", "유동성", "액티브 운용"),
             assetClass = EtfAssetClass.FIXED_INCOME,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -828,7 +789,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "KOSPI 200을 비교지수로 국내 대형 우량·성장주 약 11종목에 집중해 초과성과를 추구하는 액티브 ETF.",
             officialSourceUrl = "https://kind.krx.co.kr/external/2026/04/28/000772/20260428002161/68659.htm",
             distributionFrequency = DistributionFrequency.QUARTERLY,
-            distributionNotes = "매년 1·4·7·10월 마지막 영업일 및 회계기간 종료일 기준. 분배는 보장되지 않음.",
             eventRiskTags = setOf("11종목 집중", "국내 대형주", "액티브 운용", "종목 선택", "KOSPI 200 괴리"),
             strategy = InstrumentStrategy.BROAD_EQUITY,
         ),
@@ -842,7 +802,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "삼성전자 선물을 이용해 삼성전자 일간 수익률의 -2배를 목표로 매일 노출을 재조정하는 ETF.",
             officialSourceUrl = "https://www.plusetf.co.kr/product/detail?n=006406",
             distributionFrequency = DistributionFrequency.ANNUAL,
-            distributionNotes = "회계기간 종료일 기준이나 통상 분배 목적 상품이 아니며, 분배금이 지급되지 않을 수 있음.",
             eventRiskTags = setOf("단일종목", "-2배 레버리지", "일일 재조정", "변동성 누적손실", "선물 베이시스", "롤오버"),
             assetClass = EtfAssetClass.ALTERNATIVE,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -863,7 +822,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "미국 배당증가 성장주를 보유하고 SPY 콜옵션을 매일 부분 매도해 인컴을 추구하는 ETF.",
             officialSourceUrl = "https://www.plusetf.co.kr/product/detail?n=006376",
             distributionFrequency = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 15일 기준. 옵션 프리미엄과 분배금은 보장되지 않음.",
             eventRiskTags = setOf("미국주식", "상승 참여 제한", "데일리 옵션", "USD 환율", "분배금 원금잠식"),
             assetClass = EtfAssetClass.ALTERNATIVE,
             taxCategory = EtfTaxCategory.KOREAN_OTHER,
@@ -883,7 +841,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "전력기기·전력인프라·산업자동화·스마트에너지 사업을 영위하는 국내 사업회사.",
             officialSourceUrl = "https://www.ls-electric.com/ko/company/invest/stock",
             distributionFrequency = DistributionFrequency.ANNUAL,
-            distributionNotes = "이사회 결의와 정기주주총회 승인을 거쳐 지급하는 결산배당. 배당은 보장되지 않음.",
             eventRiskTags = setOf("수주·설비투자 사이클", "원자재 가격", "해외매출 환율", "프로젝트 원가", "단일회사"),
             aliases = setOf("LS산전"),
         ),
@@ -895,7 +852,6 @@ object RequestedKoreanInstrumentCatalog {
             strategySummary = "부산은행·경남은행과 증권·캐피탈 등 금융 자회사를 지배하는 국내 금융지주회사.",
             officialSourceUrl = "https://www.bnkfg.com/mobile/03/02.jsp?dataSeqNo=6881",
             distributionFrequency = DistributionFrequency.QUARTERLY,
-            distributionNotes = "현행 분기배당 정책은 이사회 결의, 자본비율과 감독규제에 따라 금액 또는 지급 여부가 달라질 수 있음.",
             eventRiskTags = setOf("신용손실", "순이자마진", "부동산 PF", "지역경기", "자본규제", "단일회사"),
         ),
     )
@@ -909,7 +865,6 @@ object RequestedKoreanInstrumentCatalog {
         strategySummary: String,
         officialSourceUrl: String,
         distributionFrequency: DistributionFrequency,
-        distributionNotes: String,
         eventRiskTags: Set<String>,
         aliases: Set<String> = emptySet(),
         assetClass: EtfAssetClass = EtfAssetClass.BROAD_EQUITY,
@@ -932,7 +887,6 @@ object RequestedKoreanInstrumentCatalog {
         strategySummary = strategySummary,
         officialSourceUrl = officialSourceUrl,
         distributionFrequency = distributionFrequency,
-        distributionNotes = distributionNotes,
         eventRiskTags = eventRiskTags,
         aliases = aliases,
         benchmark = benchmark,
@@ -956,7 +910,6 @@ object RequestedKoreanInstrumentCatalog {
         strategySummary: String,
         officialSourceUrl: String,
         distributionFrequency: DistributionFrequency,
-        distributionNotes: String,
         eventRiskTags: Set<String>,
         aliases: Set<String> = emptySet(),
     ): Seed = Seed(
@@ -968,7 +921,6 @@ object RequestedKoreanInstrumentCatalog {
         strategySummary = strategySummary,
         officialSourceUrl = officialSourceUrl,
         distributionFrequency = distributionFrequency,
-        distributionNotes = distributionNotes,
         eventRiskTags = eventRiskTags,
         aliases = aliases,
         strategy = InstrumentStrategy.OPERATING_COMPANY,

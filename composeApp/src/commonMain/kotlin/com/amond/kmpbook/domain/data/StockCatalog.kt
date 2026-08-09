@@ -1,10 +1,10 @@
 package com.amond.kmpbook.domain.data
 
-import com.amond.kmpbook.domain.model.Market
-import com.amond.kmpbook.domain.model.InstrumentType
-import com.amond.kmpbook.domain.model.IndustrySegment
-import com.amond.kmpbook.domain.model.Sector
-import com.amond.kmpbook.domain.model.StockDefinition
+import com.amond.kmpbook.domain.model.instrument.InstrumentType
+import com.amond.kmpbook.domain.model.instrument.StockDefinition
+import com.amond.kmpbook.domain.model.market.IndustrySegment
+import com.amond.kmpbook.domain.model.market.Market
+import com.amond.kmpbook.domain.model.market.Sector
 
 /**
  * 기본 게임 시나리오에 포함되는 종목 카탈로그.
@@ -118,8 +118,7 @@ object StockCatalog {
                 stock.industrySegments.any { keyword in it.displayName.lowercase() } ||
                 stock.etfProfile?.let { keyword in it.benchmark.lowercase() || keyword in it.assetClass.displayName.lowercase() } == true ||
                 stock.identityProfile?.let { identity ->
-                    keyword in identity.legalName.lowercase() ||
-                        identity.aliases.any { keyword in it.lowercase() } ||
+                    identity.aliases.any { keyword in it.lowercase() } ||
                         identity.eventRiskTags.any { keyword in it.lowercase() }
                 } == true
         }

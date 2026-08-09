@@ -1,9 +1,8 @@
 package com.amond.kmpbook.ui.theme
 
-import androidx.compose.runtime.Immutable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.amond.kmpbook.domain.model.market.Market
 
 /**
  * Executable design-system contract for Market Ledger 2040.

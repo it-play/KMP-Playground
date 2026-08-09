@@ -1,6 +1,6 @@
 package com.amond.kmpbook.domain.time
 
-import com.amond.kmpbook.domain.model.Market
+import com.amond.kmpbook.domain.model.market.Market
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate

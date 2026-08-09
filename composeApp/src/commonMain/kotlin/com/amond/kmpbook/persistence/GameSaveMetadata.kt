@@ -1,6 +1,5 @@
 package com.amond.kmpbook.persistence
 
-import com.amond.kmpbook.presentation.SimulatorUiState
 import kotlin.time.Instant
 
 data class GameSaveMetadata(

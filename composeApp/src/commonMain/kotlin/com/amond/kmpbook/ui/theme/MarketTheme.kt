@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.amond.kmpbook.domain.model.market.Market
 import kmpbook.composeapp.generated.resources.Res
 import kmpbook.composeapp.generated.resources.pretendard_bold
 import kmpbook.composeapp.generated.resources.pretendard_medium

@@ -24,56 +24,66 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.amond.kmpbook.domain.model.Currency
-import com.amond.kmpbook.domain.model.GamePhase
-import com.amond.kmpbook.domain.model.Market
-import com.amond.kmpbook.domain.model.MarketSession
-import com.amond.kmpbook.domain.model.OrderSide
-import com.amond.kmpbook.domain.model.OrderType
-import com.amond.kmpbook.domain.model.Screen
-import com.amond.kmpbook.domain.model.TradingProtectionAction
-import com.amond.kmpbook.domain.model.TradingProtectionRequest
-import com.amond.kmpbook.domain.model.TradingRestrictionSource
-import com.amond.kmpbook.domain.tax.FeeCategory
-import com.amond.kmpbook.domain.tax.TaxCategory
-import com.amond.kmpbook.domain.tax.TaxLiabilityStatus
+import com.amond.kmpbook.domain.model.game.GamePhase
+import com.amond.kmpbook.domain.model.game.Screen
+import com.amond.kmpbook.domain.model.market.Currency
+import com.amond.kmpbook.domain.model.market.Market
+import com.amond.kmpbook.domain.model.protection.core.TradingProtectionAction
+import com.amond.kmpbook.domain.model.protection.core.TradingProtectionRequest
+import com.amond.kmpbook.domain.model.protection.core.TradingRestrictionSource
+import com.amond.kmpbook.domain.model.trading.OrderType
+import com.amond.kmpbook.domain.model.venue.MarketSession
+import com.amond.kmpbook.domain.simulation.protection.TradingProtectionEngine
+import com.amond.kmpbook.domain.tax.core.TaxCategory
+import com.amond.kmpbook.domain.tax.fee.FeeCategory
+import com.amond.kmpbook.domain.tax.liability.TaxLiabilityStatus
+import com.amond.kmpbook.persistence.GameLoadFailure
+import com.amond.kmpbook.persistence.GameLoadNotFound
 import com.amond.kmpbook.persistence.GameLoadResult
+import com.amond.kmpbook.persistence.GameLoadSuccess
+import com.amond.kmpbook.persistence.GameSaveDeleteFailure
+import com.amond.kmpbook.persistence.GameSaveDeleteNotFound
 import com.amond.kmpbook.persistence.GameSaveDeleteResult
+import com.amond.kmpbook.persistence.GameSaveDeleted
+import com.amond.kmpbook.persistence.GameSaveFailure
+import com.amond.kmpbook.persistence.GameSaveMissing
+import com.amond.kmpbook.persistence.GameSavePresenceFailure
 import com.amond.kmpbook.persistence.GameSavePresenceResult
+import com.amond.kmpbook.persistence.GameSavePresent
 import com.amond.kmpbook.persistence.GameSaveResult
 import com.amond.kmpbook.persistence.GameSaveStorage
-import com.amond.kmpbook.presentation.InstrumentMetricsProjection
-import com.amond.kmpbook.presentation.ProtectionUiProjection
-import com.amond.kmpbook.presentation.SimulatorUiState
-import com.amond.kmpbook.presentation.SimulatorViewModel
-import com.amond.kmpbook.presentation.buildNewsUiProjection
-import com.amond.kmpbook.presentation.buildProtectionUiProjection
-import com.amond.kmpbook.domain.simulation.TradingProtectionEngine
+import com.amond.kmpbook.persistence.GameSaveSuccess
+import com.amond.kmpbook.presentation.metrics.InstrumentMetricsProjection
+import com.amond.kmpbook.presentation.news.buildNewsUiProjection
+import com.amond.kmpbook.presentation.protection.ProtectionUiProjection
+import com.amond.kmpbook.presentation.protection.buildProtectionUiProjection
+import com.amond.kmpbook.presentation.simulator.SimulatorUiState
+import com.amond.kmpbook.presentation.simulator.SimulatorViewModel
 import com.amond.kmpbook.ui.components.MarketProtectionDetailSurface
 import com.amond.kmpbook.ui.components.MarketProtectionStrip
-import com.amond.kmpbook.ui.screens.AnalyticsScreen
-import com.amond.kmpbook.ui.screens.EndingScreen
-import com.amond.kmpbook.ui.screens.EventsScreen
-import com.amond.kmpbook.ui.screens.EventNewsFilterState
-import com.amond.kmpbook.ui.screens.GameSettingsDisplay
-import com.amond.kmpbook.ui.screens.HomeDashboardScreen
-import com.amond.kmpbook.ui.screens.MarketTradingScreen
-import com.amond.kmpbook.ui.screens.NewGameScreen
-import com.amond.kmpbook.ui.screens.NewsBrowseTab
-import com.amond.kmpbook.ui.screens.OrdersScreen
-import com.amond.kmpbook.ui.screens.PortfolioScreen
-import com.amond.kmpbook.ui.screens.SettingsScreen
-import com.amond.kmpbook.ui.screens.TaxCenterData
-import com.amond.kmpbook.ui.screens.TaxCenterScreen
-import com.amond.kmpbook.ui.screens.TaxYearDisplay
+import com.amond.kmpbook.ui.screens.dashboard.HomeDashboardScreen
+import com.amond.kmpbook.ui.screens.game.EndingScreen
+import com.amond.kmpbook.ui.screens.game.GameSettingsDisplay
+import com.amond.kmpbook.ui.screens.game.NewGameScreen
+import com.amond.kmpbook.ui.screens.game.SettingsScreen
+import com.amond.kmpbook.ui.screens.market.MarketTradingScreen
+import com.amond.kmpbook.ui.screens.news.EventNewsFilterState
+import com.amond.kmpbook.ui.screens.news.EventsScreen
+import com.amond.kmpbook.ui.screens.news.NewsBrowseTab
+import com.amond.kmpbook.ui.screens.orders.OrdersScreen
+import com.amond.kmpbook.ui.screens.portfolio.AnalyticsScreen
+import com.amond.kmpbook.ui.screens.portfolio.PortfolioScreen
+import com.amond.kmpbook.ui.screens.tax.TaxCenterData
+import com.amond.kmpbook.ui.screens.tax.TaxCenterScreen
+import com.amond.kmpbook.ui.screens.tax.TaxYearDisplay
 import com.amond.kmpbook.ui.shell.SidebarSummary
 import com.amond.kmpbook.ui.shell.SimulationClockRail
 import com.amond.kmpbook.ui.shell.SimulatorSidebar
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketSimulatorTheme
 import com.amond.kmpbook.ui.theme.MarketType
-import kotlinx.datetime.toLocalDateTime
 import kotlinx.coroutines.launch
+import kotlinx.datetime.toLocalDateTime
 
 @Composable
 fun App() {
@@ -86,33 +96,33 @@ fun App() {
 
     LaunchedEffect(storage) {
         when (val result = storage.exists()) {
-            is GameSavePresenceResult.Present -> {
+            is GameSavePresent -> {
                 hasSavedGame = true
                 saveStatus = "저장 장부 ${result.sizeBytes / 1024} KB가 있습니다."
             }
-            is GameSavePresenceResult.Missing -> {
+            is GameSaveMissing -> {
                 hasSavedGame = false
                 saveStatus = "저장 장부가 없습니다."
             }
-            is GameSavePresenceResult.Failure -> saveStatus = result.error.message
+            is GameSavePresenceFailure -> saveStatus = result.error.message
         }
     }
 
     val saveGame: () -> Unit = {
         scope.launch {
             when (val result = storage.save(viewModel.currentState)) {
-                is GameSaveResult.Success -> {
+                is GameSaveSuccess -> {
                     hasSavedGame = true
                     saveStatus = "${result.metadata.gameTime} 시점 장부를 저장했습니다."
                 }
-                is GameSaveResult.Failure -> saveStatus = result.error.message
+                is GameSaveFailure -> saveStatus = result.error.message
             }
         }
     }
     val loadGame: () -> Unit = {
         scope.launch {
             when (val result = storage.load()) {
-                is GameLoadResult.Success -> {
+                is GameLoadSuccess -> {
                     if (viewModel.restoreGame(result.state)) {
                         hasSavedGame = true
                         saveStatus = "${result.metadata.gameTime} 시점 장부를 불러왔습니다."
@@ -120,26 +130,26 @@ fun App() {
                         saveStatus = "저장 장부의 게임 상태 검증에 실패했습니다."
                     }
                 }
-                is GameLoadResult.NotFound -> {
+                is GameLoadNotFound -> {
                     hasSavedGame = false
                     saveStatus = result.message
                 }
-                is GameLoadResult.Failure -> saveStatus = result.error.message
+                is GameLoadFailure -> saveStatus = result.error.message
             }
         }
     }
     val deleteSave: () -> Unit = {
         scope.launch {
             when (val result = storage.delete()) {
-                is GameSaveDeleteResult.Deleted -> {
+                is GameSaveDeleted -> {
                     hasSavedGame = false
                     saveStatus = "저장 장부를 삭제했습니다."
                 }
-                is GameSaveDeleteResult.NotFound -> {
+                is GameSaveDeleteNotFound -> {
                     hasSavedGame = false
                     saveStatus = "삭제할 저장 장부가 없습니다."
                 }
-                is GameSaveDeleteResult.Failure -> saveStatus = result.error.message
+                is GameSaveDeleteFailure -> saveStatus = result.error.message
             }
         }
     }

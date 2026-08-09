@@ -1,13 +1,13 @@
 package com.amond.kmpbook.ui.format
 
-import com.amond.kmpbook.domain.model.Currency
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.number
-import kotlinx.datetime.toLocalDateTime
+import com.amond.kmpbook.domain.model.market.Currency
 import kotlin.math.abs
 import kotlin.math.round
 import kotlin.math.roundToLong
 import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.number
+import kotlinx.datetime.toLocalDateTime
 
 fun formatMoney(value: Double, currency: Currency, compact: Boolean = false): String {
     if (!value.isFinite()) return "-"

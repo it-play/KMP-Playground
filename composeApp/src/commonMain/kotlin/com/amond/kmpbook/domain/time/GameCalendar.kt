@@ -1,9 +1,11 @@
 package com.amond.kmpbook.domain.time
 
-import com.amond.kmpbook.domain.model.Market
-import com.amond.kmpbook.domain.model.MarketSession
-import com.amond.kmpbook.domain.model.MarketVenueProfiles
-import com.amond.kmpbook.domain.model.TurnStep
+import com.amond.kmpbook.domain.model.game.TurnStep
+import com.amond.kmpbook.domain.model.market.Market
+import com.amond.kmpbook.domain.model.venue.MarketSession
+import com.amond.kmpbook.domain.model.venue.MarketVenueProfiles
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Instant
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -11,8 +13,6 @@ import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Duration.Companion.hours
-import kotlin.time.Instant
 
 data class MarketSessionWindow(
     val market: Market,

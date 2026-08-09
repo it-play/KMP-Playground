@@ -1,179 +1,149 @@
 package com.amond.kmpbook.domain.data
 
-import com.amond.kmpbook.domain.model.DistributionFrequency
-import com.amond.kmpbook.domain.model.InstrumentIdentityProfile
-import com.amond.kmpbook.domain.model.InstrumentStrategy
-import com.amond.kmpbook.domain.model.Market
-import com.amond.kmpbook.domain.model.StockDefinition
+import com.amond.kmpbook.domain.model.instrument.DistributionFrequency
+import com.amond.kmpbook.domain.model.instrument.InstrumentIdentityProfile
+import com.amond.kmpbook.domain.model.instrument.InstrumentStrategy
+import com.amond.kmpbook.domain.model.instrument.StockDefinition
+import com.amond.kmpbook.domain.model.market.Market
 import kotlin.math.abs
 
 /** 기본 ETF 전체에 균일한 구조 정보를 붙이고, 공식 검증을 마친 상품은 상세 메타데이터로 덮어쓴다. */
 object RequestedExistingInstrumentMetadata {
     private data class Metadata(
         val id: String,
-        val legalName: String,
         val aliases: Set<String>,
         val issuer: String,
         val summary: String,
         val source: String,
         val distribution: DistributionFrequency,
-        val distributionNotes: String,
         val riskTags: Set<String>,
     )
 
     private val byId = listOf(
         Metadata(
             id = "${Market.KOSPI.name}:423160",
-            legalName = "KODEX KOFR금리액티브(합성)",
             aliases = emptySet(),
             issuer = "삼성자산운용",
             summary = "KOFR 지표수익을 스왑으로 구현하는 원화 단기금리 액티브 ETF입니다.",
             source = "https://www.samsungfund.com/etf/product/view.do?id=2ETFG6",
             distribution = DistributionFrequency.MONTHLY,
-            distributionNotes = "월말 분배 기준; 지급과 금액은 보장되지 않습니다.",
             riskTags = setOf("kofr_rate", "swap_counterparty", "collateral", "tracking_error"),
         ),
         Metadata(
             id = "${Market.KOSPI.name}:402970",
-            legalName = "ACE 미국배당다우존스",
             aliases = emptySet(),
             issuer = "한국투자신탁운용",
             summary = "미국의 배당 지속성과 재무건전성을 선별한 100종목 배당성장 ETF입니다.",
             source = "https://www.aceetf.co.kr/fund/K55101DN4471",
             distribution = DistributionFrequency.MONTHLY,
-            distributionNotes = "매월 15일 분배 기준; 지급과 금액은 보장되지 않습니다.",
             riskTags = setOf("usd_exposure", "dividend_cut", "value_factor", "index_rebalance"),
         ),
         Metadata(
             id = "${Market.KOSPI.name}:357870",
-            legalName = "TIGER CD금리투자KIS(합성)",
             aliases = emptySet(),
             issuer = "미래에셋자산운용",
             summary = "CD 91일물 총수익을 합성 방식으로 추종하는 단기금융 ETF입니다.",
             source = "https://www.tigeretf.com/upload/etf/20250627095710000264.pdf",
             distribution = DistributionFrequency.ANNUAL,
-            distributionNotes = "회계기간 종료일 분배 가능; 과거 지급이 없을 수 있습니다.",
             riskTags = setOf("cd_rate", "swap_counterparty", "not_deposit", "tracking_error"),
         ),
         Metadata(
             id = "${Market.KOSPI.name}:0183J0",
-            legalName = "TIGER 미국우주테크",
             aliases = emptySet(),
             issuer = "미래에셋자산운용",
             summary = "미국 우주기술 관련 10종목에 집중하는 테마 ETF입니다.",
             source = "https://kind.krx.co.kr/external/2026/04/10/000143/20260410000293/68152.htm",
             distribution = DistributionFrequency.QUARTERLY,
-            distributionNotes = "1·4·7·10월 말 분배 기준; 지급과 금액은 보장되지 않습니다.",
             riskTags = setOf("usd_exposure", "space_theme", "ten_stock_concentration", "growth_valuation"),
         ),
         Metadata(
             id = "${Market.NYSE_ARCA.name}:VT",
-            legalName = "Vanguard Total World Stock ETF",
             aliases = setOf("뱅가드 글로벌 주식 ETF", "Vanguard Total World Stock Index ETF"),
             issuer = "Vanguard",
             summary = "미국을 포함한 전 세계 대형·중형·소형주에 투자하는 광범위 주식 ETF입니다.",
             source = "https://investor.vanguard.com/investment-products/etfs/profile/vt",
             distribution = DistributionFrequency.QUARTERLY,
-            distributionNotes = "분기 분배; 구성기업 배당에 따라 변동됩니다.",
             riskTags = setOf("global_equity", "multi_currency", "index_rebalance"),
         ),
         Metadata(
             id = "${Market.NASDAQ.name}:IEF",
-            legalName = "iShares 7-10 Year Treasury Bond ETF",
             aliases = setOf("아이셰어즈 미국 장기 국채 ETF"),
             issuer = "BlackRock Fund Advisors",
             summary = "만기 7~10년 미국 국채에 투자하는 중기 듀레이션 ETF입니다.",
             source = "https://www.ishares.com/us/products/239456/ishares-710-year-treasury-bond-etf",
             distribution = DistributionFrequency.MONTHLY,
-            distributionNotes = "월 분배; 금리와 국채 이자에 따라 변동됩니다.",
             riskTags = setOf("treasury_duration", "interest_rate", "index_rebalance"),
         ),
         Metadata(
             id = "${Market.NYSE_ARCA.name}:DGRO",
-            legalName = "iShares Core Dividend Growth ETF",
             aliases = setOf("아이셰어즈 배당성장주 ETF"),
             issuer = "BlackRock Fund Advisors",
             summary = "지속적인 배당 성장과 지급여력을 갖춘 미국 기업을 선별합니다.",
             source = "https://www.ishares.com/us/products/264623/DGRO",
             distribution = DistributionFrequency.QUARTERLY,
-            distributionNotes = "분기 분배; 구성기업의 배당정책에 따라 변동됩니다.",
             riskTags = setOf("dividend_cut", "quality_factor", "index_rebalance"),
         ),
         Metadata(
             id = "${Market.NYSE_ARCA.name}:FNDX",
-            legalName = "Schwab Fundamental U.S. Large Company ETF",
             aliases = setOf("슈왑 미국 펀더멘탈 대형주 ETF"),
             issuer = "Charles Schwab Investment Management",
             summary = "매출·현금흐름·환원 등 펀더멘털 기준으로 미국 대형주를 가중합니다.",
             source = "https://www.schwabassetmanagement.com/products/fndx",
             distribution = DistributionFrequency.QUARTERLY,
-            distributionNotes = "분기 분배; 지급액은 보장되지 않습니다.",
             riskTags = setOf("fundamental_factor", "index_rebalance", "forward_split_2024_10"),
         ),
         Metadata(
             id = "${Market.NYSE_ARCA.name}:PFXF",
-            legalName = "VanEck Preferred Securities ex Financials ETF",
             aliases = setOf("반에크 비금융 배당주 ETF"),
             issuer = "VanEck",
             summary = "금융사를 제외한 우선주·하이브리드 증권에 투자합니다.",
             source = "https://www.vaneck.com/us/en/investments/preferred-securities-ex-financials-etf-pfxf/overview/",
             distribution = DistributionFrequency.MONTHLY,
-            distributionNotes = "월 분배; 금리·콜·발행사 배당정책에 따라 변동됩니다.",
             riskTags = setOf("preferred_security", "interest_rate", "issuer_call", "credit_spread"),
         ),
         Metadata(
             id = "${Market.NYSE_ARCA.name}:AOM",
-            legalName = "iShares Core 40/60 Moderate Allocation ETF",
             aliases = setOf("아이셰어즈 안정지향적 자산배분 ETF"),
             issuer = "BlackRock Fund Advisors",
             summary = "주식 약 40%와 채권 약 60%를 재간접으로 배분하는 중립형 ETF입니다.",
             source = "https://www.ishares.com/us/products/239765/AOM",
             distribution = DistributionFrequency.QUARTERLY,
-            distributionNotes = "분기 분배; 피투자 ETF의 분배에 따라 변동됩니다.",
             riskTags = setOf("fund_of_funds", "asset_allocation", "interest_rate", "rebalance"),
         ),
         Metadata(
             id = "${Market.NYSE_ARCA.name}:ONEY",
-            legalName = "State Street SPDR Russell 1000 Yield Focus ETF",
             aliases = setOf("SPDR 러셀 1000 배당 ETF"),
             issuer = "State Street Global Advisors",
             summary = "Russell 1000에서 가치·품질·배당수익 팩터를 적용한 미국 주식 ETF입니다.",
             source = "https://www.ssga.com/us/en/individual/etfs/state-street-spdr-russell-1000-yield-focus-etf-oney",
             distribution = DistributionFrequency.QUARTERLY,
-            distributionNotes = "분기 분배; 구성기업 배당에 따라 변동됩니다.",
             riskTags = setOf("yield_factor", "value_factor", "index_rebalance"),
         ),
         Metadata(
             id = "${Market.NYSE_ARCA.name}:VTV",
-            legalName = "Vanguard Value ETF",
             aliases = setOf("뱅가드 미국 대형 가치주 ETF", "Vanguard Morningstar Value ETF"),
             issuer = "Vanguard",
             summary = "미국 대형 가치주에 광범위하게 투자하는 지수 ETF입니다.",
             source = "https://investor.vanguard.com/investment-products/etfs/profile/vtv",
             distribution = DistributionFrequency.QUARTERLY,
-            distributionNotes = "분기 분배; 지급액은 보장되지 않습니다.",
             riskTags = setOf("value_factor", "index_rebalance"),
         ),
         Metadata(
             id = "${Market.NYSE_ARCA.name}:VOO",
-            legalName = "Vanguard S&P 500 ETF",
             aliases = setOf("뱅가드 S&P500 ETF"),
             issuer = "Vanguard",
             summary = "S&P 500 지수를 추종하는 미국 대형주 ETF입니다.",
             source = "https://investor.vanguard.com/investment-products/etfs/profile/voo",
             distribution = DistributionFrequency.QUARTERLY,
-            distributionNotes = "분기 분배; S&P 500 구성기업 배당에 따라 변동됩니다.",
             riskTags = setOf("sp500", "index_rebalance", "market_concentration"),
         ),
         Metadata(
             id = "${Market.NASDAQ.name}:VYMI",
-            legalName = "Vanguard International High Dividend Yield ETF",
             aliases = setOf("뱅가드 글로벌 고배당주 ETF"),
             issuer = "Vanguard",
             summary = "미국을 제외한 국제 고배당 주식에 투자하는 ETF입니다.",
             source = "https://investor.vanguard.com/investment-products/etfs/profile/vymi",
             distribution = DistributionFrequency.QUARTERLY,
-            distributionNotes = "분기 분배; 각국 기업 배당과 통화에 따라 변동됩니다.",
             riskTags = setOf("ex_us", "multi_currency", "dividend_cut", "country_risk"),
         ),
     ).associateBy(Metadata::id)
@@ -185,12 +155,10 @@ object RequestedExistingInstrumentMetadata {
             description = metadata.summary,
             behaviorProfile = stock.behavior.copy(distributionFrequency = metadata.distribution),
             identityProfile = InstrumentIdentityProfile(
-                legalName = metadata.legalName,
                 aliases = metadata.aliases,
                 issuerOrManager = metadata.issuer,
                 strategySummary = metadata.summary,
                 officialSourceUrl = metadata.source,
-                distributionNotes = metadata.distributionNotes,
                 eventRiskTags = metadata.riskTags,
             ),
         )
@@ -202,7 +170,6 @@ object RequestedExistingInstrumentMetadata {
         return copy(
             description = summary,
             identityProfile = InstrumentIdentityProfile(
-                legalName = englishName,
                 aliases = if (name == englishName) emptySet() else setOf(name),
                 issuerOrManager = issuerOrManager(this),
                 strategySummary = summary,
@@ -211,8 +178,6 @@ object RequestedExistingInstrumentMetadata {
                 } else {
                     KRX_PRODUCT_SEARCH_URL
                 },
-                verifiedOn = EtfCatalog.IDENTITY_SNAPSHOT_DATE,
-                distributionNotes = distributionNotes(behavior.distributionFrequency),
                 eventRiskTags = buildSet {
                     add("asset_${profile.assetClass.name.lowercase()}")
                     add("region_${profile.exposureRegion.name.lowercase()}")
@@ -314,15 +279,6 @@ object RequestedExistingInstrumentMetadata {
             legalName.startsWith("Alpha Architect ") -> "Empowered Funds, LLC"
             else -> error("운용사를 판별할 수 없는 미국 ETF입니다: ${stock.id} $legalName")
         }
-    }
-
-    private fun distributionNotes(frequency: DistributionFrequency): String = when (frequency) {
-        DistributionFrequency.NONE -> "정기 분배를 목표로 하지 않으며 지급 여부와 금액은 보장되지 않습니다."
-        DistributionFrequency.WEEKLY -> "주간 분배형으로 추정되며 실제 기준일과 지급액은 운용사 공시를 확인해야 합니다."
-        DistributionFrequency.MONTHLY -> "월 분배형으로 추정되며 실제 기준일과 지급액은 운용사 공시를 확인해야 합니다."
-        DistributionFrequency.QUARTERLY -> "분기 분배형으로 추정되며 실제 기준일과 지급액은 운용사 공시를 확인해야 합니다."
-        DistributionFrequency.SEMIANNUAL -> "반기 분배형으로 추정되며 실제 기준일과 지급액은 운용사 공시를 확인해야 합니다."
-        DistributionFrequency.ANNUAL -> "연 분배형으로 추정되며 실제 기준일과 지급액은 운용사 공시를 확인해야 합니다."
     }
 
     private fun formatMultiple(value: Double): String =

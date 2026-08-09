@@ -1,6 +1,6 @@
 package com.amond.kmpbook.persistence
 
-import com.amond.kmpbook.presentation.SimulatorUiState
+import com.amond.kmpbook.presentation.simulator.SimulatorUiState
 import kotlin.time.Instant
 
 /** Versioned on-disk envelope. Only the exact current schema is accepted. */

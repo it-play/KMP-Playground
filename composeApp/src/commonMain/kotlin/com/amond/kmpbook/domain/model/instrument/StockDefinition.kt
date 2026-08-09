@@ -1,0 +1,97 @@
+package com.amond.kmpbook.domain.model.instrument
+
+import com.amond.kmpbook.domain.model.market.Currency
+import com.amond.kmpbook.domain.model.market.IndustrySegment
+import com.amond.kmpbook.domain.model.market.Market
+import com.amond.kmpbook.domain.model.market.Sector
+import kotlin.math.abs
+import kotlin.math.round
+
+/**
+ * 시뮬레이션 종목의 변하지 않는 메타데이터다.
+ *
+ * 새 종목은 [StockCatalog][com.amond.kmpbook.domain.data.StockCatalog]의 목록에 이 데이터 한 건만
+ * 추가하면 된다. 미국 소수점 거래를 활성화할 때는 [quantityStep]을 0.000001처럼 낮춘다.
+ */
+data class StockDefinition(
+    val symbol: String,
+    val name: String,
+    val englishName: String,
+    val market: Market,
+    val sector: Sector,
+    val initialPrice: Double,
+    val volatility: Double,
+    val dividendYield: Double,
+    val marketCap: Double,
+    val sharesOutstanding: Long,
+    val description: String,
+    val beta: Double = 1.0,
+    val quantityStep: Double = 1.0,
+    val lotSize: Double = 1.0,
+    val etfProfile: EtfProfile? = null,
+    /** ETF와 다른 구조(CEF·ETN·REIT·ADR)를 상장지만으로 추론하지 않는 명시적 분류. */
+    val instrumentTypeOverride: InstrumentType? = null,
+    /** 자산군·전략별 가격·분배·원금잠식 규칙. null은 종목 메타데이터에서 결정론적으로 추론한다. */
+    val behaviorProfile: InstrumentBehaviorProfile? = null,
+    /** 운용사·법적 명칭·검증 출처·이벤트 태그. 사용자 종목팩은 생략할 수 있다. */
+    val identityProfile: InstrumentIdentityProfile? = null,
+    /** 뉴스의 세부 산업 전달 경로에 쓰는 명시적 노출. 종목 추가 시 필요한 항목만 선언한다. */
+    val industrySegments: Set<IndustrySegment> = emptySet(),
+) {
+    init {
+        require(symbol.isNotBlank()) { "종목 코드는 비어 있을 수 없습니다." }
+        require(symbol == symbol.trim()) { "종목 코드 앞뒤에는 공백을 둘 수 없습니다." }
+        require(name.isNotBlank()) { "종목명은 비어 있을 수 없습니다." }
+        require(initialPrice > 0.0) { "기준 가격은 0보다 커야 합니다." }
+        require(volatility >= 0.0) { "변동성은 음수일 수 없습니다." }
+        require(dividendYield >= 0.0) { "배당수익률은 음수일 수 없습니다." }
+        require(marketCap > 0.0) { "시가총액은 0보다 커야 합니다." }
+        require(sharesOutstanding > 0L) { "발행주식 수는 0보다 커야 합니다." }
+        require(beta >= 0.0) { "베타는 음수일 수 없습니다." }
+        require(quantityStep > 0.0) { "수량 단위는 0보다 커야 합니다." }
+        require(lotSize > 0.0) { "매매 단위는 0보다 커야 합니다." }
+        etfProfile?.let { profile ->
+            require(
+                (market.isKorean && profile.taxCategory != EtfTaxCategory.FOREIGN_LISTED) ||
+                    (market.isUnitedStates && profile.taxCategory == EtfTaxCategory.FOREIGN_LISTED),
+            ) { "ETF 상장시장과 세무 분류가 일치하지 않습니다." }
+        }
+        require(instrumentTypeOverride != InstrumentType.ETF || etfProfile != null) {
+            "ETF로 분류한 종목에는 ETF 프로필이 필요합니다."
+        }
+        require(
+            instrumentTypeOverride !in setOf(InstrumentType.CLOSED_END_FUND, InstrumentType.ETN) ||
+                etfProfile != null,
+        ) { "폐쇄형 펀드와 ETN은 기초자산 가격 프로필이 필요합니다." }
+    }
+
+    /** 시장까지 포함하므로 같은 티커가 다른 시장에 있어도 충돌하지 않는다. */
+    val id: String get() = "${market.name}:$symbol"
+    val currency: Currency get() = market.currency
+    val supportsFractional: Boolean get() = quantityStep < 1.0
+    val instrumentType: InstrumentType
+        get() = instrumentTypeOverride ?: if (etfProfile == null) InstrumentType.STOCK else InstrumentType.ETF
+    /** ETF와 CEF·ETN을 구분한다. 기초자산 가격 프로필 여부는 [isFundLike]를 사용한다. */
+    val isEtf: Boolean get() = instrumentType == InstrumentType.ETF
+    val isFundLike: Boolean get() = etfProfile != null
+    val hasCorporateEarnings: Boolean
+        get() = instrumentType in setOf(InstrumentType.STOCK, InstrumentType.REIT, InstrumentType.ADR)
+    val quantityUnit: String get() = when (instrumentType) {
+        InstrumentType.ETF -> "좌"
+        InstrumentType.ETN -> "증권"
+        else -> "주"
+    }
+
+    val behavior: InstrumentBehaviorProfile
+        get() = behaviorProfile ?: InstrumentBehaviorProfile.infer(this)
+
+    fun acceptsQuantity(quantity: Double): Boolean {
+        if (quantity <= 0.0) return false
+        val steps = quantity / quantityStep
+        return abs(steps - round(steps)) < QUANTITY_EPSILON
+    }
+
+    private companion object {
+        const val QUANTITY_EPSILON = 1e-7
+    }
+}

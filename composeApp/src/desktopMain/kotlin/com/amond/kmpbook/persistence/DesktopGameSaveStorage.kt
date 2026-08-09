@@ -1,38 +1,38 @@
 package com.amond.kmpbook.persistence
 
-import com.amond.kmpbook.domain.model.CorporateActionKind
-import com.amond.kmpbook.domain.model.CorporateActionNewsTransition
-import com.amond.kmpbook.domain.model.CorporateActionSource
-import com.amond.kmpbook.domain.model.CausalEconomicFactor
-import com.amond.kmpbook.domain.model.CausalSignalDirection
-import com.amond.kmpbook.domain.model.CausalTransmissionProfile
-import com.amond.kmpbook.domain.model.EventImpactCoveragePolicy
-import com.amond.kmpbook.domain.model.EventImpactHorizon
-import com.amond.kmpbook.domain.model.EventImpactTargetKind
-import com.amond.kmpbook.domain.model.EventRecordKind
-import com.amond.kmpbook.domain.model.EventTradingHaltKind
-import com.amond.kmpbook.domain.model.EventScope
-import com.amond.kmpbook.domain.model.EventSeverity
-import com.amond.kmpbook.domain.model.EventType
-import com.amond.kmpbook.domain.model.EtfExposureRegion
-import com.amond.kmpbook.domain.model.ImpactDirection
-import com.amond.kmpbook.domain.model.IndustrySegment
-import com.amond.kmpbook.domain.model.InvestmentAlertLevel
-import com.amond.kmpbook.domain.model.InstrumentTerminationKind
-import com.amond.kmpbook.domain.model.InstrumentTerminationValuationMethod
-import com.amond.kmpbook.domain.model.ListingLifecycleStatus
-import com.amond.kmpbook.domain.model.Market
-import com.amond.kmpbook.domain.model.MarketActionKind
-import com.amond.kmpbook.domain.model.MarketActionTransition
-import com.amond.kmpbook.domain.model.MAX_FUND_REFERENCE_VALUE
-import com.amond.kmpbook.domain.model.MIN_CAUSAL_SIGNAL_STRENGTH
-import com.amond.kmpbook.domain.model.MIN_FUND_REFERENCE_VALUE
-import com.amond.kmpbook.domain.model.ReferenceCurrency
-import com.amond.kmpbook.domain.model.Sector
-import com.amond.kmpbook.domain.model.ScheduledEventKind
-import com.amond.kmpbook.domain.model.TradingHaltReason
-import com.amond.kmpbook.domain.model.TradingHaltStatus
-import com.amond.kmpbook.presentation.SimulatorUiState
+import com.amond.kmpbook.domain.model.causal.CausalEconomicFactor
+import com.amond.kmpbook.domain.model.causal.CausalSignalDirection
+import com.amond.kmpbook.domain.model.causal.CausalTransmissionProfile
+import com.amond.kmpbook.domain.model.causal.MIN_CAUSAL_SIGNAL_STRENGTH
+import com.amond.kmpbook.domain.model.corporateaction.CorporateActionKind
+import com.amond.kmpbook.domain.model.corporateaction.CorporateActionNewsTransition
+import com.amond.kmpbook.domain.model.corporateaction.CorporateActionSource
+import com.amond.kmpbook.domain.model.event.EventImpactCoveragePolicy
+import com.amond.kmpbook.domain.model.event.EventImpactHorizon
+import com.amond.kmpbook.domain.model.event.EventImpactTargetKind
+import com.amond.kmpbook.domain.model.event.EventRecordKind
+import com.amond.kmpbook.domain.model.event.EventScope
+import com.amond.kmpbook.domain.model.event.EventSeverity
+import com.amond.kmpbook.domain.model.event.EventTradingHaltKind
+import com.amond.kmpbook.domain.model.event.EventType
+import com.amond.kmpbook.domain.model.event.ImpactDirection
+import com.amond.kmpbook.domain.model.instrument.EtfExposureRegion
+import com.amond.kmpbook.domain.model.instrument.MAX_FUND_REFERENCE_VALUE
+import com.amond.kmpbook.domain.model.instrument.MIN_FUND_REFERENCE_VALUE
+import com.amond.kmpbook.domain.model.listing.alert.InvestmentAlertLevel
+import com.amond.kmpbook.domain.model.listing.lifecycle.ListingLifecycleStatus
+import com.amond.kmpbook.domain.model.listing.termination.InstrumentTerminationKind
+import com.amond.kmpbook.domain.model.listing.termination.InstrumentTerminationValuationMethod
+import com.amond.kmpbook.domain.model.market.IndustrySegment
+import com.amond.kmpbook.domain.model.market.Market
+import com.amond.kmpbook.domain.model.market.ReferenceCurrency
+import com.amond.kmpbook.domain.model.market.Sector
+import com.amond.kmpbook.domain.model.marketaction.MarketActionKind
+import com.amond.kmpbook.domain.model.marketaction.MarketActionTransition
+import com.amond.kmpbook.domain.model.protection.core.TradingHaltReason
+import com.amond.kmpbook.domain.model.protection.core.TradingHaltStatus
+import com.amond.kmpbook.domain.model.schedule.ScheduledEventKind
+import com.amond.kmpbook.presentation.simulator.SimulatorUiState
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
@@ -40,16 +40,12 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
 import com.google.gson.JsonParser
 import com.google.gson.Strictness
-import com.google.gson.TypeAdapter
 import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonToken
-import com.google.gson.stream.JsonWriter
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.datetime.LocalDate
 import java.io.IOException
 import java.io.StringReader
 import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
@@ -60,8 +56,10 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
-import java.nio.channels.FileChannel
 import kotlin.time.Instant
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.datetime.LocalDate
 
 private const val MAX_GAME_SAVE_FILE_BYTES: Long = 128L * 1024L * 1024L
 private const val MAX_SAVED_FUND_FLOW_RATE: Double = 0.20
@@ -93,7 +91,7 @@ actual class GameSaveStorage actual constructor() {
     actual suspend fun save(state: SimulatorUiState): GameSaveResult = withContext(Dispatchers.IO) {
         val validationError = validateSimulatorUiState(state)
         if (validationError != null) {
-            return@withContext GameSaveResult.Failure(
+            return@withContext GameSaveFailure(
                 path = savePath,
                 error = GameSaveError(GameSaveErrorCode.INVALID_STATE, validationError),
             )
@@ -109,7 +107,7 @@ actual class GameSaveStorage actual constructor() {
         val bytes = try {
             gson.toJson(envelope).toByteArray(StandardCharsets.UTF_8)
         } catch (error: RuntimeException) {
-            return@withContext GameSaveResult.Failure(
+            return@withContext GameSaveFailure(
                 path = savePath,
                 error = GameSaveError(
                     code = GameSaveErrorCode.SERIALIZATION_FAILED,
@@ -119,7 +117,7 @@ actual class GameSaveStorage actual constructor() {
             )
         }
         if (bytes.size.toLong() > MAX_GAME_SAVE_FILE_BYTES) {
-            return@withContext GameSaveResult.Failure(
+            return@withContext GameSaveFailure(
                 path = savePath,
                 error = tooLargeError(bytes.size.toLong()),
             )
@@ -142,24 +140,24 @@ actual class GameSaveStorage actual constructor() {
 
             val usedAtomicMove = moveIntoPlace(temporaryPath, targetPath)
             temporaryPath = null
-            GameSaveResult.Success(
+            GameSaveSuccess(
                 path = savePath,
                 metadata = envelope.metadata(),
                 bytesWritten = bytes.size.toLong(),
                 usedAtomicMove = usedAtomicMove,
             )
         } catch (error: SecurityException) {
-            GameSaveResult.Failure(
+            GameSaveFailure(
                 path = savePath,
                 error = accessError(error),
             )
         } catch (error: IOException) {
-            GameSaveResult.Failure(
+            GameSaveFailure(
                 path = savePath,
                 error = ioError("저장 파일을 안전하게 쓰지 못했습니다", error),
             )
         } catch (error: RuntimeException) {
-            GameSaveResult.Failure(
+            GameSaveFailure(
                 path = savePath,
                 error = ioError("저장 파일 처리 중 오류가 발생했습니다", error),
             )
@@ -171,10 +169,10 @@ actual class GameSaveStorage actual constructor() {
     actual suspend fun load(): GameLoadResult = withContext(Dispatchers.IO) {
         try {
             if (!Files.exists(targetPath, LinkOption.NOFOLLOW_LINKS)) {
-                return@withContext GameLoadResult.NotFound(savePath)
+                return@withContext GameLoadNotFound(savePath)
             }
             if (!Files.isRegularFile(targetPath, LinkOption.NOFOLLOW_LINKS)) {
-                return@withContext GameLoadResult.Failure(
+                return@withContext GameLoadFailure(
                     path = savePath,
                     error = GameSaveError(
                         GameSaveErrorCode.IO_ERROR,
@@ -184,7 +182,7 @@ actual class GameSaveStorage actual constructor() {
             }
             val declaredSize = Files.size(targetPath)
             if (declaredSize > MAX_GAME_SAVE_FILE_BYTES) {
-                return@withContext GameLoadResult.Failure(savePath, tooLargeError(declaredSize))
+                return@withContext GameLoadFailure(savePath, tooLargeError(declaredSize))
             }
             val bytes = readBounded(targetPath)
             if (bytes.isEmpty()) {
@@ -194,19 +192,19 @@ actual class GameSaveStorage actual constructor() {
             val envelope = parseEnvelope(json)
             val validationError = validateSimulatorUiState(envelope.state)
             if (validationError != null) {
-                return@withContext GameLoadResult.Failure(
+                return@withContext GameLoadFailure(
                     path = savePath,
                     error = GameSaveError(GameSaveErrorCode.INVALID_STATE, validationError),
                 )
             }
-            GameLoadResult.Success(
+            GameLoadSuccess(
                 path = savePath,
                 state = envelope.state,
                 metadata = envelope.metadata(),
                 bytesRead = bytes.size.toLong(),
             )
         } catch (error: UnsupportedSchemaException) {
-            GameLoadResult.Failure(
+            GameLoadFailure(
                 path = savePath,
                 error = GameSaveError(
                     code = GameSaveErrorCode.UNSUPPORTED_SCHEMA,
@@ -221,9 +219,9 @@ actual class GameSaveStorage actual constructor() {
         } catch (error: IllegalStateException) {
             corrupted("저장 파일 구조가 올바르지 않습니다: ${safeMessage(error)}", error)
         } catch (error: SecurityException) {
-            GameLoadResult.Failure(savePath, accessError(error))
+            GameLoadFailure(savePath, accessError(error))
         } catch (error: IOException) {
-            GameLoadResult.Failure(savePath, ioError("저장 파일을 읽지 못했습니다", error))
+            GameLoadFailure(savePath, ioError("저장 파일을 읽지 못했습니다", error))
         } catch (error: RuntimeException) {
             corrupted("저장 상태를 복원하지 못했습니다: ${safeMessage(error)}", error)
         }
@@ -232,10 +230,10 @@ actual class GameSaveStorage actual constructor() {
     actual suspend fun exists(): GameSavePresenceResult = withContext(Dispatchers.IO) {
         try {
             if (!Files.exists(targetPath, LinkOption.NOFOLLOW_LINKS)) {
-                return@withContext GameSavePresenceResult.Missing(savePath)
+                return@withContext GameSaveMissing(savePath)
             }
             if (!Files.isRegularFile(targetPath, LinkOption.NOFOLLOW_LINKS)) {
-                return@withContext GameSavePresenceResult.Failure(
+                return@withContext GameSavePresenceFailure(
                     path = savePath,
                     error = GameSaveError(
                         GameSaveErrorCode.IO_ERROR,
@@ -245,27 +243,27 @@ actual class GameSaveStorage actual constructor() {
             }
             val size = Files.size(targetPath)
             if (size > MAX_GAME_SAVE_FILE_BYTES) {
-                return@withContext GameSavePresenceResult.Failure(savePath, tooLargeError(size))
+                return@withContext GameSavePresenceFailure(savePath, tooLargeError(size))
             }
-            GameSavePresenceResult.Present(
+            GameSavePresent(
                 path = savePath,
                 sizeBytes = size,
                 lastModifiedAt = Instant.fromEpochMilliseconds(Files.getLastModifiedTime(targetPath).toMillis()),
             )
         } catch (error: SecurityException) {
-            GameSavePresenceResult.Failure(savePath, accessError(error))
+            GameSavePresenceFailure(savePath, accessError(error))
         } catch (error: IOException) {
-            GameSavePresenceResult.Failure(savePath, ioError("저장 파일 정보를 읽지 못했습니다", error))
+            GameSavePresenceFailure(savePath, ioError("저장 파일 정보를 읽지 못했습니다", error))
         }
     }
 
     actual suspend fun delete(): GameSaveDeleteResult = withContext(Dispatchers.IO) {
         try {
             if (!Files.exists(targetPath, LinkOption.NOFOLLOW_LINKS)) {
-                return@withContext GameSaveDeleteResult.NotFound(savePath)
+                return@withContext GameSaveDeleteNotFound(savePath)
             }
             if (Files.isDirectory(targetPath, LinkOption.NOFOLLOW_LINKS)) {
-                return@withContext GameSaveDeleteResult.Failure(
+                return@withContext GameSaveDeleteFailure(
                     path = savePath,
                     error = GameSaveError(
                         GameSaveErrorCode.IO_ERROR,
@@ -274,14 +272,14 @@ actual class GameSaveStorage actual constructor() {
                 )
             }
             if (Files.deleteIfExists(targetPath)) {
-                GameSaveDeleteResult.Deleted(savePath)
+                GameSaveDeleted(savePath)
             } else {
-                GameSaveDeleteResult.NotFound(savePath)
+                GameSaveDeleteNotFound(savePath)
             }
         } catch (error: SecurityException) {
-            GameSaveDeleteResult.Failure(savePath, accessError(error))
+            GameSaveDeleteFailure(savePath, accessError(error))
         } catch (error: IOException) {
-            GameSaveDeleteResult.Failure(savePath, ioError("저장 파일을 삭제하지 못했습니다", error))
+            GameSaveDeleteFailure(savePath, ioError("저장 파일을 삭제하지 못했습니다", error))
         }
     }
 
@@ -871,8 +869,8 @@ actual class GameSaveStorage actual constructor() {
         }
     }
 
-    private fun corrupted(message: String, cause: Throwable? = null): GameLoadResult.Failure =
-        GameLoadResult.Failure(
+    private fun corrupted(message: String, cause: Throwable? = null): GameLoadFailure =
+        GameLoadFailure(
             path = savePath,
             error = GameSaveError(
                 code = GameSaveErrorCode.CORRUPTED_FILE,

@@ -21,16 +21,16 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
-import com.amond.kmpbook.domain.model.Market
-import com.amond.kmpbook.domain.model.PriceBar
-import com.amond.kmpbook.domain.model.PriceBarInterval
+import com.amond.kmpbook.domain.model.market.Market
+import com.amond.kmpbook.domain.model.pricing.PriceBar
+import com.amond.kmpbook.domain.model.pricing.PriceBarInterval
 import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketType
-import kotlinx.datetime.number
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlinx.datetime.number
 
 @Composable
 fun CandlestickVolumeChart(

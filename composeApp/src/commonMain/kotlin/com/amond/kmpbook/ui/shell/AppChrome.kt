@@ -6,7 +6,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -44,13 +44,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.amond.kmpbook.domain.model.Currency
-import com.amond.kmpbook.domain.model.MarketSession
-import com.amond.kmpbook.domain.model.Screen
-import com.amond.kmpbook.domain.model.TurnStep
+import com.amond.kmpbook.domain.model.game.Screen
+import com.amond.kmpbook.domain.model.game.TurnStep
+import com.amond.kmpbook.domain.model.market.Currency
+import com.amond.kmpbook.domain.model.market.Market
+import com.amond.kmpbook.domain.model.venue.MarketSession
 import com.amond.kmpbook.domain.time.GameCalendar
-import com.amond.kmpbook.ui.components.StatusLabel
 import com.amond.kmpbook.ui.components.MarketButton
+import com.amond.kmpbook.ui.components.StatusLabel
 import com.amond.kmpbook.ui.format.formatDateTimeEt
 import com.amond.kmpbook.ui.format.formatDateTimeKst
 import com.amond.kmpbook.ui.format.formatMoney

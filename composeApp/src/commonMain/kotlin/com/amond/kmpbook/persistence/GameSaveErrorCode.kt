@@ -1,7 +1,5 @@
 package com.amond.kmpbook.persistence
 
-import com.amond.kmpbook.presentation.SimulatorUiState
-import kotlin.time.Instant
 
 enum class GameSaveErrorCode(val displayName: String) {
     NOT_FOUND("저장 파일 없음"),

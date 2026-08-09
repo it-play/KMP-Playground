@@ -1,14 +1,14 @@
 package com.amond.kmpbook.domain.data
 
-import com.amond.kmpbook.domain.model.CausalEconomicFactor
-import com.amond.kmpbook.domain.model.CausalExposureMechanism
-import com.amond.kmpbook.domain.model.CausalTraceNodeKind
-import com.amond.kmpbook.domain.model.EtfAssetClass
-import com.amond.kmpbook.domain.model.IndustrySegment
-import com.amond.kmpbook.domain.model.InstrumentStrategy
-import com.amond.kmpbook.domain.model.Market
-import com.amond.kmpbook.domain.model.Sector
-import com.amond.kmpbook.domain.model.StockDefinition
+import com.amond.kmpbook.domain.model.causal.CausalEconomicFactor
+import com.amond.kmpbook.domain.model.causal.CausalExposureMechanism
+import com.amond.kmpbook.domain.model.causal.CausalTraceNodeKind
+import com.amond.kmpbook.domain.model.instrument.EtfAssetClass
+import com.amond.kmpbook.domain.model.instrument.InstrumentStrategy
+import com.amond.kmpbook.domain.model.instrument.StockDefinition
+import com.amond.kmpbook.domain.model.market.IndustrySegment
+import com.amond.kmpbook.domain.model.market.Market
+import com.amond.kmpbook.domain.model.market.Sector
 
 /**
  * 경제 요인에서 산업·종목으로 이어지는 마지막 노출 간선이다.
@@ -404,7 +404,7 @@ object CausalExposureCatalog {
         return when {
             explicit.isNotEmpty() -> target in explicit
             !isFundLike -> sector == target
-            etfProfile?.assetClass == com.amond.kmpbook.domain.model.EtfAssetClass.SECTOR_EQUITY ->
+            etfProfile?.assetClass == com.amond.kmpbook.domain.model.instrument.EtfAssetClass.SECTOR_EQUITY ->
                 sector == target
             else -> false
         }

@@ -1,10 +1,10 @@
 package com.amond.kmpbook
 
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import androidx.compose.ui.Alignment
 import com.amond.kmpbook.ui.theme.MarketDesignSystem
 import com.amond.kmpbook.ui.theme.MarketLayout
 import java.awt.Dimension
