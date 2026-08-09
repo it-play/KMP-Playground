@@ -17,8 +17,7 @@ import androidx.compose.ui.unit.sp
  * - content and financial state outrank decoration;
  * - the global primary decision and causal links use violet; buy/sell actions use labelled Korean rise/fall tones;
  * - monetary and market figures use tabular numerals and always expose a unit or currency;
- * - colour is never the only direction/status signal;
- * - projected schedules and generated figures are labelled as simulation data.
+ * - colour is never the only direction/status signal.
  */
 object MarketDesignSystem {
     const val NAME: String = "Market Ledger 2040"
