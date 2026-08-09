@@ -204,10 +204,10 @@ private fun MarketPulsePanel(
 ) {
     LedgerPanel(modifier) {
         Column(Modifier.fillMaxSize()) {
-            SectionHeading("미국 대표 지수", eyebrow = "SIMULATION INDEX") {
+            SectionHeading("미국 대표 지수") {
                 StatusLabel("시장 지수", MarketColors.Primary)
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
             val indexIds = listOf(
                 MarketIndexId.SP_500,
                 MarketIndexId.NASDAQ_COMPOSITE,
@@ -235,7 +235,7 @@ private fun MarketPulsePanel(
             }
             Spacer(Modifier.weight(1f))
             LedgerDivider()
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("USD/KRW", style = MarketType.label, color = MarketColors.InkMuted)
                 Spacer(Modifier.width(8.dp))
