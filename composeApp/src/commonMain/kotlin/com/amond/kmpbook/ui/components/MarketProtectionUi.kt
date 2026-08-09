@@ -228,7 +228,7 @@ fun MarketProtectionDetailSurface(
                 )
                 LedgerDivider()
                 ProtectionDetailRow(
-                    label = "게임 규칙",
+                    label = "적용 규칙",
                     value = model.primary.ruleExplanation,
                 )
             }

@@ -585,7 +585,7 @@ internal class SimulatorRuntime(
     private val brokerFeeCalculator = BrokerFeeCalculator(
         BrokerFeeSchedule(
             id = "simulator-general-account-2026",
-            brokerName = "시뮬레이션 일반계좌",
+            brokerName = "일반계좌",
             domesticCommissionRate = TaxRate(150L), // 0.015%
             usCommissionRate = TaxRate(700L), // 0.070%
             fxSpreadRate = TaxRate(1_000L), // 0.10%
