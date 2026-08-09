@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amond.kmpbook.persistence.model.GameSaveEntry
+import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
 import com.amond.kmpbook.ui.components.StatusLabel
@@ -47,13 +48,13 @@ fun GameLobbyScreen(
     saves: List<GameSaveEntry>,
     onContinue: (GameSaveEntry) -> Unit,
     onLoad: (GameSaveEntry) -> Unit,
-    onNewGame: () -> Unit,
+    onStartNewGame: (NewGameOptions) -> Unit,
     onSettings: () -> Unit,
     onExit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val latest = saves.firstOrNull()
-    var showAllSaves by remember { mutableStateOf(false) }
+    var selectedPanel by remember { mutableStateOf(LobbyPanel.MARKET) }
 
     Row(modifier.fillMaxSize().background(MarketColors.Ledger)) {
         Column(
@@ -81,21 +82,48 @@ fun GameLobbyScreen(
                 label = "게임 불러오기",
                 value = if (saves.isEmpty()) null else "${saves.size}개",
                 enabled = saves.isNotEmpty(),
-                selected = showAllSaves,
-                onClick = { showAllSaves = !showAllSaves },
+                selected = selectedPanel == LobbyPanel.LOAD_GAME,
+                onClick = {
+                    selectedPanel = if (selectedPanel == LobbyPanel.LOAD_GAME) {
+                        LobbyPanel.MARKET
+                    } else {
+                        LobbyPanel.LOAD_GAME
+                    }
+                },
             )
-            LobbyMenuItem(label = "새 게임", onClick = onNewGame)
+            LobbyMenuItem(
+                label = "새 게임",
+                selected = selectedPanel == LobbyPanel.NEW_GAME,
+                onClick = {
+                    selectedPanel = if (selectedPanel == LobbyPanel.NEW_GAME) {
+                        LobbyPanel.MARKET
+                    } else {
+                        LobbyPanel.NEW_GAME
+                    }
+                },
+            )
             LobbyMenuItem(label = "설정", onClick = onSettings)
             LobbyMenuItem(label = "종료하기", onClick = onExit)
             Spacer(Modifier.weight(1f))
         }
 
-        SaveOverview(
-            title = if (showAllSaves) "저장 파일" else "최근 저장",
-            saves = if (showAllSaves) saves else listOfNotNull(latest),
-            onLoad = onLoad,
-            modifier = Modifier.weight(1f).fillMaxHeight().padding(58.dp),
-        )
+        Box(Modifier.weight(1f).fillMaxHeight().padding(58.dp)) {
+            when (selectedPanel) {
+                LobbyPanel.MARKET -> LobbyMarketCarousel(Modifier.fillMaxSize())
+                LobbyPanel.LOAD_GAME -> SaveOverview(
+                    title = "저장 파일",
+                    saves = saves,
+                    onLoad = onLoad,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                LobbyPanel.NEW_GAME -> NewGameScreen(
+                    onStart = onStartNewGame,
+                    onBack = { selectedPanel = LobbyPanel.MARKET },
+                    modifier = Modifier.fillMaxSize(),
+                    embedded = true,
+                )
+            }
+        }
     }
 }
 

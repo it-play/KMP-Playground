@@ -51,6 +51,7 @@ fun NewGameScreen(
     onStart: (NewGameOptions) -> Unit,
     onBack: () -> Unit = {},
     modifier: Modifier = Modifier,
+    embedded: Boolean = false,
 ) {
     var capitalText by remember { mutableStateOf("100000000") }
     var seedText by remember { mutableStateOf(NewGameOptions.DEFAULT_SEED.toString()) }
@@ -60,7 +61,7 @@ fun NewGameScreen(
     var error by remember { mutableStateOf<String?>(null) }
 
     Row(modifier.fillMaxSize().background(MarketColors.Ledger)) {
-        Column(
+        if (!embedded) Column(
             modifier = Modifier
                 .weight(1.08f)
                 .fillMaxHeight()
@@ -118,10 +119,17 @@ fun NewGameScreen(
         }
 
         Box(
-            modifier = Modifier.weight(0.92f).fillMaxHeight().padding(32.dp),
+            modifier = if (embedded) {
+                Modifier.fillMaxSize()
+            } else {
+                Modifier.weight(0.92f).fillMaxHeight().padding(32.dp)
+            },
             contentAlignment = Alignment.Center,
         ) {
-            LedgerPanel(modifier = Modifier.width(500.dp).fillMaxHeight(), padding = 28.dp) {
+            LedgerPanel(
+                modifier = if (embedded) Modifier.fillMaxSize() else Modifier.width(500.dp).fillMaxHeight(),
+                padding = 28.dp,
+            ) {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -131,7 +139,7 @@ fun NewGameScreen(
                         )
                         Spacer(Modifier.weight(1f))
                         TextButton(onClick = onBack) {
-                            Text("← 로비", style = MarketType.label, color = MarketColors.InkMuted)
+                            Text(if (embedded) "닫기" else "← 로비", style = MarketType.label, color = MarketColors.InkMuted)
                         }
                     }
                     Spacer(Modifier.height(6.dp))

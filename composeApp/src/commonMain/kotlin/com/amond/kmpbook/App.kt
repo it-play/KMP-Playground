@@ -61,7 +61,6 @@ import com.amond.kmpbook.ui.screens.game.GameEntryDestination
 import com.amond.kmpbook.ui.screens.game.GameLobbyScreen
 import com.amond.kmpbook.ui.screens.game.GameSettingsDisplay
 import com.amond.kmpbook.ui.screens.game.LobbySettingsScreen
-import com.amond.kmpbook.ui.screens.game.NewGameScreen
 import com.amond.kmpbook.ui.screens.game.SettingsScreen
 import com.amond.kmpbook.ui.screens.market.MarketTradingScreen
 import com.amond.kmpbook.ui.screens.news.EventNewsFilterState
@@ -162,13 +161,9 @@ fun App(
                         saves = saves,
                         onContinue = loadGame,
                         onLoad = loadGame,
-                        onNewGame = { entryDestination = GameEntryDestination.NEW_GAME },
+                        onStartNewGame = viewModel::newGame,
                         onSettings = { entryDestination = GameEntryDestination.SETTINGS },
                         onExit = onExitRequest,
-                    )
-                    GameEntryDestination.NEW_GAME -> NewGameScreen(
-                        onStart = viewModel::newGame,
-                        onBack = { entryDestination = GameEntryDestination.LOBBY },
                     )
                     GameEntryDestination.SETTINGS -> LobbySettingsScreen(
                         saveDirectory = storage.saveDirectory,
@@ -190,7 +185,7 @@ fun App(
                     maxDrawdown = state.maximumDrawdown,
                     onNewGame = {
                         viewModel.resetGame()
-                        entryDestination = GameEntryDestination.NEW_GAME
+                        entryDestination = GameEntryDestination.LOBBY
                     },
                 )
 
