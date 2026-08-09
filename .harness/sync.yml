@@ -1,7 +1,6 @@
 groups: []
 
 overrides:
-  claude/skills/systematic-debugging: true
   claude/skills/security-checklist: true
   claude/agents/contradiction-finder: true
   claude/agents/doc-polisher: true
@@ -10,7 +9,6 @@ overrides:
   claude/settings: true
   claude/hooks/secret-guard: true
   claude/hooks/command-guard: true
-  codex/skills/systematic-debugging: true
   codex/skills/security-checklist: true
   codex/agents/contradiction-finder: true
   codex/agents/doc-polisher: true
