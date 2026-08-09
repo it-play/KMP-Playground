@@ -36,6 +36,13 @@ data class MacroEnvironment(
     val previousFxRatesToKrw: Map<ReferenceCurrency, Double>? = null,
     val riskSentiment: Double = 0.0,
     val volatilityRegime: Double = 1.0,
+    /** 동역학 엔진이 해석한 개인·기관 순수급. 외부 구매력 목표값 자체가 아니다. */
+    val retailOrderFlow: Double = 0.0,
+    val institutionalOrderFlow: Double = 0.0,
+    /** 0은 풍부한 호가 깊이, 1은 심한 유동성 고갈을 뜻한다. */
+    val liquidityStress: Double = 0.0,
+    /** 확률 뉴스의 시간당 경쟁위험을 조절하는 bounded Hawkes 강도. */
+    val newsIntensity: Double = 1.0,
     val marketHourlyReturns: Map<Market, Double> = emptyMap(),
     val sectorHourlyReturns: Map<Sector, Double> = emptyMap(),
     val regionalEtfHourlyReturns: Map<EtfExposureRegion, Double>? = null,
@@ -54,6 +61,10 @@ data class MacroEnvironment(
         require(previousFxRatesToKrw.orEmpty().values.all { it > 0.0 && it.isFinite() })
         require(riskSentiment in -1.0..1.0) { "Risk sentiment must be in [-1, 1]" }
         require(volatilityRegime in 0.1..10.0) { "Volatility regime must be in [0.1, 10]" }
+        require(retailOrderFlow.isFinite() && retailOrderFlow in -1.0..1.0)
+        require(institutionalOrderFlow.isFinite() && institutionalOrderFlow in -1.0..1.0)
+        require(liquidityStress.isFinite() && liquidityStress in 0.0..1.0)
+        require(newsIntensity.isFinite() && newsIntensity in 0.25..3.5)
         require(marketHourlyReturns.values.all { it.isFinite() })
         require(sectorHourlyReturns.values.all { it.isFinite() })
         require(regionalEtfHourlyReturns.orEmpty().values.all { it.isFinite() })
@@ -72,4 +83,14 @@ data class MacroEnvironment(
             1.0
         }
     }
+
+    /** Gson처럼 생성자를 우회한 저장 입력도 모든 거시 불변조건에 다시 통과시킨다. */
+    internal fun validatedCopy(): MacroEnvironment = copy(
+        fxRatesToKrw = fxRatesToKrw?.toMap(),
+        previousFxRatesToKrw = previousFxRatesToKrw?.toMap(),
+        marketHourlyReturns = marketHourlyReturns.toMap(),
+        sectorHourlyReturns = sectorHourlyReturns.toMap(),
+        regionalEtfHourlyReturns = regionalEtfHourlyReturns?.toMap(),
+        marketChangeFromPreviousClose = marketChangeFromPreviousClose.toMap(),
+    )
 }

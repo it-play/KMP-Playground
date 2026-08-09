@@ -29,7 +29,6 @@ import com.amond.kmpbook.domain.model.resolvedImpactFor
 import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.max
-import kotlin.math.pow
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
 
@@ -71,31 +70,94 @@ class EventEngine(
             .mapNotNullTo(mutableSetOf(), ::triggerKeyFromEvent)
         val newEvents = mutableListOf<GameEvent>()
 
-        for (template in templates) {
-            if (newEvents.size >= context.maxNewEvents) break
-            if (!conditionMatches(template.condition, context.macro)) continue
-            if (template.oneShot && oneShotTriggerKey(template) in lastTriggeredAt) continue
-
-            val availableTargets = eligibleTargets(template, context.stocks, context.macro).filter { target ->
-                val key = triggerKey(template, target)
-                key !in activeTriggerKeys && !isCoolingDown(template, key, context.timestamp)
+        var cursor = context.timestamp
+        var remainingHours = context.elapsedHours.toDouble()
+        while (newEvents.size < context.maxNewEvents && remainingHours > 0.0) {
+            val candidates = templates.mapNotNull { template ->
+                if (template.id in context.suppressedTemplateIds) return@mapNotNull null
+                if (!conditionMatches(template.condition, context.macro)) return@mapNotNull null
+                if (template.oneShot && oneShotTriggerKey(template) in lastTriggeredAt) {
+                    return@mapNotNull null
+                }
+                val availableTargets = eligibleTargets(template, context.stocks, context.macro)
+                    .filter { target ->
+                        val key = triggerKey(template, target)
+                        key !in activeTriggerKeys && !isCoolingDown(template, key, cursor)
+                    }
+                if (availableTargets.isEmpty()) return@mapNotNull null
+                val hourlyHazard = hourlyHazard(template, context)
+                if (hourlyHazard <= 0.0) null else EventHazardCandidate(
+                    template = template,
+                    targets = availableTargets,
+                    hourlyHazard = hourlyHazard,
+                )
             }
-            if (availableTargets.isEmpty()) continue
+            val totalHazard = candidates.sumOf(EventHazardCandidate::hourlyHazard)
+            if (totalHazard <= 0.0) break
 
-            // The template owns one hazard draw per generation. More listed instruments only
-            // increase the target pool; they never multiply the aggregate occurrence rate.
-            val probability = probabilityForInterval(template.probabilityPerDay, context.elapsedHours)
-            if (!random.nextBoolean(probability)) continue
+            // Competing-risk clock: every template participates in one aggregate point process.
+            // This removes declaration-order bias while still allowing related events to cluster
+            // through the bounded Hawkes intensity supplied by MarketDynamicsEngine.
+            val waitingHours = -ln(random.nextDouble().coerceAtLeast(MIN_HAZARD_UNIFORM)) / totalHazard
+            if (waitingHours >= remainingHours) break
+            cursor += waitingHours.hours
+            remainingHours -= waitingHours
 
-            val target = random.choose(availableTargets)
-            val key = triggerKey(template, target)
-            val event = instantiate(template, target, context.timestamp, context.macro)
+            val selected = chooseHazardCandidate(candidates, totalHazard)
+            val target = random.choose(selected.targets)
+            val key = triggerKey(selected.template, target)
+            // Keep the point-process occurrence time. EventShockCalculator can then integrate
+            // only the remaining fraction of this hour instead of backdating every shock to the
+            // turn boundary (which used to make large news reach circuit thresholds too early).
+            val event = instantiate(selected.template, target, cursor, context.macro)
             generatedActiveEvents += event
             newEvents += event
             activeTriggerKeys += key
-            lastTriggeredAt[key] = context.timestamp.epochSeconds
+            lastTriggeredAt[key] = cursor.epochSeconds
         }
         return result(newEvents)
+    }
+
+    private fun hourlyHazard(template: EventTemplate, context: EventGenerationContext): Double {
+        if (template.probabilityPerDay <= 0.0) return 0.0
+        val boundedDailyProbability = template.probabilityPerDay.coerceAtMost(MAX_HAZARD_PROBABILITY)
+        val baseline = -ln(1.0 - boundedDailyProbability) / HOURS_PER_DAY
+        val forces = context.externalForces
+        val typeMultiplier = when (template.type) {
+            EventType.GEOPOLITICAL -> exp(1.75 * (forces.worldTension - 0.5))
+            EventType.MARKET_SENTIMENT -> exp(0.95 * (forces.chaos - 0.5))
+            EventType.CURRENCY,
+            EventType.COMMODITY,
+            -> exp(0.55 * (forces.chaos - 0.5) + 0.65 * (forces.worldTension - 0.5))
+            EventType.FUND_OPERATION -> 0.78 +
+                0.22 * (forces.retailBuyingPower + forces.institutionalBuyingPower)
+            EventType.ECONOMIC_INDICATOR,
+            EventType.CENTRAL_BANK,
+            -> exp(0.42 * (forces.chaos - 0.5))
+            EventType.INDUSTRY_SUPPLY_DEMAND,
+            EventType.EARNINGS,
+            EventType.CORPORATE_ACTION,
+            EventType.PRODUCT_TECHNOLOGY,
+            -> 0.88 + forces.economicMomentum * 0.24
+            EventType.REGULATION_POLICY,
+            EventType.NATURAL_DISASTER,
+            EventType.HEALTH_CRISIS,
+            -> exp(0.32 * (forces.chaos - 0.5))
+        }
+        return (baseline * context.newsHazardMultiplier * typeMultiplier)
+            .coerceIn(0.0, MAX_TEMPLATE_HOURLY_HAZARD)
+    }
+
+    private fun chooseHazardCandidate(
+        candidates: List<EventHazardCandidate>,
+        totalHazard: Double,
+    ): EventHazardCandidate {
+        var threshold = random.nextDouble() * totalHazard
+        for (candidate in candidates) {
+            threshold -= candidate.hourlyHazard
+            if (threshold <= 0.0) return candidate
+        }
+        return candidates.last()
     }
 
     /**
@@ -496,7 +558,7 @@ class EventEngine(
         EventCondition.POLICY_RATE_RISING -> macro.policyRateChange > 0.0
         EventCondition.POLICY_RATE_FALLING -> macro.policyRateChange < 0.0
         EventCondition.INFLATION_HIGH -> macro.inflationRate >= 0.035 || macro.inflationSurprise >= 0.75
-        EventCondition.INFLATION_COOLING -> macro.inflationRate <= 0.022 && macro.inflationSurprise < 0.0
+        EventCondition.INFLATION_COOLING -> macro.inflationRate <= 0.022 && macro.inflationSurprise <= 0.0
         EventCondition.GROWTH_NEGATIVE -> macro.growthRate < 0.0 || macro.growthSurprise <= -0.75
         EventCondition.GROWTH_STRONG -> macro.growthRate >= 0.03 || macro.growthSurprise >= 0.75
         EventCondition.KRW_WEAK -> macro.usdKrw >= 1_450.0
@@ -576,6 +638,12 @@ class EventEngine(
         val accelerationRecoveryRate: Double?,
     )
 
+    private data class EventHazardCandidate(
+        val template: EventTemplate,
+        val targets: List<SelectedEventTarget>,
+        val hourlyHazard: Double,
+    )
+
     private data class SelectedEventTarget(
         val markets: Set<Market> = emptySet(),
         val sectors: Set<Sector> = emptySet(),
@@ -593,12 +661,11 @@ class EventEngine(
 
     companion object {
         private const val SECONDS_PER_HOUR: Long = 3_600L
+        private const val HOURS_PER_DAY: Double = 24.0
+        private const val MIN_HAZARD_UNIFORM: Double = 1e-12
+        private const val MAX_HAZARD_PROBABILITY: Double = 1.0 - 1e-12
+        private const val MAX_TEMPLATE_HOURLY_HAZARD: Double = 0.35
 
-        private fun probabilityForInterval(probabilityPerDay: Double, hours: Int): Double {
-            if (probabilityPerDay == 0.0) return 0.0
-            if (probabilityPerDay == 1.0) return 1.0
-            return 1.0 - (1.0 - probabilityPerDay).pow(hours / 24.0)
-        }
     }
 }
 
@@ -647,28 +714,46 @@ object EventShockCalculator {
         to: Instant,
     ): PriceImpulse {
         require(to >= from)
-        var returnFactor = 1.0
-        var directProductReturnFactor = 1.0
-        var volatilityMultiplier = 1.0
-        var volumeMultiplier = 1.0
+        var returnLogSum = 0.0
+        var directProductReturnLogSum = 0.0
+        var volatilityLogSum = 0.0
+        var volumeLogSum = 0.0
 
         for (event in events) {
             if (!event.affects(stock)) continue
             val stockSpecificImpact = event.impactFor(stock)
             val eventReturn = returnBetween(event, stockSpecificImpact, from, to)
-            returnFactor *= 1.0 + eventReturn
+            returnLogSum += ln(1.0 + eventReturn)
             if (event.isDirectProductImpactFor(stock)) {
-                directProductReturnFactor *= 1.0 + eventReturn
+                directProductReturnLogSum += ln(1.0 + eventReturn)
             }
             val weight = effectWeightBetween(event, from, to)
-            volatilityMultiplier *= 1.0 + (stockSpecificImpact.volatilityMultiplier - 1.0) * weight
-            volumeMultiplier *= 1.0 + (stockSpecificImpact.volumeMultiplier - 1.0) * weight
+            volatilityLogSum += ln(
+                1.0 + (stockSpecificImpact.volatilityMultiplier - 1.0) * weight,
+            )
+            volumeLogSum += ln(1.0 + (stockSpecificImpact.volumeMultiplier - 1.0) * weight)
         }
+        val boundedReturnLog = softBoundLogReturn(returnLogSum)
+        val boundedDirectProductLog = softBoundLogReturn(directProductReturnLogSum)
         return PriceImpulse(
-            returnRate = (returnFactor - 1.0).coerceIn(-0.90, 1.50),
-            directProductReturnRate = (directProductReturnFactor - 1.0).coerceIn(-0.90, 1.50),
-            volatilityMultiplier = volatilityMultiplier.coerceIn(0.0, 20.0),
-            volumeMultiplier = volumeMultiplier.coerceIn(0.0, 100.0),
+            returnRate = exp(boundedReturnLog) - 1.0,
+            directProductReturnRate = exp(boundedDirectProductLog) - 1.0,
+            volatilityMultiplier = exp(
+                softBoundSigned(
+                    volatilityLogSum,
+                    negativeLimit = -ln(MIN_EVENT_VOLATILITY_MULTIPLIER),
+                    positiveLimit = ln(MAX_EVENT_VOLATILITY_MULTIPLIER),
+                    knee = ln(EVENT_VOLATILITY_SOFT_KNEE),
+                ),
+            ),
+            volumeMultiplier = exp(
+                softBoundSigned(
+                    volumeLogSum,
+                    negativeLimit = -ln(MIN_EVENT_VOLUME_MULTIPLIER),
+                    positiveLimit = ln(MAX_EVENT_VOLUME_MULTIPLIER),
+                    knee = ln(EVENT_VOLUME_SOFT_KNEE),
+                ),
+            ),
         )
     }
 
@@ -678,14 +763,14 @@ object EventShockCalculator {
         stock: StockDefinition,
         time: Instant,
     ): Double {
-        var multiplier = 1.0
+        var logSum = 0.0
         for (event in events) {
             if (!event.affects(stock)) continue
             val weight = effectWeightAt(event, time)
             val stockSpecificImpact = event.impactFor(stock)
-            multiplier *= 1.0 + (stockSpecificImpact.liquidityMultiplier - 1.0) * weight
+            logSum += ln(1.0 + (stockSpecificImpact.liquidityMultiplier - 1.0) * weight)
         }
-        return multiplier.coerceIn(0.05, 20.0)
+        return exp(softBoundLiquidityLog(logSum))
     }
 
     /** Time-weighted liquidity over a simulation interval. */
@@ -696,14 +781,46 @@ object EventShockCalculator {
         to: Instant,
     ): Double {
         require(to >= from) { "Event liquidity interval cannot run backwards" }
-        var multiplier = 1.0
+        var logSum = 0.0
         for (event in events) {
             if (!event.affects(stock)) continue
             val weight = effectWeightBetween(event, from, to)
             val stockSpecificImpact = event.impactFor(stock)
-            multiplier *= 1.0 + (stockSpecificImpact.liquidityMultiplier - 1.0) * weight
+            logSum += ln(1.0 + (stockSpecificImpact.liquidityMultiplier - 1.0) * weight)
         }
-        return multiplier.coerceIn(0.05, 20.0)
+        return exp(softBoundLiquidityLog(logSum))
+    }
+
+    /**
+     * 관련 사건은 로그 공간에서 실제로 누적한다. 다만 시장의 유한한 가격발견·호가흡수
+     * 능력을 넘는 구간만 매끄럽게 포화시켜, 임의의 hard clip 경계에서 흐름이 꺾이지 않는다.
+     */
+    private fun softBoundLogReturn(value: Double): Double = softBoundSigned(
+        value = value,
+        negativeLimit = -ln(MIN_EVENT_RETURN_FACTOR),
+        positiveLimit = ln(MAX_EVENT_RETURN_FACTOR),
+        knee = EVENT_RETURN_LOG_SOFT_KNEE,
+    )
+
+    private fun softBoundLiquidityLog(value: Double): Double = softBoundSigned(
+        value = value,
+        negativeLimit = -ln(MIN_EVENT_LIQUIDITY_MULTIPLIER),
+        positiveLimit = ln(MAX_EVENT_LIQUIDITY_MULTIPLIER),
+        knee = ln(EVENT_LIQUIDITY_SOFT_KNEE),
+    )
+
+    private fun softBoundSigned(
+        value: Double,
+        negativeLimit: Double,
+        positiveLimit: Double,
+        knee: Double,
+    ): Double {
+        val limit = if (value < 0.0) negativeLimit else positiveLimit
+        val magnitude = kotlin.math.abs(value)
+        if (magnitude <= knee) return value
+        val remaining = (limit - knee).coerceAtLeast(1e-9)
+        val boundedMagnitude = knee + remaining * kotlin.math.tanh((magnitude - knee) / remaining)
+        return if (value < 0.0) -boundedMagnitude else boundedMagnitude
     }
 
     private fun effectWeightAt(event: GameEvent, time: Instant): Double {
@@ -773,5 +890,17 @@ object EventShockCalculator {
     }
 
     private const val NANOS_PER_HOUR: Double = 3_600_000_000_000.0
+    private const val MIN_EVENT_RETURN_FACTOR: Double = 0.30
+    private const val MAX_EVENT_RETURN_FACTOR: Double = 2.50
+    private const val EVENT_RETURN_LOG_SOFT_KNEE: Double = 0.14
+    private const val MIN_EVENT_VOLATILITY_MULTIPLIER: Double = 0.35
+    private const val MAX_EVENT_VOLATILITY_MULTIPLIER: Double = 5.0
+    private const val EVENT_VOLATILITY_SOFT_KNEE: Double = 1.8
+    private const val MIN_EVENT_VOLUME_MULTIPLIER: Double = 0.30
+    private const val MAX_EVENT_VOLUME_MULTIPLIER: Double = 12.0
+    private const val EVENT_VOLUME_SOFT_KNEE: Double = 2.5
+    private const val MIN_EVENT_LIQUIDITY_MULTIPLIER: Double = 0.20
+    private const val MAX_EVENT_LIQUIDITY_MULTIPLIER: Double = 5.0
+    private const val EVENT_LIQUIDITY_SOFT_KNEE: Double = 1.8
     private val LN_2: Double = ln(2.0)
 }

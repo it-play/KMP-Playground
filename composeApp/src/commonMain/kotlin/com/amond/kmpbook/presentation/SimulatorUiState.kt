@@ -29,7 +29,9 @@ import com.amond.kmpbook.domain.model.Trade
 import com.amond.kmpbook.domain.model.TradingProtectionSnapshot
 import com.amond.kmpbook.domain.model.TurnStep
 import com.amond.kmpbook.domain.simulation.EventEngineSnapshot
+import com.amond.kmpbook.domain.simulation.ExternalMarketForces
 import com.amond.kmpbook.domain.simulation.MacroEnvironment
+import com.amond.kmpbook.domain.simulation.MarketDynamicsSnapshot
 import com.amond.kmpbook.domain.simulation.OrderBookSnapshot
 import com.amond.kmpbook.domain.simulation.DeterministicRandom
 import com.amond.kmpbook.domain.simulation.ScheduledEventEngine
@@ -76,6 +78,9 @@ data class SimulatorUiState(
     val selectedOrderBook: OrderBookSnapshot?,
     val marketSessions: Map<Market, MarketSession>,
     val macro: MacroEnvironment,
+    /** 설정에서 조절한 목표와 시간에 따라 그 목표로 수렴하는 실제 동역학 상태. */
+    val externalMarketForcesTarget: ExternalMarketForces,
+    val marketDynamicsSnapshot: MarketDynamicsSnapshot,
     val activeEvents: List<GameEvent>,
     val newsEvents: List<GameEvent>,
     val readEventIds: Set<String>,

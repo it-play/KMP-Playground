@@ -54,7 +54,7 @@ class PriceEngine(private val seed: Long) {
             else -> 1.0
         }
         val behavior = stock.behavior
-        val volatilityScale = input.macro.volatilityRegime *
+        val volatilityScale = idiosyncraticRegimeScale(input.macro.volatilityRegime) *
             input.eventImpulse.volatilityMultiplier *
             circuitVolatilityFactor *
             sqrt(input.regularTradingFraction)
@@ -74,13 +74,15 @@ class PriceEngine(private val seed: Long) {
 
         val fundLeverage = stock.etfProfile?.leverage ?: 1.0
         val factor = factorReturn(stock, input.macro)
+        val diffusionFraction = sqrt(referenceFraction)
         val marketComponent = fundLeverage * stock.beta *
-            strategyParticipation(behavior, factor) * factor * referenceFraction
+            strategyParticipation(behavior, factor) * factor * diffusionFraction
         val sectorFactor = input.macro.sectorHourlyReturns[stock.sector] ?: 0.0
         val sectorComponent = fundLeverage * SECTOR_LOADING *
-            strategyParticipation(behavior, sectorFactor) * sectorFactor * referenceFraction
+            strategyParticipation(behavior, sectorFactor) * sectorFactor * diffusionFraction
         val ratesAndInflation = instrumentRateReturn(stock, input.macro)
         val growthAndSentiment = instrumentGrowthAndCreditReturn(stock, input.macro)
+        val orderFlow = instrumentOrderFlowReturn(stock, input.macro)
         val fxReturn = foreignExchangeReturn(stock, input.macro, input.fxSensitivity) *
             fairValueFraction
         val fundCosts = fundAccrualLogReturn(stock, fairValueFraction)
@@ -101,6 +103,7 @@ class PriceEngine(private val seed: Long) {
             sector = sectorComponent,
             ratesAndInflation = fundLeverage * ratesAndInflation * referenceFraction,
             growthAndSentiment = fundLeverage * growthAndSentiment * referenceFraction,
+            orderFlow = fundLeverage * orderFlow * referenceFraction,
             // Currency hedging is an independent overlay. Multiplying it by an inverse or
             // leveraged equity mandate would incorrectly reverse/double the FX leg.
             foreignExchange = fxReturn,
@@ -132,8 +135,8 @@ class PriceEngine(private val seed: Long) {
         val rawOpen = input.previousPrice * exp(boundedCarry)
         val open = boundedPrice(stock, rawOpen, input.dailyBasePrice)
         val activeLogReturn = (
-            attribution.market + attribution.sector + attribution.ratesAndInflation +
-                attribution.growthAndSentiment + attribution.foreignExchange +
+                attribution.market + attribution.sector + attribution.ratesAndInflation +
+                attribution.growthAndSentiment + attribution.orderFlow + attribution.foreignExchange +
                 attribution.referenceEvent + attribution.directProductEvent +
                 attribution.fundCosts + attribution.referenceResidual + attribution.priceDislocation
             ).coerceIn(-MAX_RAW_LOG_RETURN, MAX_RAW_LOG_RETURN)
@@ -162,7 +165,9 @@ class PriceEngine(private val seed: Long) {
             averageDailyVolume = input.averageDailyVolume,
             absoluteReturn = abs(returnRate),
             multiplier = input.eventImpulse.volumeMultiplier * circuitVolumeFactor *
-                input.regularTradingFraction,
+                (1.0 + 0.75 * abs(input.macro.retailOrderFlow) +
+                    0.50 * abs(input.macro.institutionalOrderFlow) +
+                    0.35 * input.macro.liquidityStress) * input.regularTradingFraction,
         )
 
         val bar = PriceBar(
@@ -245,20 +250,22 @@ class PriceEngine(private val seed: Long) {
         val leverage = profile.leverage
         val behavior = stock.behavior
         val factor = factorReturn(stock, macro)
+        val diffusionFraction = sqrt(referenceTradingFraction)
         val market = leverage * stock.beta * strategyParticipation(behavior, factor) *
-            factor * referenceTradingFraction
+            factor * diffusionFraction
         val sectorFactor = macro.sectorHourlyReturns[stock.sector] ?: 0.0
         val sector = leverage * SECTOR_LOADING *
-            strategyParticipation(behavior, sectorFactor) * sectorFactor * referenceTradingFraction
+            strategyParticipation(behavior, sectorFactor) * sectorFactor * diffusionFraction
         val ratesAndInflation = leverage * instrumentRateReturn(stock, macro) * referenceTradingFraction
         val growthAndSentiment = leverage * instrumentGrowthAndCreditReturn(stock, macro) *
             referenceTradingFraction
+        val orderFlow = leverage * instrumentOrderFlowReturn(stock, macro) * referenceTradingFraction
         val fx = structuredFxReturn(stock, macro, profile.fxProfile) * fxTradingFraction
         val event = referenceEventLogReturn(stock, eventImpulse, referenceTradingFraction)
         // Expense and hedge-cost accrual belongs to the listing's regular-session NAV
         // path. Including it here would charge a foreign-market ETF once while its
         // reference trades and again while the listing trades.
-        return market + sector + ratesAndInflation + growthAndSentiment + fx + event
+        return market + sector + ratesAndInflation + growthAndSentiment + orderFlow + fx + event
     }
 
     /**
@@ -321,7 +328,8 @@ class PriceEngine(private val seed: Long) {
             else -> 1.0
         }
         val hoursPerTradingYear = TRADING_DAYS_PER_YEAR * TRADING_HOURS_PER_DAY
-        val volatilityScale = macro.volatilityRegime * eventImpulse.volatilityMultiplier *
+        val volatilityScale = idiosyncraticRegimeScale(macro.volatilityRegime) *
+            eventImpulse.volatilityMultiplier *
             circuitVolatilityFactor * sqrt(tradingFraction)
         return (stock.volatility / sqrt(hoursPerTradingYear) * volatilityScale)
             .coerceIn(0.0, MAX_HOURLY_VOLATILITY)
@@ -413,6 +421,14 @@ class PriceEngine(private val seed: Long) {
         factor: Double,
     ): Double = if (factor >= 0.0) behavior.upsideParticipation else behavior.downsideParticipation
 
+    /**
+     * 체계적 팩터는 MarketDynamicsEngine에서 이미 국면 배율을 전부 받는다. 종목 고유
+     * 분산도 스트레스에 늘지만 탄력도는 1보다 작게 두어 공통 변동성을 모든 종목의
+     * 독립 잡음에 다시 한 번 선형 복제하지 않는다.
+     */
+    private fun idiosyncraticRegimeScale(volatilityRegime: Double): Double =
+        exp(ln(volatilityRegime.coerceAtLeast(0.1)) * IDIOSYNCRATIC_VOLATILITY_ELASTICITY)
+
     private fun instrumentRateReturn(stock: StockDefinition, macro: MacroEnvironment): Double {
         val behavior = stock.behavior
         if (behavior.durationYears != 0.0 || behavior.cashRateAccrual > 0.0) {
@@ -456,6 +472,18 @@ class PriceEngine(private val seed: Long) {
             cryptoLoading * macro.riskSentiment * CRYPTO_SENTIMENT_SCALE
         return if (behavior.creditSpreadSensitivity > 0.0) credit + ordinary * 0.20
         else ordinary + alternative
+    }
+
+    /**
+     * 공통 순수급은 MarketDynamicsEngine의 시장 팩터가 이미 소유한다. 여기서는 개인은
+     * 고베타, 기관은 상대적으로 저베타 상품에 더 실리는 횡단면 기울기만 더한다.
+     */
+    private fun instrumentOrderFlowReturn(stock: StockDefinition, macro: MacroEnvironment): Double {
+        val betaDistance = (stock.beta - 1.0).coerceIn(-0.8, 1.8)
+        val retailTilt = macro.retailOrderFlow * betaDistance * RETAIL_FLOW_TILT_SCALE
+        val institutionalTilt = macro.institutionalOrderFlow * -betaDistance *
+            INSTITUTIONAL_FLOW_TILT_SCALE
+        return retailTilt + institutionalTilt
     }
 
     private fun dailyResetVolatilityDrag(stock: StockDefinition, hoursPerTradingYear: Double): Double {
@@ -619,7 +647,7 @@ class PriceEngine(private val seed: Long) {
         private const val TRADING_HOURS_PER_DAY: Double = 6.5
         private const val SECTOR_LOADING: Double = 0.55
         private const val HOURLY_MACRO_SCALE: Double = 0.0015
-        private const val RISK_SENTIMENT_HOURLY_SCALE: Double = 0.0012
+        private const val RISK_SENTIMENT_HOURLY_SCALE: Double = 0.00018
         private const val CREDIT_GROWTH_SCALE: Double = 0.00045
         private const val CREDIT_SENTIMENT_SCALE: Double = 0.00060
         private const val COMMODITY_INFLATION_SCALE: Double = 0.00075
@@ -635,8 +663,23 @@ class PriceEngine(private val seed: Long) {
         private const val ETF_DISLOCATION_REVERSION_PER_HOUR: Double = 0.18
         private const val ETN_DISLOCATION_REVERSION_PER_HOUR: Double = 0.04
         private const val CEF_DISLOCATION_REVERSION_PER_HOUR: Double = 0.015
+        private const val RETAIL_FLOW_TILT_SCALE: Double = 0.000045
+        private const val INSTITUTIONAL_FLOW_TILT_SCALE: Double = 0.000035
+        private const val IDIOSYNCRATIC_VOLATILITY_ELASTICITY: Double = 0.55
         private val ZERO_ATTRIBUTION = PriceAttribution(
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            market = 0.0,
+            sector = 0.0,
+            ratesAndInflation = 0.0,
+            growthAndSentiment = 0.0,
+            orderFlow = 0.0,
+            foreignExchange = 0.0,
+            referenceEvent = 0.0,
+            directProductEvent = 0.0,
+            fundCosts = 0.0,
+            carriedReference = 0.0,
+            carriedPriceDislocation = 0.0,
+            referenceResidual = 0.0,
+            priceDislocation = 0.0,
         )
 
         internal fun stableHash64(value: String): Long {

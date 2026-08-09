@@ -14,6 +14,7 @@ import com.amond.kmpbook.domain.model.EventTradingHaltKind
 import com.amond.kmpbook.domain.model.EventScope
 import com.amond.kmpbook.domain.model.EventSeverity
 import com.amond.kmpbook.domain.model.EventType
+import com.amond.kmpbook.domain.model.EtfExposureRegion
 import com.amond.kmpbook.domain.model.ImpactDirection
 import com.amond.kmpbook.domain.model.IndustrySegment
 import com.amond.kmpbook.domain.model.InvestmentAlertLevel
@@ -26,6 +27,7 @@ import com.amond.kmpbook.domain.model.MarketActionTransition
 import com.amond.kmpbook.domain.model.MAX_FUND_REFERENCE_VALUE
 import com.amond.kmpbook.domain.model.MIN_CAUSAL_SIGNAL_STRENGTH
 import com.amond.kmpbook.domain.model.MIN_FUND_REFERENCE_VALUE
+import com.amond.kmpbook.domain.model.ReferenceCurrency
 import com.amond.kmpbook.domain.model.Sector
 import com.amond.kmpbook.domain.model.ScheduledEventKind
 import com.amond.kmpbook.domain.model.TradingHaltReason
@@ -345,6 +347,57 @@ actual class GameSaveStorage actual constructor() {
     }
 
     private fun validateCurrentStateJson(state: JsonObject) {
+        fun JsonObject.requireExternalMarketForces(path: String) {
+            requireExactFields(EXTERNAL_MARKET_FORCES_FIELDS, path)
+            EXTERNAL_MARKET_FORCES_FIELDS.forEach { field ->
+                val value = requiredFiniteDouble(field, "$path.$field")
+                if (value !in 0.0..1.0) {
+                    throw JsonParseException("필드 '$path.$field'는 0과 1 사이여야 합니다.")
+                }
+            }
+        }
+
+        state.requiredObject("options").apply {
+            requireExactFields(NEW_GAME_OPTIONS_FIELDS, "state.options")
+            requiredObject("initialExternalMarketForces")
+                .requireExternalMarketForces("state.options.initialExternalMarketForces")
+        }
+        state.requiredObject("externalMarketForcesTarget")
+            .requireExternalMarketForces("state.externalMarketForcesTarget")
+        state.requiredObject("marketDynamicsSnapshot").apply {
+            requireExactFields(MARKET_DYNAMICS_SNAPSHOT_FIELDS, "state.marketDynamicsSnapshot")
+            requiredObject("effectiveForces")
+                .requireExternalMarketForces("state.marketDynamicsSnapshot.effectiveForces")
+            requiredObject("regimeProbabilities").apply {
+                requireExactFields(MARKET_REGIME_PROBABILITY_FIELDS, "state.marketDynamicsSnapshot.regimeProbabilities")
+                MARKET_REGIME_PROBABILITY_FIELDS.forEach { field ->
+                    val value = requiredFiniteDouble(
+                        field,
+                        "state.marketDynamicsSnapshot.regimeProbabilities.$field",
+                    )
+                    if (value !in 0.0..1.0) {
+                        throw JsonParseException(
+                            "필드 'state.marketDynamicsSnapshot.regimeProbabilities.$field'는 0과 1 사이여야 합니다.",
+                        )
+                    }
+                }
+            }
+            listOf(
+                "conditionalVariance",
+                "newsExcitation",
+                "newsIntensity",
+                "eventSentimentMemory",
+                "liquidityStress",
+                "retailFlow",
+                "institutionalFlow",
+                "downsideMemory",
+            ).forEach { field -> requiredFiniteDouble(field, "state.marketDynamicsSnapshot.$field") }
+            nullableFiniteDouble(
+                "previousObservedReturn",
+                "state.marketDynamicsSnapshot.previousObservedReturn",
+            )
+            requiredLong("randomState", "state.marketDynamicsSnapshot.randomState")
+        }
         state.requiredArray("stocks").forEachIndexed { index, element ->
             element.requireObject("state.stocks[$index]")
                 .requiredEnumArray<IndustrySegment>("industrySegments", "state.stocks[$index].industrySegments")
@@ -426,8 +479,44 @@ actual class GameSaveStorage actual constructor() {
             }
         }
         state.requiredObject("macro").apply {
+            requireExactFields(MACRO_ENVIRONMENT_FIELDS, "state.macro")
             requiredObject("fxRatesToKrw")
             requiredObject("previousFxRatesToKrw")
+            listOf(
+                "policyRate",
+                "policyRateChange",
+                "inflationRate",
+                "inflationSurprise",
+                "growthRate",
+                "growthSurprise",
+                "usdKrw",
+                "previousUsdKrw",
+                "riskSentiment",
+                "volatilityRegime",
+                "retailOrderFlow",
+                "institutionalOrderFlow",
+                "liquidityStress",
+                "newsIntensity",
+            ).forEach { field -> requiredFiniteDouble(field, "state.macro.$field") }
+            requiredEnumFiniteDoubleMap<ReferenceCurrency>("fxRatesToKrw", "state.macro.fxRatesToKrw")
+            requiredEnumFiniteDoubleMap<ReferenceCurrency>(
+                "previousFxRatesToKrw",
+                "state.macro.previousFxRatesToKrw",
+            )
+            requiredEnumFiniteDoubleMap<Market>("marketHourlyReturns", "state.macro.marketHourlyReturns")
+            requiredEnumFiniteDoubleMap<Sector>("sectorHourlyReturns", "state.macro.sectorHourlyReturns")
+            requiredEnumFiniteDoubleMap<Market>(
+                "marketChangeFromPreviousClose",
+                "state.macro.marketChangeFromPreviousClose",
+            )
+            requireMember("regionalEtfHourlyReturns")
+            if (!get("regionalEtfHourlyReturns").isJsonNull) {
+                requiredEnumFiniteDoubleMap<EtfExposureRegion>(
+                    "regionalEtfHourlyReturns",
+                    "state.macro.regionalEtfHourlyReturns",
+                )
+            }
+            requiredInt("usCircuitBreakerLevel")
         }
         state.requiredArray("portfolioSnapshots").forEachIndexed { index, element ->
             element.requireObject("state.portfolioSnapshots[$index]")
@@ -867,6 +956,8 @@ actual class GameSaveStorage actual constructor() {
             "selectedOrderBook",
             "marketSessions",
             "macro",
+            "externalMarketForcesTarget",
+            "marketDynamicsSnapshot",
             "activeEvents",
             "newsEvents",
             "readEventIds",
@@ -907,6 +998,70 @@ actual class GameSaveStorage actual constructor() {
             "selectedStockId",
             "selectedOrderBook",
             "lastMessage",
+        )
+
+        val NEW_GAME_OPTIONS_FIELDS: Set<String> = setOf(
+            "initialCapitalKrw",
+            "seed",
+            "usFractionalTrading",
+            "autoExchange",
+            "initialUsdKrw",
+            "initialExternalMarketForces",
+        )
+
+        val EXTERNAL_MARKET_FORCES_FIELDS: Set<String> = setOf(
+            "chaos",
+            "worldTension",
+            "retailBuyingPower",
+            "institutionalBuyingPower",
+            "marketLiquidity",
+            "economicMomentum",
+        )
+
+        val MARKET_REGIME_PROBABILITY_FIELDS: Set<String> = setOf(
+            "calm",
+            "balanced",
+            "stress",
+            "crisis",
+        )
+
+        val MARKET_DYNAMICS_SNAPSHOT_FIELDS: Set<String> = setOf(
+            "effectiveForces",
+            "regimeProbabilities",
+            "conditionalVariance",
+            "newsExcitation",
+            "newsIntensity",
+            "eventSentimentMemory",
+            "liquidityStress",
+            "retailFlow",
+            "institutionalFlow",
+            "downsideMemory",
+            "previousObservedReturn",
+            "randomState",
+        )
+
+        val MACRO_ENVIRONMENT_FIELDS: Set<String> = setOf(
+            "policyRate",
+            "policyRateChange",
+            "inflationRate",
+            "inflationSurprise",
+            "growthRate",
+            "growthSurprise",
+            "usdKrw",
+            "previousUsdKrw",
+            "fxRatesToKrw",
+            "previousFxRatesToKrw",
+            "riskSentiment",
+            "volatilityRegime",
+            "retailOrderFlow",
+            "institutionalOrderFlow",
+            "liquidityStress",
+            "newsIntensity",
+            "marketHourlyReturns",
+            "sectorHourlyReturns",
+            "regionalEtfHourlyReturns",
+            "marketChangeFromPreviousClose",
+            "usCircuitBreakerLevel",
         )
 
         val CAUSAL_SIGNAL_FIELDS: Set<String> = setOf(
@@ -1083,6 +1238,17 @@ private fun JsonObject.requiredInt(name: String): Int = try {
     throw JsonParseException("필드 '$name'은 정수여야 합니다.", error)
 }
 
+private fun JsonObject.requiredLong(name: String, path: String): Long = try {
+    val primitive = required(name).takeIf(JsonElement::isJsonPrimitive)?.asJsonPrimitive
+        ?: throw JsonParseException("필드 '$path'은 정수여야 합니다.")
+    if (!primitive.isNumber) throw JsonParseException("필드 '$path'은 정수여야 합니다.")
+    primitive.asString.toLongOrNull()
+        ?: throw JsonParseException("필드 '$path'은 Long 범위의 10진 정수여야 합니다.")
+} catch (error: RuntimeException) {
+    if (error is JsonParseException) throw error
+    throw JsonParseException("필드 '$path'은 정수여야 합니다.", error)
+}
+
 private fun JsonObject.requiredFiniteDouble(name: String, path: String): Double = try {
     val primitive = required(name).takeIf(JsonElement::isJsonPrimitive)?.asJsonPrimitive
         ?: throw JsonParseException("필드 '$path'은 숫자여야 합니다.")
@@ -1092,4 +1258,11 @@ private fun JsonObject.requiredFiniteDouble(name: String, path: String): Double 
 } catch (error: RuntimeException) {
     if (error is JsonParseException) throw error
     throw JsonParseException("필드 '$path'은 유한한 숫자여야 합니다.", error)
+}
+
+private fun JsonObject.nullableFiniteDouble(name: String, path: String): Double? {
+    requireMember(name)
+    val element = get(name)
+    if (element.isJsonNull) return null
+    return requiredFiniteDouble(name, path)
 }

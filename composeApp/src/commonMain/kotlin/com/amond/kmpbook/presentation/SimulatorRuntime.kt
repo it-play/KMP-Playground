@@ -114,8 +114,10 @@ import com.amond.kmpbook.domain.simulation.DeterministicRandom
 import com.amond.kmpbook.domain.simulation.EventEngine
 import com.amond.kmpbook.domain.simulation.EventGenerationContext
 import com.amond.kmpbook.domain.simulation.EventShockCalculator
+import com.amond.kmpbook.domain.simulation.ExternalMarketForces
 import com.amond.kmpbook.domain.simulation.InstrumentMetricsEngine
 import com.amond.kmpbook.domain.simulation.MacroEnvironment
+import com.amond.kmpbook.domain.simulation.MarketDynamicsEngine
 import com.amond.kmpbook.domain.simulation.MarketMicrostructure
 import com.amond.kmpbook.domain.simulation.ListingLifecycleEngine
 import com.amond.kmpbook.domain.simulation.ListingRemediationDecisionStatus
@@ -169,6 +171,7 @@ import kotlin.math.exp
 import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.round
+import kotlin.math.sqrt
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.nanoseconds
@@ -572,6 +575,7 @@ internal class SimulatorRuntime(
         fxRatesToKrw = initialFxRates(options.initialUsdKrw),
         previousFxRatesToKrw = initialFxRates(options.initialUsdKrw),
     )
+    private var externalMarketForcesTarget = options.initialExternalMarketForces
     private var macroDate = gameDate(currentTime)
     private var benchmarkValue = BENCHMARK_START
     private var peakAssetsKrw = options.initialCapitalKrw
@@ -580,6 +584,10 @@ internal class SimulatorRuntime(
 
     private val random = DeterministicRandom(
         DeterministicRandom.mixSeed(options.seed, MACRO_STREAM_ID),
+    )
+    private val marketDynamicsEngine = MarketDynamicsEngine(
+        seed = DeterministicRandom.mixSeed(options.seed, DYNAMICS_STREAM_ID),
+        initialForces = options.initialExternalMarketForces,
     )
     private val priceEngine = PriceEngine(DeterministicRandom.mixSeed(options.seed, PRICE_STREAM_ID))
     private val orderBookEngine = OrderBookEngine(DeterministicRandom.mixSeed(options.seed, BOOK_STREAM_ID))
@@ -609,6 +617,14 @@ internal class SimulatorRuntime(
 
     init {
         require(stocks.size >= 24) { "기본 종목 카탈로그가 충분하지 않습니다." }
+        val initialDynamics = marketDynamicsEngine.snapshot()
+        macro = macro.copy(
+            volatilityRegime = initialDynamics.resolvedVolatilityRegime,
+            retailOrderFlow = initialDynamics.retailFlow,
+            institutionalOrderFlow = initialDynamics.institutionalFlow,
+            liquidityStress = initialDynamics.liquidityStress,
+            newsIntensity = initialDynamics.newsIntensity,
+        )
         selectedStockId = stocks.firstOrNull()?.id
         stocks.associateTo(listingLifecycleStates) { stock -> stock.id to listingLifecycleEngine.initialState(stock) }
         initializeMarketData()
@@ -639,6 +655,11 @@ internal class SimulatorRuntime(
     fun setAutoExchange(enabled: Boolean) {
         options = options.copy(autoExchange = enabled)
         lastMessage = if (enabled) "자동 환전을 켰습니다." else "자동 환전을 껐습니다."
+    }
+
+    fun setExternalMarketForces(target: ExternalMarketForces) {
+        externalMarketForcesTarget = target.copy()
+        lastMessage = "시장 환경 목표를 변경했습니다. 실제 시장에는 시간에 따라 반영됩니다."
     }
 
     fun clearMessage() {
@@ -892,6 +913,8 @@ internal class SimulatorRuntime(
             selectedOrderBook = selectedBook,
             marketSessions = sessions,
             macro = macro,
+            externalMarketForcesTarget = externalMarketForcesTarget,
+            marketDynamicsSnapshot = marketDynamicsEngine.snapshot(),
             activeEvents = (activeEvents.filter { it.isActiveAt(currentTime) } + scheduledActiveEvents)
                 .distinctBy(GameEvent::id),
             newsEvents = newsEvents.sortedByDescending(GameEvent::startsAt),
@@ -1032,10 +1055,28 @@ internal class SimulatorRuntime(
         selectedStockId = state.selectedStockId?.also { require(it in ids) }
         isAdvancing = false
         lastMessage = "저장 게임을 불러왔습니다."
-        require(state.macro.fxRatesToKrw != null && state.macro.previousFxRatesToKrw != null) {
+        val restoredMacro = state.macro.validatedCopy()
+        require(restoredMacro.fxRatesToKrw != null && restoredMacro.previousFxRatesToKrw != null) {
             "현재 저장 스키마에는 통화별 환율 상태가 필요합니다."
         }
-        macro = state.macro
+        require(
+            state.options.initialExternalMarketForces.values.all { it.isFinite() && it in 0.0..1.0 } &&
+                state.externalMarketForcesTarget.values.all { it.isFinite() && it in 0.0..1.0 },
+        ) {
+            "외부 시장 환경의 시작값 또는 목표가 올바르지 않습니다."
+        }
+        val restoredDynamics = state.marketDynamicsSnapshot.validatedCopy()
+        require(
+            abs(restoredMacro.volatilityRegime - restoredDynamics.resolvedVolatilityRegime) <= 1e-9 &&
+                abs(restoredMacro.retailOrderFlow - restoredDynamics.retailFlow) <= 1e-9 &&
+                abs(restoredMacro.institutionalOrderFlow -
+                    restoredDynamics.institutionalFlow) <= 1e-9 &&
+                abs(restoredMacro.liquidityStress - restoredDynamics.liquidityStress) <= 1e-9 &&
+                abs(restoredMacro.newsIntensity - restoredDynamics.newsIntensity) <= 1e-9,
+        ) { "거시 상태와 시장 동역학 스냅샷이 일치하지 않습니다." }
+        macro = restoredMacro
+        externalMarketForcesTarget = state.externalMarketForcesTarget
+        marketDynamicsEngine.restore(restoredDynamics)
         macroDate = gameDate(currentTime)
         benchmarkValue = state.benchmarkHistory.lastOrNull()?.value ?: BENCHMARK_START
         peakAssetsKrw = state.peakAssetsKrw
@@ -1374,6 +1415,12 @@ internal class SimulatorRuntime(
 
         updateMarketIndices(to, finalized.bars, previousClosesByStockId, tradingFractions)
         updateMarketChange(finalized.bars, tradingFractions)
+        marketDynamicsEngine.observeMarketReturn(
+            realizedSystemicReturn(
+                attributions = finalized.priceAttributions,
+                tradingFractions = finalized.stockTradingFractions,
+            ),
+        )
         processOpenOrders(
             finalized.bars,
             finalized.stockTradingFractions,
@@ -1418,6 +1465,30 @@ internal class SimulatorRuntime(
         val stockFirstExecutionTimes: Map<String, Instant>,
         val priceAttributions: Map<String, PriceAttribution>,
     )
+
+    private fun realizedSystemicReturn(
+        attributions: Map<String, PriceAttribution>,
+        tradingFractions: Map<String, Double>,
+    ): Double? {
+        var weightedLogReturn = 0.0
+        var totalWeight = 0.0
+        for (stock in stocks) {
+            if (stock.isFundLike || listingLifecycleStates.getValue(stock.id).isIndexEligible.not()) continue
+            val tradingFraction = tradingFractions[stock.id] ?: 0.0
+            if (tradingFraction <= 0.0) continue
+            val attribution = attributions[stock.id] ?: continue
+            val weight = stock.marketCap.coerceAtLeast(1.0)
+            val fullHourEquivalent =
+                attribution.systemicDiffusionLogReturn / sqrt(tradingFraction) +
+                    attribution.systemicContinuousLogReturn / tradingFraction +
+                    attribution.systemicJumpLogReturn
+            weightedLogReturn += fullHourEquivalent * weight
+            totalWeight += weight
+        }
+        return if (totalWeight == 0.0) null else {
+            (exp(weightedLogReturn / totalWeight) - 1.0).coerceIn(-1.0, 1.0)
+        }
+    }
 
     private data class TurnProtectionImpact(
         val marketBlocks: Map<Market, List<RuntimeTradingInterval>> = emptyMap(),
@@ -3797,13 +3868,25 @@ internal class SimulatorRuntime(
         }
 
     private fun updateMacro(time: Instant) {
+        // Exactly one path-dependent frame is resolved for this hour. The provisional and final
+        // pricing passes below both consume this immutable MacroEnvironment and never advance the
+        // dynamics RNG themselves.
+        val dynamics = marketDynamicsEngine.advance(externalMarketForcesTarget)
+        val effectiveForces = dynamics.effectiveForces
         val date = gameDate(time)
         val resetMarketChange = date != macroDate
         macroDate = date
         val previousUsdKrw = macro.usdKrw
         val previousFxRates = macro.fxRatesToKrw ?: initialFxRates(previousUsdKrw)
-        val meanReversion = ln(options.initialUsdKrw / previousUsdKrw) * FX_MEAN_REVERSION
-        val usdKrw = (previousUsdKrw * exp(meanReversion + random.nextGaussian() * FX_HOURLY_VOLATILITY))
+        val dynamicFxTarget = options.initialUsdKrw * exp(
+            0.22 * (effectiveForces.worldTension - 0.5) +
+                0.12 * (effectiveForces.chaos - 0.5) -
+                0.10 * (effectiveForces.institutionalBuyingPower - 0.5) +
+                0.10 * dynamics.liquidityStress,
+        )
+        val meanReversion = ln(dynamicFxTarget / previousUsdKrw) * FX_MEAN_REVERSION
+        val fxVolatility = FX_HOURLY_VOLATILITY * (0.72 + dynamics.volatilityRegime * 0.28)
+        val usdKrw = (previousUsdKrw * exp(meanReversion + random.nextGaussian() * fxVolatility))
             .coerceIn(MIN_USD_KRW, MAX_USD_KRW)
         val usdLogReturn = ln(usdKrw / previousUsdKrw)
         val fxRates = ReferenceCurrency.entries.associateWith { currency ->
@@ -3821,50 +3904,46 @@ internal class SimulatorRuntime(
                 }
             }
         }
-        val policyChange = if (random.nextDouble() < POLICY_CHANGE_PROBABILITY_PER_HOUR) {
-            if (random.nextBoolean()) 0.0025 else -0.0025
-        } else {
-            0.0
-        }
-        val policyRate = (macro.policyRate + policyChange).coerceIn(0.0, 0.12)
-        val inflation = (macro.inflationRate + (0.02 - macro.inflationRate) * 0.002 +
-            random.nextGaussian() * 0.00008).coerceIn(-0.02, 0.15)
-        val growth = (macro.growthRate + (0.02 - macro.growthRate) * 0.0015 +
-            random.nextGaussian() * 0.0001).coerceIn(-0.10, 0.15)
+        // Monetary-policy decisions are owned by the scheduled FOMC/BOK calendar. Economic
+        // levels move slowly; release surprises are transient innovations, never reconstructed
+        // every hour from the distance between a level and an arbitrary 2% reference.
+        val policyChange = 0.0
+        val policyRate = macro.policyRate
+        val inflationTarget = (
+            0.02 + 0.010 * (effectiveForces.worldTension - 0.5) +
+                0.006 * (effectiveForces.chaos - 0.5) +
+                0.004 * maxOf(effectiveForces.economicMomentum - 0.5, 0.0)
+            ).coerceIn(-0.02, 0.15)
+        val growthTarget = (
+            0.02 + 0.050 * (effectiveForces.economicMomentum - 0.5) -
+                0.012 * maxOf(effectiveForces.worldTension - 0.5, 0.0) -
+                0.008 * dynamics.liquidityStress
+            ).coerceIn(-0.10, 0.15)
+        val inflation = (
+            macro.inflationRate + (inflationTarget - macro.inflationRate) * MACRO_LEVEL_REVERSION +
+                random.nextGaussian() * MACRO_LEVEL_INNOVATION * dynamics.volatilityRegime
+            ).coerceIn(-0.02, 0.15)
+        val growth = (
+            macro.growthRate + (growthTarget - macro.growthRate) * MACRO_LEVEL_REVERSION +
+                random.nextGaussian() * MACRO_LEVEL_INNOVATION * dynamics.volatilityRegime
+            ).coerceIn(-0.10, 0.15)
+        val sentimentMemory = marketDynamicsEngine.snapshot().eventSentimentMemory
+        val riskTarget = kotlin.math.tanh(
+            0.42 * dynamics.retailFlow +
+                0.64 * dynamics.institutionalFlow +
+                0.44 * (effectiveForces.economicMomentum - 0.5) -
+                0.62 * dynamics.liquidityStress +
+                0.72 * sentimentMemory,
+        )
         val riskSentiment = (
-            macro.riskSentiment * RISK_SENTIMENT_PERSISTENCE +
-                random.nextGaussian() * RISK_SENTIMENT_HOURLY_VOLATILITY
-            )
-            .coerceIn(-1.0, 1.0)
-        val previousMarketMove = macro.marketHourlyReturns.values.maxOfOrNull(::abs) ?: 0.0
-        val realizedStress = (
-            previousMarketMove / MARKET_FACTOR_VOLATILITY - VOLATILITY_SHOCK_FREE_MULTIPLE
-            ).coerceIn(0.0, VOLATILITY_MAX_REALIZED_STRESS)
-        val volatilityTarget = 1.0 +
-            maxOf(-riskSentiment, 0.0) * VOLATILITY_DOWNSIDE_SENTIMENT_SENSITIVITY +
-            maxOf(riskSentiment, 0.0) * VOLATILITY_UPSIDE_SENTIMENT_SENSITIVITY +
-            realizedStress * VOLATILITY_REALIZED_STRESS_SENSITIVITY
-        val volatilityRegime = (
-            macro.volatilityRegime +
-                (volatilityTarget - macro.volatilityRegime) * VOLATILITY_REGIME_REVERSION +
-                random.nextGaussian() * VOLATILITY_REGIME_INNOVATION
-            ).coerceIn(MIN_VOLATILITY_REGIME, MAX_VOLATILITY_REGIME)
-        val krCommonReturn = random.nextGaussian() * MARKET_FACTOR_VOLATILITY * volatilityRegime
-        val usCommonReturn = random.nextGaussian() * MARKET_FACTOR_VOLATILITY * volatilityRegime
+            macro.riskSentiment + (riskTarget - macro.riskSentiment) * RISK_SENTIMENT_REVERSION +
+                random.nextGaussian() * RISK_SENTIMENT_INNOVATION
+            ).coerceIn(-1.0, 1.0)
         val marketReturns = Market.entries.associateWith { market ->
             val fraction = regularTradingFraction(market, time, time + 1.hours)
-            if (fraction == 0.0) {
-                0.0
-            } else {
-                val common = if (market.isKorean) krCommonReturn else usCommonReturn
-                // Store an unscaled hourly factor. PriceEngine applies the regular/reference
-                // fraction once when it builds the instrument return.
-                common + random.nextGaussian() * VENUE_FACTOR_VOLATILITY * volatilityRegime
-            }
+            if (fraction == 0.0) 0.0 else dynamics.marketReturns.getValue(market)
         }
-        val sectorReturns = Sector.entries.associateWith {
-            random.nextGaussian() * SECTOR_FACTOR_VOLATILITY * volatilityRegime
-        }
+        val sectorReturns = dynamics.sectorReturns
         val regionalReturns = linkedMapOf<EtfExposureRegion, Double>()
         regionalReturns[EtfExposureRegion.KOREA] = marketReturns
             .filterKeys(Market::isKorean).values.filter { it != 0.0 }.averageOrZero()
@@ -3872,25 +3951,35 @@ internal class SimulatorRuntime(
             .filterKeys(Market::isUnitedStates).values.filter { it != 0.0 }.averageOrZero()
         regionalReturns[EtfExposureRegion.DEVELOPED_EX_US] = if (
             regionalTradingFraction(EtfExposureRegion.DEVELOPED_EX_US, time) > 0.0
-        ) random.nextGaussian() * MARKET_FACTOR_VOLATILITY * volatilityRegime else 0.0
+        ) {
+            marketReturns.values.filter { it != 0.0 }.averageOrZero() +
+                random.nextGaussian() * MARKET_FACTOR_VOLATILITY * 0.65 * dynamics.volatilityRegime
+        } else 0.0
         regionalReturns[EtfExposureRegion.EMERGING_MARKETS] = if (
             regionalTradingFraction(EtfExposureRegion.EMERGING_MARKETS, time) > 0.0
-        ) random.nextGaussian() * MARKET_FACTOR_VOLATILITY * 1.12 * volatilityRegime else 0.0
+        ) {
+            marketReturns.values.filter { it != 0.0 }.averageOrZero() +
+                random.nextGaussian() * MARKET_FACTOR_VOLATILITY * 0.78 * dynamics.volatilityRegime
+        } else 0.0
         regionalReturns[EtfExposureRegion.GLOBAL] = regionalReturns.values
             .filter { it != 0.0 }.averageOrZero()
         macro = MacroEnvironment(
             policyRate = policyRate,
             policyRateChange = policyChange,
             inflationRate = inflation,
-            inflationSurprise = (inflation - 0.02) / 0.01,
+            inflationSurprise = macro.inflationSurprise * MACRO_SURPRISE_DECAY,
             growthRate = growth,
-            growthSurprise = (growth - 0.02) / 0.02,
+            growthSurprise = macro.growthSurprise * MACRO_SURPRISE_DECAY,
             usdKrw = usdKrw,
             previousUsdKrw = previousUsdKrw,
             fxRatesToKrw = fxRates,
             previousFxRatesToKrw = previousFxRates,
             riskSentiment = riskSentiment,
-            volatilityRegime = volatilityRegime,
+            volatilityRegime = dynamics.volatilityRegime,
+            retailOrderFlow = dynamics.retailFlow,
+            institutionalOrderFlow = dynamics.institutionalFlow,
+            liquidityStress = dynamics.liquidityStress,
+            newsIntensity = dynamics.newsHazardMultiplier,
             marketHourlyReturns = marketReturns,
             sectorHourlyReturns = sectorReturns,
             regionalEtfHourlyReturns = regionalReturns,
@@ -3907,14 +3996,37 @@ internal class SimulatorRuntime(
                 state.isTerminal || state.isSettlementPending
             }
         }
+
+        // Calendar releases own their reported fact and direct repricing. Emit them first so a
+        // stochastic template cannot immediately restate the same CPI/GDP/rate narrative.
+        val scheduled = scheduledEventEngine.generate(from, to, eligibleStocks)
+        if (scheduled.emissions.isNotEmpty()) {
+            val existingIds = newsEvents.mapTo(mutableSetOf(), GameEvent::id)
+            newsEvents += scheduled.newEvents.filter { existingIds.add(it.id) }
+            applyScheduledCorporateFundamentals(scheduled.emissions)
+            applyScheduledMacro(scheduled.emissions)
+        }
+
+        // Do not expose this hour's not-yet-realized factor innovation to the event selector or
+        // freeze it into a causal snapshot. Hazard decisions only see pre-step state and the last
+        // finalized market observations.
+        val eventContextMacro = macro.copy(
+            marketHourlyReturns = emptyMap(),
+            sectorHourlyReturns = emptyMap(),
+            regionalEtfHourlyReturns = emptyMap(),
+        )
+        val dynamicsSnapshot = marketDynamicsEngine.snapshot()
         val result = eventEngine.generate(
             EventGenerationContext(
                 timestamp = from,
                 stocks = eligibleStocks,
-                macro = macro,
+                macro = eventContextMacro,
+                externalForces = dynamicsSnapshot.effectiveForces,
+                newsHazardMultiplier = dynamicsSnapshot.newsIntensity,
                 elapsedHours = 1,
                 existingEvents = activeEvents,
-                maxNewEvents = 2,
+                suppressedTemplateIds = stochasticNarrativeSuppressions(from),
+                maxNewEvents = 1,
             ),
         )
         activeEvents.clear()
@@ -3925,21 +4037,33 @@ internal class SimulatorRuntime(
             trimStochasticNews()
         }
 
-        // Scheduled emissions deliberately bypass EventGenerationContext.maxNewEvents and the
-        // stochastic-news cap. Their ids and [from, to) membership come from the pure calendar.
-        val scheduled = scheduledEventEngine.generate(from, to, eligibleStocks)
-        if (scheduled.emissions.isNotEmpty()) {
-            val existingIds = newsEvents.mapTo(mutableSetOf(), GameEvent::id)
-            newsEvents += scheduled.newEvents.filter { existingIds.add(it.id) }
-            applyScheduledCorporateFundamentals(scheduled.emissions)
-            applyScheduledMacro(scheduled.emissions)
-        }
-
         val allNewEvents = result.newEvents + scheduled.newEvents
-        val systemicSentimentEvents = allNewEvents.filter { event -> event.scope == EventScope.GLOBAL }
-        if (systemicSentimentEvents.isNotEmpty()) {
-            val sentiment = systemicSentimentEvents.map { it.impact.sentiment }.average()
-            macro = macro.copy(riskSentiment = (macro.riskSentiment + sentiment * 0.15).coerceIn(-1.0, 1.0))
+        // Direct repricing is consumed this hour by EventShockCalculator. Sentiment and news
+        // clustering enter only the next dynamics frame, preventing same-hour double counting.
+        marketDynamicsEngine.recordEvents(allNewEvents)
+    }
+
+    private fun stochasticNarrativeSuppressions(at: Instant): Set<String> {
+        val recentKinds = newsEvents.asSequence()
+            .filter { event ->
+                event.recordKind == EventRecordKind.SCHEDULED_RELEASE &&
+                    event.startsAt <= at && event.startsAt + NARRATIVE_FAMILY_COOLDOWN_HOURS.hours > at
+            }
+            .mapNotNull { it.scheduledEventReference?.kind }
+            .toSet()
+        return buildSet {
+            if (recentKinds.any { it in INFLATION_RELEASE_KINDS }) {
+                add("inflation_hot")
+                add("inflation_cools")
+            }
+            if (recentKinds.any { it in GROWTH_RELEASE_KINDS }) {
+                add("growth_recession")
+                add("growth_rebound")
+            }
+            if (recentKinds.any { it in POLICY_RELEASE_KINDS }) {
+                add("surprise_rate_hike")
+                add("surprise_rate_cut")
+            }
         }
     }
 
@@ -4137,14 +4261,14 @@ internal class SimulatorRuntime(
                 ScheduledEventKind.KR_CPI,
                 -> macro.copy(
                     inflationRate = actual / 100.0,
-                    inflationSurprise = outcome.surpriseScore,
+                    inflationSurprise = 0.0,
                 )
 
                 ScheduledEventKind.US_GDP,
                 ScheduledEventKind.KR_GDP,
                 -> macro.copy(
                     growthRate = actual / 100.0,
-                    growthSurprise = outcome.surpriseScore,
+                    growthSurprise = 0.0,
                 )
 
                 ScheduledEventKind.US_FOMC,
@@ -4153,18 +4277,24 @@ internal class SimulatorRuntime(
                     val nextRate = actual / 100.0
                     macro.copy(
                         policyRate = nextRate,
-                        policyRateChange = nextRate - macro.policyRate,
+                        policyRateChange = 0.0,
                     )
                 }
 
                 ScheduledEventKind.US_WEEKLY_CLAIMS -> macro.copy(
-                    growthSurprise = -outcome.surpriseScore,
+                    growthRate = (macro.growthRate - outcome.surpriseScore * 0.0006)
+                        .coerceIn(-0.10, 0.15),
+                    growthSurprise = 0.0,
                 )
 
                 ScheduledEventKind.US_EMPLOYMENT,
                 ScheduledEventKind.KR_EMPLOYMENT,
                 ScheduledEventKind.US_RETAIL_SALES,
-                -> macro.copy(growthSurprise = outcome.surpriseScore)
+                -> macro.copy(
+                    growthRate = (macro.growthRate + outcome.surpriseScore * 0.0007)
+                        .coerceIn(-0.10, 0.15),
+                    growthSurprise = 0.0,
+                )
 
                 ScheduledEventKind.EARNINGS -> macro
             }
@@ -6769,6 +6899,14 @@ internal class SimulatorRuntime(
             stock,
             currentTime,
         )
+        // Negative means a liquidity-providing event. Preserve that sign so positive liquidity
+        // news can thicken the book instead of being erased by a one-sided stress clamp.
+        val eventLiquidityStress = (-ln(liquidity) / ln(5.0)).coerceIn(-1.0, 1.0)
+        val combinedLiquidityStress = if (eventLiquidityStress >= 0.0) {
+            1.0 - (1.0 - macro.liquidityStress) * (1.0 - eventLiquidityStress)
+        } else {
+            macro.liquidityStress * (1.0 + eventLiquidityStress)
+        }.coerceIn(0.0, 1.0)
         return orderBookEngine.generate(
             OrderBookGenerationInput(
                 stock = stock,
@@ -6776,9 +6914,13 @@ internal class SimulatorRuntime(
                 lastPrice = quote.price,
                 dailyBasePrice = tracker.basePrice,
                 session = session,
-                buyPressure = macro.riskSentiment * 0.25,
-                marketStress = ((macro.volatilityRegime - 1.0) / 2.0 + (1.0 / liquidity - 1.0) * 0.25)
-                    .coerceIn(0.0, 1.0),
+                buyPressure = (
+                    macro.retailOrderFlow * 0.42 + macro.institutionalOrderFlow * 0.58
+                    ).coerceIn(-1.0, 1.0),
+                marketStress = (
+                    combinedLiquidityStress * 0.68 +
+                        ((macro.volatilityRegime - 1.0) / 3.0).coerceAtLeast(0.0) * 0.32
+                    ).coerceIn(0.0, 1.0),
             ),
         )
     }
@@ -6828,6 +6970,7 @@ internal class SimulatorRuntime(
         const val INVESTMENT_ALERT_NOTICE_TRADING_DAYS = 10
         const val MAX_NEWS_EVENTS = 1_000
         const val MAX_MARKET_ACTION_OCCURRENCE_GROUPS = 4_000
+        const val NARRATIVE_FAMILY_COOLDOWN_HOURS = 72
         /** 축소 게임 유니버스에서 2026 KRX 합산 시총 상위100 제외를 재현하는 기준일 프록시. */
         const val KRX_TOP_100_MARKET_CAP_PROXY_KRW = 3_000_000_000_000.0
         const val BENCHMARK_START = 100.0
@@ -6840,21 +6983,12 @@ internal class SimulatorRuntime(
         const val FX_GLOBAL_KRW_LOADING = 0.72
         const val MIN_USD_KRW = 800.0
         const val MAX_USD_KRW = 2_500.0
-        const val POLICY_CHANGE_PROBABILITY_PER_HOUR = 1.0 / (24.0 * 120.0)
-        const val RISK_SENTIMENT_PERSISTENCE = 0.985
-        const val RISK_SENTIMENT_HOURLY_VOLATILITY = 0.018
-        const val VOLATILITY_REGIME_REVERSION = 0.08
-        const val VOLATILITY_REGIME_INNOVATION = 0.012
-        const val VOLATILITY_DOWNSIDE_SENTIMENT_SENSITIVITY = 1.15
-        const val VOLATILITY_UPSIDE_SENTIMENT_SENSITIVITY = 0.15
-        const val VOLATILITY_SHOCK_FREE_MULTIPLE = 1.25
-        const val VOLATILITY_MAX_REALIZED_STRESS = 4.0
-        const val VOLATILITY_REALIZED_STRESS_SENSITIVITY = 0.07
-        const val MIN_VOLATILITY_REGIME = 0.65
-        const val MAX_VOLATILITY_REGIME = 3.0
+        const val MACRO_LEVEL_REVERSION = 0.0015
+        const val MACRO_LEVEL_INNOVATION = 0.000025
+        const val MACRO_SURPRISE_DECAY = 0.84
+        const val RISK_SENTIMENT_REVERSION = 0.045
+        const val RISK_SENTIMENT_INNOVATION = 0.004
         const val MARKET_FACTOR_VOLATILITY = 0.0016
-        const val VENUE_FACTOR_VOLATILITY = 0.00018
-        const val SECTOR_FACTOR_VOLATILITY = 0.0010
         const val FORWARD_SPLIT_STREAK_DAYS = 20
         const val CORPORATE_ACTION_NOTICE_HOURS = 24 * 5
         const val CORPORATE_ACTION_COOLDOWN_HOURS = 24 * 365
@@ -6872,6 +7006,23 @@ internal class SimulatorRuntime(
         val LISTING_TRADING_HALT_REASONS = setOf(
             TradingHaltReason.LISTING_MAINTENANCE_REVIEW,
             TradingHaltReason.DELISTING_PROCESS,
+        )
+        val INFLATION_RELEASE_KINDS = setOf(
+            ScheduledEventKind.US_CPI,
+            ScheduledEventKind.US_PCE,
+            ScheduledEventKind.KR_CPI,
+        )
+        val GROWTH_RELEASE_KINDS = setOf(
+            ScheduledEventKind.US_GDP,
+            ScheduledEventKind.KR_GDP,
+            ScheduledEventKind.US_WEEKLY_CLAIMS,
+            ScheduledEventKind.US_EMPLOYMENT,
+            ScheduledEventKind.KR_EMPLOYMENT,
+            ScheduledEventKind.US_RETAIL_SALES,
+        )
+        val POLICY_RELEASE_KINDS = setOf(
+            ScheduledEventKind.US_FOMC,
+            ScheduledEventKind.KR_BOK,
         )
 
         fun initialFxRates(usdKrw: Double): Map<ReferenceCurrency, Double> {
@@ -6894,6 +7045,7 @@ internal class SimulatorRuntime(
             )
         }
         const val MACRO_STREAM_ID = 0x4D4143524FL
+        const val DYNAMICS_STREAM_ID = 0x44594E414D494353L
         const val PRICE_STREAM_ID = 0x5052494345L
         const val BOOK_STREAM_ID = 0x424F4F4BL
         const val EVENT_STREAM_ID = 0x4556454E54L

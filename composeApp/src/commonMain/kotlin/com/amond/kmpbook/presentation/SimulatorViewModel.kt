@@ -7,6 +7,7 @@ import com.amond.kmpbook.domain.model.OrderType
 import com.amond.kmpbook.domain.model.Screen
 import com.amond.kmpbook.domain.model.TimeInForce
 import com.amond.kmpbook.domain.model.TurnStep
+import com.amond.kmpbook.domain.simulation.ExternalMarketForces
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -104,6 +105,11 @@ class SimulatorViewModel(
 
     fun setAutoExchange(enabled: Boolean) {
         runtime.setAutoExchange(enabled)
+        publish()
+    }
+
+    fun setExternalMarketForces(forces: ExternalMarketForces) {
+        runtime.setExternalMarketForces(forces)
         publish()
     }
 

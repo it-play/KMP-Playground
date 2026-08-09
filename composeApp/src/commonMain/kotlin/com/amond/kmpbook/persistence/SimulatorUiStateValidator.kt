@@ -67,6 +67,8 @@ import com.amond.kmpbook.domain.simulation.DefaultEventTemplates
 import com.amond.kmpbook.domain.simulation.DeterministicRandom
 import com.amond.kmpbook.domain.simulation.EventEngine
 import com.amond.kmpbook.domain.simulation.ListingLifecyclePolicyCatalog
+import com.amond.kmpbook.domain.simulation.MarketDynamicsSnapshot
+import com.amond.kmpbook.domain.simulation.MarketRegimeProbabilities
 import com.amond.kmpbook.domain.simulation.ScheduledEventEngine
 import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.presentation.SimulatorUiState
@@ -84,11 +86,64 @@ private val CURRENT_EVENT_TEMPLATE_IDS: Set<String> =
     DefaultEventTemplates.all.mapTo(linkedSetOf()) { it.id }
 
 private const val MAX_PENDING_FUND_FLOW_RATE: Double = 0.20
+private const val DYNAMICS_MATCH_EPSILON: Double = 1e-9
 
 internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
     if (state.turn < 0L) return "턴 번호가 음수입니다."
     if (state.nextSequence < 0L) return "다음 원장 시퀀스가 음수입니다."
     if (state.eventEngineSnapshot.sequence < 0L) return "이벤트 엔진 시퀀스가 음수입니다."
+    val macro = try {
+        state.macro.validatedCopy()
+    } catch (_: RuntimeException) {
+        return "거시 환경의 금리·물가·성장·환율·시장 팩터 상태가 유효하지 않습니다."
+    }
+    if (!state.options.initialExternalMarketForces.values.all { it.isFinite() && it in 0.0..1.0 } ||
+        !state.externalMarketForcesTarget.values.all { it.isFinite() && it in 0.0..1.0 } ||
+        !state.marketDynamicsSnapshot.effectiveForces.values.all { it.isFinite() && it in 0.0..1.0 }
+    ) {
+        return "외부 시장 환경의 시작값·목표값·실효값이 유효하지 않습니다."
+    }
+    val dynamics = state.marketDynamicsSnapshot
+    val regimeValues = dynamics.regimeProbabilities.values
+    if (regimeValues.any { !it.isFinite() || it !in 0.0..1.0 } ||
+        kotlin.math.abs(regimeValues.sum() - 1.0) > MarketRegimeProbabilities.SUM_EPSILON ||
+        !dynamics.conditionalVariance.isFinite() ||
+        dynamics.conditionalVariance !in MarketDynamicsSnapshot.MIN_VARIANCE..MarketDynamicsSnapshot.MAX_VARIANCE ||
+        !dynamics.newsExcitation.isFinite() ||
+        dynamics.newsExcitation !in 0.0..MarketDynamicsSnapshot.MAX_NEWS_EXCITATION ||
+        !dynamics.newsIntensity.isFinite() ||
+        dynamics.newsIntensity !in MarketDynamicsSnapshot.MIN_NEWS_INTENSITY..
+            MarketDynamicsSnapshot.MAX_NEWS_INTENSITY ||
+        !dynamics.eventSentimentMemory.isFinite() || dynamics.eventSentimentMemory !in -1.0..1.0 ||
+        !dynamics.liquidityStress.isFinite() || dynamics.liquidityStress !in 0.0..1.0 ||
+        !dynamics.retailFlow.isFinite() || dynamics.retailFlow !in -1.0..1.0 ||
+        !dynamics.institutionalFlow.isFinite() || dynamics.institutionalFlow !in -1.0..1.0 ||
+        !dynamics.downsideMemory.isFinite() ||
+        dynamics.downsideMemory !in 0.0..MarketDynamicsSnapshot.MAX_DOWNSIDE_MEMORY ||
+        dynamics.previousObservedReturn?.let { !it.isFinite() || it !in -1.0..1.0 } == true
+    ) {
+        return "시장 동역학 스냅샷의 분산·국면·뉴스·수급 상태가 유효하지 않습니다."
+    }
+    val macroDynamicsValues = listOf(
+        macro.volatilityRegime,
+        macro.retailOrderFlow,
+        macro.institutionalOrderFlow,
+        macro.liquidityStress,
+        macro.newsIntensity,
+    )
+    if (macroDynamicsValues.any { !it.isFinite() }) {
+        return "거시 스냅샷의 변동성·수급·유동성·뉴스 강도가 유한하지 않습니다."
+    }
+    if (kotlin.math.abs(macro.volatilityRegime - dynamics.resolvedVolatilityRegime) >
+        DYNAMICS_MATCH_EPSILON ||
+        kotlin.math.abs(macro.retailOrderFlow - dynamics.retailFlow) > DYNAMICS_MATCH_EPSILON ||
+        kotlin.math.abs(macro.institutionalOrderFlow - dynamics.institutionalFlow) >
+        DYNAMICS_MATCH_EPSILON ||
+        kotlin.math.abs(macro.liquidityStress - dynamics.liquidityStress) > DYNAMICS_MATCH_EPSILON ||
+        kotlin.math.abs(macro.newsIntensity - dynamics.newsIntensity) > DYNAMICS_MATCH_EPSILON
+    ) {
+        return "거시 스냅샷과 시장 동역학의 변동성·수급·유동성·뉴스 강도가 일치하지 않습니다."
+    }
     if (state.stocks.map { it.id }.distinct().size != state.stocks.size) return "종목 ID가 중복되었습니다."
     val stocksById = state.stocks.associateBy { it.id }
     val stockIds = stocksById.keys

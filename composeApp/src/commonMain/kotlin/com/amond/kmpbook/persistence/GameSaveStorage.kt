@@ -3,7 +3,7 @@ package com.amond.kmpbook.persistence
 import com.amond.kmpbook.presentation.SimulatorUiState
 import kotlin.time.Instant
 
-const val CURRENT_GAME_SAVE_SCHEMA_VERSION: Int = 17
+const val CURRENT_GAME_SAVE_SCHEMA_VERSION: Int = 18
 const val GAME_SAVE_FORMAT_ID: String = "market-ledger-2040.game-save"
 
 // These result variants stay with the expect storage declaration because together they form one
