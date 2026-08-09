@@ -759,6 +759,9 @@ private fun StockChartPanel(
             }
             CandlestickVolumeChart(
                 bars = displayedBars,
+                market = stock.market,
+                priceFormatter = { value -> formatPrice(value, stock.currency) },
+                aggregateByTradingDay = range == "1개월" || range == "3개월",
                 modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp),
             )
             LedgerDivider()
