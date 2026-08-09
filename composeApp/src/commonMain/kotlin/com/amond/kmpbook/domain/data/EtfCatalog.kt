@@ -26,8 +26,6 @@ import kotlin.math.abs
  */
 object EtfCatalog {
     const val IDENTITY_SNAPSHOT_DATE: String = "2026-08-07"
-    const val DISCLAIMER: String =
-        "ETF 티커와 상품명만 실제 상장 식별정보이며 가격·수익률·보수·규모는 투자정보가 아닌 게임 데이터입니다."
     val IDENTITY_SOURCE_URLS: Set<String> = linkedSetOf(
         "https://finance.naver.com/sise/etf.naver",
         "https://www.nasdaqtrader.com/trader.aspx?id=symboldirdefs",
@@ -137,9 +135,9 @@ object EtfCatalog {
                 marketCap = gameMarketCap,
                 sharesOutstanding = maxOf(1L, (gameMarketCap / initialPrice).toLong()),
                 description = if (market.isKorean) {
-                    "국내 거래소에 상장된 $name. 수치 지표는 시뮬레이션용 게임 데이터입니다."
+                    "국내 거래소에 상장된 $name"
                 } else {
-                    "미국 거래소에 상장된 $name. Numeric metrics are simulation-only game data."
+                    "미국 거래소에 상장된 $name"
                 },
                 beta = gameBeta(profile),
                 etfProfile = profile,

@@ -29,9 +29,6 @@ import com.amond.kmpbook.domain.model.StockDefinition
  */
 object RequestedUsInstrumentCatalog {
     const val IDENTITY_SNAPSHOT_DATE: String = "2026-08-07"
-    const val DISCLAIMER: String =
-        "상품 식별정보와 구조만 공식 자료를 따른다. 가격·규모·수익률·보수는 투자정보가 아닌 결정론적 캠페인 값이다."
-
     val definitions: List<StockDefinition> by lazy {
         SEEDS.mapIndexed { index, seed -> seed.toDefinition(rank = index + 1) }.also { definitions ->
             require(definitions.size == EXPECTED_COUNT) { "요청 미국 상품은 정확히 ${EXPECTED_COUNT}종이어야 합니다." }
@@ -125,7 +122,7 @@ object RequestedUsInstrumentCatalog {
                 dividendYield = gameDistributionYield(strategy, distributionFrequency, fingerprint),
                 marketCap = gameMarketCap,
                 sharesOutstanding = maxOf(1L, (gameMarketCap / initialPrice).toLong()),
-                description = "$strategySummary 가격·규모·수익률 수치는 캠페인 전용 게임 데이터입니다.",
+                description = strategySummary,
                 beta = gameBeta(strategy, assetClass),
                 etfProfile = profile,
                 instrumentTypeOverride = instrumentType,

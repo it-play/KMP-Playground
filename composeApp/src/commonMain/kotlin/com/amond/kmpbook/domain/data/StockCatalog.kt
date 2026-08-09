@@ -16,8 +16,6 @@ import com.amond.kmpbook.domain.model.StockDefinition
  */
 object StockCatalog {
     const val BASE_DATE: String = "2026-08-07"
-    const val DISCLAIMER: String = "모든 가격과 기업 지표는 투자 정보가 아닌 주식 시뮬레이션용 게임 시세입니다."
-
     val stockDefinitions: List<StockDefinition> = listOf(
         // KOSPI
         stock("005930", "삼성전자", "Samsung Electronics", Market.KOSPI, Sector.SEMICONDUCTOR, 98_000.0, 0.28, 0.015, 585_000_000_000_000.0, 5_969_782_550L, 1.02, "메모리·파운드리와 모바일 기기를 아우르는 대한민국 대표 전자기업", setOf(IndustrySegment.COMPUTER_HARDWARE)),

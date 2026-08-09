@@ -29,9 +29,6 @@ import com.amond.kmpbook.domain.model.StockDefinition
  */
 object RequestedKoreanInstrumentCatalog {
     const val IDENTITY_SNAPSHOT_DATE: String = "2026-08-07"
-    const val DISCLAIMER: String =
-        "상장 식별·상품 구조 외 모든 수치는 실제 투자정보가 아닌 결정론적 캠페인 초기값입니다."
-
     private val KRW_EXPOSURE: EtfFxProfile = fx(
         ReferenceCurrency.KRW to 1.0,
     )
@@ -206,7 +203,7 @@ object RequestedKoreanInstrumentCatalog {
                 ),
                 marketCap = marketCap,
                 sharesOutstanding = maxOf(1L, (marketCap / initialPrice).toLong()),
-                description = "$strategySummary $DISCLAIMER",
+                description = strategySummary,
                 beta = gameBeta(strategy),
                 etfProfile = profile,
                 instrumentTypeOverride = instrumentType,
