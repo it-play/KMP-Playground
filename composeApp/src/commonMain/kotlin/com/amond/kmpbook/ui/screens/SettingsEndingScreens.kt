@@ -172,7 +172,7 @@ fun SettingsScreen(
                 }
             }
             Column(
-                Modifier.width(410.dp).fillMaxHeight(),
+                Modifier.width(MarketLayout.settingsRailWidth).fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
             ) {
                 LedgerPanel(Modifier.fillMaxWidth().height(355.dp)) {

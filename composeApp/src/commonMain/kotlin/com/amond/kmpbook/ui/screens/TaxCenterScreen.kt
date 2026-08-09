@@ -62,7 +62,10 @@ fun TaxCenterScreen(data: TaxCenterData, modifier: Modifier = Modifier) {
                 CapitalGainsCalculation(current, Modifier.fillMaxWidth().height(250.dp))
                 AnnualTaxLedger(data.years, Modifier.fillMaxWidth().weight(1f))
             }
-            Column(Modifier.width(360.dp), verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
+            Column(
+                Modifier.width(MarketLayout.detailRailWidth),
+                verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+            ) {
                 TaxPolicyCards(data, Modifier.fillMaxWidth().weight(1f))
                 Box(
                     Modifier.fillMaxWidth().background(MarketColors.AmberSoft, RoundedCornerShape(MarketRadii.small)).padding(16.dp),

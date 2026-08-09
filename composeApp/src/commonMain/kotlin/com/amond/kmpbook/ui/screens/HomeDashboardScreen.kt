@@ -112,7 +112,7 @@ fun HomeDashboardScreen(
                 )
             }
             Column(
-                Modifier.width(332.dp).fillMaxHeight(),
+                Modifier.width(MarketLayout.detailRailWidth).fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
             ) {
                 AllocationPanel(

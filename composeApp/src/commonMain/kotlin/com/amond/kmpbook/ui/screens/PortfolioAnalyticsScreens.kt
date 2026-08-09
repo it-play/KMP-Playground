@@ -109,7 +109,10 @@ fun PortfolioScreen(
                     }
                 }
             }
-            Column(Modifier.width(350.dp), verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
+            Column(
+                Modifier.width(MarketLayout.detailRailWidth),
+                verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+            ) {
                 AssetAllocationPanel(allocationValues, snapshot.totalAssetValueKrw, Modifier.fillMaxWidth().weight(1f))
                 CashPanel(snapshot, Modifier.fillMaxWidth().height(155.dp))
                 LedgerPanel(Modifier.fillMaxWidth().height(150.dp)) {
@@ -193,7 +196,10 @@ fun AnalyticsScreen(
                     }
                 }
             }
-            Column(Modifier.width(360.dp), verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap)) {
+            Column(
+                Modifier.width(MarketLayout.detailRailWidth),
+                verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+            ) {
                 LedgerPanel(Modifier.fillMaxWidth().height(185.dp)) {
                     Column {
                         SectionHeading("운용 효율", eyebrow = "EFFICIENCY")
