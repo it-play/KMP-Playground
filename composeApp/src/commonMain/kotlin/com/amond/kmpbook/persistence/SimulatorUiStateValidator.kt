@@ -1,7 +1,9 @@
 package com.amond.kmpbook.persistence
 
+import com.amond.kmpbook.domain.data.StockCatalog
 import com.amond.kmpbook.domain.model.CorporateActionKind
 import com.amond.kmpbook.domain.model.CorporateActionNewsTransition
+import com.amond.kmpbook.domain.model.CorporateActionRecord
 import com.amond.kmpbook.domain.model.CorporateActionSource
 import com.amond.kmpbook.domain.model.CausalEconomicFactor
 import com.amond.kmpbook.domain.model.CausalMarketRegimeSnapshot
@@ -35,12 +37,16 @@ import com.amond.kmpbook.domain.model.MarketActionKind
 import com.amond.kmpbook.domain.model.MarketActionReference
 import com.amond.kmpbook.domain.model.MarketActionTransition
 import com.amond.kmpbook.domain.model.MarketIndexId
+import com.amond.kmpbook.domain.model.MAX_FUND_REFERENCE_VALUE
 import com.amond.kmpbook.domain.model.MIN_CAUSAL_SIGNAL_STRENGTH
+import com.amond.kmpbook.domain.model.MIN_FUND_REFERENCE_VALUE
 import com.amond.kmpbook.domain.model.OrderSide
 import com.amond.kmpbook.domain.model.ListingLifecycleLedgerEvent
 import com.amond.kmpbook.domain.model.ListingLifecycleEventKind
 import com.amond.kmpbook.domain.model.ListingFinalDispositionType
 import com.amond.kmpbook.domain.model.PublishedInstrumentTerminationNotice
+import com.amond.kmpbook.domain.model.ScheduledEventKind
+import com.amond.kmpbook.domain.model.ScheduledEventMetricKind
 import com.amond.kmpbook.domain.model.StockDefinition
 import com.amond.kmpbook.domain.model.TradingHaltReason
 import com.amond.kmpbook.domain.model.TradingHaltStatus
@@ -65,6 +71,8 @@ import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.presentation.SimulatorUiState
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.plus
+import kotlin.math.round
+import kotlin.time.Duration.Companion.nanoseconds
 
 private val TERMINAL_LISTING_STATUSES: Set<ListingLifecycleStatus> = setOf(
     ListingLifecycleStatus.DELISTED,
@@ -74,6 +82,8 @@ private val TERMINAL_LISTING_STATUSES: Set<ListingLifecycleStatus> = setOf(
 private val CURRENT_EVENT_TEMPLATE_IDS: Set<String> =
     DefaultEventTemplates.all.mapTo(linkedSetOf()) { it.id }
 
+private const val MAX_PENDING_FUND_FLOW_RATE: Double = 0.20
+
 internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
     if (state.turn < 0L) return "턴 번호가 음수입니다."
     if (state.nextSequence < 0L) return "다음 원장 시퀀스가 음수입니다."
@@ -81,6 +91,9 @@ internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
     if (state.stocks.map { it.id }.distinct().size != state.stocks.size) return "종목 ID가 중복되었습니다."
     val stocksById = state.stocks.associateBy { it.id }
     val stockIds = stocksById.keys
+    validateInstrumentFinancialStates(state, stocksById)?.let { violation ->
+        return violation
+    }
     val eventSchemaEngine = EventEngine(seed = 0L)
     val scheduledEventSchemaEngine = ScheduledEventEngine(
         DeterministicRandom.mixSeed(state.options.seed, ScheduledEventEngine.STREAM_ID),
@@ -253,13 +266,22 @@ internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
     ) {
         return "확률 뉴스의 생성 규칙·대상과 쿨다운 원장이 일치하지 않습니다."
     }
+    val canonicalStocksByScheduledEventId = canonicalStockSnapshotsAtScheduledReleases(state)
     if (state.newsEvents.any { event ->
             event.recordKind == EventRecordKind.SCHEDULED_RELEASE &&
-                !scheduledEventSchemaEngine.isCanonicalNewsEvent(event, state.stocks)
+                !scheduledEventSchemaEngine.isCanonicalNewsEvent(
+                    event,
+                    canonicalStocksByScheduledEventId[event.id] ?: state.stocks,
+                )
         }
     ) {
         return "정기 발표 뉴스가 현재 일정·시드·종목 카탈로그에서 재생한 원본과 일치하지 않습니다."
     }
+    validateCurrentCorporateReportLineage(
+        state = state,
+        scheduledEventEngine = scheduledEventSchemaEngine,
+        canonicalStocksByScheduledEventId = canonicalStocksByScheduledEventId,
+    )?.let { violation -> return violation }
     validateCorporateActionNewsLineage(state, stocksById)?.let { violation ->
         return violation
     }
@@ -937,6 +959,229 @@ private fun List<GameEvent>.exactTerminationNotice(
                 ?: return@let null,
         )
     }
+
+private fun validateInstrumentFinancialStates(
+    state: SimulatorUiState,
+    stocksById: Map<String, StockDefinition>,
+): String? {
+    val expectedCorporateIds = stocksById.values
+        .filter(StockDefinition::hasCorporateEarnings)
+        .mapTo(linkedSetOf(), StockDefinition::id)
+    if (state.corporateFundamentals.keys != expectedCorporateIds) {
+        return "기업 원시 재무 상태는 실적 발표 대상 종목에 정확히 하나씩 필요합니다."
+    }
+    if (state.corporateFundamentals.any { (stockId, fundamentals) ->
+            fundamentals.stockId != stockId || stocksById[stockId]?.hasCorporateEarnings != true
+        }
+    ) {
+        return "기업 원시 재무 맵의 키·종목 ID·종목 유형이 일치하지 않습니다."
+    }
+
+    state.corporateFundamentals.values.forEach { fundamentals ->
+        val quarters = fundamentals.quarters
+        if (quarters.size != 4 ||
+            quarters.any { report ->
+                report.periodId.isBlank() || !report.revenue.isFinite() || report.revenue < 0.0 ||
+                    !report.netIncome.isFinite() || !report.dilutedShares.isFinite() ||
+                    report.dilutedShares <= 0.0 || report.reportedAt > fundamentals.asOf ||
+                    report.sourceOccurrenceId?.isBlank() == true
+            } ||
+            quarters.map { it.periodId }.distinct().size != quarters.size ||
+            quarters.zipWithNext().any { (previous, next) -> previous.reportedAt >= next.reportedAt } ||
+            !fundamentals.bookEquity.isFinite() || fundamentals.bookEquity <= 0.0 ||
+            !fundamentals.equityAtTtmStart.isFinite() || fundamentals.equityAtTtmStart <= 0.0 ||
+            fundamentals.appliedEarningsOccurrenceIds.any(String::isBlank) ||
+            fundamentals.appliedEarningsOccurrenceIds.distinct().size !=
+            fundamentals.appliedEarningsOccurrenceIds.size ||
+            fundamentals.asOf > state.currentTime
+        ) {
+            return "${fundamentals.stockId}의 4개 분기 원시 재무·자본·기준 시각이 유효하지 않습니다."
+        }
+        val currentQuarterSourceIds = quarters.mapNotNull { it.sourceOccurrenceId }
+        if (currentQuarterSourceIds.distinct().size != currentQuarterSourceIds.size ||
+            currentQuarterSourceIds.any { it !in fundamentals.appliedEarningsOccurrenceIds }
+        ) {
+            return "${fundamentals.stockId}의 분기 원장과 적용된 실적 발표 ID가 일치하지 않습니다."
+        }
+    }
+
+    val expectedFundIds = stocksById.values
+        .filter(StockDefinition::isFundLike)
+        .mapTo(linkedSetOf(), StockDefinition::id)
+    if (state.fundFinancialStates.keys != expectedFundIds) {
+        return "상장상품 원시 재무 상태는 기초자산 프로필이 있는 종목에 정확히 하나씩 필요합니다."
+    }
+    if (state.fundFinancialStates.any { (stockId, financialState) ->
+            financialState.stockId != stockId || stocksById[stockId]?.isFundLike != true ||
+                financialState.navPerUnit !in MIN_FUND_REFERENCE_VALUE..MAX_FUND_REFERENCE_VALUE ||
+                !financialState.indicativeValuePerUnit.isFinite() ||
+                financialState.indicativeValuePerUnit !in
+                MIN_FUND_REFERENCE_VALUE..MAX_FUND_REFERENCE_VALUE ||
+                !financialState.unitsOrNotesOutstanding.isFinite() ||
+                financialState.unitsOrNotesOutstanding <= 0.0 ||
+                !financialState.lastNetFlow.isFinite() || financialState.asOf > state.currentTime
+        }
+    ) {
+        return "상장상품 원시 재무 맵의 ID·NAV·지표가치·존속 좌수·기준 시각이 유효하지 않습니다."
+    }
+    if (state.pendingFundFlowRates.any { (stockId, rate) ->
+            stockId !in expectedFundIds || !rate.isFinite() ||
+                rate !in -MAX_PENDING_FUND_FLOW_RATE..MAX_PENDING_FUND_FLOW_RATE
+        }
+    ) {
+        return "미소비 상장상품 설정·환매 충격의 종목·비율이 유효하지 않습니다."
+    }
+
+    val allAppliedIds = state.corporateFundamentals.values
+        .flatMap { it.appliedEarningsOccurrenceIds }
+    if (allAppliedIds.distinct().size != allAppliedIds.size) {
+        return "하나의 실적 발표 ID가 둘 이상의 기업 원장에 중복 적용되었습니다."
+    }
+    val newsById = state.newsEvents.groupBy(GameEvent::id)
+    state.corporateFundamentals.values.forEach { fundamentals ->
+        fundamentals.appliedEarningsOccurrenceIds.forEach { occurrenceId ->
+            val news = newsById[occurrenceId]?.singleOrNull()
+                ?: return "적용된 실적 발표 '$occurrenceId'의 저장 뉴스가 없거나 중복되었습니다."
+            if (news.scheduledEventReference?.kind != ScheduledEventKind.EARNINGS ||
+                news.scheduledEventReference.occurrenceId != occurrenceId ||
+                news.affectedStockIds != setOf(fundamentals.stockId) ||
+                news.startsAt > fundamentals.asOf
+            ) {
+                return "적용된 실적 발표 '$occurrenceId'의 뉴스 종류·종목·시각 계보가 원장과 다릅니다."
+            }
+        }
+    }
+    return null
+}
+
+/**
+ * 실적 뉴스의 EPS는 발표 당시 주식수에 의존한다. 현재(분할 후) 종목으로 과거 뉴스를
+ * 재생성하지 않고, 런타임과 동일한 순차 반올림으로 각 발표 시점의 종목 스냅샷을 복원한다.
+ */
+private fun canonicalStockSnapshotsAtScheduledReleases(
+    state: SimulatorUiState,
+): Map<String, List<StockDefinition>> {
+    val releases = state.newsEvents
+        .filter { event -> event.recordKind == EventRecordKind.SCHEDULED_RELEASE }
+        .sortedWith(compareBy(GameEvent::startsAt, GameEvent::id))
+    if (releases.isEmpty()) return emptyMap()
+
+    val baseStocks = if (state.options.usFractionalTrading) {
+        StockCatalog.withUsFractionalTrading()
+    } else {
+        StockCatalog.definitions
+    }
+    val sharesByStockId = baseStocks.associateTo(linkedMapOf()) { stock ->
+        stock.id to stock.sharesOutstanding
+    }
+    val appliedActions = state.corporateActionLedger
+        .withIndex()
+        .sortedWith(
+            compareBy<IndexedValue<CorporateActionRecord>>(
+                { indexed -> indexed.value.effectiveAt },
+                { indexed -> indexed.index },
+            ),
+        )
+        .map(IndexedValue<CorporateActionRecord>::value)
+
+    val result = linkedMapOf<String, List<StockDefinition>>()
+    var actionIndex = 0
+    var stockSnapshot = baseStocks
+    for (release in releases) {
+        var sharesChanged = false
+        while (actionIndex < appliedActions.size &&
+            appliedActions[actionIndex].effectiveAt <= release.startsAt
+        ) {
+            val action = appliedActions[actionIndex++]
+            val previousShares = sharesByStockId[action.stockId] ?: continue
+            sharesByStockId[action.stockId] = round(previousShares.toDouble() * action.quantityMultiplier)
+                .toLong()
+                .coerceAtLeast(1L)
+            sharesChanged = true
+        }
+        if (sharesChanged) {
+            stockSnapshot = baseStocks.map { stock ->
+                val shares = sharesByStockId.getValue(stock.id)
+                if (shares == stock.sharesOutstanding) stock else stock.copy(sharesOutstanding = shares)
+            }
+        }
+        result[release.id] = stockSnapshot
+    }
+    return result
+}
+
+private fun validateCurrentCorporateReportLineage(
+    state: SimulatorUiState,
+    scheduledEventEngine: ScheduledEventEngine,
+    canonicalStocksByScheduledEventId: Map<String, List<StockDefinition>>,
+): String? {
+    val earningsNewsByStockId = state.newsEvents
+        .filter { event -> event.scheduledEventReference?.kind == ScheduledEventKind.EARNINGS }
+        .groupBy { event -> event.affectedStockIds.single() }
+        .mapValues { (_, events) -> events.sortedWith(compareBy(GameEvent::startsAt, GameEvent::id)) }
+
+    for (fundamentals in state.corporateFundamentals.values) {
+        val canonicalNews = earningsNewsByStockId[fundamentals.stockId].orEmpty()
+        val expectedAppliedIds = canonicalNews.map(GameEvent::id)
+        if (fundamentals.appliedEarningsOccurrenceIds != expectedAppliedIds) {
+            return "${fundamentals.stockId}의 적용 실적 발표 ID가 저장된 canonical 뉴스 시간순과 다릅니다."
+        }
+        val expectedAsOf = canonicalNews.lastOrNull()?.startsAt ?: GameCalendar.startInstant
+        if (fundamentals.asOf != expectedAsOf) {
+            return "${fundamentals.stockId}의 재무 기준 시각이 최신 실적 발표 시각과 다릅니다."
+        }
+
+        val sourcedReports = fundamentals.quarters.filter { report -> report.sourceOccurrenceId != null }
+        val expectedSourceIds = expectedAppliedIds.takeLast(minOf(fundamentals.quarters.size, expectedAppliedIds.size))
+        if (sourcedReports.mapNotNull { report -> report.sourceOccurrenceId } != expectedSourceIds) {
+            return "${fundamentals.stockId}의 현재 4개 분기 출처가 적용 실적 발표 원장의 최신 tail과 다릅니다."
+        }
+        val openingReports = fundamentals.quarters.dropLast(sourcedReports.size)
+        val expectedOpeningIds = ((4 - openingReports.size + 1)..4)
+            .takeIf { openingReports.isNotEmpty() }
+            ?.map { index -> "opening-$index" }
+            .orEmpty()
+        if (openingReports.any { report -> report.sourceOccurrenceId != null } ||
+            openingReports.map { report -> report.periodId } != expectedOpeningIds
+        ) {
+            return "${fundamentals.stockId}의 초기 synthetic 분기와 실제 발표 분기의 위치·ID가 다릅니다."
+        }
+
+        for (report in sourcedReports) {
+            val occurrenceId = requireNotNull(report.sourceOccurrenceId)
+            val news = canonicalNews.singleOrNull { event -> event.id == occurrenceId }
+                ?: return "${fundamentals.stockId}의 분기 출처 '$occurrenceId'에 대응하는 실적 뉴스가 없습니다."
+            val stocksAtRelease = canonicalStocksByScheduledEventId[occurrenceId]
+                ?: return "실적 발표 '$occurrenceId'의 발표 시점 종목 스냅샷이 없습니다."
+            val occurrence = scheduledEventEngine.occurrencesBetween(
+                from = news.startsAt,
+                to = news.startsAt + 1.nanoseconds,
+                stocks = stocksAtRelease,
+            ).singleOrNull { candidate ->
+                candidate.id == occurrenceId && candidate.kind == ScheduledEventKind.EARNINGS
+            } ?: return "실적 발표 '$occurrenceId'를 canonical 일정에서 찾을 수 없습니다."
+            val emission = scheduledEventEngine.emissionFor(occurrence, stocksAtRelease)
+            val eps = emission.outcome.metrics.singleOrNull { metric ->
+                metric.kind == ScheduledEventMetricKind.EARNINGS_DILUTED_EPS
+            } ?: return "실적 발표 '$occurrenceId'의 canonical EPS가 없습니다."
+            val revenue = emission.outcome.metrics.singleOrNull { metric ->
+                metric.kind == ScheduledEventMetricKind.EARNINGS_REVENUE
+            } ?: return "실적 발표 '$occurrenceId'의 canonical 매출이 없습니다."
+            val sharesAtRelease = stocksAtRelease.single { stock -> stock.id == fundamentals.stockId }
+                .sharesOutstanding
+                .toDouble()
+            if (report.periodId != (occurrence.referencePeriod ?: occurrence.id) ||
+                report.reportedAt != occurrence.scheduledAt ||
+                report.dilutedShares != sharesAtRelease ||
+                report.revenue != revenue.actualInBaseUnits.coerceAtLeast(0.0) ||
+                report.netIncome != eps.actualInBaseUnits * sharesAtRelease
+            ) {
+                return "${fundamentals.stockId}의 분기 '$occurrenceId'가 canonical 발표의 기간·시각·주식수·매출·순이익과 다릅니다."
+            }
+        }
+    }
+    return null
+}
 
 /**
  * 기업행동의 상태는 뉴스 만료 시각이 아니라 공시 → 적용/취소 계보로 검증한다.
