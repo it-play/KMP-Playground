@@ -755,15 +755,15 @@ private fun statusColor(state: NewsEffectState): Color = when (state) {
 }
 
 private fun directionColor(direction: ImpactDirection): Color = when (direction) {
-    ImpactDirection.POSITIVE -> MarketColors.RiseText
+    ImpactDirection.POSITIVE -> MarketColors.Positive
     ImpactDirection.NEGATIVE -> MarketColors.FallText
     ImpactDirection.MIXED -> MarketColors.AmberText
     ImpactDirection.NEUTRAL -> MarketColors.InkMuted
 }
 
 private fun directionLabel(direction: ImpactDirection): String = when (direction) {
-    ImpactDirection.POSITIVE -> "긍정"
-    ImpactDirection.NEGATIVE -> "부정"
+    ImpactDirection.POSITIVE -> "호재"
+    ImpactDirection.NEGATIVE -> "악재"
     ImpactDirection.MIXED -> "엇갈림"
     ImpactDirection.NEUTRAL -> "중립"
 }
