@@ -127,7 +127,7 @@ private fun TradingProtectionSnapshot.instrumentStatuses(
 ): List<ProtectionUiStatus> = buildList {
     val listingStatus = listingState?.toUiStatus()
     listingStatus?.let(::add)
-    // 상장이 끝난 종목에는 과거 보호장치가 저장돼 있어도 거래 상태로 함께 노출하지 않는다.
+    // 상장이 끝난 종목에는 종목별 보호장치를 거래 상태로 함께 노출하지 않는다.
     if (listingState?.isTerminal == true) return@buildList
     buildList {
         instrumentTradingHalts[stockId]?.let(::add)
