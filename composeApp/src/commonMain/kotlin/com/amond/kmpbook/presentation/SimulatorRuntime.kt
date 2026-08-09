@@ -1254,7 +1254,11 @@ internal class SimulatorRuntime(
         updateMacro(from)
         generateEvents(from, to)
         syncEventDrivenTradingHalts(from, to)
-        val activeStocks = stocks.filterNot { isInstrumentMatured(it, from) }
+        val activeStocks = stocks.filterNot { stock ->
+            listingLifecycleStates.getValue(stock.id).let { state ->
+                state.isTerminal || state.isSettlementPending
+            }
+        }
         val scheduledImpactEvents = scheduledEventEngine.impactEventsBetween(from, to, activeStocks)
 
         val previousClosesByStockId = quotes.mapValues { (_, quote) -> quote.price }
@@ -1678,11 +1682,13 @@ internal class SimulatorRuntime(
     ) {
         for ((stockId, previousState) in fundFinancialStates.toMap()) {
             val stock = stockById.getValue(stockId)
-            if (isInstrumentMatured(stock, at)) {
+            val listingState = listingLifecycleStates.getValue(stockId)
+            val attribution = turn.priceAttributions[stockId]
+            if (listingState.isTerminal || listingState.isSettlementPending) {
                 pendingFundFlowRates.remove(stockId)
                 continue
             }
-            val attribution = turn.priceAttributions[stockId] ?: continue
+            if (attribution == null) continue
             val tradingFraction = turn.stockTradingFractions[stockId] ?: 0.0
             val externalFlowRate = if (tradingFraction > 0.0) {
                 pendingFundFlowRates[stockId] ?: 0.0
@@ -1980,6 +1986,9 @@ internal class SimulatorRuntime(
                     },
                 ) { "청산 대기 전이에 대응하는 상장 원장 이벤트가 없습니다." }
                 cancelPendingCorporateActions(stock, venueCloseAt, liquidationEvent)
+                pendingEtfReferenceReturns.remove(stock.id)
+                pendingClosedEventLogReturns.remove(stock.id)
+                pendingFundFlowRates.remove(stock.id)
             }
             listingLifecycleStates[stock.id] = nextState
             if (ledgerEvents.isEmpty()) continue
@@ -2819,6 +2828,7 @@ internal class SimulatorRuntime(
         }
         pendingEtfReferenceReturns.remove(stock.id)
         pendingClosedEventLogReturns.remove(stock.id)
+        pendingFundFlowRates.remove(stock.id)
 
         when (disposition.type) {
             ListingFinalDispositionType.CASH_LIQUIDATION -> settleListingCashDisposition(
@@ -3795,7 +3805,11 @@ internal class SimulatorRuntime(
     }
 
     private fun generateEvents(from: Instant, to: Instant) {
-        val eligibleStocks = stocks.filterNot { isInstrumentMatured(it, from) }
+        val eligibleStocks = stocks.filterNot { stock ->
+            listingLifecycleStates.getValue(stock.id).let { state ->
+                state.isTerminal || state.isSettlementPending
+            }
+        }
         val result = eventEngine.generate(
             EventGenerationContext(
                 timestamp = from,
@@ -3840,7 +3854,12 @@ internal class SimulatorRuntime(
                 else -> continue
             }
             val stockId = event.affectedStockIds.singleOrNull()
-                ?.takeIf(fundFinancialStates::containsKey)
+                ?.takeIf { candidateId ->
+                    candidateId in fundFinancialStates &&
+                        listingLifecycleStates[candidateId]?.let { state ->
+                            !state.isTerminal && !state.isSettlementPending
+                        } == true
+                }
                 ?: continue
             pendingFundFlowRates[stockId] = (
                 (pendingFundFlowRates[stockId] ?: 0.0) + flowRate
