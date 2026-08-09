@@ -686,8 +686,12 @@ internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
 
     val protection = state.tradingProtectionSnapshot
     val krxMarkets = Market.entries.filter(Market::isKorean).toSet()
-    val krxStockIds = stocksById.filterValues { it.market.isKorean }.keys
-    val usStockIds = stocksById.filterValues { it.market.isUnitedStates }.keys
+    val krxStockIds = stocksById.filter { (stockId, stock) ->
+        stock.market.isKorean && listings.getValue(stockId).isIndexEligible
+    }.keys
+    val usStockIds = stocksById.filter { (stockId, stock) ->
+        stock.market.isUnitedStates && listings.getValue(stockId).isIndexEligible
+    }.keys
     if (protection.krxCircuitBreakers.keys != krxMarkets ||
         protection.krxCircuitBreakers.any { (market, protectionState) ->
             market != protectionState.market
@@ -712,6 +716,7 @@ internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
     }
     if (protection.instrumentTradingHalts.any { (stockId, protectionState) ->
             stockId != protectionState.stockId || stockId !in stockIds ||
+                !listings.getValue(stockId).isIndexEligible ||
                 invalidInstrumentTradingHalt(protectionState)
         }
     ) {
@@ -720,6 +725,7 @@ internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
     if (protection.scheduledInstrumentTradingHalts.any { (scheduleId, protectionState) ->
             scheduleId.isBlank() || scheduleId != protectionState.occurrenceId ||
                 protectionState.stockId !in stockIds ||
+                !listings.getValue(protectionState.stockId).isIndexEligible ||
                 protectionState.scheduledReleaseAt == null ||
                 protectionState.status != TradingHaltStatus.ACTIVE ||
                 invalidInstrumentTradingHalt(protectionState)
@@ -733,7 +739,8 @@ internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
         return "현재·예정 종목 거래정지의 발생 ID가 중복되었습니다."
     }
     if (protection.investmentAlerts.any { (stockId, protectionState) ->
-            stockId != protectionState.stockId || stocksById[stockId]?.market?.isKorean != true
+            stockId != protectionState.stockId || stocksById[stockId]?.market?.isKorean != true ||
+                !listings.getValue(stockId).isIndexEligible
         }
     ) {
         return "투자경보 맵 키와 KRX 종목 ID가 일치하지 않습니다."
@@ -744,7 +751,7 @@ internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
             stockId != protectionState.stockId || stock == null || stock.market != protectionState.primaryMarket
         }
     ) {
-        return "미국 LULD에 필수 종목 상태가 없거나 맵 키·종목·주 상장시장이 일치하지 않습니다."
+        return "미국 LULD에 적격 종목 상태가 없거나 맵 키·종목·주 상장시장이 일치하지 않습니다."
     }
     val mwcb = protection.usMarketWideCircuitBreaker
         ?: return "미국 MWCB 상태가 없습니다."

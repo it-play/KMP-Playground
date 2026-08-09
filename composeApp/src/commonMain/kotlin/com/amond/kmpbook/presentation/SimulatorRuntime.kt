@@ -976,9 +976,15 @@ internal class SimulatorRuntime(
             protection.krxCircuitBreakers.keys == krxMarkets &&
                 protection.krxSidecars.keys == krxMarkets &&
                 protection.krxVolatilityInterruptions.keys == krxStockIds &&
-                protection.instrumentTradingHalts.keys.all(ids::contains) &&
-                protection.scheduledInstrumentTradingHalts.values.all { it.stockId in ids } &&
-                protection.investmentAlerts.keys.all(ids::contains) &&
+                protection.instrumentTradingHalts.keys.all { stockId ->
+                    stockId in ids && state.listingLifecycleStates.getValue(stockId).isIndexEligible
+                } &&
+                protection.scheduledInstrumentTradingHalts.values.all { halt ->
+                    halt.stockId in ids && state.listingLifecycleStates.getValue(halt.stockId).isIndexEligible
+                } &&
+                protection.investmentAlerts.keys.all { stockId ->
+                    stockId in ids && state.listingLifecycleStates.getValue(stockId).isIndexEligible
+                } &&
                 protection.usLuldStates.keys == usStockIds &&
                 protection.usMarketWideCircuitBreaker?.venueStatuses?.keys ==
                 Market.entries.filter(Market::isUnitedStates).toSet()
