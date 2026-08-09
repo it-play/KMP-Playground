@@ -100,7 +100,12 @@ fun MarketButton(
         ),
         contentPadding = ButtonDefaults.ContentPadding,
     ) {
-        Text(text, style = MarketType.label.copy(fontWeight = FontWeight.SemiBold))
+        Text(
+            text = text,
+            style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -172,6 +177,7 @@ fun StatusLabel(
             ),
             color = color,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -189,8 +195,20 @@ fun Metric(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(MarketSpacing.xxs),
     ) {
-        Text(label, style = MarketType.label, color = labelColor)
-        Text(value, style = MarketType.number, color = valueColor, maxLines = 1)
+        Text(
+            text = label,
+            style = MarketType.label,
+            color = labelColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = value,
+            style = MarketType.number,
+            color = valueColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         if (detail != null) {
             Text(
                 detail,
