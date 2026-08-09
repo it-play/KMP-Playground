@@ -1026,7 +1026,10 @@ private fun validateInstrumentFinancialStates(
     }
     if (state.pendingFundFlowRates.any { (stockId, rate) ->
             stockId !in expectedFundIds || !rate.isFinite() ||
-                rate !in -MAX_PENDING_FUND_FLOW_RATE..MAX_PENDING_FUND_FLOW_RATE
+                rate !in -MAX_PENDING_FUND_FLOW_RATE..MAX_PENDING_FUND_FLOW_RATE ||
+                state.listingLifecycleStates[stockId]?.let { listing ->
+                    listing.isTerminal || listing.isSettlementPending
+                } != false
         }
     ) {
         return "미소비 상장상품 설정·환매 충격의 종목·비율이 유효하지 않습니다."
