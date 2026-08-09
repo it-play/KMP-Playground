@@ -59,7 +59,7 @@ object EconomicReleaseCatalog {
                         seriesId = "us-employment",
                         kind = ScheduledEventKind.US_EMPLOYMENT,
                         title = "미국 고용보고서 발표",
-                        description = "비농업 고용과 실업률의 게임 수치가 공개됩니다.",
+                        description = "비농업 고용과 실업률이 공개됩니다.",
                         localDate = releaseDate(
                             "us-employment", year, month,
                             nthWeekdayOfMonth(year, month, DayOfWeek.FRIDAY, 1),
@@ -75,7 +75,7 @@ object EconomicReleaseCatalog {
                         seriesId = "us-cpi",
                         kind = ScheduledEventKind.US_CPI,
                         title = "미국 소비자물가 발표",
-                        description = "헤드라인과 근원 CPI의 게임 수치가 공개됩니다.",
+                        description = "헤드라인과 근원 CPI가 공개됩니다.",
                         localDate = releaseDate(
                             "us-cpi", year, month,
                             nthWeekdayOfMonth(year, month, DayOfWeek.WEDNESDAY, 2),
@@ -91,7 +91,7 @@ object EconomicReleaseCatalog {
                         seriesId = "us-pce",
                         kind = ScheduledEventKind.US_PCE,
                         title = "미국 PCE 물가 발표",
-                        description = "개인소비지출 물가의 게임 수치가 공개됩니다.",
+                        description = "개인소비지출 물가가 공개됩니다.",
                         localDate = releaseDate(
                             "us-pce", year, month,
                             lastWeekdayOfMonth(year, month, DayOfWeek.FRIDAY),
@@ -107,7 +107,7 @@ object EconomicReleaseCatalog {
                         seriesId = "us-retail-sales",
                         kind = ScheduledEventKind.US_RETAIL_SALES,
                         title = "미국 소매판매 발표",
-                        description = "소비 흐름을 보여주는 소매판매 게임 수치가 공개됩니다.",
+                        description = "소비 흐름을 보여주는 소매판매가 공개됩니다.",
                         localDate = releaseDate(
                             "us-retail-sales", year, month,
                             nthWeekdayOfMonth(year, month, DayOfWeek.WEDNESDAY, 3),
@@ -123,7 +123,7 @@ object EconomicReleaseCatalog {
                         seriesId = "kr-cpi",
                         kind = ScheduledEventKind.KR_CPI,
                         title = "한국 소비자물가 발표",
-                        description = "소비자물가 상승률의 게임 수치가 공개됩니다.",
+                        description = "소비자물가 상승률이 공개됩니다.",
                         localDate = releaseDate(
                             "kr-cpi", year, month,
                             nthWeekdayOfMonth(year, month, DayOfWeek.TUESDAY, 1),
@@ -139,7 +139,7 @@ object EconomicReleaseCatalog {
                         seriesId = "kr-employment",
                         kind = ScheduledEventKind.KR_EMPLOYMENT,
                         title = "한국 고용동향 발표",
-                        description = "취업자와 실업률의 게임 수치가 공개됩니다.",
+                        description = "취업자와 실업률이 공개됩니다.",
                         localDate = releaseDate(
                             "kr-employment", year, month,
                             nthWeekdayOfMonth(year, month, DayOfWeek.WEDNESDAY, 2),
@@ -157,7 +157,7 @@ object EconomicReleaseCatalog {
                             seriesId = "us-fomc",
                             kind = ScheduledEventKind.US_FOMC,
                             title = "FOMC 금리 결정",
-                            description = "연방기금금리와 정책 문구의 게임 결과가 공개됩니다.",
+                            description = "연방기금금리와 정책 문구가 공개됩니다.",
                             localDate = releaseDate(
                                 "us-fomc", year, month,
                                 nthWeekdayOfMonth(year, month, DayOfWeek.WEDNESDAY, 3),
@@ -175,7 +175,7 @@ object EconomicReleaseCatalog {
                             seriesId = "kr-bok",
                             kind = ScheduledEventKind.KR_BOK,
                             title = "한국은행 기준금리 결정",
-                            description = "기준금리와 통화정책 방향의 게임 결과가 공개됩니다.",
+                            description = "기준금리와 통화정책 방향이 공개됩니다.",
                             localDate = releaseDate(
                                 "kr-bok", year, month,
                                 nthWeekdayOfMonth(year, month, DayOfWeek.THURSDAY, 2),
@@ -193,7 +193,7 @@ object EconomicReleaseCatalog {
                             seriesId = "kr-gdp",
                             kind = ScheduledEventKind.KR_GDP,
                             title = "한국 GDP 발표",
-                            description = "분기 실질 국내총생산의 게임 수치가 공개됩니다.",
+                            description = "분기 실질 국내총생산이 공개됩니다.",
                             localDate = releaseDate(
                                 "kr-gdp", year, month,
                                 nthWeekdayOfMonth(year, month, DayOfWeek.THURSDAY, 4),
@@ -216,7 +216,7 @@ object EconomicReleaseCatalog {
                         seriesId = "us-gdp-${vintage.name.lowercase()}",
                         kind = ScheduledEventKind.US_GDP,
                         title = "미국 GDP ${vintage.displayName} 발표",
-                        description = "분기 실질 국내총생산 ${vintage.displayName} 게임 수치가 공개됩니다.",
+                        description = "분기 실질 국내총생산 ${vintage.displayName}가 공개됩니다.",
                         localDate = releaseDate(
                             "us-gdp-${vintage.name.lowercase()}", year, month,
                             nthWeekdayOfMonth(year, month, DayOfWeek.THURSDAY, 4),
@@ -239,7 +239,7 @@ object EconomicReleaseCatalog {
                             seriesId = "us-weekly-claims",
                             kind = ScheduledEventKind.US_WEEKLY_CLAIMS,
                             title = "미국 주간 신규 실업수당 청구 발표",
-                            description = "신규 실업수당 청구 건수의 게임 수치가 공개됩니다.",
+                            description = "신규 실업수당 청구 건수가 공개됩니다.",
                             localDate = adjustProjectedReleaseDate(date, Market.NASDAQ),
                             localTime = usMorning,
                             zone = usZone,

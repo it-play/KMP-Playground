@@ -508,7 +508,6 @@ class ScheduledEventEngine(private val seed: Long) {
             },
         )
         occurrence.referencePeriod?.let { append(" · $it") }
-        append(". 모든 발표값은 실제 자료가 아닌 occurrence-keyed 게임 수치입니다.")
     }
 
     private fun impactInsightsFor(

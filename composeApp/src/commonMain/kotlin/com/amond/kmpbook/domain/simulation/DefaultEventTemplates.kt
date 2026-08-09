@@ -582,7 +582,7 @@ object DefaultEventTemplates {
         ),
         fund(
             "etn_issuer_call_decision", "{company} 선택적 가속상환(콜) 결정",
-            "발행사가 공식 조건에 포함된 선택적 가속상환 권리를 행사하는 캠페인 시나리오다. 30일 뒤 지표가치 대용 상환가격으로 거래가 종료될 수 있으며 이는 실제 미래 공시의 예측이 아니다.",
+            "발행사가 공식 조건의 선택적 가속상환 권리를 행사했다. 30일 뒤 지표가치 대용 상환가격으로 거래가 종료될 수 있다.",
             ImpactDirection.MIXED, 0.0002, 720..720, -0.010..0.010,
             strategies = setOf(InstrumentStrategy.ETN_LINKED),
             severity = EventSeverity.MAJOR,
@@ -596,7 +596,7 @@ object DefaultEventTemplates {
         ),
         fund(
             "etn_issuer_acceleration", "{company} 발행사 가속상환 사유 발생",
-            "발행사 신용·계약상 가속상환 사유가 발생한 극단 캠페인 시나리오다. 7일 뒤 회수율을 반영한 상환가격으로 거래가 종료될 수 있다.",
+            "발행사 신용·계약상 가속상환 사유가 발생했다. 7일 뒤 회수율을 반영한 상환가격으로 거래가 종료될 수 있다.",
             ImpactDirection.NEGATIVE, 0.00001, 168..168, -0.180..-0.060,
             strategies = setOf(InstrumentStrategy.ETN_LINKED),
             severity = EventSeverity.CRITICAL,

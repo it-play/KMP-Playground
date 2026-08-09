@@ -57,7 +57,7 @@ object EarningsCalendarCatalog {
                     seriesId = "earnings:${stock.id}",
                     kind = ScheduledEventKind.EARNINGS,
                     title = "${stock.name} ${fiscal.first}년 ${fiscal.second}분기 실적 발표 · $sessionLabel",
-                    description = "${stock.name}의 EPS와 매출 게임 수치가 ${sessionLabel}에 공개됩니다.",
+                    description = "${stock.name}의 EPS와 매출이 ${sessionLabel}에 공개됩니다.",
                     scheduledAt = LocalDateTime(localDate, localTime).toInstant(zone),
                     timeZoneId = zone.id,
                     // These are simulator recurrence dates, never issuer-published fixtures.
