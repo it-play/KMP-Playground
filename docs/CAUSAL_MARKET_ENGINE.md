@@ -218,10 +218,14 @@ ETF의 현지 호가 공백 같은 `LOCAL_MICROSTRUCTURE` 수익은 기초지수
 
 ## 저장·뉴스·확장
 
-저장 스키마 14는 각 signal의 `factor`, `direction`, `strength`, `confidence`,
+저장 스키마 15는 각 signal의 `factor`, `direction`, `strength`, `confidence`,
 `transmissionProfile`과 사건 발생 시점의 `marketRegimeSnapshot`을 엄격히 검사한다. 국면
 스냅샷은 심리·변동성·원/달러 변화율의 유한 범위, 시장 enum 키별 수익률의 유한성, 정확한
 필드 집합을 보존한다. enum, factor 중복과 생성 템플릿 payload 일치도 복원 전에 검증한다.
+같은 버전은 기업의 분기별 재무 원시 상태와 펀드·ETN의 운용 원시 상태를 종목 키로
+보존하며, PER·PSR·ROE·시가총액과 같은 파생 스냅샷은 저장하지 않고 현재 가격과 원시
+재무 수치에서 다시 계산한다. 맵 키·내부 종목 ID·종목 유형, 기준 시각, 4개 분기의 시간
+순서와 실적 반영 뉴스 계보도 복원 전에 확인한다.
 원유 사건의 광범위 에너지 섹터 경로를 구조화된 생산자·기준가격 노출로 좁힌 템플릿도 같은
 버전에 고정한다. 구버전 마이그레이션은 개발 정책상 제공하지 않는다.
 
