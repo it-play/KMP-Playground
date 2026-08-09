@@ -5,6 +5,7 @@ enum class GameSaveErrorCode(val displayName: String) {
     FILE_TOO_LARGE("저장 파일 크기 초과"),
     CORRUPTED_FILE("손상된 저장 파일"),
     UNSUPPORTED_SCHEMA("지원하지 않는 저장 스키마"),
+    INVALID_FILE_NAME("잘못된 저장 파일 이름"),
     INVALID_STATE("유효하지 않은 게임 상태"),
     SERIALIZATION_FAILED("저장 데이터 직렬화 실패"),
     IO_ERROR("파일 입출력 실패"),

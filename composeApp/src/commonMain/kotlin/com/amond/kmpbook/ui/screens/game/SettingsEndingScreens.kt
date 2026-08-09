@@ -38,6 +38,7 @@ import com.amond.kmpbook.domain.model.market.Currency
 import com.amond.kmpbook.domain.model.portfolio.PortfolioSnapshot
 import com.amond.kmpbook.domain.simulation.market.ExternalMarketForces
 import com.amond.kmpbook.domain.simulation.market.MarketDynamicsSnapshot
+import com.amond.kmpbook.persistence.model.GameSaveEntry
 import com.amond.kmpbook.persistence.storage.CURRENT_GAME_SAVE_SCHEMA_VERSION
 import com.amond.kmpbook.ui.charts.LineAreaChart
 import com.amond.kmpbook.ui.components.LedgerDivider
@@ -78,17 +79,18 @@ fun SettingsScreen(
     onExternalMarketForcesChanged: (ExternalMarketForces) -> Unit,
     onExchangeKrwToUsd: (Double) -> Unit,
     onExchangeUsdToKrw: (Double) -> Unit,
-    hasSavedGame: Boolean,
-    savePath: String,
+    saves: List<GameSaveEntry>,
+    saveDirectory: String,
     saveStatus: String,
-    onSaveGame: () -> Unit,
-    onLoadGame: () -> Unit,
-    onDeleteSave: () -> Unit,
+    onSaveGame: (String) -> Unit,
+    onLoadGame: (GameSaveEntry) -> Unit,
+    onDeleteSave: (GameSaveEntry) -> Unit,
     onResetGame: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var exchangeDirection by remember { mutableStateOf(0) }
     var amountText by remember { mutableStateOf("") }
+    var saveName by remember { mutableStateOf("내 투자 장부") }
     var resetArmed by remember { mutableStateOf(false) }
     var deleteArmed by remember { mutableStateOf(false) }
     Column(
@@ -105,8 +107,8 @@ fun SettingsScreen(
                     eyebrow = "ACCOUNT CONTROL",
                     action = {
                         StatusLabel(
-                            text = if (hasSavedGame) "저장 장부 있음" else "저장 장부 없음",
-                            color = if (hasSavedGame) MarketColors.Positive else MarketColors.InkMuted,
+                            text = if (saves.isNotEmpty()) "저장 장부 ${saves.size}개" else "저장 장부 없음",
+                            color = if (saves.isNotEmpty()) MarketColors.Positive else MarketColors.InkMuted,
                         )
                     },
                 )
@@ -138,7 +140,7 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth().height(338.dp),
         )
         Row(
-            Modifier.fillMaxWidth().height(560.dp),
+            Modifier.fillMaxWidth().height(740.dp),
             horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
         ) {
             Column(
@@ -203,27 +205,48 @@ fun SettingsScreen(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        if (savePath.isNotBlank()) {
+                        if (saveDirectory.isNotBlank()) {
                             Spacer(Modifier.height(3.dp))
                             Text(
-                                savePath,
+                                saveDirectory,
                                 style = MarketType.caption,
                                 color = MarketColors.InkMuted,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = saveName,
+                            onValueChange = { saveName = it.take(80) },
+                            modifier = Modifier.fillMaxWidth().height(MarketComponentSize.textFieldHeight),
+                            label = { Text("저장 파일 이름", style = MarketType.label) },
+                            suffix = { Text(".ml2", style = MarketType.label, color = MarketColors.InkMuted) },
+                            singleLine = true,
+                            textStyle = MarketType.body,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        MarketButton(
+                            text = "이 이름으로 저장",
+                            onClick = { onSaveGame(saveName) },
+                            enabled = saveName.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                         Spacer(Modifier.weight(1f))
+                        val latestSave = saves.firstOrNull()
+                        Text(
+                            latestSave?.let { "최근 장부 · ${it.name}.ml2" } ?: "불러올 장부가 없습니다.",
+                            style = MarketType.caption,
+                            color = MarketColors.InkMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             MarketButton(
-                                text = "지금 저장",
-                                onClick = onSaveGame,
-                                modifier = Modifier.weight(1.2f),
-                            )
-                            MarketButton(
-                                text = "불러오기",
-                                onClick = onLoadGame,
-                                enabled = hasSavedGame,
+                                text = "최근 장부 불러오기",
+                                onClick = { latestSave?.let(onLoadGame) },
+                                enabled = latestSave != null,
                                 modifier = Modifier.weight(1f),
                                 variant = MarketButtonVariant.Weak,
                             )
@@ -231,13 +254,13 @@ fun SettingsScreen(
                                 text = if (deleteArmed) "삭제 확정" else "저장 삭제",
                                 onClick = {
                                     if (deleteArmed) {
-                                        onDeleteSave()
+                                        latestSave?.let(onDeleteSave)
                                         deleteArmed = false
                                     } else {
                                         deleteArmed = true
                                     }
                                 },
-                                enabled = hasSavedGame,
+                                enabled = latestSave != null,
                                 modifier = Modifier.weight(1f),
                                 variant = if (deleteArmed) MarketButtonVariant.Fill else MarketButtonVariant.Weak,
                                 tone = MarketButtonTone.Danger,

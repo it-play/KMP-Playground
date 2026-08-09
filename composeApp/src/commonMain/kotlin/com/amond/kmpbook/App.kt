@@ -37,6 +37,7 @@ import com.amond.kmpbook.domain.simulation.protection.TradingProtectionEngine
 import com.amond.kmpbook.domain.tax.core.TaxCategory
 import com.amond.kmpbook.domain.tax.fee.FeeCategory
 import com.amond.kmpbook.domain.tax.liability.TaxLiabilityStatus
+import com.amond.kmpbook.persistence.model.GameSaveEntry
 import com.amond.kmpbook.persistence.result.GameLoadFailure
 import com.amond.kmpbook.persistence.result.GameLoadNotFound
 import com.amond.kmpbook.persistence.result.GameLoadSuccess
@@ -44,9 +45,6 @@ import com.amond.kmpbook.persistence.result.GameSaveDeleteFailure
 import com.amond.kmpbook.persistence.result.GameSaveDeleteNotFound
 import com.amond.kmpbook.persistence.result.GameSaveDeleted
 import com.amond.kmpbook.persistence.result.GameSaveFailure
-import com.amond.kmpbook.persistence.result.GameSaveMissing
-import com.amond.kmpbook.persistence.result.GameSavePresenceFailure
-import com.amond.kmpbook.persistence.result.GameSavePresent
 import com.amond.kmpbook.persistence.result.GameSaveSuccess
 import com.amond.kmpbook.persistence.storage.GameSaveStorage
 import com.amond.kmpbook.presentation.metrics.InstrumentMetricsProjection
@@ -59,7 +57,10 @@ import com.amond.kmpbook.ui.components.MarketProtectionDetailSurface
 import com.amond.kmpbook.ui.components.MarketProtectionStrip
 import com.amond.kmpbook.ui.screens.dashboard.HomeDashboardScreen
 import com.amond.kmpbook.ui.screens.game.EndingScreen
+import com.amond.kmpbook.ui.screens.game.GameEntryDestination
+import com.amond.kmpbook.ui.screens.game.GameLobbyScreen
 import com.amond.kmpbook.ui.screens.game.GameSettingsDisplay
+import com.amond.kmpbook.ui.screens.game.LobbySettingsScreen
 import com.amond.kmpbook.ui.screens.game.NewGameScreen
 import com.amond.kmpbook.ui.screens.game.SettingsScreen
 import com.amond.kmpbook.ui.screens.market.MarketTradingScreen
@@ -82,106 +83,134 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.toLocalDateTime
 
 @Composable
-fun App() {
+fun App(
+    onExitRequest: () -> Unit = {},
+    escapeRequest: Int = 0,
+) {
     val viewModel = remember { SimulatorViewModel() }
     val storage = remember { GameSaveStorage() }
     val scope = rememberCoroutineScope()
     val state by viewModel.uiState.collectAsState()
-    var hasSavedGame by remember { mutableStateOf(false) }
+    var entryDestination by remember { mutableStateOf(GameEntryDestination.LOBBY) }
+    var saves by remember { mutableStateOf(emptyList<GameSaveEntry>()) }
     var saveStatus by remember { mutableStateOf("아직 확인된 저장 장부가 없습니다.") }
 
     LaunchedEffect(storage) {
-        when (val result = storage.exists()) {
-            is GameSavePresent -> {
-                hasSavedGame = true
-                saveStatus = "저장 장부 ${result.sizeBytes / 1024} KB가 있습니다."
-            }
-            is GameSaveMissing -> {
-                hasSavedGame = false
-                saveStatus = "저장 장부가 없습니다."
-            }
-            is GameSavePresenceFailure -> saveStatus = result.error.message
+        val catalog = storage.list()
+        saves = catalog.entries
+        saveStatus = catalog.error?.message ?: if (saves.isEmpty()) {
+            "저장 장부가 없습니다."
+        } else {
+            "최근 저장 순으로 ${saves.size}개 장부를 찾았습니다."
+        }
+    }
+    LaunchedEffect(escapeRequest) {
+        if (escapeRequest > 0 && state.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED)) {
+            viewModel.selectScreen(Screen.SETTINGS)
         }
     }
 
-    val saveGame: () -> Unit = {
+    val refreshSaves: suspend () -> Unit = {
+        val catalog = storage.list()
+        saves = catalog.entries
+        catalog.error?.let { saveStatus = it.message }
+    }
+    val saveGame: (String) -> Unit = { name ->
         scope.launch {
-            when (val result = storage.save(viewModel.currentState)) {
+            when (val result = storage.save(viewModel.currentState, name)) {
                 is GameSaveSuccess -> {
-                    hasSavedGame = true
-                    saveStatus = "${result.metadata.gameTime} 시점 장부를 저장했습니다."
+                    saveStatus = "${result.path.substringAfterLast('/').substringAfterLast('\\')} 파일로 저장했습니다."
+                    refreshSaves()
                 }
                 is GameSaveFailure -> saveStatus = result.error.message
             }
         }
     }
-    val loadGame: () -> Unit = {
+    val loadGame: (GameSaveEntry) -> Unit = { save ->
         scope.launch {
-            when (val result = storage.load()) {
+            when (val result = storage.load(save.fileName)) {
                 is GameLoadSuccess -> {
                     if (viewModel.restoreGame(result.state)) {
-                        hasSavedGame = true
-                        saveStatus = "${result.metadata.gameTime} 시점 장부를 불러왔습니다."
+                        saveStatus = "${save.name} 장부를 불러왔습니다."
                     } else {
                         saveStatus = "저장 장부의 게임 상태 검증에 실패했습니다."
                     }
                 }
-                is GameLoadNotFound -> {
-                    hasSavedGame = false
-                    saveStatus = result.message
-                }
+                is GameLoadNotFound -> saveStatus = result.message
                 is GameLoadFailure -> saveStatus = result.error.message
             }
         }
     }
-    val deleteSave: () -> Unit = {
+    val deleteSave: (GameSaveEntry) -> Unit = { save ->
         scope.launch {
-            when (val result = storage.delete()) {
+            when (val result = storage.delete(save.fileName)) {
                 is GameSaveDeleted -> {
-                    hasSavedGame = false
-                    saveStatus = "저장 장부를 삭제했습니다."
+                    saveStatus = "${save.name} 장부를 삭제했습니다."
+                    refreshSaves()
                 }
-                is GameSaveDeleteNotFound -> {
-                    hasSavedGame = false
-                    saveStatus = "삭제할 저장 장부가 없습니다."
-                }
+                is GameSaveDeleteNotFound -> saveStatus = "삭제할 저장 장부가 없습니다."
                 is GameSaveDeleteFailure -> saveStatus = result.error.message
             }
         }
     }
 
     MarketSimulatorTheme {
-        when (state.phase) {
-            GamePhase.SETUP -> NewGameScreen(
-                onStart = viewModel::newGame,
-                hasSavedGame = hasSavedGame,
-                onLoadSavedGame = loadGame,
-            )
+        Box(Modifier.fillMaxSize()) {
+            when (state.phase) {
+                GamePhase.SETUP -> when (entryDestination) {
+                    GameEntryDestination.LOBBY -> GameLobbyScreen(
+                        saves = saves,
+                        saveStatus = saveStatus,
+                        saveDirectory = storage.saveDirectory,
+                        onContinue = loadGame,
+                        onLoad = loadGame,
+                        onNewGame = { entryDestination = GameEntryDestination.NEW_GAME },
+                        onSettings = { entryDestination = GameEntryDestination.SETTINGS },
+                        onExit = onExitRequest,
+                    )
+                    GameEntryDestination.NEW_GAME -> NewGameScreen(
+                        onStart = viewModel::newGame,
+                        onBack = { entryDestination = GameEntryDestination.LOBBY },
+                    )
+                    GameEntryDestination.SETTINGS -> LobbySettingsScreen(
+                        saveDirectory = storage.saveDirectory,
+                        saveCount = saves.size,
+                        onBack = { entryDestination = GameEntryDestination.LOBBY },
+                    )
+                }
 
-            GamePhase.SETTLEMENT,
-            GamePhase.FINISHED,
-            -> EndingScreen(
-                snapshot = state.currentPortfolio,
-                history = state.portfolioSnapshots,
-                tradeCount = state.trades.size,
-                eventCount = state.newsEvents.size,
-                totalTaxKrw = state.totalSaleTaxKrw +
-                    state.dividendLedger.sumOf { it.withholdingTaxKrw } +
-                    state.annualTaxLedgers.values.sumOf { it.totalPayableKrw }.toDouble(),
-                maxDrawdown = state.maximumDrawdown,
-                onNewGame = viewModel::resetGame,
-            )
+                GamePhase.SETTLEMENT,
+                GamePhase.FINISHED,
+                -> EndingScreen(
+                    snapshot = state.currentPortfolio,
+                    history = state.portfolioSnapshots,
+                    tradeCount = state.trades.size,
+                    eventCount = state.newsEvents.size,
+                    totalTaxKrw = state.totalSaleTaxKrw +
+                        state.dividendLedger.sumOf { it.withholdingTaxKrw } +
+                        state.annualTaxLedgers.values.sumOf { it.totalPayableKrw }.toDouble(),
+                    maxDrawdown = state.maximumDrawdown,
+                    onNewGame = {
+                        viewModel.resetGame()
+                        entryDestination = GameEntryDestination.NEW_GAME
+                    },
+                )
 
-            else -> RunningGame(
-                state = state,
-                viewModel = viewModel,
-                hasSavedGame = hasSavedGame,
-                savePath = storage.savePath,
-                saveStatus = saveStatus,
-                onSaveGame = saveGame,
-                onLoadGame = loadGame,
-                onDeleteSave = deleteSave,
-            )
+                else -> RunningGame(
+                    state = state,
+                    viewModel = viewModel,
+                    saves = saves,
+                    saveDirectory = storage.saveDirectory,
+                    saveStatus = saveStatus,
+                    onSaveGame = saveGame,
+                    onLoadGame = loadGame,
+                    onDeleteSave = deleteSave,
+                    onReturnToLobby = {
+                        viewModel.resetGame()
+                        entryDestination = GameEntryDestination.LOBBY
+                    },
+                )
+            }
         }
     }
 }
@@ -190,12 +219,13 @@ fun App() {
 private fun RunningGame(
     state: SimulatorUiState,
     viewModel: SimulatorViewModel,
-    hasSavedGame: Boolean,
-    savePath: String,
+    saves: List<GameSaveEntry>,
+    saveDirectory: String,
     saveStatus: String,
-    onSaveGame: () -> Unit,
-    onLoadGame: () -> Unit,
-    onDeleteSave: () -> Unit,
+    onSaveGame: (String) -> Unit,
+    onLoadGame: (GameSaveEntry) -> Unit,
+    onDeleteSave: (GameSaveEntry) -> Unit,
+    onReturnToLobby: () -> Unit,
 ) {
     val selectedMarket = state.selectedStock?.market
     val protectionProjection = remember(
@@ -252,12 +282,13 @@ private fun RunningGame(
                         state = state,
                         viewModel = viewModel,
                         protectionProjection = protectionProjection,
-                        hasSavedGame = hasSavedGame,
-                        savePath = savePath,
+                        saves = saves,
+                        saveDirectory = saveDirectory,
                         saveStatus = saveStatus,
                         onSaveGame = onSaveGame,
                         onLoadGame = onLoadGame,
                         onDeleteSave = onDeleteSave,
+                        onReturnToLobby = onReturnToLobby,
                     )
                 }
             }
@@ -300,12 +331,13 @@ private fun ScreenContent(
     state: SimulatorUiState,
     viewModel: SimulatorViewModel,
     protectionProjection: ProtectionUiProjection,
-    hasSavedGame: Boolean,
-    savePath: String,
+    saves: List<GameSaveEntry>,
+    saveDirectory: String,
     saveStatus: String,
-    onSaveGame: () -> Unit,
-    onLoadGame: () -> Unit,
-    onDeleteSave: () -> Unit,
+    onSaveGame: (String) -> Unit,
+    onLoadGame: (GameSaveEntry) -> Unit,
+    onDeleteSave: (GameSaveEntry) -> Unit,
+    onReturnToLobby: () -> Unit,
 ) {
     var eventNewsFilterState by remember { mutableStateOf(EventNewsFilterState()) }
     val portfolioHistory = state.portfolioSnapshots.ifEmpty { listOf(state.currentPortfolio) }
@@ -471,13 +503,13 @@ private fun ScreenContent(
             onExternalMarketForcesChanged = viewModel::setExternalMarketForces,
             onExchangeKrwToUsd = { viewModel.exchange(Currency.KRW, Currency.USD, it) },
             onExchangeUsdToKrw = { viewModel.exchange(Currency.USD, Currency.KRW, it) },
-            hasSavedGame = hasSavedGame,
-            savePath = savePath,
+            saves = saves,
+            saveDirectory = saveDirectory,
             saveStatus = saveStatus,
             onSaveGame = onSaveGame,
             onLoadGame = onLoadGame,
             onDeleteSave = onDeleteSave,
-            onResetGame = viewModel::resetGame,
+            onResetGame = onReturnToLobby,
         )
 
         Screen.ENDING -> EndingScreen(

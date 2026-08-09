@@ -41,7 +41,6 @@ import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
 import com.amond.kmpbook.ui.components.MarketButton
-import com.amond.kmpbook.ui.components.MarketButtonVariant
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
@@ -50,8 +49,7 @@ import kotlin.math.roundToInt
 @Composable
 fun NewGameScreen(
     onStart: (NewGameOptions) -> Unit,
-    hasSavedGame: Boolean = false,
-    onLoadSavedGame: () -> Unit = {},
+    onBack: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var capitalText by remember { mutableStateOf("100000000") }
@@ -125,11 +123,17 @@ fun NewGameScreen(
         ) {
             LedgerPanel(modifier = Modifier.width(500.dp).fillMaxHeight(), padding = 28.dp) {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                    Text(
-                        "새 투자 계정",
-                        style = MarketType.display.copy(fontSize = 28.sp),
-                        color = MarketColors.Ink,
-                    )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "새 투자 계정",
+                            style = MarketType.display.copy(fontSize = 28.sp),
+                            color = MarketColors.Ink,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = onBack) {
+                            Text("← 로비", style = MarketType.label, color = MarketColors.InkMuted)
+                        }
+                    }
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "일반 증권계좌 · 대한민국 거주 개인",
@@ -277,15 +281,6 @@ fun NewGameScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    if (hasSavedGame) {
-                        Spacer(Modifier.height(7.dp))
-                        MarketButton(
-                            text = "저장 장부 이어서 열기",
-                            onClick = onLoadSavedGame,
-                            modifier = Modifier.fillMaxWidth(),
-                            variant = MarketButtonVariant.Weak,
-                        )
-                    }
                     TextButton(
                         onClick = {
                             capitalText = "100000000"

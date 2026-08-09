@@ -35,6 +35,8 @@ import com.amond.kmpbook.domain.model.schedule.ScheduledEventKind
 import com.amond.kmpbook.persistence.model.GameSaveEnvelope
 import com.amond.kmpbook.persistence.model.GameSaveError
 import com.amond.kmpbook.persistence.model.GameSaveErrorCode
+import com.amond.kmpbook.persistence.model.GameSaveCatalog
+import com.amond.kmpbook.persistence.model.GameSaveEntry
 import com.amond.kmpbook.persistence.result.GameLoadFailure
 import com.amond.kmpbook.persistence.result.GameLoadNotFound
 import com.amond.kmpbook.persistence.result.GameLoadResult
@@ -44,10 +46,6 @@ import com.amond.kmpbook.persistence.result.GameSaveDeleteNotFound
 import com.amond.kmpbook.persistence.result.GameSaveDeleteResult
 import com.amond.kmpbook.persistence.result.GameSaveDeleted
 import com.amond.kmpbook.persistence.result.GameSaveFailure
-import com.amond.kmpbook.persistence.result.GameSaveMissing
-import com.amond.kmpbook.persistence.result.GameSavePresenceFailure
-import com.amond.kmpbook.persistence.result.GameSavePresenceResult
-import com.amond.kmpbook.persistence.result.GameSavePresent
 import com.amond.kmpbook.persistence.result.GameSaveResult
 import com.amond.kmpbook.persistence.result.GameSaveSuccess
 import com.amond.kmpbook.persistence.validation.validateSimulatorUiState
@@ -83,7 +81,10 @@ import kotlinx.datetime.LocalDate
 private const val MAX_GAME_SAVE_FILE_BYTES: Long = 128L * 1024L * 1024L
 private const val MAX_SAVED_FUND_FLOW_RATE: Double = 0.20
 
-private fun defaultGameSavePath(): Path {
+private const val GAME_SAVE_EXTENSION: String = ".ml2"
+private const val MAX_GAME_SAVE_NAME_LENGTH: Int = 80
+
+private fun defaultGameSaveDirectory(): Path {
     val osName = System.getProperty("os.name").orEmpty()
     val userHome = requireNotNull(System.getProperty("user.home")) {
         "The JVM user.home property is unavailable."
@@ -98,20 +99,31 @@ private fun defaultGameSavePath(): Path {
     } else {
         Paths.get(userHome, ".market-ledger-2040")
     }
-    return saveDirectory.resolve("savegame.json").toAbsolutePath().normalize()
+    return saveDirectory.resolve("saves").toAbsolutePath().normalize()
 }
 
 actual class GameSaveStorage actual constructor() {
-    private val targetPath: Path = defaultGameSavePath()
+    private val targetDirectory: Path = defaultGameSaveDirectory()
     private val gson: Gson = createSaveGson()
 
-    actual val savePath: String = targetPath.toString()
+    actual val saveDirectory: String = targetDirectory.toString()
 
-    actual suspend fun save(state: SimulatorUiState): GameSaveResult = withContext(Dispatchers.IO) {
+    actual suspend fun save(state: SimulatorUiState, name: String): GameSaveResult = withContext(Dispatchers.IO) {
+        val targetPath = try {
+            resolveSavePath(name)
+        } catch (error: IllegalArgumentException) {
+            return@withContext GameSaveFailure(
+                path = saveDirectory,
+                error = GameSaveError(
+                    GameSaveErrorCode.INVALID_FILE_NAME,
+                    error.message ?: "저장 파일 이름이 올바르지 않습니다.",
+                ),
+            )
+        }
         val validationError = validateSimulatorUiState(state)
         if (validationError != null) {
             return@withContext GameSaveFailure(
-                path = savePath,
+                path = targetPath.toString(),
                 error = GameSaveError(GameSaveErrorCode.INVALID_STATE, validationError),
             )
         }
@@ -127,7 +139,7 @@ actual class GameSaveStorage actual constructor() {
             gson.toJson(envelope).toByteArray(StandardCharsets.UTF_8)
         } catch (error: RuntimeException) {
             return@withContext GameSaveFailure(
-                path = savePath,
+                path = targetPath.toString(),
                 error = GameSaveError(
                     code = GameSaveErrorCode.SERIALIZATION_FAILED,
                     message = "게임 상태를 JSON으로 변환하지 못했습니다: ${safeMessage(error)}",
@@ -137,16 +149,15 @@ actual class GameSaveStorage actual constructor() {
         }
         if (bytes.size.toLong() > MAX_GAME_SAVE_FILE_BYTES) {
             return@withContext GameSaveFailure(
-                path = savePath,
+                path = targetPath.toString(),
                 error = tooLargeError(bytes.size.toLong()),
             )
         }
 
         var temporaryPath: Path? = null
         try {
-            val parent = requireNotNull(targetPath.parent) { "The save path has no parent directory." }
-            Files.createDirectories(parent)
-            temporaryPath = Files.createTempFile(parent, ".savegame-", ".tmp")
+            Files.createDirectories(targetDirectory)
+            temporaryPath = Files.createTempFile(targetDirectory, ".market-ledger-", ".tmp")
             Files.newOutputStream(
                 temporaryPath,
                 StandardOpenOption.WRITE,
@@ -160,24 +171,24 @@ actual class GameSaveStorage actual constructor() {
             val usedAtomicMove = moveIntoPlace(temporaryPath, targetPath)
             temporaryPath = null
             GameSaveSuccess(
-                path = savePath,
+                path = targetPath.toString(),
                 metadata = envelope.metadata(),
                 bytesWritten = bytes.size.toLong(),
                 usedAtomicMove = usedAtomicMove,
             )
         } catch (error: SecurityException) {
             GameSaveFailure(
-                path = savePath,
+                path = targetPath.toString(),
                 error = accessError(error),
             )
         } catch (error: IOException) {
             GameSaveFailure(
-                path = savePath,
+                path = targetPath.toString(),
                 error = ioError("저장 파일을 안전하게 쓰지 못했습니다", error),
             )
         } catch (error: RuntimeException) {
             GameSaveFailure(
-                path = savePath,
+                path = targetPath.toString(),
                 error = ioError("저장 파일 처리 중 오류가 발생했습니다", error),
             )
         } finally {
@@ -185,14 +196,25 @@ actual class GameSaveStorage actual constructor() {
         }
     }
 
-    actual suspend fun load(): GameLoadResult = withContext(Dispatchers.IO) {
+    actual suspend fun load(fileName: String): GameLoadResult = withContext(Dispatchers.IO) {
+        val targetPath = try {
+            resolveSavePath(fileName)
+        } catch (error: IllegalArgumentException) {
+            return@withContext GameLoadFailure(
+                path = saveDirectory,
+                error = GameSaveError(
+                    GameSaveErrorCode.INVALID_FILE_NAME,
+                    error.message ?: "저장 파일 이름이 올바르지 않습니다.",
+                ),
+            )
+        }
         try {
             if (!Files.exists(targetPath, LinkOption.NOFOLLOW_LINKS)) {
-                return@withContext GameLoadNotFound(savePath)
+                return@withContext GameLoadNotFound(targetPath.toString())
             }
             if (!Files.isRegularFile(targetPath, LinkOption.NOFOLLOW_LINKS)) {
                 return@withContext GameLoadFailure(
-                    path = savePath,
+                    path = targetPath.toString(),
                     error = GameSaveError(
                         GameSaveErrorCode.IO_ERROR,
                         "저장 경로가 일반 파일이 아닙니다.",
@@ -201,30 +223,30 @@ actual class GameSaveStorage actual constructor() {
             }
             val declaredSize = Files.size(targetPath)
             if (declaredSize > MAX_GAME_SAVE_FILE_BYTES) {
-                return@withContext GameLoadFailure(savePath, tooLargeError(declaredSize))
+                return@withContext GameLoadFailure(targetPath.toString(), tooLargeError(declaredSize))
             }
             val bytes = readBounded(targetPath)
             if (bytes.isEmpty()) {
-                return@withContext corrupted("저장 파일이 비어 있습니다.")
+                return@withContext corrupted(targetPath, "저장 파일이 비어 있습니다.")
             }
             val json = decodeUtf8Strict(bytes)
             val envelope = parseEnvelope(json)
             val validationError = validateSimulatorUiState(envelope.state)
             if (validationError != null) {
                 return@withContext GameLoadFailure(
-                    path = savePath,
+                    path = targetPath.toString(),
                     error = GameSaveError(GameSaveErrorCode.INVALID_STATE, validationError),
                 )
             }
             GameLoadSuccess(
-                path = savePath,
+                path = targetPath.toString(),
                 state = envelope.state,
                 metadata = envelope.metadata(),
                 bytesRead = bytes.size.toLong(),
             )
         } catch (error: UnsupportedSchemaException) {
             GameLoadFailure(
-                path = savePath,
+                path = targetPath.toString(),
                 error = GameSaveError(
                     code = GameSaveErrorCode.UNSUPPORTED_SCHEMA,
                     message = error.message ?: "지원하지 않는 저장 스키마입니다.",
@@ -232,58 +254,72 @@ actual class GameSaveStorage actual constructor() {
                 ),
             )
         } catch (error: CharacterCodingException) {
-            corrupted("저장 파일이 올바른 UTF-8이 아닙니다.", error)
+            corrupted(targetPath, "저장 파일이 올바른 UTF-8이 아닙니다.", error)
         } catch (error: JsonParseException) {
-            corrupted("저장 JSON이 손상되었습니다: ${safeMessage(error)}", error)
+            corrupted(targetPath, "저장 데이터가 손상되었습니다: ${safeMessage(error)}", error)
         } catch (error: IllegalStateException) {
-            corrupted("저장 파일 구조가 올바르지 않습니다: ${safeMessage(error)}", error)
+            corrupted(targetPath, "저장 파일 구조가 올바르지 않습니다: ${safeMessage(error)}", error)
         } catch (error: SecurityException) {
-            GameLoadFailure(savePath, accessError(error))
+            GameLoadFailure(targetPath.toString(), accessError(error))
         } catch (error: IOException) {
-            GameLoadFailure(savePath, ioError("저장 파일을 읽지 못했습니다", error))
+            GameLoadFailure(targetPath.toString(), ioError("저장 파일을 읽지 못했습니다", error))
         } catch (error: RuntimeException) {
-            corrupted("저장 상태를 복원하지 못했습니다: ${safeMessage(error)}", error)
+            corrupted(targetPath, "저장 상태를 복원하지 못했습니다: ${safeMessage(error)}", error)
         }
     }
 
-    actual suspend fun exists(): GameSavePresenceResult = withContext(Dispatchers.IO) {
+    actual suspend fun list(): GameSaveCatalog = withContext(Dispatchers.IO) {
         try {
-            if (!Files.exists(targetPath, LinkOption.NOFOLLOW_LINKS)) {
-                return@withContext GameSaveMissing(savePath)
+            if (!Files.exists(targetDirectory, LinkOption.NOFOLLOW_LINKS)) {
+                return@withContext GameSaveCatalog(emptyList())
             }
-            if (!Files.isRegularFile(targetPath, LinkOption.NOFOLLOW_LINKS)) {
-                return@withContext GameSavePresenceFailure(
-                    path = savePath,
+            if (!Files.isDirectory(targetDirectory, LinkOption.NOFOLLOW_LINKS)) {
+                return@withContext GameSaveCatalog(
+                    entries = emptyList(),
                     error = GameSaveError(
                         GameSaveErrorCode.IO_ERROR,
-                        "저장 경로가 일반 파일이 아닙니다.",
+                        "저장 경로가 디렉터리가 아닙니다.",
                     ),
                 )
             }
-            val size = Files.size(targetPath)
-            if (size > MAX_GAME_SAVE_FILE_BYTES) {
-                return@withContext GameSavePresenceFailure(savePath, tooLargeError(size))
+            val entries = Files.list(targetDirectory).use { paths ->
+                paths
+                    .filter { path ->
+                        Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) &&
+                            path.fileName.toString().endsWith(GAME_SAVE_EXTENSION, ignoreCase = true)
+                    }
+                    .map { path -> readCatalogEntry(path) }
+                    .filter { entry -> entry != null }
+                    .map { entry -> requireNotNull(entry) }
+                    .toList()
             }
-            GameSavePresent(
-                path = savePath,
-                sizeBytes = size,
-                lastModifiedAt = Instant.fromEpochMilliseconds(Files.getLastModifiedTime(targetPath).toMillis()),
-            )
+            GameSaveCatalog(entries.sortedByDescending { it.metadata.savedAt })
         } catch (error: SecurityException) {
-            GameSavePresenceFailure(savePath, accessError(error))
+            GameSaveCatalog(emptyList(), accessError(error))
         } catch (error: IOException) {
-            GameSavePresenceFailure(savePath, ioError("저장 파일 정보를 읽지 못했습니다", error))
+            GameSaveCatalog(emptyList(), ioError("저장 파일 목록을 읽지 못했습니다", error))
         }
     }
 
-    actual suspend fun delete(): GameSaveDeleteResult = withContext(Dispatchers.IO) {
+    actual suspend fun delete(fileName: String): GameSaveDeleteResult = withContext(Dispatchers.IO) {
+        val targetPath = try {
+            resolveSavePath(fileName)
+        } catch (error: IllegalArgumentException) {
+            return@withContext GameSaveDeleteFailure(
+                path = saveDirectory,
+                error = GameSaveError(
+                    GameSaveErrorCode.INVALID_FILE_NAME,
+                    error.message ?: "저장 파일 이름이 올바르지 않습니다.",
+                ),
+            )
+        }
         try {
             if (!Files.exists(targetPath, LinkOption.NOFOLLOW_LINKS)) {
-                return@withContext GameSaveDeleteNotFound(savePath)
+                return@withContext GameSaveDeleteNotFound(targetPath.toString())
             }
             if (Files.isDirectory(targetPath, LinkOption.NOFOLLOW_LINKS)) {
                 return@withContext GameSaveDeleteFailure(
-                    path = savePath,
+                    path = targetPath.toString(),
                     error = GameSaveError(
                         GameSaveErrorCode.IO_ERROR,
                         "안전을 위해 저장 경로가 디렉터리이면 삭제하지 않습니다.",
@@ -291,15 +327,57 @@ actual class GameSaveStorage actual constructor() {
                 )
             }
             if (Files.deleteIfExists(targetPath)) {
-                GameSaveDeleted(savePath)
+                GameSaveDeleted(targetPath.toString())
             } else {
-                GameSaveDeleteNotFound(savePath)
+                GameSaveDeleteNotFound(targetPath.toString())
             }
         } catch (error: SecurityException) {
-            GameSaveDeleteFailure(savePath, accessError(error))
+            GameSaveDeleteFailure(targetPath.toString(), accessError(error))
         } catch (error: IOException) {
-            GameSaveDeleteFailure(savePath, ioError("저장 파일을 삭제하지 못했습니다", error))
+            GameSaveDeleteFailure(targetPath.toString(), ioError("저장 파일을 삭제하지 못했습니다", error))
         }
+    }
+
+    private fun resolveSavePath(name: String): Path {
+        val trimmedName = name.trim()
+        val stem = if (trimmedName.endsWith(GAME_SAVE_EXTENSION, ignoreCase = true)) {
+            trimmedName.dropLast(GAME_SAVE_EXTENSION.length)
+        } else {
+            trimmedName
+        }
+        require(stem.isNotBlank()) { "저장 파일 이름을 입력하세요." }
+        require(stem.length <= MAX_GAME_SAVE_NAME_LENGTH) {
+            "저장 파일 이름은 ${MAX_GAME_SAVE_NAME_LENGTH}자 이하여야 합니다."
+        }
+        require(stem.none { it.code < 32 || it in INVALID_FILE_NAME_CHARACTERS }) {
+            "저장 파일 이름에는 \\/ : * ? \" < > | 문자를 사용할 수 없습니다."
+        }
+        require(stem != "." && stem != ".." && !stem.endsWith('.') && !stem.endsWith(' ')) {
+            "저장 파일 이름은 점이나 공백으로 끝날 수 없습니다."
+        }
+        require(!WINDOWS_RESERVED_NAMES.matches(stem)) { "운영체제가 예약한 파일 이름은 사용할 수 없습니다." }
+        val resolved = targetDirectory.resolve("$stem$GAME_SAVE_EXTENSION").normalize()
+        require(resolved.parent == targetDirectory) { "저장 디렉터리 밖의 경로는 사용할 수 없습니다." }
+        return resolved
+    }
+
+    private fun readCatalogEntry(path: Path): GameSaveEntry? = try {
+        val size = Files.size(path)
+        if (size > MAX_GAME_SAVE_FILE_BYTES || size == 0L) return null
+        val envelope = parseEnvelope(decodeUtf8Strict(readBounded(path)))
+        if (validateSimulatorUiState(envelope.state) != null) return null
+        val fileName = path.fileName.toString()
+        GameSaveEntry(
+            name = fileName.dropLast(GAME_SAVE_EXTENSION.length),
+            fileName = fileName,
+            path = path.toString(),
+            sizeBytes = size,
+            metadata = envelope.metadata(),
+        )
+    } catch (_: RuntimeException) {
+        null
+    } catch (_: IOException) {
+        null
     }
 
     private fun readBounded(path: Path): ByteArray {
@@ -888,9 +966,9 @@ actual class GameSaveStorage actual constructor() {
         }
     }
 
-    private fun corrupted(message: String, cause: Throwable? = null): GameLoadFailure =
+    private fun corrupted(path: Path, message: String, cause: Throwable? = null): GameLoadFailure =
         GameLoadFailure(
-            path = savePath,
+            path = path.toString(),
             error = GameSaveError(
                 code = GameSaveErrorCode.CORRUPTED_FILE,
                 message = message,
@@ -936,6 +1014,12 @@ actual class GameSaveStorage actual constructor() {
         false
     }
     private companion object {
+        val INVALID_FILE_NAME_CHARACTERS: Set<Char> = setOf('\\', '/', ':', '*', '?', '"', '<', '>', '|')
+        val WINDOWS_RESERVED_NAMES: Regex = Regex(
+            "^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\\..*)?$",
+            RegexOption.IGNORE_CASE,
+        )
+
         val CURRENT_ENVELOPE_FIELDS: Set<String> = setOf(
             "format",
             "schemaVersion",
