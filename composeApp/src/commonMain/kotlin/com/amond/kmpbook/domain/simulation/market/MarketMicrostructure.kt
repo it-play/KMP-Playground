@@ -7,16 +7,6 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.round
 
-data class DailyPriceLimits(
-    val lower: Double,
-    val upper: Double,
-) {
-    init {
-        require(lower > 0.0) { "Lower price limit must be positive" }
-        require(upper >= lower) { "Upper price limit must not be below lower limit" }
-    }
-}
-
 /** Exchange quotation rules shared by the price and order-book engines. */
 object MarketMicrostructure {
     /**

@@ -42,6 +42,9 @@ data class StockDefinition(
         require(symbol.isNotBlank()) { "종목 코드는 비어 있을 수 없습니다." }
         require(symbol == symbol.trim()) { "종목 코드 앞뒤에는 공백을 둘 수 없습니다." }
         require(name.isNotBlank()) { "종목명은 비어 있을 수 없습니다." }
+        require(description.length in 30..60) {
+            "상품·기업 설명은 30~60자여야 합니다: $symbol (${description.length}자)"
+        }
         require(initialPrice > 0.0) { "기준 가격은 0보다 커야 합니다." }
         require(volatility >= 0.0) { "변동성은 음수일 수 없습니다." }
         require(dividendYield >= 0.0) { "배당수익률은 음수일 수 없습니다." }

@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.schedule
 
-
 /** 실제로 발표·보도된 수치만 뉴스에 싣기 위한 표시용 사실 데이터다. */
 data class ReportedFact(
     val label: String,

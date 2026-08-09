@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.instrument
 
-
 enum class EtfAssetClass(val displayName: String) {
     BROAD_EQUITY("주식시장"),
     SECTOR_EQUITY("주식 섹터·테마"),

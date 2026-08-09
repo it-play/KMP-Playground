@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.tax.assessment
 
-
 data class FinancialIncomeAssessment(
     val ordinaryFinancialIncomeGrossKrw: Long,
     val electedHighDividendIncomeKrw: Long,

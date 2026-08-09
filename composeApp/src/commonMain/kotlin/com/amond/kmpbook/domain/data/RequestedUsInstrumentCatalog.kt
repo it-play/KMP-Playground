@@ -757,7 +757,7 @@ object RequestedUsInstrumentCatalog {
             instrumentType = InstrumentType.ETF,
             strategy = InstrumentStrategy.TREASURY,
             distributionFrequency = DistributionFrequency.MONTHLY,
-            strategySummary = "잔존만기 0–3개월 미국 재무부 증권을 추종합니다.",
+            strategySummary = "잔존만기 0~3개월 미국 재무부 증권에 투자해 단기 금리수익을 추구하는 ETF입니다.",
             officialSourceUrl = "https://www.ishares.com/us/products/314116/ishares-0-3-month-treasury-bond-etf",
             eventRiskTags = setOf("exchange_transfer_2026_02_23", "treasury_yield", "index_rebalance"),
             durationYears = 0.12,
@@ -1349,7 +1349,7 @@ object RequestedUsInstrumentCatalog {
             instrumentType = InstrumentType.ETF,
             strategy = InstrumentStrategy.TREASURY,
             distributionFrequency = DistributionFrequency.MONTHLY,
-            strategySummary = "잔존만기 0–1년 미국 재무부 증권을 추종합니다.",
+            strategySummary = "잔존만기 0~1년 미국 재무부 증권에 투자해 단기 금리수익을 추구하는 ETF입니다.",
             officialSourceUrl = "https://www.ishares.com/us/products/239466/ishares-us-treasury-bond-etf",
             aliases = setOf("아이셰어즈 미국 단기 국채 ETF"),
             eventRiskTags = setOf("exchange_transfer_2026_02_23", "treasury_yield", "index_rebalance"),
@@ -1405,7 +1405,7 @@ object RequestedUsInstrumentCatalog {
             instrumentType = InstrumentType.ETF,
             strategy = InstrumentStrategy.INFLATION_LINKED_BOND,
             distributionFrequency = DistributionFrequency.MONTHLY,
-            strategySummary = "미국 재무부 물가연동국채에 투자합니다.",
+            strategySummary = "미국 재무부 물가연동국채에 투자해 물가상승 방어와 이자수익을 추구하는 ETF입니다.",
             officialSourceUrl = "https://www.ishares.com/us/products/239467/TIP",
             eventRiskTags = setOf("real_yield", "cpi_indexation", "phantom_income_tax"),
             durationYears = 6.5,
@@ -1487,7 +1487,7 @@ object RequestedUsInstrumentCatalog {
             instrumentType = InstrumentType.ETF,
             strategy = InstrumentStrategy.COVERED_CALL,
             distributionFrequency = DistributionFrequency.MONTHLY,
-            strategySummary = "Pershing Square의 공개 보유종목을 참고한 주식 포트폴리오와 데이터 기반 옵션 전략으로 인컴을 추구합니다.",
+            strategySummary = "퍼싱스퀘어 공개 보유주식과 데이터 기반 옵션 전략을 결합해 인컴을 추구하는 ETF입니다.",
             officialSourceUrl = "https://www.vistashares.com/etf/acky/",
             aliases = setOf("VistaShares Target 15 ACKtivist Distribution ETF", "비스타셰어즈 타겟 15 액티비스트 셀렉트 인컴 ETF"),
             eventRiskTags = setOf(
@@ -1562,7 +1562,7 @@ object RequestedUsInstrumentCatalog {
             instrumentType = InstrumentType.CLOSED_END_FUND,
             strategy = InstrumentStrategy.CLOSED_END_INCOME,
             distributionFrequency = DistributionFrequency.MONTHLY,
-            strategySummary = "회사채·대출·구조화신용·우선주와 일부 주식·옵션을 탄력적으로 운용하는 레버리지 폐쇄형 펀드이며 지방채 전용 펀드가 아닙니다.",
+            strategySummary = "회사채·대출·구조화신용·우선주를 탄력적으로 운용하는 레버리지 폐쇄형 펀드입니다.",
             officialSourceUrl = "https://www.guggenheiminvestments.com/cef/fund/gof",
             aliases = setOf("구겐하임 지방채 펀드"),
             eventRiskTags = setOf(
@@ -1587,7 +1587,7 @@ object RequestedUsInstrumentCatalog {
             instrumentType = InstrumentType.ETF,
             strategy = InstrumentStrategy.ALTERNATIVE,
             distributionFrequency = DistributionFrequency.MONTHLY,
-            strategySummary = "모기지 이자전용(IO) 증권과 미국 국채 헤지를 조합해 인컴과 통상 -3~-9년의 음의 듀레이션을 추구합니다.",
+            strategySummary = "모기지 이자전용증권과 미국 국채 헤지를 조합해 인컴과 음의 듀레이션을 추구하는 ETF입니다.",
             officialSourceUrl = "https://www.etfs.foliobeyond.com/risr",
             aliases = setOf("폴리오비욘드 금리 인상 ETF"),
             eventRiskTags = setOf(
@@ -1638,7 +1638,7 @@ object RequestedUsInstrumentCatalog {
             instrumentType = InstrumentType.ETF,
             strategy = InstrumentStrategy.COMMODITY_FUTURES,
             distributionFrequency = DistributionFrequency.MONTHLY,
-            strategySummary = "WTI 원유 선물의 세 만기 구간을 활용하는 지수를 추종하며 원유 현물을 직접 보유하지 않는 K-1 비발급 ETF입니다.",
+            strategySummary = "WTI 원유 선물 세 만기 구간에 분산 투자하며 K-1을 발급하지 않는 ETF입니다.",
             officialSourceUrl = "https://www.proshares.com/our-etfs/strategic/oilk",
             aliases = setOf("ProShares K-1 Free Crude Oil Strategy ETF", "프로셰어즈 WTI 원유 선물 ETF"),
             eventRiskTags = setOf(
@@ -1690,7 +1690,7 @@ object RequestedUsInstrumentCatalog {
             instrumentType = InstrumentType.ETF,
             strategy = InstrumentStrategy.DAILY_LEVERAGED,
             distributionFrequency = DistributionFrequency.QUARTERLY,
-            strategySummary = "Nasdaq-100 지수의 하루 수익률 300%를 목표로 스왑·선물을 매일 재조정하는 단기 전술형 ETF입니다.",
+            strategySummary = "스왑·선물로 NASDAQ 100 일간 수익률의 3배를 추구해 매일 재조정하는 ETF입니다.",
             officialSourceUrl = "https://www.proshares.com/our-etfs/leveraged-and-inverse/tqqq",
             aliases = setOf("프로셰어즈 QQQ 3배 ETF"),
             eventRiskTags = setOf(
@@ -1715,7 +1715,7 @@ object RequestedUsInstrumentCatalog {
             instrumentType = InstrumentType.ETF,
             strategy = InstrumentStrategy.DAILY_INVERSE,
             distributionFrequency = DistributionFrequency.QUARTERLY,
-            strategySummary = "NYSE Semiconductor Index 하루 수익률의 -300%를 목표로 파생상품 노출을 매일 재조정하며 장기 누적 -3배 상품이 아닙니다.",
+            strategySummary = "파생상품으로 미국 반도체지수 일간 수익률의 -3배를 추구해 매일 재조정하는 ETF입니다.",
             officialSourceUrl = "https://www.direxion.com/product/daily-semiconductor-bull-bear-3x-etfs",
             aliases = setOf("디렉시온 미국 반도체 3배 인버스 ETF"),
             eventRiskTags = setOf(
@@ -1868,7 +1868,7 @@ object RequestedUsInstrumentCatalog {
             instrumentType = InstrumentType.ETF,
             strategy = InstrumentStrategy.MULTI_ASSET,
             distributionFrequency = DistributionFrequency.QUARTERLY,
-            strategySummary = "글로벌 채권·REIT의 미 국채 대비 일드 스프레드를 비교하고 매력이 낮을 때 최대 100%를 단기국채로 이동합니다.",
+            strategySummary = "글로벌 채권·리츠의 일드 스프레드에 따라 위험자산과 단기국채 비중을 조절하는 ETF입니다.",
             officialSourceUrl = "https://cambriafunds.com/tyld",
             aliases = setOf("캠브리아 전략적 수익 ETF"),
             eventRiskTags = setOf(
@@ -1902,7 +1902,7 @@ object RequestedUsInstrumentCatalog {
             instrumentType = InstrumentType.CLOSED_END_FUND,
             strategy = InstrumentStrategy.CLOSED_END_INCOME,
             distributionFrequency = DistributionFrequency.MONTHLY,
-            strategySummary = "파이프라인·LNG·유틸리티·전력망 등 북미 에너지·전력 인프라 기업에 주로 투자하는 레버리지 폐쇄형 펀드입니다.",
+            strategySummary = "북미 파이프라인·LNG·유틸리티·전력망 기업에 투자하는 레버리지 폐쇄형 펀드입니다.",
             officialSourceUrl = "https://tortoisecapital.com/cef/tortoise-energy-infrastructure-corp/",
             aliases = setOf("토터스 에너지 인프라 코퍼레이션"),
             eventRiskTags = setOf(
@@ -1928,7 +1928,7 @@ object RequestedUsInstrumentCatalog {
             instrumentType = InstrumentType.ETF,
             strategy = InstrumentStrategy.DAILY_INVERSE,
             distributionFrequency = DistributionFrequency.QUARTERLY,
-            strategySummary = "7–10년 미국 국채지수 하루 수익률의 -300%를 목표로 파생상품을 매일 재조정하며 장기 누적 -3배 상품이 아닙니다.",
+            strategySummary = "파생상품으로 7~10년 미국 국채 일간 수익률의 -3배를 추구해 매일 재조정하는 ETF입니다.",
             officialSourceUrl = "https://www.direxion.com/product/daily-7-10-year-treasury-bull-bear-3x-etfs",
             aliases = setOf("디렉시온 미국 장기채 3배 인버스 ETF"),
             eventRiskTags = setOf(
@@ -2048,7 +2048,7 @@ object RequestedUsInstrumentCatalog {
             instrumentType = InstrumentType.ADR,
             strategy = InstrumentStrategy.ADR_EQUITY,
             distributionFrequency = DistributionFrequency.MONTHLY,
-            strategySummary = "브라질의 은행·카드·보험·자산관리 사업을 영위하는 금융그룹의 NYSE 예탁증서이며 1 ADR은 우선주 1주를 나타냅니다.",
+            strategySummary = "은행·카드·보험·자산관리 사업을 영위하는 브라질 금융그룹의 NYSE 상장 ADR입니다.",
             officialSourceUrl = "https://www.itau.com.br/relacoes-com-investidores/en/",
             aliases = setOf("이타우 우니방쿠 홀딩스(ADR)", "Itaú Unibanco ADR"),
             eventRiskTags = setOf(
@@ -2122,7 +2122,7 @@ object RequestedUsInstrumentCatalog {
             instrumentType = InstrumentType.ADR,
             strategy = InstrumentStrategy.ADR_EQUITY,
             distributionFrequency = DistributionFrequency.QUARTERLY,
-            strategySummary = "첨단·성숙 공정 반도체를 위탁생산하는 대만 파운드리 기업의 NYSE ADS이며 1 ADS는 대만 보통주 5주를 나타냅니다.",
+            strategySummary = "첨단·성숙 공정 반도체를 위탁생산하는 대만 파운드리 기업의 NYSE 상장 ADS입니다.",
             officialSourceUrl = "https://investor.tsmc.com/english/adr",
             aliases = setOf("TSM(TSMC(ADR))", "Taiwan Semiconductor ADR"),
             eventRiskTags = setOf(

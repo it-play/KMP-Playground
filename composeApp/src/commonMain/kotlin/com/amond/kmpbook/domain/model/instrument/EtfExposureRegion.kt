@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.instrument
 
-
 enum class EtfExposureRegion(val displayName: String) {
     KOREA("대한민국"),
     UNITED_STATES("미국"),

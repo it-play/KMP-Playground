@@ -2,10 +2,8 @@ package com.amond.kmpbook.domain.data
 
 import com.amond.kmpbook.domain.model.instrument.DistributionFrequency
 import com.amond.kmpbook.domain.model.instrument.InstrumentIdentityProfile
-import com.amond.kmpbook.domain.model.instrument.InstrumentStrategy
 import com.amond.kmpbook.domain.model.instrument.StockDefinition
 import com.amond.kmpbook.domain.model.market.Market
-import kotlin.math.abs
 
 /** 기본 ETF 전체에 균일한 구조 정보를 붙이고, 공식 검증을 마친 상품은 상세 메타데이터로 덮어쓴다. */
 object RequestedExistingInstrumentMetadata {
@@ -96,7 +94,7 @@ object RequestedExistingInstrumentMetadata {
             id = "${Market.NYSE_ARCA.name}:PFXF",
             aliases = setOf("반에크 비금융 배당주 ETF"),
             issuer = "VanEck",
-            summary = "금융사를 제외한 우선주·하이브리드 증권에 투자합니다.",
+            summary = "금융사를 제외한 우선주·하이브리드 증권에 투자해 인컴을 추구하는 ETF입니다.",
             source = "https://www.vaneck.com/us/en/investments/preferred-securities-ex-financials-etf-pfxf/overview/",
             distribution = DistributionFrequency.MONTHLY,
             riskTags = setOf("preferred_security", "interest_rate", "issuer_call", "credit_spread"),
@@ -166,7 +164,7 @@ object RequestedExistingInstrumentMetadata {
 
     private fun StockDefinition.withBaselineMetadata(): StockDefinition {
         val profile = requireNotNull(etfProfile) { "기본 ETF 구조 메타데이터에는 ETF 프로필이 필요합니다: $id" }
-        val summary = baselineSummary(this)
+        val summary = description
         return copy(
             description = summary,
             identityProfile = InstrumentIdentityProfile(
@@ -190,40 +188,6 @@ object RequestedExistingInstrumentMetadata {
         )
     }
 
-    private fun baselineSummary(stock: StockDefinition): String {
-        val profile = requireNotNull(stock.etfProfile)
-        val core = when (stock.behavior.strategy) {
-            InstrumentStrategy.DAILY_INVERSE ->
-                "기초 전략의 일간 수익률을 ${formatMultiple(abs(profile.leverage))}배 역방향으로 추종하는 ETF입니다."
-            InstrumentStrategy.DAILY_LEVERAGED ->
-                "기초 전략의 일간 수익률을 ${formatMultiple(profile.leverage)}배로 추종하며 매일 노출을 재조정하는 ETF입니다."
-            InstrumentStrategy.COVERED_CALL ->
-                "${profile.exposureRegion.displayName} ${profile.assetClass.displayName}에 투자하면서 콜옵션 매도로 분배 재원을 추구하는 ETF입니다."
-            InstrumentStrategy.MONEY_MARKET ->
-                "${profile.exposureRegion.displayName} 단기금리·현금성 자산의 수익을 추구하는 단기금융 ETF입니다."
-            InstrumentStrategy.TREASURY,
-            InstrumentStrategy.INFLATION_LINKED_BOND,
-            InstrumentStrategy.INVESTMENT_GRADE_BOND,
-            InstrumentStrategy.HIGH_YIELD_BOND,
-            InstrumentStrategy.FLOATING_RATE,
-            InstrumentStrategy.CLO,
-            -> "${profile.exposureRegion.displayName} 채권에 투자하는 ${stock.behavior.strategy.displayName} ETF입니다."
-            InstrumentStrategy.COMMODITY_FUTURES,
-            InstrumentStrategy.CRYPTO_FUTURES,
-            -> "${profile.exposureRegion.displayName} ${profile.assetClass.displayName} 가격에 연동되는 ${stock.behavior.strategy.displayName} ETF입니다."
-            InstrumentStrategy.MULTI_ASSET ->
-                "주식·채권 등 여러 자산군을 배분해 운용하는 혼합자산 ETF입니다."
-            else ->
-                "상품명에 명시된 지수·운용전략을 기준으로 ${profile.exposureRegion.displayName} ${profile.assetClass.displayName}에 투자하는 ETF입니다."
-        }
-        val fxNote = when {
-            profile.fxProfile.isFullyHedged -> " 기초 통화 노출은 상장통화 기준으로 대부분 헤지합니다."
-            stock.market.isKorean && profile.fxProfile.legs.any { it.currency.name != stock.currency.name } ->
-                " 환헤지형이 아니므로 원화 기준 수익률은 환율 변동의 영향을 받을 수 있습니다."
-            else -> ""
-        }
-        return core + fxNote
-    }
 
     private fun issuerOrManager(stock: StockDefinition): String {
         val legalName = stock.englishName
@@ -280,9 +244,6 @@ object RequestedExistingInstrumentMetadata {
             else -> error("운용사를 판별할 수 없는 미국 ETF입니다: ${stock.id} $legalName")
         }
     }
-
-    private fun formatMultiple(value: Double): String =
-        if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
 
     private const val KRX_PRODUCT_SEARCH_URL: String =
         "https://data.krx.co.kr/contents/MDC/MAIN/main/index.cmd"

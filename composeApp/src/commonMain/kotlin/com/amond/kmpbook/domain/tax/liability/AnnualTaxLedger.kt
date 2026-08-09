@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.tax.liability
 
-
 data class AnnualTaxLedger(
     val taxYear: Int,
     val policyId: String,

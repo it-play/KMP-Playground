@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.game
 
-
 enum class GamePhase(val displayName: String) {
     SETUP("게임 준비"),
     PLAYING("진행 중"),

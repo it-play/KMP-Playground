@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.event
 
-
 enum class EventSeverity(
     val displayName: String,
     val level: Int,

@@ -1,6 +1,5 @@
 package com.amond.kmpbook.presentation.news
 
-
 enum class NewsInstrumentTerminationStageUi {
     SCHEDULED,
     BLOCKED_BY_FORCED_REVIEW,

@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.event
 
-
 /**
  * 이벤트가 가격 과정에 주는 규칙 기반 효과. 비율은 0.05 = 5% 형식이다.
  * shockReturn은 발생 즉시, hourlyDrift는 유효 기간 매 시간 적용한다.

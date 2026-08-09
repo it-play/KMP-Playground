@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.index
 
-
 /** 대표 미국 지수 4종의 게임 산식과 초기 기준값. */
 object MarketIndexCatalog {
     val all: Map<MarketIndexId, MarketIndexFormulaMetadata> = linkedMapOf(

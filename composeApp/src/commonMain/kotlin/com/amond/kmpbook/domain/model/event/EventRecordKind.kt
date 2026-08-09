@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.event
 
-
 /**
  * 뉴스 항목이 생성된 업무 흐름을 ID 규칙과 분리해 저장한다.
  *

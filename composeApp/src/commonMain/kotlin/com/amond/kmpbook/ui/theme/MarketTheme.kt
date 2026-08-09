@@ -7,8 +7,6 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
@@ -16,9 +14,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.amond.kmpbook.domain.model.market.Market
 import kmpbook.composeapp.generated.resources.Res
 import kmpbook.composeapp.generated.resources.pretendard_bold
 import kmpbook.composeapp.generated.resources.pretendard_medium
@@ -26,140 +22,8 @@ import kmpbook.composeapp.generated.resources.pretendard_regular
 import kmpbook.composeapp.generated.resources.pretendard_semibold
 import org.jetbrains.compose.resources.Font
 
-/**
- * Market Ledger's signal-observatory palette.
- *
- * Neutral surfaces behave like an instrument chassis while violet is reserved for causal links
- * and primary decisions. Korean red-up and blue-down semantics remain independent from that
- * accent, so an interaction colour can never be mistaken for a price direction.
- */
-object MarketColors {
-    val Grey50 = Color(0xFFF8FAFB)
-    val Grey100 = Color(0xFFEFF2F5)
-    val Grey200 = Color(0xFFDCE2E8)
-    val Grey400 = Color(0xFF9AA7B4)
-    val Grey600 = Color(0xFF5E6C79)
-    val Grey700 = Color(0xFF394754)
-    val Grey900 = Color(0xFF17222D)
-
-    val Primary = Color(0xFF625CF6)
-    val PrimaryWeak = Color(0xFFEEEDFF)
-    /** 흰색·옅은 배경 위 작은 상태 텍스트용 WCAG 대비 색상. */
-    val PrimaryText = Color(0xFF4B45D6)
-    val Signal = Primary
-    val SignalSoft = PrimaryWeak
-    val SignalLine = Color(0xFFB8B4FF)
-    val Rise = Color(0xFFE34D5B)
-    val RiseSoft = Color(0xFFFFECEF)
-    val RiseText = Color(0xFFBD3141)
-    val Fall = Color(0xFF2F73D2)
-    val FallSoft = Color(0xFFEAF2FC)
-    val FallText = Color(0xFF255EAD)
-    val Positive = Color(0xFF0B9274)
-    val PositiveSoft = Color(0xFFE7F6F1)
-    val Amber = Color(0xFFE08719)
-    val AmberSoft = Color(0xFFFFF3E2)
-    val AmberText = Color(0xFF92530C)
-
-    val Ledger = Color(0xFFEDF1F4)
-    val Paper = Color(0xFFFCFDFE)
-    val PaperMuted = Grey100
-    val Navy = Color(0xFF121B24)
-    val NavyRaised = Color(0xFF1D2A35)
-    val Ink = Grey900
-    val InkMuted = Grey600
-    val Line = Grey200
-
-    val Scrim = Color(0xA6121B24)
-}
-
-object MarketSpacing {
-    val xxs = 4.dp
-    val xs = 8.dp
-    val sm = 12.dp
-    val md = 16.dp
-    val lg = 20.dp
-    val xl = 24.dp
-    val xxl = 32.dp
-}
-
-object MarketRadii {
-    val small = 6.dp
-    val medium = 10.dp
-    val large = 14.dp
-    val xLarge = 18.dp
-    val pill = 999.dp
-}
-
-object MarketElevation {
-    val flat = 0.dp
-    val card = 1.dp
-    val floating = 6.dp
-}
-
-object MarketMotion {
-    const val quick = 120
-    const val standard = 200
-    const val emphasized = 320
-}
-
-@Immutable
-data class MarketTypography(
-    val display: TextStyle,
-    val headingLarge: TextStyle,
-    val heading: TextStyle,
-    val body: TextStyle,
-    val label: TextStyle,
-    val caption: TextStyle,
-    val number: TextStyle,
-    val numberLarge: TextStyle,
-)
-
 val LocalMarketTypography = staticCompositionLocalOf {
     createMarketTypography(FontFamily.SansSerif)
-}
-
-/** Typography accessors backed by the active desktop-installed or bundled font family. */
-object MarketType {
-    val display: TextStyle
-        @Composable
-        @ReadOnlyComposable
-        get() = LocalMarketTypography.current.display
-
-    val headingLarge: TextStyle
-        @Composable
-        @ReadOnlyComposable
-        get() = LocalMarketTypography.current.headingLarge
-
-    val heading: TextStyle
-        @Composable
-        @ReadOnlyComposable
-        get() = LocalMarketTypography.current.heading
-
-    val body: TextStyle
-        @Composable
-        @ReadOnlyComposable
-        get() = LocalMarketTypography.current.body
-
-    val label: TextStyle
-        @Composable
-        @ReadOnlyComposable
-        get() = LocalMarketTypography.current.label
-
-    val caption: TextStyle
-        @Composable
-        @ReadOnlyComposable
-        get() = LocalMarketTypography.current.caption
-
-    val number: TextStyle
-        @Composable
-        @ReadOnlyComposable
-        get() = LocalMarketTypography.current.number
-
-    val numberLarge: TextStyle
-        @Composable
-        @ReadOnlyComposable
-        get() = LocalMarketTypography.current.numberLarge
 }
 
 private val SimulatorColorScheme = lightColorScheme(

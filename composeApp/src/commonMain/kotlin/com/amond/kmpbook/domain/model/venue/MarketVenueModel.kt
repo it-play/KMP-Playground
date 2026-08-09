@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.venue
 
-
 /**
  * A venue's dominant matching/liquidity model as represented by the simulator.
  *

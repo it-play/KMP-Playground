@@ -1,6 +1,5 @@
 package com.amond.kmpbook.ui.screens.tax
 
-
 data class TaxCenterData(
     val currentYear: Int,
     val years: List<TaxYearDisplay>,

@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.instrument
 
-
 enum class PrincipalRisk(val displayName: String, val explanation: String) {
     ORDINARY_MARKET("시장 가격", "기초자산 가격과 시장 위험에 따라 원금 손실이 발생합니다."),
     DAILY_RESET_DECAY("일일 재조정 감가", "횡보와 높은 변동성이 지수의 누적수익률과 장기 성과를 크게 벌어지게 합니다."),

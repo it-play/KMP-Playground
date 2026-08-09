@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.simulation.price
 
-
 /** Price, volatility, and liquidity effect applied during this one-hour step. */
 data class PriceImpulse(
     val returnRate: Double = 0.0,

@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.market
 
-
 /** 현실 종목과 이벤트를 함께 분류하기 위한 넓은 산업군. */
 enum class Sector(val displayName: String) {
     SEMICONDUCTOR("반도체"),

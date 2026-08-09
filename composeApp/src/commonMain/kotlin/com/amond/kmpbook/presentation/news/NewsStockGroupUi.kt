@@ -1,6 +1,5 @@
 package com.amond.kmpbook.presentation.news
 
-
 data class NewsStockGroupUi(
     val key: String,
     val stockId: String,

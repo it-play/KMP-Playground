@@ -639,13 +639,6 @@ class PriceEngine(private val seed: Long) {
         else -> 0.75
     }
 
-    private data class BoundedPrice(
-        val price: Double,
-        val wasClamped: Boolean,
-        val hitUpperLimit: Boolean = false,
-        val hitLowerLimit: Boolean = false,
-    )
-
     companion object {
         private const val TRADING_DAYS_PER_YEAR: Double = 252.0
         private const val TRADING_HOURS_PER_DAY: Double = 6.5

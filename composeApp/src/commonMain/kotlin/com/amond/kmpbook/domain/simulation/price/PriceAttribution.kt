@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.simulation.price
 
-
 data class PriceAttribution(
     val market: Double,
     val sector: Double,

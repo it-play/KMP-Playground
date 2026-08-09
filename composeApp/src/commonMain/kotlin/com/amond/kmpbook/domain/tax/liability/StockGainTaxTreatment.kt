@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.tax.liability
 
-
 enum class StockGainTaxTreatment(val displayName: String) {
     DOMESTIC_EXEMPT_SMALL_ON_EXCHANGE("국내 장내 소액주주 비과세"),
     DOMESTIC_ETF_HOLDING_PERIOD_WITHHELD("국내상장 기타 ETF 보유기간 과세"),

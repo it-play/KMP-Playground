@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.market
 
-
 /**
  * 거래소가 아니라 상장 시장 단위다. 같은 미국 정규장 규칙을 쓰더라도 NASDAQ과 NYSE를
  * 분리해 종목 검색, 지수, 이벤트 범위를 명확히 유지한다.

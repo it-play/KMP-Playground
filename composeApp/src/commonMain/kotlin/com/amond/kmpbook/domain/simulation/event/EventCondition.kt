@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.simulation.event
 
-
 enum class EventCondition {
     ALWAYS,
     POLICY_RATE_HIGH,

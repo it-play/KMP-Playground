@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.tax.core
 
-
 enum class TaxCategory(val displayName: String) {
     SECURITIES_TRANSACTION("증권거래세"),
     SPECIAL_RURAL("농어촌특별세"),

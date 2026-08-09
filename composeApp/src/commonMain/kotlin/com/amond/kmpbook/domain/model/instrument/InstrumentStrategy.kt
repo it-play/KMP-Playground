@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.instrument
 
-
 /**
  * 종목명이 아니라 실제 수익 구조를 가격 엔진과 캠페인 이벤트에 전달하는 분류다.
  * 예를 들어 커버드콜은 상승 참여율이 낮고, 일일 레버리지는 변동성 누적 손실을 갖는다.

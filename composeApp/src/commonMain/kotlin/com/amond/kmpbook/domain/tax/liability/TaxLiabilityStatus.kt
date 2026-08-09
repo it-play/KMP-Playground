@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.tax.liability
 
-
 enum class TaxLiabilityStatus(val displayName: String) {
     ESTIMATED("추정"),
     WITHHELD("원천징수됨"),

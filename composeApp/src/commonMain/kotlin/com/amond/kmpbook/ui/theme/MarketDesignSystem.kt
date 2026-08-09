@@ -1,7 +1,5 @@
 package com.amond.kmpbook.ui.theme
 
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.amond.kmpbook.domain.model.market.Market
 
 /**
@@ -42,57 +40,6 @@ object MarketDesignSystem {
             url = "https://github.com/orioncactus/pretendard",
         ),
     )
-}
-
-/** Desktop shell measurements. Screens consume these instead of redefining the application frame. */
-object MarketLayout {
-    val defaultWindowWidth = 1_800.dp
-    val defaultWindowHeight = 1_080.dp
-    const val minimumWindowWidthPx: Int = 1_720
-    const val minimumWindowHeightPx: Int = 980
-
-    val sidebarWidth = 208.dp
-    val marketPulseRailHeight = 96.dp
-    val marketExplorerWidth = 272.dp
-    val marketOrderBookWidth = 260.dp
-    val marketOrderTicketWidth = 348.dp
-    val newsGroupRailWidth = 208.dp
-    val newsStoryListWidth = 400.dp
-    val detailRailWidth = 360.dp
-    val settingsRailWidth = 420.dp
-    val screenPadding = MarketSpacing.sm
-    val screenGap = MarketSpacing.sm
-    val panelPadding = MarketSpacing.md
-}
-
-/** Interactive and decorative dimensions shared by primitives and the desktop shell. */
-object MarketComponentSize {
-    val minimumInteractiveTarget = 44.dp
-    val textFieldHeight = 56.dp
-    val primaryButtonHeight = 48.dp
-    val panelBorder = 1.dp
-    val divider = 1.dp
-    val statusDot = 6.dp
-}
-
-/** The complete type scale. The smallest supported text is the 11sp caption. */
-object MarketTypographyTokens {
-    val displaySize = 30.sp
-    val displayLineHeight = 40.sp
-    val headingLargeSize = 20.sp
-    val headingLargeLineHeight = 29.sp
-    val headingSize = 17.sp
-    val headingLineHeight = 25.5.sp
-    val bodySize = 15.sp
-    val bodyLineHeight = 22.5.sp
-    val labelSize = 13.sp
-    val labelLineHeight = 19.5.sp
-    val captionSize = 11.sp
-    val captionLineHeight = 16.5.sp
-    val numberSize = 15.sp
-    val numberLineHeight = 22.5.sp
-    val numberLargeSize = 24.sp
-    val numberLargeLineHeight = 34.sp
 }
 
 /** Returns both text semantics and colour so a caller never has to infer direction from hue alone. */

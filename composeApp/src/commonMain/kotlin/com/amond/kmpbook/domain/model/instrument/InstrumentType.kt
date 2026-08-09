@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.instrument
 
-
 enum class InstrumentType(val displayName: String) {
     STOCK("주식"),
     ETF("ETF"),

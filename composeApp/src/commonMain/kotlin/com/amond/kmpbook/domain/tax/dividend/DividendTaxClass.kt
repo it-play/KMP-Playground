@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.tax.dividend
 
-
 enum class DividendTaxClass(val displayName: String) {
     KOREAN_ORDINARY_CASH("국내 일반 현금배당"),
     KOREAN_ETF_DISTRIBUTION("국내 ETF 분배금"),

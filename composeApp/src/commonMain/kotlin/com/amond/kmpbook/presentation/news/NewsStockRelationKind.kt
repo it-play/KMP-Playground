@@ -1,6 +1,5 @@
 package com.amond.kmpbook.presentation.news
 
-
 enum class NewsStockRelationKind(val displayName: String) {
     DIRECT_TARGET("직접 대상"),
     UNDERLYING_EXPOSURE("기초자산 연결"),

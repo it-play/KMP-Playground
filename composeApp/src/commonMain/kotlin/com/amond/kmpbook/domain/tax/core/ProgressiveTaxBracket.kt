@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.tax.core
 
-
 /** A null upper bound is the final bracket. */
 data class ProgressiveTaxBracket(
     val upperBoundKrw: Long?,

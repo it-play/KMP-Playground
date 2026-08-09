@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.instrument
 
-
 enum class DistributionFrequency(val displayName: String, val periodsPerYear: Int) {
     NONE("미분배", 0),
     WEEKLY("주간", 52),

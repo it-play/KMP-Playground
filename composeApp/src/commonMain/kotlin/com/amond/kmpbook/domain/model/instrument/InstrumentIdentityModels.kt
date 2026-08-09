@@ -24,7 +24,9 @@ data class InstrumentIdentityProfile(
 ) {
     init {
         require(issuerOrManager.isNotBlank())
-        require(strategySummary.isNotBlank())
+        require(strategySummary.length in 30..60) {
+            "상품·기업 설명은 30~60자여야 합니다: ${strategySummary.length}자"
+        }
         require(officialSourceUrl.startsWith("https://"))
         require(supportingSourceUrls.all { it.startsWith("https://") })
         require(officialSourceUrl !in supportingSourceUrls)

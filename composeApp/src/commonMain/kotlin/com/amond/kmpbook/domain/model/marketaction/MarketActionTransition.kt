@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.marketaction
 
-
 /** 제목이나 이벤트 ID를 해석하지 않고 조치의 발표·효력·해제 단계를 판별하기 위한 전이 정보다. */
 enum class MarketActionTransition {
     HALT_SCHEDULED,

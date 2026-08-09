@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.index
 
-
 /**
  * 실제 지수와 시뮬레이션 산식을 분리해 표시하는 메타데이터다.
  *

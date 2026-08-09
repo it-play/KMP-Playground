@@ -14,17 +14,6 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 
-data class MarketSessionWindow(
-    val market: Market,
-    val localDate: LocalDate,
-    val opensAt: Instant,
-    val closesAt: Instant,
-) {
-    init {
-        require(closesAt > opensAt) { "시장 종료 시각은 개장 시각보다 뒤여야 합니다." }
-    }
-}
-
 /**
  * 게임 시간과 거래소 정규장을 계산하는 상태 없는 달력.
  *

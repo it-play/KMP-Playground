@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.game
 
-
 /** Compose 내비게이션 구현과 분리된, 저장 가능한 화면 식별자. */
 enum class Screen(val displayName: String) {
     HOME("홈"),

@@ -1,6 +1,5 @@
 package com.amond.kmpbook.ui.screens.tax
 
-
 data class TaxYearDisplay(
     val year: Int,
     val taxableStockGainKrw: Double,

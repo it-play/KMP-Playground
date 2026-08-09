@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.trading
 
-
 /** 매수 또는 매도 호가 한 단계. */
 data class OrderBookLevel(
     val price: Double,

@@ -437,39 +437,4 @@ object MarketContagionEngine {
         survival * (1.0 - value.coerceIn(0.0, 1.0))
     }.let { survival -> (1.0 - survival).coerceIn(0.0, 1.0) }
 
-    private data class DirectExposure(
-        val market: Market,
-        val reach: Double,
-        val preferOverSpatial: Boolean,
-    ) {
-        fun asReach(): TransmissionReach = TransmissionReach(
-            reach = reach,
-            path = listOf(market),
-            dominantPathContribution = reach,
-            directExposure = true,
-        )
-    }
-
-    private data class SourceReach(
-        val weightedReach: Double,
-        val representative: MarketContagionPath,
-        val representativeEffectiveContribution: Double,
-    )
-
-    private data class TransmissionReach(
-        val reach: Double,
-        val path: List<Market>,
-        val dominantPathContribution: Double,
-        val directExposure: Boolean,
-    )
-
-    private data class MarketResponse(
-        val effectiveStrength: Double,
-        val intensity: Double,
-    )
-
-    private data class ResponseCandidate(
-        val transmission: TransmissionReach,
-        val response: MarketResponse,
-    )
 }

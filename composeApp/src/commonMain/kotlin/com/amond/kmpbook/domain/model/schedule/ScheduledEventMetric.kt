@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.schedule
 
-
 data class ScheduledEventMetric(
     val label: String,
     val actual: Double,

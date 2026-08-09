@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.schedule
 
-
 /**
  * 저장된 뉴스가 장기 일정의 어느 발표에서 생성됐는지 가리키는 구조화 참조다.
  *

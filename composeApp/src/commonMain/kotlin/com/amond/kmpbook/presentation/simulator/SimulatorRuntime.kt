@@ -1477,13 +1477,6 @@ internal class SimulatorRuntime(
         }
     }
 
-    private data class TurnGenerationResult(
-        val bars: Map<String, PriceBar>,
-        val stockTradingFractions: Map<String, Double>,
-        val stockFirstExecutionTimes: Map<String, Instant>,
-        val priceAttributions: Map<String, PriceAttribution>,
-    )
-
     private fun realizedSystemicReturn(
         attributions: Map<String, PriceAttribution>,
         tradingFractions: Map<String, Double>,
@@ -1506,62 +1499,6 @@ internal class SimulatorRuntime(
         return if (totalWeight == 0.0) null else {
             (exp(weightedLogReturn / totalWeight) - 1.0).coerceIn(-1.0, 1.0)
         }
-    }
-
-    private data class TurnProtectionImpact(
-        val marketBlocks: Map<Market, List<RuntimeTradingInterval>> = emptyMap(),
-        val instrumentBlocks: Map<String, List<RuntimeTradingInterval>> = emptyMap(),
-        val priceBounds: Map<String, RuntimePriceBounds> = emptyMap(),
-        val newRestrictionStartedAt: Map<String, Instant> = emptyMap(),
-        val newMarketRestrictionStartedAt: Map<Market, Instant> = emptyMap(),
-        val temporaryProtectionMarkets: Set<Market> = emptySet(),
-        val usMwcbControlledTurn: Boolean = false,
-    ) {
-        fun firstNewRestrictionAt(stock: StockDefinition): Instant? = listOfNotNull(
-            newRestrictionStartedAt[stock.id],
-            newMarketRestrictionStartedAt[stock.market],
-        ).minOrNull()
-    }
-
-    private class TurnProtectionImpactBuilder {
-        val marketBlocks = mutableMapOf<Market, MutableList<RuntimeTradingInterval>>()
-        val instrumentBlocks = mutableMapOf<String, MutableList<RuntimeTradingInterval>>()
-        val priceBounds = mutableMapOf<String, RuntimePriceBounds>()
-        val newRestrictionStartedAt = mutableMapOf<String, Instant>()
-        val newMarketRestrictionStartedAt = mutableMapOf<Market, Instant>()
-        val temporaryProtectionMarkets = mutableSetOf<Market>()
-        var usMwcbControlledTurn: Boolean = false
-
-        fun addMarketBlock(market: Market, block: RuntimeTradingInterval, temporary: Boolean) {
-            marketBlocks.getOrPut(market) { mutableListOf() } += block
-            newMarketRestrictionStartedAt[market] = minOf(
-                newMarketRestrictionStartedAt[market] ?: block.startsAt,
-                block.startsAt,
-            )
-            if (temporary) temporaryProtectionMarkets += market
-        }
-
-        fun addInstrumentBlock(stockId: String, block: RuntimeTradingInterval) {
-            instrumentBlocks.getOrPut(stockId) { mutableListOf() } += block
-            newRestrictionStartedAt[stockId] = minOf(
-                newRestrictionStartedAt[stockId] ?: block.startsAt,
-                block.startsAt,
-            )
-        }
-
-        fun mergePriceBounds(stockId: String, bounds: RuntimePriceBounds) {
-            priceBounds[stockId] = priceBounds[stockId]?.merge(bounds) ?: bounds
-        }
-
-        fun build(): TurnProtectionImpact = TurnProtectionImpact(
-            marketBlocks = marketBlocks.mapValues { it.value.toList() },
-            instrumentBlocks = instrumentBlocks.mapValues { it.value.toList() },
-            priceBounds = priceBounds.toMap(),
-            newRestrictionStartedAt = newRestrictionStartedAt.toMap(),
-            newMarketRestrictionStartedAt = newMarketRestrictionStartedAt.toMap(),
-            temporaryProtectionMarkets = temporaryProtectionMarkets.toSet(),
-            usMwcbControlledTurn = usMwcbControlledTurn,
-        )
     }
 
     /**
@@ -6053,8 +5990,6 @@ internal class SimulatorRuntime(
             (time.hour * 3_600 + time.minute * 60 + time.second + time.nanosecond / 1_000_000_000.0)) /
             60.0
 
-    private data class ExtremeMove(val price: Double, val absoluteRate: Double, val isUpper: Boolean)
-
     private fun extremeMove(reference: Double, bar: PriceBar): ExtremeMove {
         val upper = bar.high / reference - 1.0
         val lower = bar.low / reference - 1.0
@@ -6578,11 +6513,6 @@ internal class SimulatorRuntime(
 
         var rebuiltBook = FifoCostBasisBook()
         val rebuiltGains = mutableListOf<RealizedGainRecord>()
-        data class ReplayEntry(
-            val priority: Int,
-            val accountingSequence: Long,
-            val id: String,
-        )
         val actionsById = corporateActionLedger.associateBy(CorporateActionRecord::id)
         val tradesById = trades.associateBy(Trade::id)
         val rocById = dividends.filter { it.rocAmount > 0.0 }.associateBy(DividendLedgerEntry::id)
@@ -6962,15 +6892,6 @@ internal class SimulatorRuntime(
         lastMessage = message
         return false
     }
-
-    private data class DailyPriceTracker(
-        var date: LocalDate,
-        var basePrice: Double,
-        var open: Double,
-        var high: Double,
-        var low: Double,
-        var hasRegularTrading: Boolean,
-    )
 
     companion object {
         /** 장외·거래정지 봉을 제외한 최근 거래 시간봉을 종목별로 보존한다. */

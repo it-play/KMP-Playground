@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.instrument
 
-
 /** 대한민국 거주자의 일반 증권계좌를 기준으로 한 ETF 세무 분류. */
 enum class EtfTaxCategory(val displayName: String) {
     /** 국내 주식지수를 1:1로 추종하는 국내 상장 주식형 ETF. */

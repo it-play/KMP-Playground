@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.event
 
-
 enum class EventType(val displayName: String) {
     ECONOMIC_INDICATOR("경제지표"),
     CENTRAL_BANK("중앙은행·금리"),

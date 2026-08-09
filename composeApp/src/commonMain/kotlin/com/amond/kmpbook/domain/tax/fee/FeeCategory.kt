@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.tax.fee
 
-
 enum class FeeCategory(val displayName: String) {
     BROKER_COMMISSION("매매수수료"),
     FX_SPREAD("환전 스프레드"),

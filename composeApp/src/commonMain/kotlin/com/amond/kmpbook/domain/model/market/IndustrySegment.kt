@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.market
 
-
 /**
  * 넓은 [Sector] 안에서 실제 수익 구조가 다른 세부 산업이다.
  * 뉴스 분석과 가격 엔진이 같은 명시적 노출을 사용하므로 이름만 비슷한 종목에 영향이 번지지 않는다.

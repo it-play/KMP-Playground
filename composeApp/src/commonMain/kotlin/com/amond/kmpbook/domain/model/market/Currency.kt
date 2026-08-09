@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.market
 
-
 /** 게임에서 취급하는 결제 통화. 금액 반올림은 거래/세금 계산 계층이 담당한다. */
 enum class Currency(
     val displayName: String,

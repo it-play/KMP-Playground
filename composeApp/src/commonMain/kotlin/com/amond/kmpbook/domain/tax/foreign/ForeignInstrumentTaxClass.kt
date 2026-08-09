@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.tax.foreign
 
-
 /** Tax classification must not be inferred only from NASDAQ/NYSE listing venue. */
 enum class ForeignInstrumentTaxClass(val displayName: String) {
     US_COMMON_STOCK("미국 일반법인 보통주"),

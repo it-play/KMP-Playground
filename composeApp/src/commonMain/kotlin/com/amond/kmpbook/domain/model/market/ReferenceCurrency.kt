@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.market
 
-
 /** ETF 기초자산 통화 바스켓에 사용하는 참조통화. 현금 결제통화와는 별도다. */
 enum class ReferenceCurrency(val displayName: String) {
     KRW("원화"),

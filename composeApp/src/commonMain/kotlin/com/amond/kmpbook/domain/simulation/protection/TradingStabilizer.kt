@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.simulation.protection
 
-
 enum class TradingStabilizer {
     NONE,
     MARKET_CLOSED,

@@ -22,8 +22,8 @@ object StockCatalog {
         stock("000660", "SK하이닉스", "SK hynix", Market.KOSPI, Sector.SEMICONDUCTOR, 310_000.0, 0.36, 0.005, 225_000_000_000_000.0, 728_002_365L, 1.22, "HBM과 메모리 반도체를 중심으로 성장하는 글로벌 반도체 기업"),
         stock("373220", "LG에너지솔루션", "LG Energy Solution", Market.KOSPI, Sector.BATTERY, 390_000.0, 0.34, 0.0, 91_000_000_000_000.0, 234_000_000L, 1.18, "전기차와 에너지저장장치용 배터리를 생산하는 글로벌 배터리 기업"),
         stock("207940", "삼성바이오로직스", "Samsung Biologics", Market.KOSPI, Sector.HEALTHCARE_BIO, 1_200_000.0, 0.27, 0.001, 85_000_000_000_000.0, 71_174_000L, 0.84, "바이오의약품 위탁개발생산을 제공하는 대형 CDMO 기업"),
-        stock("005380", "현대차", "Hyundai Motor", Market.KOSPI, Sector.AUTOMOTIVE, 240_000.0, 0.29, 0.048, 50_000_000_000_000.0, 209_416_191L, 1.05, "내연기관·전기차·수소차를 생산하는 글로벌 완성차 기업"),
-        stock("105560", "KB금융", "KB Financial Group", Market.KOSPI, Sector.FINANCIALS, 110_000.0, 0.25, 0.032, 43_000_000_000_000.0, 393_528_423L, 0.88, "은행·증권·보험·카드를 보유한 대한민국 종합금융그룹"),
+        stock("005380", "현대차", "Hyundai Motor", Market.KOSPI, Sector.AUTOMOTIVE, 240_000.0, 0.29, 0.048, 50_000_000_000_000.0, 209_416_191L, 1.05, "내연기관·전기차·수소차를 생산하고 판매하는 글로벌 완성차 기업"),
+        stock("105560", "KB금융", "KB Financial Group", Market.KOSPI, Sector.FINANCIALS, 110_000.0, 0.25, 0.032, 43_000_000_000_000.0, 393_528_423L, 0.88, "은행·증권·보험·카드 자회사를 보유한 대한민국 종합금융지주회사"),
         stock("035420", "NAVER", "NAVER", Market.KOSPI, Sector.INTERNET_PLATFORM, 280_000.0, 0.33, 0.004, 44_000_000_000_000.0, 164_049_085L, 1.11, "검색·커머스·핀테크·콘텐츠와 AI 서비스를 운영하는 플랫폼 기업"),
         stock("068270", "셀트리온", "Celltrion", Market.KOSPI, Sector.HEALTHCARE_BIO, 195_000.0, 0.35, 0.004, 42_000_000_000_000.0, 216_993_223L, 0.91, "바이오시밀러 개발과 생산·판매를 영위하는 바이오제약 기업"),
         stock("005490", "POSCO홀딩스", "POSCO Holdings", Market.KOSPI, Sector.MATERIALS_CHEMICALS, 320_000.0, 0.31, 0.031, 27_000_000_000_000.0, 84_571_230L, 1.09, "철강을 기반으로 이차전지 소재와 친환경 인프라 사업을 확장하는 지주회사", setOf(IndustrySegment.CRITICAL_MINERALS)),
@@ -31,7 +31,7 @@ object StockCatalog {
 
         // KOSDAQ
         stock("196170", "알테오젠", "Alteogen", Market.KOSDAQ, Sector.HEALTHCARE_BIO, 490_000.0, 0.49, 0.0, 26_000_000_000_000.0, 53_240_000L, 1.28, "피하주사 제형변경 플랫폼과 바이오의약품 기술수출을 추진하는 바이오기업"),
-        stock("247540", "에코프로비엠", "EcoPro BM", Market.KOSDAQ, Sector.BATTERY, 130_000.0, 0.46, 0.0, 13_000_000_000_000.0, 97_801_344L, 1.51, "전기차 배터리용 하이니켈 양극재를 생산하는 소재기업"),
+        stock("247540", "에코프로비엠", "EcoPro BM", Market.KOSDAQ, Sector.BATTERY, 130_000.0, 0.46, 0.0, 13_000_000_000_000.0, 97_801_344L, 1.51, "전기차 배터리용 하이니켈 양극재를 생산하는 국내 배터리 소재기업"),
         stock("028300", "HLB", "HLB", Market.KOSDAQ, Sector.HEALTHCARE_BIO, 45_000.0, 0.58, 0.0, 6_000_000_000_000.0, 131_418_242L, 1.43, "항암 신약 개발과 바이오 사업을 수행하는 연구개발 중심 기업"),
         stock("277810", "레인보우로보틱스", "Rainbow Robotics", Market.KOSDAQ, Sector.ROBOTICS, 330_000.0, 0.52, 0.0, 6_500_000_000_000.0, 19_399_858L, 1.47, "협동로봇·휴머노이드·천문 마운트 기술을 개발하는 로봇기업"),
         stock("293490", "카카오게임즈", "Kakao Games", Market.KOSDAQ, Sector.GAMING, 18_000.0, 0.41, 0.0, 1_500_000_000_000.0, 82_750_000L, 1.29, "PC·모바일 게임 퍼블리싱과 개발 사업을 운영하는 게임기업", setOf(IndustrySegment.GAME_SOFTWARE)),
@@ -44,7 +44,7 @@ object StockCatalog {
         stock("AMZN", "아마존", "Amazon", Market.NASDAQ, Sector.RETAIL_ECOMMERCE, 240.0, 0.32, 0.0, 2_550_000_000_000.0, 10_600_000_000L, 1.31, "전자상거래·클라우드·광고·물류 사업을 운영하는 글로벌 플랫폼 기업"),
         stock("GOOGL", "알파벳 A", "Alphabet Class A", Market.NASDAQ, Sector.COMMUNICATION_SERVICES, 210.0, 0.29, 0.004, 2_560_000_000_000.0, 12_200_000_000L, 1.04, "검색·광고·유튜브·클라우드와 AI 연구를 운영하는 기술 지주회사"),
         stock("META", "메타 플랫폼스", "Meta Platforms", Market.NASDAQ, Sector.COMMUNICATION_SERVICES, 760.0, 0.36, 0.003, 1_920_000_000_000.0, 2_530_000_000L, 1.27, "소셜 네트워크·디지털 광고·AI와 혼합현실 플랫폼을 운영하는 기업"),
-        stock("TSLA", "테슬라", "Tesla", Market.NASDAQ, Sector.AUTOMOTIVE, 360.0, 0.57, 0.0, 1_160_000_000_000.0, 3_220_000_000L, 2.04, "전기차·에너지저장·충전·자율주행 기술을 개발하는 기업"),
+        stock("TSLA", "테슬라", "Tesla", Market.NASDAQ, Sector.AUTOMOTIVE, 360.0, 0.57, 0.0, 1_160_000_000_000.0, 3_220_000_000L, 2.04, "전기차·에너지저장·충전·자율주행 기술을 개발하는 미국 자동차기업"),
         stock("AVGO", "브로드컴", "Broadcom", Market.NASDAQ, Sector.SEMICONDUCTOR, 320.0, 0.38, 0.008, 1_500_000_000_000.0, 4_690_000_000L, 1.21, "네트워크 반도체와 인프라 소프트웨어를 공급하는 기술기업"),
 
         // NYSE
@@ -59,7 +59,7 @@ object StockCatalog {
 
         // NYSE American (구 AMEX)
         stock("UEC", "우라늄 에너지", "Uranium Energy Corp.", Market.NYSE_AMERICAN, Sector.ENERGY, 13.50, 0.55, 0.0, 4_800_000_000.0, 360_000_000L, 1.72, "미국 내 우라늄 탐사·개발과 생산 자산을 운영하는 에너지 기업"),
-        stock("CMT", "코어 몰딩 테크놀로지스", "Core Molding Technologies", Market.NYSE_AMERICAN, Sector.INDUSTRIALS, 18.00, 0.38, 0.0, 250_000_000.0, 13_900_000L, 1.16, "복합소재 성형 제품을 제조하는 미국 산업재 기업"),
+        stock("CMT", "코어 몰딩 테크놀로지스", "Core Molding Technologies", Market.NYSE_AMERICAN, Sector.INDUSTRIALS, 18.00, 0.38, 0.0, 250_000_000.0, 13_900_000L, 1.16, "자동차·중장비용 복합소재 성형 제품을 제조하는 미국 산업재 기업"),
         stock("KULR", "KULR 테크놀로지 그룹", "KULR Technology Group", Market.NYSE_AMERICAN, Sector.BATTERY, 4.50, 0.82, 0.0, 1_200_000_000.0, 270_000_000L, 2.08, "배터리 열관리·안전 기술과 에너지 저장 솔루션을 개발하는 기술기업"),
     )
 

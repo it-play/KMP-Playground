@@ -38,7 +38,7 @@ import com.amond.kmpbook.domain.model.market.Currency
 import com.amond.kmpbook.domain.model.portfolio.PortfolioSnapshot
 import com.amond.kmpbook.domain.simulation.market.ExternalMarketForces
 import com.amond.kmpbook.domain.simulation.market.MarketDynamicsSnapshot
-import com.amond.kmpbook.persistence.CURRENT_GAME_SAVE_SCHEMA_VERSION
+import com.amond.kmpbook.persistence.storage.CURRENT_GAME_SAVE_SCHEMA_VERSION
 import com.amond.kmpbook.ui.charts.LineAreaChart
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel

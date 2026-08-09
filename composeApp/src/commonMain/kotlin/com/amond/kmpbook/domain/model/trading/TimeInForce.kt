@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.trading
 
-
 enum class TimeInForce(val displayName: String) {
     DAY("당일 주문"),
     GOOD_TILL_CANCELLED("취소 전까지"),

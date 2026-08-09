@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.event
 
-
 /**
  * 분석 경로가 없는 종목에 스코프의 기본 충격을 적용할지를 결정한다.
  *

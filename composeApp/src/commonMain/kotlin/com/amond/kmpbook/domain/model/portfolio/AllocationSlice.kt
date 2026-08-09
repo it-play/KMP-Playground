@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.portfolio
 
-
 /** 원형 차트, 섹터/시장 비중 차트 등에 공통으로 쓰는 한 조각. */
 data class AllocationSlice(
     val key: String,
