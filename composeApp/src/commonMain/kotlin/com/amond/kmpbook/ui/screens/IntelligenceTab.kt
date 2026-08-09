@@ -84,8 +84,8 @@ import com.amond.kmpbook.ui.theme.MarketLayout
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
 
-internal enum class IntelligenceTab(val label: String) {
-    IMPACT("영향 경로"),
-    NEWS("관련 뉴스"),
-    STRUCTURE("상품 구조"),
+internal enum class IntelligenceTab(val label: String, val eyebrow: String) {
+    IMPACT("영향 경로", "WHY IT MOVES"),
+    NEWS("관련 뉴스", "CONNECTED SIGNALS"),
+    STRUCTURE("상품 구조", "INSTRUMENT PROFILE"),
 }
