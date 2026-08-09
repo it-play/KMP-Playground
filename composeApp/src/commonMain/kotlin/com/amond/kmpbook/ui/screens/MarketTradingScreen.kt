@@ -743,13 +743,15 @@ private fun StockChartPanel(
                         style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
                         color = MarketColors.Ink,
                     )
-                    Text(
-                        "상승 빨강 · 하락 파랑 · 이동평균 5/20",
-                        style = MarketType.caption,
-                        color = MarketColors.InkMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ChartLegendItem("상승", MarketColors.Rise)
+                        ChartLegendItem("하락", MarketColors.Fall)
+                        ChartLegendItem("MA5", MarketColors.Amber, line = true)
+                        ChartLegendItem("MA20", MarketColors.Primary, line = true)
+                    }
                 }
                 Spacer(Modifier.width(8.dp))
                 listOf("1일", "1주", "1개월", "3개월").forEach { item ->
@@ -791,6 +793,29 @@ private fun StockChartPanel(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ChartLegendItem(
+    label: String,
+    color: Color,
+    line: Boolean = false,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(
+            Modifier
+                .width(if (line) 10.dp else 7.dp)
+                .height(if (line) 2.dp else 7.dp)
+                .background(
+                    color = color,
+                    shape = RoundedCornerShape(if (line) MarketRadii.pill else 1.dp),
+                ),
+        )
+        Text(label, style = MarketType.caption, color = MarketColors.InkMuted)
     }
 }
 
