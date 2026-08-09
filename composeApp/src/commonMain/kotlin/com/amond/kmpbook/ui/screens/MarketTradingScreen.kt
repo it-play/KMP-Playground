@@ -1,5 +1,10 @@
 package com.amond.kmpbook.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
@@ -34,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -736,7 +743,7 @@ private fun StockChartPanel(
                 holding = holding,
                 relatedNews = relatedNews,
                 onOpenEvent = onOpenEvent,
-                modifier = Modifier.fillMaxWidth().height(260.dp),
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
@@ -751,6 +758,7 @@ private fun MarketIntelligenceDeck(
     modifier: Modifier,
 ) {
     var selectedTab by remember(stock.id) { mutableStateOf(IntelligenceTab.IMPACT) }
+    var isStructureExpanded by remember(stock.id) { mutableStateOf(false) }
     val signals = remember(relatedNews, stock) {
         relatedNews.mapNotNull { story -> story.signalFor(stock) }
     }
@@ -767,65 +775,105 @@ private fun MarketIntelligenceDeck(
         if (selectedTab != activeTab) selectedTab = activeTab
     }
 
-    Column(modifier.background(MarketColors.Grey50)) {
-        if (availableTabs.size == 1) {
-            SectionHeading(
-                title = activeTab.label,
-                eyebrow = activeTab.eyebrow,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-        } else {
-            Row(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
+    if (activeTab == IntelligenceTab.STRUCTURE) {
+        Column(modifier.background(MarketColors.Grey50)) {
+            AnimatedVisibility(
+                visible = isStructureExpanded,
+                enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+                exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "WHY IT MOVES",
-                        style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
-                        color = MarketColors.Signal,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                Column(Modifier.fillMaxWidth()) {
+                    IntelligenceDeckHeader(
+                        activeTab = activeTab,
+                        availableTabs = availableTabs,
+                        signalCount = signals.size,
+                        onTabSelected = { selectedTab = it },
                     )
-                    Text(
-                        "왜 움직이는가",
-                        style = MarketType.heading,
-                        color = MarketColors.Ink,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                availableTabs.forEach { tab ->
-                    IntelligenceTabButton(
-                        text = if (tab == IntelligenceTab.NEWS && signals.isNotEmpty()) {
-                            "${tab.label} ${signals.size}"
-                        } else {
-                            tab.label
-                        },
-                        selected = activeTab == tab,
-                        onClick = { selectedTab = tab },
+                    LedgerDivider()
+                    ProductStructurePanel(
+                        stock = stock,
+                        holding = holding,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
+            StructureBookmarkHandle(
+                expanded = isStructureExpanded,
+                onClick = { isStructureExpanded = !isStructureExpanded },
+            )
         }
-        LedgerDivider()
-        when (activeTab) {
-            IntelligenceTab.IMPACT -> ImpactPathPanel(
-                stock = stock,
-                signals = tracedSignals,
-                onOpenEvent = onOpenEvent,
-                modifier = Modifier.fillMaxSize(),
+    } else {
+        Column(modifier.height(260.dp).background(MarketColors.Grey50)) {
+            IntelligenceDeckHeader(
+                activeTab = activeTab,
+                availableTabs = availableTabs,
+                signalCount = signals.size,
+                onTabSelected = { selectedTab = it },
             )
-            IntelligenceTab.NEWS -> RelatedNewsPanel(
-                stock = stock,
-                signals = signals,
-                onOpenEvent = onOpenEvent,
-                modifier = Modifier.fillMaxSize(),
+            LedgerDivider()
+            when (activeTab) {
+                IntelligenceTab.IMPACT -> ImpactPathPanel(
+                    stock = stock,
+                    signals = tracedSignals,
+                    onOpenEvent = onOpenEvent,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                IntelligenceTab.NEWS -> RelatedNewsPanel(
+                    stock = stock,
+                    signals = signals,
+                    onOpenEvent = onOpenEvent,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                IntelligenceTab.STRUCTURE -> Unit
+            }
+        }
+    }
+}
+
+@Composable
+private fun IntelligenceDeckHeader(
+    activeTab: IntelligenceTab,
+    availableTabs: List<IntelligenceTab>,
+    signalCount: Int,
+    onTabSelected: (IntelligenceTab) -> Unit,
+) {
+    if (availableTabs.size == 1) {
+        SectionHeading(
+            title = activeTab.label,
+            eyebrow = activeTab.eyebrow,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+        return
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "WHY IT MOVES",
+                style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                color = MarketColors.Signal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            IntelligenceTab.STRUCTURE -> ProductStructurePanel(
-                stock = stock,
-                holding = holding,
-                modifier = Modifier.fillMaxSize(),
+            Text(
+                "왜 움직이는가",
+                style = MarketType.heading,
+                color = MarketColors.Ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        availableTabs.forEach { tab ->
+            IntelligenceTabButton(
+                text = if (tab == IntelligenceTab.NEWS && signalCount > 0) {
+                    "${tab.label} $signalCount"
+                } else {
+                    tab.label
+                },
+                selected = activeTab == tab,
+                onClick = { onTabSelected(tab) },
             )
         }
     }
@@ -1146,24 +1194,34 @@ private fun ProductStructurePanel(
         }
     }
     val structureFacts = buildList {
-        add(
-            "분류" to buildString {
-                append(stock.instrumentType.displayName)
-                stock.etfProfile?.let { append(" · ${it.assetClass.displayName}") }
-                append(" · ${stock.behavior.strategy.displayName}")
-            },
-        )
+        stock.etfProfile?.let { profile ->
+            add("자산·지역" to "${profile.assetClass.displayName} · ${profile.exposureRegion.displayName}")
+            add("운용 전략" to stock.behavior.strategy.displayName)
+            if (profile.leverage != 1.0) add("일일 목표" to "${formatRatio(profile.leverage)}배")
+            fxExposureLabel(stock)?.let { add("환 노출" to it) }
+        } ?: run {
+            add("산업·섹터" to stock.sector.displayName)
+            add("사업 구조" to stock.behavior.strategy.displayName)
+            if (stock.industrySegments.isNotEmpty()) {
+                add("세부 노출" to stock.industrySegments.joinToString(" · ") { it.displayName })
+            }
+        }
         add("핵심 위험" to stock.behavior.principalRisk.displayName)
         identity?.issuerOrManager?.takeIf(String::isNotBlank)?.let { add("운용·발행" to it) }
         identity?.distributionNotes?.takeIf(String::isNotBlank)?.let { add("분배 정책" to it) }
         if (contractFacts.isNotEmpty()) add("계약" to contractFacts.joinToString(" · "))
-        identity?.let { add("공식 확인" to "${it.legalName} · ${it.verifiedOn} 검증") }
+        identity?.let { add("확인 기준" to "${it.legalName} · ${it.verifiedOn}") }
     }
 
     Column(
         modifier = modifier.padding(horizontal = 16.dp, vertical = 9.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
+        ProductInfoLine(
+            label = "분류",
+            value = stock.structureClassification(),
+            maxLines = 1,
+        )
         if (holding != null) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -1203,7 +1261,7 @@ private fun ProductStructurePanel(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             structureFacts.chunked(2).forEach { facts ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                     facts.forEach { (label, value) ->
@@ -1214,6 +1272,56 @@ private fun ProductStructurePanel(
             }
         }
     }
+}
+
+@Composable
+private fun StructureBookmarkHandle(
+    expanded: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+        Box(
+            modifier = Modifier
+                .width(48.dp)
+                .height(28.dp)
+                .clickable(role = Role.Button, onClick = onClick)
+                .semantics {
+                    contentDescription = if (expanded) "상품 구조 상세 접기" else "상품 구조 상세 펼치기"
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .graphicsLayer { scaleY = if (expanded) 1f else -1f }
+                    .clip(StructureBookmarkShape)
+                    .background(MarketColors.Primary),
+            )
+            Text(
+                text = if (expanded) "↓" else "↑",
+                style = MarketType.label.copy(fontWeight = FontWeight.Bold),
+                color = Color.White,
+            )
+        }
+    }
+}
+
+private val StructureBookmarkShape = GenericShape { size, _ ->
+    moveTo(0f, 0f)
+    lineTo(size.width, 0f)
+    lineTo(size.width, size.height)
+    lineTo(size.width / 2f, size.height * 0.72f)
+    lineTo(0f, size.height)
+    close()
+}
+
+private fun StockDefinition.structureClassification(): String = when (instrumentType) {
+    InstrumentType.STOCK -> "사업회사"
+    InstrumentType.ETF -> "ETF"
+    InstrumentType.CLOSED_END_FUND -> "CEF"
+    InstrumentType.ETN -> "ETN"
+    InstrumentType.REIT -> "REIT"
+    InstrumentType.ADR -> "ADR"
 }
 
 @Composable
@@ -1347,7 +1455,7 @@ private fun InstrumentMetricsPanel(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "시뮬레이션 · TTM/최근 산출",
+                    "TTM/최근 산출",
                     style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
                     color = MarketColors.InkMuted,
                 )
