@@ -440,6 +440,7 @@ private fun ScreenContent(
             upcomingEvents = state.upcomingScheduledEvents,
             onOpenStock = openStock,
             onEventViewed = viewModel::markEventRead,
+            onMarkAllEventsRead = viewModel::markAllEventsRead,
             filterState = eventNewsFilterState,
             onFilterStateChange = { eventNewsFilterState = it },
         )

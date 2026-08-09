@@ -645,6 +645,10 @@ internal class SimulatorRuntime(
         if (newsEvents.any { it.id == eventId }) readEventIds += eventId
     }
 
+    fun markAllEventsRead() {
+        newsEvents.forEach { event -> readEventIds += event.id }
+    }
+
     fun toggleWatchlist(stockId: String): Boolean {
         if (stockId !in stockById) return fail("존재하지 않는 종목입니다.")
         val added = if (stockId in watchlistedStockIds) {

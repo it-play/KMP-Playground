@@ -53,6 +53,8 @@ import com.amond.kmpbook.presentation.NewsStoryUi
 import com.amond.kmpbook.presentation.NewsUiProjection
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
+import com.amond.kmpbook.ui.components.MarketButton
+import com.amond.kmpbook.ui.components.MarketButtonVariant
 import com.amond.kmpbook.ui.components.StatusLabel
 import com.amond.kmpbook.ui.format.formatDateTimeKst
 import com.amond.kmpbook.ui.theme.MarketColors
@@ -73,6 +75,7 @@ internal fun EventsScreen(
     upcomingEvents: List<ScheduledEventOccurrence> = emptyList(),
     onOpenStock: (String) -> Unit = {},
     onEventViewed: (String) -> Unit = {},
+    onMarkAllEventsRead: () -> Unit = {},
     filterState: EventNewsFilterState,
     onFilterStateChange: (EventNewsFilterState) -> Unit,
 ) {
@@ -103,6 +106,8 @@ internal fun EventsScreen(
             operationalActiveCount = projection.operationalActiveCount,
             personalCount = projection.personalCount,
             upcomingCount = upcomingEvents.size,
+            unreadCount = projection.stories.count(NewsStoryUi::isUnread),
+            onMarkAllEventsRead = onMarkAllEventsRead,
             onSelectTab = { tab ->
                 onFilterStateChange(
                     filterState.copy(tab = tab, groupKey = null, selectedEventId = null),
@@ -145,6 +150,8 @@ private fun NewsHeader(
     operationalActiveCount: Int,
     personalCount: Int,
     upcomingCount: Int,
+    unreadCount: Int,
+    onMarkAllEventsRead: () -> Unit,
     onSelectTab: (NewsBrowseTab) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(MarketSpacing.sm)) {
@@ -167,6 +174,7 @@ private fun NewsHeader(
         Row(
             Modifier.fillMaxWidth().selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(MarketSpacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             NewsBrowseTab.entries.forEach { tab ->
                 NewsTab(
@@ -175,6 +183,18 @@ private fun NewsHeader(
                     onClick = { onSelectTab(tab) },
                 )
             }
+            Spacer(Modifier.weight(1f))
+            Text(
+                "미읽음 ${unreadCount}건",
+                style = MarketType.caption,
+                color = MarketColors.InkMuted,
+            )
+            MarketButton(
+                text = "알림 모두 읽음",
+                onClick = onMarkAllEventsRead,
+                enabled = unreadCount > 0,
+                variant = MarketButtonVariant.Weak,
+            )
         }
     }
 }

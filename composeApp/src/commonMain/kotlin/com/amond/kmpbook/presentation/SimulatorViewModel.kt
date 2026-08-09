@@ -112,6 +112,11 @@ class SimulatorViewModel(
         publish()
     }
 
+    fun markAllEventsRead() {
+        runtime.markAllEventsRead()
+        publish()
+    }
+
     fun toggleWatchlist(stockId: String): Boolean {
         val added = runtime.toggleWatchlist(stockId)
         publish()
