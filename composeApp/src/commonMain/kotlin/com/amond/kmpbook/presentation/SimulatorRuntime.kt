@@ -1585,8 +1585,16 @@ internal class SimulatorRuntime(
             } else {
                 0.0
             }
+            val closedFundAccrualReturn = if (stock.isFundLike) {
+                priceEngine.fundAccrualLogReturn(
+                    stock,
+                    (ordinaryFraction - fairValueFraction).coerceIn(0.0, 1.0),
+                )
+            } else {
+                0.0
+            }
             val closedReferenceCarry = if (stock.isFundLike) {
-                closedFairValueReturn + closedReferenceEventReturn
+                closedFairValueReturn + closedReferenceEventReturn + closedFundAccrualReturn
             } else {
                 0.0
             }
