@@ -14,10 +14,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.amond.kmpbook.domain.simulation.ExternalMarketForces
 import com.amond.kmpbook.presentation.NewGameOptions
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
@@ -40,15 +44,11 @@ import com.amond.kmpbook.ui.components.MarketButtonVariant
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
+import kotlin.math.roundToInt
 
 @Composable
 fun NewGameScreen(
-    onStart: (
-        initialCapitalKrw: Double,
-        seed: Long,
-        fractionalUsTrading: Boolean,
-        autoExchange: Boolean,
-    ) -> Unit,
+    onStart: (NewGameOptions) -> Unit,
     hasSavedGame: Boolean = false,
     onLoadSavedGame: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -57,6 +57,7 @@ fun NewGameScreen(
     var seedText by remember { mutableStateOf(NewGameOptions.DEFAULT_SEED.toString()) }
     var fractional by remember { mutableStateOf(false) }
     var autoExchange by remember { mutableStateOf(true) }
+    var externalForces by remember { mutableStateOf(ExternalMarketForces()) }
     var error by remember { mutableStateOf<String?>(null) }
 
     Row(modifier.fillMaxSize().background(MarketColors.Ledger)) {
@@ -118,11 +119,11 @@ fun NewGameScreen(
         }
 
         Box(
-            modifier = Modifier.weight(0.92f).fillMaxHeight().padding(44.dp),
+            modifier = Modifier.weight(0.92f).fillMaxHeight().padding(32.dp),
             contentAlignment = Alignment.Center,
         ) {
-            LedgerPanel(modifier = Modifier.width(450.dp), padding = 28.dp) {
-                Column {
+            LedgerPanel(modifier = Modifier.width(500.dp).fillMaxHeight(), padding = 28.dp) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                     Text(
                         "새 투자 계정",
                         style = MarketType.display.copy(fontSize = 28.sp),
@@ -180,6 +181,63 @@ fun NewGameScreen(
                         detail = "USD 부족분만 환전 스프레드를 반영",
                     )
 
+                    Spacer(Modifier.height(12.dp))
+                    LedgerDivider()
+                    Spacer(Modifier.height(14.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            FormLabel("초기 시장 환경")
+                            Text(
+                                "시작 상태에 즉시 반영되며, 진행 중 변경은 서서히 반영됩니다.",
+                                style = MarketType.caption,
+                                color = MarketColors.InkMuted,
+                            )
+                        }
+                        Text(
+                            "0 — 100",
+                            style = MarketType.number,
+                            color = MarketColors.Primary,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    NewGameForceSlider(
+                        title = "카오스",
+                        detail = "변동성과 뉴스 혼선",
+                        value = externalForces.chaos,
+                        onValueChange = { externalForces = externalForces.copy(chaos = it) },
+                    )
+                    NewGameForceSlider(
+                        title = "세계 긴장",
+                        detail = "전쟁·지정학 위험",
+                        value = externalForces.worldTension,
+                        onValueChange = { externalForces = externalForces.copy(worldTension = it) },
+                    )
+                    NewGameForceSlider(
+                        title = "개인 투자력",
+                        detail = "개인 투자자 수급",
+                        value = externalForces.retailBuyingPower,
+                        onValueChange = { externalForces = externalForces.copy(retailBuyingPower = it) },
+                    )
+                    NewGameForceSlider(
+                        title = "기관 투자력",
+                        detail = "기관 투자자 수급",
+                        value = externalForces.institutionalBuyingPower,
+                        onValueChange = { externalForces = externalForces.copy(institutionalBuyingPower = it) },
+                    )
+                    NewGameForceSlider(
+                        title = "시장 유동성",
+                        detail = "주문 흡수와 체결 깊이",
+                        value = externalForces.marketLiquidity,
+                        onValueChange = { externalForces = externalForces.copy(marketLiquidity = it) },
+                    )
+                    NewGameForceSlider(
+                        title = "경기 모멘텀",
+                        detail = "성장·실적의 기초 체력",
+                        value = externalForces.economicMomentum,
+                        onValueChange = { externalForces = externalForces.copy(economicMomentum = it) },
+                    )
+                    Spacer(Modifier.height(8.dp))
+
                     if (error != null) {
                         Text(
                             error.orEmpty(),
@@ -204,7 +262,15 @@ fun NewGameScreen(
                                 seed == null -> error = "시장 시드를 정수로 입력하세요."
                                 else -> {
                                     error = null
-                                    onStart(capital, seed, fractional, autoExchange)
+                                    onStart(
+                                        NewGameOptions(
+                                            initialCapitalKrw = capital,
+                                            seed = seed,
+                                            usFractionalTrading = fractional,
+                                            autoExchange = autoExchange,
+                                            initialExternalMarketForces = externalForces,
+                                        ),
+                                    )
                                 }
                             }
                         },
@@ -225,6 +291,7 @@ fun NewGameScreen(
                             seedText = NewGameOptions.DEFAULT_SEED.toString()
                             fractional = false
                             autoExchange = true
+                            externalForces = ExternalMarketForces()
                             error = null
                         },
                         modifier = Modifier.align(Alignment.CenterHorizontally),
@@ -234,6 +301,39 @@ fun NewGameScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun NewGameForceSlider(
+    title: String,
+    detail: String,
+    value: Double,
+    onValueChange: (Double) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                title,
+                style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                color = MarketColors.Ink,
+            )
+            Spacer(Modifier.width(7.dp))
+            Text(detail, style = MarketType.caption, color = MarketColors.InkMuted)
+            Spacer(Modifier.weight(1f))
+            Text(
+                (value * 100.0).roundToInt().toString(),
+                style = MarketType.number,
+                color = MarketColors.Primary,
+            )
+        }
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onValueChange(it.toDouble()) },
+            modifier = Modifier.fillMaxWidth().height(28.dp),
+            valueRange = 0f..1f,
+            steps = 99,
+        )
     }
 }
 

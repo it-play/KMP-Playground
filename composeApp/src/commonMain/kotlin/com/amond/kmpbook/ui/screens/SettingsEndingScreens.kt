@@ -13,10 +13,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amond.kmpbook.domain.model.Currency
 import com.amond.kmpbook.domain.model.PortfolioSnapshot
+import com.amond.kmpbook.domain.simulation.ExternalMarketForces
+import com.amond.kmpbook.domain.simulation.MarketDynamicsSnapshot
 import com.amond.kmpbook.persistence.CURRENT_GAME_SAVE_SCHEMA_VERSION
 import com.amond.kmpbook.ui.charts.LineAreaChart
 import com.amond.kmpbook.ui.components.LedgerDivider
@@ -51,6 +56,8 @@ import com.amond.kmpbook.ui.theme.MarketComponentSize
 import com.amond.kmpbook.ui.theme.MarketLayout
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
+import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 data class GameSettingsDisplay(
     val initialCapitalKrw: Double,
@@ -60,12 +67,15 @@ data class GameSettingsDisplay(
     val usdKrw: Double,
     val cashKrw: Double,
     val cashUsd: Double,
+    val externalMarketForcesTarget: ExternalMarketForces,
+    val marketDynamicsSnapshot: MarketDynamicsSnapshot,
 )
 
 @Composable
 fun SettingsScreen(
     settings: GameSettingsDisplay,
     onAutoExchangeChanged: (Boolean) -> Unit,
+    onExternalMarketForcesChanged: (ExternalMarketForces) -> Unit,
     onExchangeKrwToUsd: (Double) -> Unit,
     onExchangeUsdToKrw: (Double) -> Unit,
     hasSavedGame: Boolean,
@@ -82,7 +92,10 @@ fun SettingsScreen(
     var resetArmed by remember { mutableStateOf(false) }
     var deleteArmed by remember { mutableStateOf(false) }
     Column(
-        modifier.fillMaxSize().padding(MarketLayout.screenPadding),
+        modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(MarketLayout.screenPadding),
         verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
     ) {
         LedgerPanel(Modifier.fillMaxWidth().height(160.dp), padding = 16.dp) {
@@ -118,8 +131,14 @@ fun SettingsScreen(
                 )
             }
         }
+        ExternalMarketForcesPanel(
+            target = settings.externalMarketForcesTarget,
+            snapshot = settings.marketDynamicsSnapshot,
+            onChanged = onExternalMarketForcesChanged,
+            modifier = Modifier.fillMaxWidth().height(338.dp),
+        )
         Row(
-            Modifier.fillMaxWidth().weight(1f),
+            Modifier.fillMaxWidth().height(560.dp),
             horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
         ) {
             Column(
@@ -343,6 +362,217 @@ fun SettingsScreen(
             )
         }
     }
+}
+
+@Composable
+private fun ExternalMarketForcesPanel(
+    target: ExternalMarketForces,
+    snapshot: MarketDynamicsSnapshot,
+    onChanged: (ExternalMarketForces) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var draft by remember(target) { mutableStateOf(target) }
+    LedgerPanel(modifier, padding = 16.dp) {
+        Column(Modifier.fillMaxSize()) {
+            SectionHeading(
+                title = "시장 동역학",
+                eyebrow = "EXTERNAL FORCES · TARGET → EFFECTIVE",
+                action = {
+                    StatusLabel(
+                        text = snapshot.dominantRegimeLabel(),
+                        color = when (snapshot.dominantRegimeLabel()) {
+                            "위기 국면" -> MarketColors.Rise
+                            "스트레스 국면" -> MarketColors.Amber
+                            "안정 국면" -> MarketColors.Positive
+                            else -> MarketColors.Primary
+                        },
+                        strong = true,
+                    )
+                },
+            )
+            Spacer(Modifier.height(9.dp))
+            Text(
+                "슬라이더는 목표 환경입니다. 실효값은 충격의 관성과 유동성을 반영해 서서히 이동합니다.",
+                style = MarketType.caption,
+                color = MarketColors.InkMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                Column(Modifier.weight(1f)) {
+                    ExternalForceSetting(
+                        title = "카오스",
+                        detail = "변동성·뉴스 혼선",
+                        target = draft.chaos,
+                        effective = snapshot.effectiveForces.chaos,
+                        onValueChange = { draft = draft.copy(chaos = it) },
+                        onValueChangeFinished = { onChanged(draft) },
+                    )
+                    ExternalForceSetting(
+                        title = "세계 긴장",
+                        detail = "전쟁·지정학 위험",
+                        target = draft.worldTension,
+                        effective = snapshot.effectiveForces.worldTension,
+                        onValueChange = { draft = draft.copy(worldTension = it) },
+                        onValueChangeFinished = { onChanged(draft) },
+                    )
+                    ExternalForceSetting(
+                        title = "개인 투자력",
+                        detail = "개인 투자자 수급",
+                        target = draft.retailBuyingPower,
+                        effective = snapshot.effectiveForces.retailBuyingPower,
+                        onValueChange = { draft = draft.copy(retailBuyingPower = it) },
+                        onValueChangeFinished = { onChanged(draft) },
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    ExternalForceSetting(
+                        title = "기관 투자력",
+                        detail = "기관 투자자 수급",
+                        target = draft.institutionalBuyingPower,
+                        effective = snapshot.effectiveForces.institutionalBuyingPower,
+                        onValueChange = { draft = draft.copy(institutionalBuyingPower = it) },
+                        onValueChangeFinished = { onChanged(draft) },
+                    )
+                    ExternalForceSetting(
+                        title = "시장 유동성",
+                        detail = "주문 흡수와 체결 깊이",
+                        target = draft.marketLiquidity,
+                        effective = snapshot.effectiveForces.marketLiquidity,
+                        onValueChange = { draft = draft.copy(marketLiquidity = it) },
+                        onValueChangeFinished = { onChanged(draft) },
+                    )
+                    ExternalForceSetting(
+                        title = "경기 모멘텀",
+                        detail = "성장·실적 기초 체력",
+                        target = draft.economicMomentum,
+                        effective = snapshot.effectiveForces.economicMomentum,
+                        onValueChange = { draft = draft.copy(economicMomentum = it) },
+                        onValueChangeFinished = { onChanged(draft) },
+                    )
+                }
+                Column(
+                    Modifier
+                        .width(286.dp)
+                        .fillMaxHeight()
+                        .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.small))
+                        .padding(13.dp),
+                ) {
+                    Text(
+                        "현재 엔진 상태",
+                        style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                        color = MarketColors.Ink,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    DynamicsMetric("조건부 변동성", formatMultiplier(sqrt(snapshot.conditionalVariance)))
+                    DynamicsMetric("뉴스 강도", formatMultiplier(snapshot.newsIntensity))
+                    DynamicsMetric("유동성 스트레스", formatForcePercent(snapshot.liquidityStress))
+                    DynamicsMetric(
+                        "개인 수급",
+                        formatSignedPercent(snapshot.retailFlow),
+                        flowColor(snapshot.retailFlow),
+                    )
+                    DynamicsMetric(
+                        "기관 수급",
+                        formatSignedPercent(snapshot.institutionalFlow),
+                        flowColor(snapshot.institutionalFlow),
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "위기 확률 ${formatForcePercent(snapshot.regimeProbabilities.crisis)}",
+                        style = MarketType.caption,
+                        color = MarketColors.InkMuted,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExternalForceSetting(
+    title: String,
+    detail: String,
+    target: Double,
+    effective: Double,
+    onValueChange: (Double) -> Unit,
+    onValueChangeFinished: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                title,
+                style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                color = MarketColors.Ink,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(detail, style = MarketType.caption, color = MarketColors.InkMuted)
+            Spacer(Modifier.weight(1f))
+            Text(
+                "목표 ${formatForceValue(target)}",
+                style = MarketType.number,
+                color = MarketColors.Primary,
+            )
+            Spacer(Modifier.width(7.dp))
+            Text(
+                "실효 ${formatForceValue(effective)}",
+                style = MarketType.caption,
+                color = MarketColors.InkMuted,
+            )
+        }
+        Slider(
+            value = target.toFloat(),
+            onValueChange = { onValueChange(it.toDouble()) },
+            modifier = Modifier.fillMaxWidth().height(30.dp),
+            valueRange = 0f..1f,
+            steps = 99,
+            onValueChangeFinished = onValueChangeFinished,
+        )
+    }
+}
+
+@Composable
+private fun DynamicsMetric(
+    label: String,
+    value: String,
+    color: Color = MarketColors.Ink,
+) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MarketType.caption, color = MarketColors.InkMuted)
+        Spacer(Modifier.weight(1f))
+        Text(value, style = MarketType.number, color = color)
+    }
+}
+
+private fun MarketDynamicsSnapshot.dominantRegimeLabel(): String {
+    val regimes = regimeProbabilities
+    return when (maxOf(regimes.calm, regimes.balanced, regimes.stress, regimes.crisis)) {
+        regimes.calm -> "안정 국면"
+        regimes.stress -> "스트레스 국면"
+        regimes.crisis -> "위기 국면"
+        else -> "균형 국면"
+    }
+}
+
+private fun formatForceValue(value: Double): String = (value * 100.0).roundToInt().toString()
+
+private fun formatForcePercent(value: Double): String = "${formatForceValue(value)}%"
+
+private fun formatMultiplier(value: Double): String = "${(value * 10.0).roundToInt() / 10.0}×"
+
+private fun formatSignedPercent(value: Double): String {
+    val percent = (value * 100.0).roundToInt()
+    return "${if (percent > 0) "+" else ""}$percent%"
+}
+
+private fun flowColor(value: Double): Color = when {
+    value > 0.005 -> MarketColors.Rise
+    value < -0.005 -> MarketColors.Fall
+    else -> MarketColors.InkMuted
 }
 
 @Composable

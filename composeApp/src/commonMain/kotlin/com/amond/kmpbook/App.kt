@@ -43,7 +43,6 @@ import com.amond.kmpbook.persistence.GameSavePresenceResult
 import com.amond.kmpbook.persistence.GameSaveResult
 import com.amond.kmpbook.persistence.GameSaveStorage
 import com.amond.kmpbook.presentation.InstrumentMetricsProjection
-import com.amond.kmpbook.presentation.NewGameOptions
 import com.amond.kmpbook.presentation.ProtectionUiProjection
 import com.amond.kmpbook.presentation.SimulatorUiState
 import com.amond.kmpbook.presentation.SimulatorViewModel
@@ -148,16 +147,7 @@ fun App() {
     MarketSimulatorTheme {
         when (state.phase) {
             GamePhase.SETUP -> NewGameScreen(
-                onStart = { capital, seed, fractional, autoExchange ->
-                    viewModel.newGame(
-                        NewGameOptions(
-                            initialCapitalKrw = capital,
-                            seed = seed,
-                            usFractionalTrading = fractional,
-                            autoExchange = autoExchange,
-                        ),
-                    )
-                },
+                onStart = viewModel::newGame,
                 hasSavedGame = hasSavedGame,
                 onLoadSavedGame = loadGame,
             )
@@ -468,8 +458,11 @@ private fun ScreenContent(
                 usdKrw = state.macro.usdKrw,
                 cashKrw = state.cashByCurrency[Currency.KRW] ?: 0.0,
                 cashUsd = state.cashByCurrency[Currency.USD] ?: 0.0,
+                externalMarketForcesTarget = state.externalMarketForcesTarget,
+                marketDynamicsSnapshot = state.marketDynamicsSnapshot,
             ),
             onAutoExchangeChanged = viewModel::setAutoExchange,
+            onExternalMarketForcesChanged = viewModel::setExternalMarketForces,
             onExchangeKrwToUsd = { viewModel.exchange(Currency.KRW, Currency.USD, it) },
             onExchangeUsdToKrw = { viewModel.exchange(Currency.USD, Currency.KRW, it) },
             hasSavedGame = hasSavedGame,
