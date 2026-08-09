@@ -149,17 +149,15 @@ class MarketIndexEngine {
     }
 
     /**
-     * 직전 종가 시점의 시가총액을 가중치로 고정한 뒤 각 endpoint를
-     * `Σ(wᵢ×priceᵢ/previousCloseᵢ)/Σwᵢ`로 계산한다. 이로써 시가 갭과
-     * 시간 봉의 고가·저가·종가가 모두 같은 시가총액 가중 원리를 따른다.
+     * 직전 종가 시점의 시가총액을 가중치로 고정해 동시 관측 가능한 시가·종가 지수점을
+     * 계산한다. 종목별 고가·저가는 각기 다른 시각의 값이므로 합산하지 않고, 두 지수점의
+     * 범위를 시간봉 고가·저가로 사용해 존재하지 않았던 시장 전체 극값을 만들지 않는다.
      */
     private fun marketCapWeightedInterval(
         input: MarketIndexCalculationInput,
         include: (StockDefinition) -> Boolean,
     ): IndexIntervalCalculation {
         var weightedOpenFactor = 0.0
-        var weightedHighFactor = 0.0
-        var weightedLowFactor = 0.0
         var weightedCloseFactor = 0.0
         var totalWeight = 0.0
         var constituentCount = 0
@@ -170,29 +168,27 @@ class MarketIndexEngine {
             val previousClose = input.previousCloseByStockId[stock.id] ?: bar.open
             if (previousClose <= 0.0) return@forEach
             weightedOpenFactor += stock.marketCap * bar.open / previousClose
-            weightedHighFactor += stock.marketCap * bar.high / previousClose
-            weightedLowFactor += stock.marketCap * bar.low / previousClose
             weightedCloseFactor += stock.marketCap * bar.close / previousClose
             totalWeight += stock.marketCap
             constituentCount += 1
         }
 
         if (totalWeight == 0.0) return IndexIntervalCalculation.neutral()
+        val openFactor = weightedOpenFactor / totalWeight
+        val closeFactor = weightedCloseFactor / totalWeight
         return IndexIntervalCalculation(
-            openFactor = weightedOpenFactor / totalWeight,
-            highFactor = weightedHighFactor / totalWeight,
-            lowFactor = weightedLowFactor / totalWeight,
-            closeFactor = weightedCloseFactor / totalWeight,
+            openFactor = openFactor,
+            highFactor = max(openFactor, closeFactor),
+            lowFactor = min(openFactor, closeFactor),
+            closeFactor = closeFactor,
             constituentCount = constituentCount,
         )
     }
 
-    /** DJIA 30 스냅샷과 게임 개별주의 교집합에 대해 각 endpoint의 Σprice/ΣpreviousClose를 적용한다. */
+    /** DJIA 30 교집합의 동시 관측 가능한 시가·종가에 Σprice/ΣpreviousClose를 적용한다. */
     private fun priceWeightedDowInterval(input: MarketIndexCalculationInput): IndexIntervalCalculation {
         var previousCloseSum = 0.0
         var openPriceSum = 0.0
-        var highPriceSum = 0.0
-        var lowPriceSum = 0.0
         var closePriceSum = 0.0
         var constituentCount = 0
 
@@ -205,18 +201,18 @@ class MarketIndexEngine {
             if (previousClose <= 0.0) return@forEach
             previousCloseSum += previousClose
             openPriceSum += bar.open
-            highPriceSum += bar.high
-            lowPriceSum += bar.low
             closePriceSum += bar.close
             constituentCount += 1
         }
 
         if (previousCloseSum == 0.0) return IndexIntervalCalculation.neutral()
+        val openFactor = openPriceSum / previousCloseSum
+        val closeFactor = closePriceSum / previousCloseSum
         return IndexIntervalCalculation(
-            openFactor = openPriceSum / previousCloseSum,
-            highFactor = highPriceSum / previousCloseSum,
-            lowFactor = lowPriceSum / previousCloseSum,
-            closeFactor = closePriceSum / previousCloseSum,
+            openFactor = openFactor,
+            highFactor = max(openFactor, closeFactor),
+            lowFactor = min(openFactor, closeFactor),
+            closeFactor = closeFactor,
             constituentCount = constituentCount,
         )
     }
