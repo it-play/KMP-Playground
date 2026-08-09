@@ -310,6 +310,7 @@ private fun NewsListPanel(
                             selected = story.event.id == selectedId,
                             onClick = { onSelect(story.event.id) },
                         )
+                        LedgerDivider()
                     }
                 }
             }
@@ -411,7 +412,6 @@ private fun NewsStoryRow(story: NewsStoryUi, selected: Boolean, onClick: () -> U
                 }
             }
         }
-        LedgerDivider()
     }
 }
 
