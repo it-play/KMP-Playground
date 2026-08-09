@@ -790,11 +790,7 @@ private fun MarketIntelligenceDeck(
                         onTabSelected = { selectedTab = it },
                     )
                     LedgerDivider()
-                    ProductStructurePanel(
-                        stock = stock,
-                        holding = holding,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    ProductStructurePanel(stock, holding, Modifier.fillMaxWidth())
                 }
             }
             StructureBookmarkHandle(
