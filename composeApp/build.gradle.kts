@@ -39,6 +39,7 @@ kotlin {
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.datetime)
+            implementation(libs.lucide.icons)
         }
         val desktopMain by getting
         desktopMain.dependencies {

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -62,17 +63,26 @@ import com.amond.kmpbook.ui.theme.MarketMotion
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketSpacing
 import com.amond.kmpbook.ui.theme.MarketType
+import com.composables.icons.lucide.ChartCandlestick
+import com.composables.icons.lucide.ChartNoAxesCombined
+import com.composables.icons.lucide.ChartPie
+import com.composables.icons.lucide.ClipboardList
+import com.composables.icons.lucide.LayoutDashboard
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Newspaper
+import com.composables.icons.lucide.ReceiptText
+import com.composables.icons.lucide.SlidersHorizontal
 import kotlin.time.Instant
 
 private val navigationItems = listOf(
-    NavigationItem(Screen.HOME, "상황판", "홈"),
-    NavigationItem(Screen.MARKET, "시장·종목", "시"),
-    NavigationItem(Screen.ORDER, "주문·체결", "주"),
-    NavigationItem(Screen.PORTFOLIO, "포트폴리오", "자"),
-    NavigationItem(Screen.EVENTS, "뉴스·이벤트", "뉴"),
-    NavigationItem(Screen.ANALYTICS, "투자 분석", "분"),
-    NavigationItem(Screen.TAX_REPORT, "세금 센터", "세"),
-    NavigationItem(Screen.SETTINGS, "설정", "설"),
+    NavigationItem(Screen.HOME, "상황판", Lucide.LayoutDashboard),
+    NavigationItem(Screen.MARKET, "시장·종목", Lucide.ChartCandlestick),
+    NavigationItem(Screen.ORDER, "주문·체결", Lucide.ClipboardList),
+    NavigationItem(Screen.PORTFOLIO, "포트폴리오", Lucide.ChartPie),
+    NavigationItem(Screen.EVENTS, "뉴스·이벤트", Lucide.Newspaper),
+    NavigationItem(Screen.ANALYTICS, "투자 분석", Lucide.ChartNoAxesCombined),
+    NavigationItem(Screen.TAX_REPORT, "세금 센터", Lucide.ReceiptText),
+    NavigationItem(Screen.SETTINGS, "설정", Lucide.SlidersHorizontal),
 )
 
 @Composable
@@ -186,10 +196,11 @@ private fun SidebarItem(
                 .background(markerBackground, RoundedCornerShape(MarketRadii.small)),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                item.marker,
-                style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
-                color = if (selected) Color.White else MarketColors.Grey400,
+            Icon(
+                imageVector = item.icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = if (selected) Color.White else MarketColors.Grey400,
             )
         }
         Spacer(Modifier.width(MarketSpacing.sm))
