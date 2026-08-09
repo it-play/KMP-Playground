@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,7 +29,10 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -270,7 +274,7 @@ fun SimulationClockRail(
                     maxLines = 1,
                 )
                 Text(
-                    "TURN ${turn.toString().padStart(6, '0')}",
+                    "TURN $turn",
                     style = MarketType.caption.copy(
                         fontWeight = FontWeight.SemiBold,
                         fontFeatureSettings = "tnum",
@@ -314,10 +318,10 @@ fun SimulationClockRail(
                     StepButton(step, step == selectedStep) { onStepSelected(step) }
                 }
                 MarketButton(
-                    text = "${selectedStep.displayName} 진행  →",
+                    text = "턴 진행",
                     onClick = onAdvance,
                     enabled = canAdvance,
-                    modifier = Modifier.width(190.dp),
+                    modifier = Modifier.width(148.dp),
                 )
             }
         }
@@ -332,19 +336,75 @@ private fun StepButton(step: TurnStep, selected: Boolean, onClick: () -> Unit) {
     )
     Box(
         modifier = Modifier
-            .width(52.dp)
+            .width(48.dp)
             .height(MarketComponentSize.minimumInteractiveTarget)
             .background(background, RoundedCornerShape(MarketRadii.small))
+            .border(
+                width = 1.dp,
+                color = if (selected) MarketColors.Primary.copy(alpha = 0.34f) else Color.Transparent,
+                shape = RoundedCornerShape(MarketRadii.small),
+            )
+            .semantics {
+                contentDescription = "${step.displayName} 진행 간격${if (selected) ", 선택됨" else ""}"
+            }
             .selectable(selected = selected, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            if (selected) "✓${step.displayName}" else step.displayName,
-            style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+        TurnStepMarker(
+            step = step,
             color = if (selected) MarketColors.Primary else MarketColors.InkMuted,
-            maxLines = 1,
-            overflow = TextOverflow.Clip,
         )
+    }
+}
+
+@Composable
+private fun TurnStepMarker(step: TurnStep, color: Color) {
+    val (arrowCount, hasBoundary) = when (step) {
+        TurnStep.ONE_HOUR -> 1 to false
+        TurnStep.FOUR_HOURS -> 2 to false
+        TurnStep.TWELVE_HOURS -> 3 to false
+        TurnStep.ONE_DAY -> 1 to true
+        TurnStep.ONE_WEEK -> 2 to true
+    }
+    Canvas(Modifier.size(width = 28.dp, height = 18.dp)) {
+        val arrowWidth = 5.dp.toPx()
+        val gap = 2.5.dp.toPx()
+        val stroke = 2.dp.toPx()
+        val groupWidth = arrowCount * arrowWidth + (arrowCount - 1) * gap
+        val boundaryGap = if (hasBoundary) 3.dp.toPx() else 0f
+        val boundaryWidth = if (hasBoundary) stroke else 0f
+        val startX = (size.width - groupWidth - boundaryGap - boundaryWidth) / 2f
+        val top = 3.dp.toPx()
+        val bottom = size.height - top
+        val centerY = size.height / 2f
+
+        repeat(arrowCount) { index ->
+            val x = startX + index * (arrowWidth + gap)
+            drawLine(
+                color = color,
+                start = Offset(x, top),
+                end = Offset(x + arrowWidth, centerY),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color = color,
+                start = Offset(x + arrowWidth, centerY),
+                end = Offset(x, bottom),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round,
+            )
+        }
+        if (hasBoundary) {
+            val boundaryX = startX + groupWidth + boundaryGap
+            drawLine(
+                color = color,
+                start = Offset(boundaryX, top),
+                end = Offset(boundaryX, bottom),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round,
+            )
+        }
     }
 }
 
