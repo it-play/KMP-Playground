@@ -27,12 +27,27 @@ data class PriceAttribution(
     val ratesAndInflation: Double,
     val growthAndSentiment: Double,
     val foreignExchange: Double,
-    val event: Double,
+    /** 기초자산 경로의 사건 수익. 가격과 펀드 기준가가 함께 소비한다. */
+    val referenceEvent: Double,
+    /** 운용·발행사 등 상품 자체 사건. 시장가격 괴리 계층에서만 소비한다. */
+    val directProductEvent: Double,
     val fundCosts: Double,
     val carriedReference: Double,
-    val idiosyncratic: Double,
+    val carriedPriceDislocation: Double,
+    /** 기초자산으로 설명되지 않는 잔차 공정가치. 가격과 펀드 기준가가 함께 소비한다. */
+    val referenceResidual: Double,
+    /** CEF 괴리·ETN 스프레드·미시구조처럼 시장가격에만 남는 잔차다. */
+    val priceDislocation: Double,
 ) {
-    val totalBeforeStabilization: Double
+    /** 기초자산·거시·이벤트·비용으로 설명되는 한 시간의 공정가치 로그수익률이다. */
+    val fairValueLogReturn: Double
         get() = market + sector + ratesAndInflation + growthAndSentiment +
-            foreignExchange + event + fundCosts + carriedReference + idiosyncratic
+            foreignExchange + referenceEvent + fundCosts + carriedReference + referenceResidual
+
+    /** 공정가치로 설명되지 않는 종목 고유 가격 괴리다. 펀드 지표 엔진은 이를 NAV와 분리한다. */
+    val priceDislocationLogReturn: Double
+        get() = directProductEvent + carriedPriceDislocation + priceDislocation
+
+    val totalBeforeStabilization: Double
+        get() = fairValueLogReturn + priceDislocationLogReturn
 }
