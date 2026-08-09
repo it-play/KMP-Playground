@@ -1,14 +1,11 @@
 package com.amond.kmpbook.ui.screens
 
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -115,71 +112,75 @@ fun MarketTradingScreen(
     val quote = selectedStock?.let { quotes[it.id] }
     val bars = selectedStock?.let { priceHistory[it.id].orEmpty() }.orEmpty()
     var showSelectedProtectionDetail by remember(selectedStock?.id) { mutableStateOf(false) }
+    var orderSide by remember(selectedStock?.id) { mutableStateOf(OrderSide.BUY) }
+    var orderType by remember(selectedStock?.id) { mutableStateOf(OrderType.MARKET) }
+    var selectedBookPrice by remember(selectedStock?.id) { mutableStateOf<Double?>(null) }
 
-    BoxWithConstraints(modifier = modifier.fillMaxSize().padding(MarketLayout.screenPadding)) {
-        val compactColumns = maxWidth < 1_140.dp
-        val explorerWidth = if (compactColumns) 220.dp else 252.dp
-        val tradingWidth = if (compactColumns) 280.dp else 304.dp
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
-        ) {
-            WatchlistPanel(
-                stocks = stocks,
-                quotes = quotes,
-                selectedStockId = selectedStock?.id,
-                onSelectStock = onSelectStock,
-                watchlistedStockIds = watchlistedStockIds,
-                onToggleWatchlist = onToggleWatchlist,
-                protectionBadges = protectionBadges,
-                modifier = Modifier.width(explorerWidth).fillMaxHeight(),
-            )
-            if (selectedStock != null && quote != null) {
-                val selectedNews = remember(relatedNews, selectedStock.id) {
-                    relatedNews.filter { story ->
-                        story.relatedStocks.any { it.stockId == selectedStock.id }
-                    }
+    Row(
+        modifier = modifier.fillMaxSize().padding(MarketLayout.screenPadding),
+        horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+    ) {
+        WatchlistPanel(
+            stocks = stocks,
+            quotes = quotes,
+            selectedStockId = selectedStock?.id,
+            onSelectStock = onSelectStock,
+            watchlistedStockIds = watchlistedStockIds,
+            onToggleWatchlist = onToggleWatchlist,
+            protectionBadges = protectionBadges,
+            modifier = Modifier.width(MarketLayout.marketExplorerWidth).fillMaxHeight(),
+        )
+        if (selectedStock != null && quote != null) {
+            val selectedNews = remember(relatedNews, selectedStock.id) {
+                relatedNews.filter { story ->
+                    story.relatedStocks.any { it.stockId == selectedStock.id }
                 }
-                StockChartPanel(
+            }
+            StockChartPanel(
+                stock = selectedStock,
+                quote = quote,
+                bars = bars,
+                holding = holding,
+                relatedNews = selectedNews,
+                onOpenEvent = onOpenEvent,
+                watched = selectedStock.id in watchlistedStockIds,
+                onToggleWatchlist = { onToggleWatchlist(selectedStock.id) },
+                protectionBadge = protectionBadges[selectedStock.id],
+                onOpenProtectionDetail = { showSelectedProtectionDetail = true },
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
+            if (orderType == OrderType.LIMIT && orderBook != null) {
+                OrderBookPanel(
                     stock = selectedStock,
                     quote = quote,
-                    bars = bars,
-                    holding = holding,
-                    relatedNews = selectedNews,
-                    onOpenEvent = onOpenEvent,
-                    watched = selectedStock.id in watchlistedStockIds,
-                    onToggleWatchlist = { onToggleWatchlist(selectedStock.id) },
-                    protectionBadge = protectionBadges[selectedStock.id],
-                    onOpenProtectionDetail = { showSelectedProtectionDetail = true },
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    orderBook = orderBook,
+                    side = orderSide,
+                    selectedPrice = selectedBookPrice,
+                    onSelectPrice = { selectedBookPrice = it },
+                    modifier = Modifier.width(MarketLayout.marketOrderBookWidth).fillMaxHeight(),
                 )
-                Column(
-                    modifier = Modifier.width(tradingWidth).fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
-                ) {
-                    OrderBookPanel(
-                        stock = selectedStock,
-                        quote = quote,
-                        orderBook = orderBook,
-                        modifier = Modifier.fillMaxWidth().weight(0.88f),
-                    )
-                    OrderTicketPanel(
-                        stock = selectedStock,
-                        quote = quote,
-                        holding = holding,
-                        cashKrw = cashKrw,
-                        cashUsd = cashUsd,
-                        protectionDetail = selectedProtectionDetail,
-                        orderUnavailableReason = { type -> orderUnavailableReason(selectedStock.id, type) },
-                        onSubmitOrder = onSubmitOrder,
-                        modifier = Modifier.fillMaxWidth().weight(1.12f),
-                    )
-                }
-            } else {
-                LedgerPanel(Modifier.weight(1f).fillMaxHeight()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("표시할 종목이 없습니다.", style = MarketType.body, color = MarketColors.InkMuted)
-                    }
+            }
+            OrderTicketPanel(
+                stock = selectedStock,
+                quote = quote,
+                holding = holding,
+                cashKrw = cashKrw,
+                cashUsd = cashUsd,
+                side = orderSide,
+                onSideChange = { orderSide = it },
+                type = orderType,
+                onTypeChange = { orderType = it },
+                selectedBookPrice = selectedBookPrice,
+                onLimitPriceEdited = { selectedBookPrice = null },
+                protectionDetail = selectedProtectionDetail,
+                orderUnavailableReason = { type -> orderUnavailableReason(selectedStock.id, type) },
+                onSubmitOrder = onSubmitOrder,
+                modifier = Modifier.width(MarketLayout.marketOrderTicketWidth).fillMaxHeight(),
+            )
+        } else {
+            LedgerPanel(Modifier.weight(1f).fillMaxHeight()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("표시할 종목이 없습니다.", style = MarketType.body, color = MarketColors.InkMuted)
                 }
             }
         }
@@ -213,6 +214,17 @@ private fun WatchlistPanel(
     var venueFilter by remember { mutableStateOf(VenueFilter.ALL) }
     var instrumentFilter by remember { mutableStateOf(InstrumentFilter.ALL) }
     var watchlistOnly by remember { mutableStateOf(false) }
+    var filtersExpanded by remember { mutableStateOf(false) }
+    val activeFilterCount = listOf(
+        watchlistOnly,
+        instrumentFilter != InstrumentFilter.ALL,
+        venueFilter != VenueFilter.ALL,
+    ).count { it }
+    val filterSummary = buildList {
+        if (watchlistOnly) add("관심 종목")
+        if (instrumentFilter != InstrumentFilter.ALL) add(instrumentFilter.label)
+        if (venueFilter != VenueFilter.ALL) add(venueFilter.label)
+    }.joinToString(" · ").ifEmpty { "전체 상품" }
     val filtered = stocks.filter { stock ->
         (!watchlistOnly || stock.id in watchlistedStockIds) &&
             instrumentFilter.matches(stock) &&
@@ -237,35 +249,55 @@ private fun WatchlistPanel(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it.take(30) },
-                    modifier = Modifier.fillMaxWidth().height(44.dp),
-                    placeholder = { Text("종목명·티커 검색", style = MarketType.label) },
+                    modifier = Modifier.fillMaxWidth().height(MarketComponentSize.textFieldHeight),
+                    placeholder = {
+                        Text(
+                            "종목명·티커 검색",
+                            style = MarketType.label,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
                     textStyle = MarketType.body,
                     singleLine = true,
                 )
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    FilterCell("전체 종목", !watchlistOnly) { watchlistOnly = false }
-                    FilterCell("★ 관심 ${watchlistedStockIds.size}", watchlistOnly) { watchlistOnly = true }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        filterSummary,
+                        modifier = Modifier.weight(1f),
+                        style = MarketType.label,
+                        color = if (activeFilterCount > 0) MarketColors.Primary else MarketColors.InkMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    FilterDisclosureButton(
+                        expanded = filtersExpanded,
+                        activeFilterCount = activeFilterCount,
+                        onClick = { filtersExpanded = !filtersExpanded },
+                    )
                 }
-                Spacer(Modifier.height(5.dp))
-                val instrumentRows = InstrumentFilter.entries.chunked(2)
-                instrumentRows.forEachIndexed { index, filters ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        filters.forEach { filter ->
-                            FilterCell(filter.label, instrumentFilter == filter) { instrumentFilter = filter }
-                        }
-                    }
-                    if (index != instrumentRows.lastIndex) Spacer(Modifier.height(4.dp))
-                }
-                Spacer(Modifier.height(5.dp))
-                val venueRows = VenueFilter.entries.chunked(3)
-                venueRows.forEachIndexed { index, filters ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        filters.forEach { filter ->
-                            FilterCell(filter.label, venueFilter == filter) { venueFilter = filter }
-                        }
-                    }
-                    if (index != venueRows.lastIndex) Spacer(Modifier.height(4.dp))
+                if (filtersExpanded) {
+                    Spacer(Modifier.height(8.dp))
+                    WatchlistFilterPanel(
+                        watchlistOnly = watchlistOnly,
+                        watchlistedCount = watchlistedStockIds.size,
+                        onWatchlistOnlyChange = { watchlistOnly = it },
+                        instrumentFilter = instrumentFilter,
+                        onInstrumentFilterChange = { instrumentFilter = it },
+                        venueFilter = venueFilter,
+                        onVenueFilterChange = { venueFilter = it },
+                        showReset = activeFilterCount > 0,
+                        onReset = {
+                            watchlistOnly = false
+                            instrumentFilter = InstrumentFilter.ALL
+                            venueFilter = VenueFilter.ALL
+                        },
+                    )
                 }
             }
             LedgerDivider()
@@ -300,6 +332,119 @@ private fun WatchlistPanel(
 }
 
 @Composable
+private fun FilterDisclosureButton(
+    expanded: Boolean,
+    activeFilterCount: Int,
+    onClick: () -> Unit,
+) {
+    val active = expanded || activeFilterCount > 0
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(MarketRadii.pill))
+            .background(if (expanded) MarketColors.Navy else MarketColors.PaperMuted)
+            .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics {
+                contentDescription = if (expanded) "종목 필터 접기" else "종목 필터 펼치기"
+            }
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            buildString {
+                append("필터")
+                if (activeFilterCount > 0) append(" $activeFilterCount")
+                append(if (expanded) " ▴" else " ▾")
+            },
+            style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+            color = when {
+                expanded -> Color.White
+                active -> MarketColors.Primary
+                else -> MarketColors.InkMuted
+            },
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun WatchlistFilterPanel(
+    watchlistOnly: Boolean,
+    watchlistedCount: Int,
+    onWatchlistOnlyChange: (Boolean) -> Unit,
+    instrumentFilter: InstrumentFilter,
+    onInstrumentFilterChange: (InstrumentFilter) -> Unit,
+    venueFilter: VenueFilter,
+    onVenueFilterChange: (VenueFilter) -> Unit,
+    showReset: Boolean,
+    onReset: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.medium))
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "필터 조건",
+                modifier = Modifier.weight(1f),
+                style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                color = MarketColors.InkMuted,
+            )
+            if (showReset) {
+                Text(
+                    "초기화",
+                    modifier = Modifier
+                        .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
+                        .clickable(role = Role.Button, onClick = onReset)
+                        .padding(horizontal = 6.dp, vertical = 12.dp),
+                    style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                    color = MarketColors.Primary,
+                    maxLines = 1,
+                )
+            }
+        }
+        FilterGroupLabel("목록")
+        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            FilterCell("전체 종목", !watchlistOnly) { onWatchlistOnlyChange(false) }
+            FilterCell("★ 관심 $watchlistedCount", watchlistOnly) { onWatchlistOnlyChange(true) }
+        }
+        FilterGroupLabel("상품")
+        InstrumentFilter.entries.chunked(2).forEach { filters ->
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                filters.forEach { filter ->
+                    FilterCell(filter.label, instrumentFilter == filter) {
+                        onInstrumentFilterChange(filter)
+                    }
+                }
+            }
+        }
+        FilterGroupLabel("시장")
+        VenueFilter.entries.chunked(3).forEach { filters ->
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                filters.forEach { filter ->
+                    FilterCell(filter.label, venueFilter == filter) {
+                        onVenueFilterChange(filter)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterGroupLabel(text: String) {
+    Text(
+        text,
+        style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+        color = MarketColors.InkMuted,
+        maxLines = 1,
+    )
+}
+
+@Composable
 private fun FilterCell(text: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
@@ -314,6 +459,8 @@ private fun FilterCell(text: String, selected: Boolean, onClick: () -> Unit) {
             if (selected) "✓ $text" else text,
             style = MarketType.caption,
             color = if (selected) Color.White else MarketColors.InkMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -579,7 +726,7 @@ private fun StockChartPanel(
                 holding = holding,
                 relatedNews = relatedNews,
                 onOpenEvent = onOpenEvent,
-                modifier = Modifier.fillMaxWidth().height(224.dp),
+                modifier = Modifier.fillMaxWidth().height(260.dp),
             )
         }
     }
@@ -611,34 +758,44 @@ private fun MarketIntelligenceDeck(
     }
 
     Column(modifier.background(MarketColors.Grey50)) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "WHY IT MOVES",
-                    style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
-                    color = MarketColors.Signal,
-                )
-                Text(
-                    "왜 움직이는가",
-                    style = MarketType.heading,
-                    color = MarketColors.Ink,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            availableTabs.forEach { tab ->
-                IntelligenceTabButton(
-                    text = if (tab == IntelligenceTab.NEWS && signals.isNotEmpty()) {
-                        "${tab.label} ${signals.size}"
-                    } else {
-                        tab.label
-                    },
-                    selected = activeTab == tab,
-                    onClick = { selectedTab = tab },
-                )
+        if (availableTabs.size == 1) {
+            SectionHeading(
+                title = activeTab.label,
+                eyebrow = activeTab.eyebrow,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        } else {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "WHY IT MOVES",
+                        style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                        color = MarketColors.Signal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "왜 움직이는가",
+                        style = MarketType.heading,
+                        color = MarketColors.Ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                availableTabs.forEach { tab ->
+                    IntelligenceTabButton(
+                        text = if (tab == IntelligenceTab.NEWS && signals.isNotEmpty()) {
+                            "${tab.label} ${signals.size}"
+                        } else {
+                            tab.label
+                        },
+                        selected = activeTab == tab,
+                        onClick = { selectedTab = tab },
+                    )
+                }
             }
         }
         LedgerDivider()
@@ -672,6 +829,7 @@ private fun IntelligenceTabButton(
 ) {
     Box(
         Modifier
+            .width(104.dp)
             .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = 8.dp),
@@ -969,7 +1127,6 @@ private fun ProductStructurePanel(
     holding: Holding?,
     modifier: Modifier,
 ) {
-    val scrollState = remember(stock.id) { ScrollState(initial = 0) }
     val identity = stock.identityProfile
     val contractFacts = buildList {
         identity?.maturityDate?.let { add("만기 $it") }
@@ -980,23 +1137,27 @@ private fun ProductStructurePanel(
     }
 
     Column(
-        modifier = modifier
-            .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 11.dp),
+        modifier = modifier.padding(horizontal = 16.dp, vertical = 9.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("내 포지션", style = MarketType.label, color = MarketColors.InkMuted)
-                Text(
-                    holding?.let {
-                        "${formatQuantity(it.quantity, stock.quantityUnit)} · 평균 ${formatPrice(it.averagePrice, stock.currency)}"
-                    } ?: "보유 수량 없음",
-                    style = MarketType.number,
-                    color = MarketColors.Ink,
-                )
-            }
-            if (holding != null) {
+        if (holding != null) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "내 포지션",
+                        style = MarketType.label,
+                        color = MarketColors.InkMuted,
+                        maxLines = 1,
+                    )
+                    Text(
+                        "${formatQuantity(holding.quantity, stock.quantityUnit)} · " +
+                            "평균 ${formatPrice(holding.averagePrice, stock.currency)}",
+                        style = MarketType.number,
+                        color = MarketColors.Ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Metric(
                     if (stock.currency == Currency.USD) "USD 평가손익" else "평가손익",
                     formatMoney(holding.unrealizedProfit, stock.currency),
@@ -1009,45 +1170,54 @@ private fun ProductStructurePanel(
                     },
                 )
             }
+            LedgerDivider()
         }
-        LedgerDivider()
-        Text(
-            if (stock.isFundLike) "상품 구조와 위험" else "기업 구조와 위험",
-            style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
-            color = MarketColors.Ink,
-        )
-        Text(
-            identity?.strategySummary ?: stock.description,
-            style = MarketType.caption,
-            color = MarketColors.Ink,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-        )
-        ProductInfoLine(
-            label = "기본 구조",
-            value = buildString {
-                append(stock.instrumentType.displayName)
-                append(" · ${stock.behavior.strategy.displayName}")
-                append(" · ${stock.behavior.distributionFrequency.displayName}")
-                stock.etfProfile?.let { append(" · 목표배율 ${it.leverage}x") }
-            },
-        )
-        stock.etfProfile?.let { profile ->
-            ProductInfoLine("기초자산", "${profile.assetClass.displayName} · ${profile.benchmark}")
-            ProductInfoLine("세금 분류", profile.taxCategory.displayName)
+        Row(
+            Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(
+                    if (stock.isFundLike) "상품 구조와 위험" else "기업 구조와 위험",
+                    style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                    color = MarketColors.Ink,
+                )
+                Text(
+                    identity?.strategySummary ?: stock.description,
+                    style = MarketType.caption,
+                    color = MarketColors.Ink,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                ProductInfoLine(
+                    label = "기본 구조",
+                    value = buildString {
+                        append(stock.instrumentType.displayName)
+                        append(" · ${stock.behavior.strategy.displayName}")
+                        append(" · ${stock.behavior.distributionFrequency.displayName}")
+                        stock.etfProfile?.let { append(" · 목표배율 ${it.leverage}x") }
+                    },
+                )
+                ProductInfoLine(
+                    "핵심 위험",
+                    "${stock.behavior.principalRisk.displayName} · ${stock.behavior.principalRisk.explanation}",
+                )
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                stock.etfProfile?.let { profile ->
+                    ProductInfoLine("기초자산", "${profile.assetClass.displayName} · ${profile.benchmark}")
+                    ProductInfoLine("세금 분류", profile.taxCategory.displayName, maxLines = 1)
+                }
+                identity?.let {
+                    ProductInfoLine("운용·발행", it.issuerOrManager, maxLines = 1)
+                    ProductInfoLine("분배", it.distributionNotes, maxLines = 1)
+                    ProductInfoLine("공식 확인", "${it.legalName} · ${it.verifiedOn} 검증", maxLines = 1)
+                }
+                if (contractFacts.isNotEmpty()) {
+                    ProductInfoLine("계약", contractFacts.joinToString(" · "))
+                }
+            }
         }
-        identity?.let {
-            ProductInfoLine("운용·발행", it.issuerOrManager)
-            ProductInfoLine("분배", it.distributionNotes)
-            ProductInfoLine("공식 확인", "${it.legalName} · ${it.verifiedOn} 검증")
-        }
-        if (contractFacts.isNotEmpty()) {
-            ProductInfoLine("계약", contractFacts.joinToString(" · "))
-        }
-        ProductInfoLine(
-            "핵심 위험",
-            "${stock.behavior.principalRisk.displayName} · ${stock.behavior.principalRisk.explanation}",
-        )
     }
 }
 
@@ -1059,6 +1229,8 @@ private fun ProductInfoLine(label: String, value: String, maxLines: Int = 2) {
             modifier = Modifier.width(72.dp),
             style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
             color = MarketColors.InkMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         Text(
             value,
@@ -1105,69 +1277,77 @@ private fun fxExposureLabel(stock: StockDefinition): String? {
 private fun OrderBookPanel(
     stock: StockDefinition,
     quote: Quote,
-    orderBook: OrderBook?,
+    orderBook: OrderBook,
+    side: OrderSide,
+    selectedPrice: Double?,
+    onSelectPrice: (Double) -> Unit,
     modifier: Modifier,
 ) {
     LedgerPanel(modifier, padding = 0.dp) {
         Column(Modifier.fillMaxSize()) {
-            SectionHeading("10단계 호가", eyebrow = "ORDER BOOK", modifier = Modifier.padding(12.dp))
+            SectionHeading(
+                title = "${side.displayName} 지정가 선택",
+                eyebrow = "10-LEVEL ORDER BOOK",
+                modifier = Modifier.padding(12.dp),
+            )
             LedgerDivider()
             Row(Modifier.padding(horizontal = 10.dp, vertical = 5.dp)) {
                 Text("잔량", Modifier.weight(1f), style = MarketType.label, color = MarketColors.InkMuted)
                 Text("가격", Modifier.weight(1f), style = MarketType.label, color = MarketColors.InkMuted)
                 Text("건수", Modifier.weight(0.5f), style = MarketType.label, color = MarketColors.InkMuted)
             }
-            LazyColumn(Modifier.weight(1f)) {
-                val asks = orderBook?.asks.orEmpty().take(10).reversed()
-                items(asks) { level ->
-                    OrderBookRow(
-                        price = level.price,
-                        quantity = level.quantity,
-                        orders = level.orderCount,
-                        currency = stock.currency,
-                        color = MarketColors.Rise,
-                    )
-                }
-                item {
-                    Row(
-                        Modifier.fillMaxWidth().background(MarketColors.PaperMuted).padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("현재가", style = MarketType.label, color = MarketColors.InkMuted)
-                        Spacer(Modifier.weight(1f))
-                        Text(
-                            formatPrice(quote.price, stock.currency),
-                            style = MarketType.number,
-                            color = deltaColor(quote.change),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            formatPercent(quote.changeRate),
-                            style = MarketType.number,
-                            color = deltaColor(quote.change),
-                        )
-                    }
-                }
-                val bids = orderBook?.bids.orEmpty().take(10)
-                items(bids) { level ->
-                    OrderBookRow(
-                        price = level.price,
-                        quantity = level.quantity,
-                        orders = level.orderCount,
-                        currency = stock.currency,
-                        color = MarketColors.Fall,
-                    )
-                }
+            orderBook.asks.take(10).reversed().forEach { level ->
+                OrderBookRow(
+                    price = level.price,
+                    quantity = level.quantity,
+                    orders = level.orderCount,
+                    currency = stock.currency,
+                    color = MarketColors.Rise,
+                    selected = selectedPrice == level.price,
+                    onClick = { onSelectPrice(level.price) },
+                )
             }
+            Row(
+                Modifier.fillMaxWidth().background(MarketColors.PaperMuted).padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("현재가", style = MarketType.label, color = MarketColors.InkMuted)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    formatPrice(quote.price, stock.currency),
+                    style = MarketType.number,
+                    color = deltaColor(quote.change),
+                    maxLines = 1,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    formatPercent(quote.changeRate),
+                    style = MarketType.number,
+                    color = deltaColor(quote.change),
+                    maxLines = 1,
+                )
+            }
+            orderBook.bids.take(10).forEach { level ->
+                OrderBookRow(
+                    price = level.price,
+                    quantity = level.quantity,
+                    orders = level.orderCount,
+                    currency = stock.currency,
+                    color = MarketColors.Fall,
+                    selected = selectedPrice == level.price,
+                    onClick = { onSelectPrice(level.price) },
+                )
+            }
+            Spacer(Modifier.weight(1f))
             Row(Modifier.fillMaxWidth().padding(8.dp)) {
                 Text(
-                    "매수 ${formatQuantity(orderBook?.totalBidQuantity ?: 0.0)}",
+                    "매수 ${formatQuantity(orderBook.totalBidQuantity)}",
                     style = MarketType.label,
                     color = MarketColors.Fall,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "매도 ${formatQuantity(orderBook?.totalAskQuantity ?: 0.0)}",
+                    "매도 ${formatQuantity(orderBook.totalAskQuantity)}",
                     style = MarketType.label,
                     color = MarketColors.Rise,
                 )
@@ -1183,16 +1363,40 @@ private fun OrderBookRow(
     orders: Int,
     currency: Currency,
     color: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
 ) {
     Row(
         Modifier
             .fillMaxWidth()
-            .background(color.copy(alpha = 0.055f))
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+            .background(if (selected) MarketColors.SignalSoft else color.copy(alpha = 0.055f))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(formatQuantity(quantity), Modifier.weight(1f), style = MarketType.number, color = MarketColors.InkMuted)
-        Text(formatPrice(price, currency), Modifier.weight(1f), style = MarketType.number, color = color)
-        Text(orders.toString(), Modifier.weight(0.5f), style = MarketType.number, color = MarketColors.InkMuted)
+        Text(
+            formatQuantity(quantity),
+            Modifier.weight(1f),
+            style = MarketType.number,
+            color = MarketColors.InkMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            formatPrice(price, currency),
+            Modifier.weight(1f),
+            style = MarketType.number.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium),
+            color = if (selected) MarketColors.Signal else color,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            orders.toString(),
+            Modifier.weight(0.5f),
+            style = MarketType.number,
+            color = MarketColors.InkMuted,
+            maxLines = 1,
+        )
     }
 }
 
@@ -1203,17 +1407,26 @@ private fun OrderTicketPanel(
     holding: Holding?,
     cashKrw: Double,
     cashUsd: Double,
+    side: OrderSide,
+    onSideChange: (OrderSide) -> Unit,
+    type: OrderType,
+    onTypeChange: (OrderType) -> Unit,
+    selectedBookPrice: Double?,
+    onLimitPriceEdited: () -> Unit,
     protectionDetail: ProtectionDetailUi?,
     orderUnavailableReason: (OrderType) -> String?,
     onSubmitOrder: (OrderSide, OrderType, TimeInForce, Double, Double?) -> Unit,
     modifier: Modifier,
 ) {
-    var side by remember(stock.id) { mutableStateOf(OrderSide.BUY) }
-    var type by remember(stock.id) { mutableStateOf(OrderType.MARKET) }
     var timeInForce by remember(stock.id) { mutableStateOf(TimeInForce.DAY) }
     var quantityText by remember(stock.id) { mutableStateOf("1") }
     var limitPriceText by remember(stock.id) {
         mutableStateOf(formatPrice(quote.price, stock.currency, includeCurrency = false).replace(",", ""))
+    }
+    LaunchedEffect(stock.id, selectedBookPrice) {
+        selectedBookPrice?.let { price ->
+            limitPriceText = formatPrice(price, stock.currency, includeCurrency = false).replace(",", "")
+        }
     }
     val quantity = quantityText.toDoubleOrNull() ?: 0.0
     val limitPrice = limitPriceText.toDoubleOrNull()
@@ -1221,21 +1434,23 @@ private fun OrderTicketPanel(
     val expectedAmount = quantity * expectedPrice
     val availableCash = if (stock.currency == Currency.KRW) cashKrw else cashUsd
     val protectionBlockReason = orderUnavailableReason(type)
-    val scrollState = remember(stock.id, type) { ScrollState(initial = 0) }
-
     LedgerPanel(modifier, padding = 12.dp) {
-        Column(Modifier.fillMaxSize().verticalScroll(scrollState)) {
+        Column(Modifier.fillMaxSize()) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                SideTab("매수", side == OrderSide.BUY, MarketColors.Rise, Modifier.weight(1f)) { side = OrderSide.BUY }
-                SideTab("매도", side == OrderSide.SELL, MarketColors.Fall, Modifier.weight(1f)) { side = OrderSide.SELL }
+                SideTab("매수", side == OrderSide.BUY, MarketColors.Rise, Modifier.weight(1f)) {
+                    onSideChange(OrderSide.BUY)
+                }
+                SideTab("매도", side == OrderSide.SELL, MarketColors.Fall, Modifier.weight(1f)) {
+                    onSideChange(OrderSide.SELL)
+                }
             }
             Spacer(Modifier.height(9.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("주문 방식", style = MarketType.label, color = MarketColors.InkMuted)
                 Spacer(Modifier.weight(1f))
-                FilterCell("시장가", type == OrderType.MARKET) { type = OrderType.MARKET }
+                FilterCell("시장가", type == OrderType.MARKET) { onTypeChange(OrderType.MARKET) }
                 Spacer(Modifier.width(4.dp))
-                FilterCell("지정가", type == OrderType.LIMIT) { type = OrderType.LIMIT }
+                FilterCell("지정가", type == OrderType.LIMIT) { onTypeChange(OrderType.LIMIT) }
             }
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1260,7 +1475,10 @@ private fun OrderTicketPanel(
                     label = "주문 가격",
                     value = limitPriceText,
                     suffix = stock.currency.symbol,
-                    onValueChange = { limitPriceText = it.filter { c -> c.isDigit() || c == '.' } },
+                    onValueChange = {
+                        limitPriceText = it.filter { c -> c.isDigit() || c == '.' }
+                        onLimitPriceEdited()
+                    },
                 )
                 Spacer(Modifier.height(8.dp))
             }
@@ -1332,6 +1550,8 @@ private fun OrderTicketPanel(
                 },
                 style = MarketType.caption,
                 color = MarketColors.InkMuted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(7.dp))
             MarketButton(
@@ -1383,6 +1603,8 @@ private fun SideTab(text: String, selected: Boolean, color: Color, modifier: Mod
             if (selected) "✓ $text" else text,
             style = MarketType.label.copy(fontWeight = FontWeight.Bold),
             color = if (selected) Color.White else MarketColors.InkMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -1390,11 +1612,18 @@ private fun SideTab(text: String, selected: Boolean, color: Color, modifier: Mod
 @Composable
 private fun TicketField(label: String, value: String, suffix: String, onValueChange: (String) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, modifier = Modifier.width(68.dp), style = MarketType.label, color = MarketColors.InkMuted)
+        Text(
+            label,
+            modifier = Modifier.width(68.dp),
+            style = MarketType.label,
+            color = MarketColors.InkMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier.weight(1f).height(MarketComponentSize.minimumInteractiveTarget),
+            modifier = Modifier.weight(1f).height(MarketComponentSize.textFieldHeight),
             textStyle = MarketType.number,
             singleLine = true,
             suffix = { Text(suffix, style = MarketType.label, color = MarketColors.InkMuted) },
