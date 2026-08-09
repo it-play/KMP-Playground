@@ -731,14 +731,23 @@ object TradingProtectionEngine {
         )
     }
 
+    /**
+     * Updates a normal-session reference only from a sample window wholly covered by the current
+     * reference-price regime. After an opening or reopening, the LULD Plan excludes earlier trades
+     * from the pro-forma reference price, so a window crossing [state.referencePriceEffectiveAt]
+     * is not eligible.
+     */
     fun updateUsLuldReferencePrice(
         state: UsLuldState,
         candidateFiveMinuteMean: Double,
+        candidateWindowStartsAt: Instant,
         at: Instant,
         easternTime: LocalTime,
     ): UsLuldTransition {
         require(candidateFiveMinuteMean >= 0.01 && candidateFiveMinuteMean.isFinite())
+        require(candidateWindowStartsAt <= at)
         if (state.phase != UsLuldPhase.NORMAL) return UsLuldTransition(state)
+        if (candidateWindowStartsAt < state.referencePriceEffectiveAt) return UsLuldTransition(state)
         if (at - state.referencePriceEffectiveAt < TradingProtectionRules.US_LULD_REFERENCE_MINIMUM_AGE) {
             return UsLuldTransition(state)
         }

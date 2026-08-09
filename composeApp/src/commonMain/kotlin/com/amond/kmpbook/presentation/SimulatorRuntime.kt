@@ -966,8 +966,12 @@ internal class SimulatorRuntime(
             "상장 생명주기 원장에 현재 카탈로그가 알 수 없는 ID가 있습니다."
         }
         val krxMarkets = setOf(Market.KOSPI, Market.KOSDAQ)
-        val krxStockIds = stocks.filter { it.market.isKorean }.mapTo(linkedSetOf(), StockDefinition::id)
-        val usStockIds = stocks.filter { it.market.isUnitedStates }.mapTo(linkedSetOf(), StockDefinition::id)
+        val krxStockIds = stocks.filter { stock ->
+            stock.market.isKorean && state.listingLifecycleStates.getValue(stock.id).isIndexEligible
+        }.mapTo(linkedSetOf(), StockDefinition::id)
+        val usStockIds = stocks.filter { stock ->
+            stock.market.isUnitedStates && state.listingLifecycleStates.getValue(stock.id).isIndexEligible
+        }.mapTo(linkedSetOf(), StockDefinition::id)
         require(state.tradingProtectionSnapshot.let { protection ->
             protection.krxCircuitBreakers.keys == krxMarkets &&
                 protection.krxSidecars.keys == krxMarkets &&
@@ -2010,7 +2014,7 @@ internal class SimulatorRuntime(
                     "${nextState.status.displayName} 조치로 미체결 주문을 취소했습니다.",
                 )
             }
-            syncListingTradingHalt(stock, previous, nextState, venueCloseAt)
+            syncListingTradingProtections(stock, previous, nextState, venueCloseAt)
             if (!previous.isTerminal && nextState.isTerminal) {
                 applyListingFinalDisposition(stock, nextState, venueCloseAt)
             }
@@ -2714,14 +2718,17 @@ internal class SimulatorRuntime(
         }
     }
 
-    private fun syncListingTradingHalt(
+    private fun syncListingTradingProtections(
         stock: StockDefinition,
         previous: ListingLifecycleState,
         current: ListingLifecycleState,
         at: Instant,
     ) {
+        val volatilityInterruptions = tradingProtectionSnapshot.krxVolatilityInterruptions.toMutableMap()
         val halts = tradingProtectionSnapshot.instrumentTradingHalts.toMutableMap()
         val scheduledHalts = tradingProtectionSnapshot.scheduledInstrumentTradingHalts.toMutableMap()
+        val investmentAlerts = tradingProtectionSnapshot.investmentAlerts.toMutableMap()
+        val luldStates = tradingProtectionSnapshot.usLuldStates.toMutableMap()
         val existing = halts[stock.id]
         val existingIsListingHalt = existing?.reason in LISTING_TRADING_HALT_REASONS
         val desiredListingHaltReason = if (current.status == ListingLifecycleStatus.DELISTING_SCHEDULED) {
@@ -2729,11 +2736,14 @@ internal class SimulatorRuntime(
         } else {
             TradingHaltReason.LISTING_MAINTENANCE_REVIEW
         }
-        if (current.isTerminal) {
-            // The listing lifecycle is now the terminal source of truth. Keeping an ACTIVE halt
-            // would later emit a false "trading resumed" transition for a delisted security.
+        if (!current.isIndexEligible) {
+            // Once settlement or final disposition starts, the listing lifecycle is the sole source
+            // of truth. Instrument-scoped market protections must not survive or be recreated.
+            volatilityInterruptions.remove(stock.id)
             halts.remove(stock.id)
             scheduledHalts.entries.removeAll { (_, halt) -> halt.stockId == stock.id }
+            investmentAlerts.remove(stock.id)
+            luldStates.remove(stock.id)
         } else if (!current.isTradable &&
             (
                 existing == null || existing.status == TradingHaltStatus.RELEASED ||
@@ -2757,8 +2767,11 @@ internal class SimulatorRuntime(
             )
         }
         tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
+            krxVolatilityInterruptions = volatilityInterruptions,
             instrumentTradingHalts = halts,
             scheduledInstrumentTradingHalts = scheduledHalts,
+            investmentAlerts = investmentAlerts,
+            usLuldStates = luldStates,
         )
     }
 
@@ -5599,6 +5612,7 @@ internal class SimulatorRuntime(
                 state = TradingProtectionEngine.updateUsLuldReferencePrice(
                     state,
                     typical,
+                    sessionInterval.startsAt,
                     sessionInterval.endsAt,
                     GameCalendar.marketLocalDateTime(stock.market, sessionInterval.endsAt).time,
                 ).state
