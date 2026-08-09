@@ -322,7 +322,7 @@ private fun WatchlistPanel(
                 Modifier.fillMaxWidth().background(MarketColors.PaperMuted).padding(9.dp),
             ) {
                 Text(
-                    "${filtered.size}개 상품 · 가격은 게임 시세",
+                    "${filtered.size}개 종목",
                     style = MarketType.caption,
                     color = MarketColors.InkMuted,
                 )
