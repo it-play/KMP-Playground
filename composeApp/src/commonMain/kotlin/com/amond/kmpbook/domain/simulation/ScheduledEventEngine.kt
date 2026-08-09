@@ -15,6 +15,7 @@ import com.amond.kmpbook.domain.model.ReportedFact
 import com.amond.kmpbook.domain.model.ScheduledEventEmission
 import com.amond.kmpbook.domain.model.ScheduledEventKind
 import com.amond.kmpbook.domain.model.ScheduledEventMetric
+import com.amond.kmpbook.domain.model.ScheduledEventMetricKind
 import com.amond.kmpbook.domain.model.ScheduledEventOccurrence
 import com.amond.kmpbook.domain.model.ScheduledEventOutcome
 import com.amond.kmpbook.domain.model.ScheduledEventReference
@@ -284,7 +285,10 @@ class ScheduledEventEngine(private val seed: Long) {
             ?: error("Earnings occurrence references unknown stock '$stockId'")
         val epsSurprise = (random.nextGaussian() / SURPRISE_NORMALIZER).coerceIn(-1.0, 1.0)
         val revenueSurprise = (random.nextGaussian() / SURPRISE_NORMALIZER).coerceIn(-1.0, 1.0)
-        val epsConsensus = stock.initialPrice * random.nextDouble(0.010, 0.025)
+        // marketCap/current shares is invariant to a split when the runtime updates the dynamic
+        // StockDefinition. initialPrice is intentionally not used because it is never split-adjusted.
+        val currentPriceAnchor = stock.marketCap / stock.sharesOutstanding.toDouble()
+        val epsConsensus = currentPriceAnchor * random.nextDouble(0.010, 0.025)
         val revenueConsensus = stock.marketCap / 1_000_000_000.0 * random.nextDouble(0.018, 0.040)
         val eps = ScheduledEventMetric(
             label = "EPS",
@@ -292,6 +296,7 @@ class ScheduledEventEngine(private val seed: Long) {
             consensus = epsConsensus,
             unit = if (stock.currency == Currency.KRW) "KRW" else "USD",
             decimalPlaces = if (stock.currency == Currency.KRW) 0 else 2,
+            kind = ScheduledEventMetricKind.EARNINGS_DILUTED_EPS,
         )
         val revenue = ScheduledEventMetric(
             label = "매출",
@@ -299,6 +304,8 @@ class ScheduledEventEngine(private val seed: Long) {
             consensus = revenueConsensus,
             unit = if (stock.currency == Currency.KRW) "십억 KRW" else "십억 USD",
             decimalPlaces = if (stock.currency == Currency.KRW) 0 else 1,
+            kind = ScheduledEventMetricKind.EARNINGS_REVENUE,
+            valueScale = 1_000_000_000.0,
         )
         return outcome(
             occurrence = occurrence,
