@@ -115,12 +115,6 @@ fun NewGameScreen(
                 MarketStamp("NASDAQ", "US")
                 MarketStamp("NYSE", "US")
             }
-            Spacer(Modifier.height(18.dp))
-            Text(
-                "실제 종목명은 사용하지만 모든 미래 가격·뉴스·실적은 재현 가능한 게임 데이터입니다.\n세금 계산은 2026-08-07 대한민국 세법을 동결한 교육용 추정치입니다.",
-                style = MarketType.caption,
-                color = Color.White.copy(alpha = 0.68f),
-            )
         }
 
         Box(
@@ -153,7 +147,7 @@ fun NewGameScreen(
                         textStyle = MarketType.number,
                         prefix = { Text("₩ ", style = MarketType.number, color = MarketColors.InkMuted) },
                         supportingText = {
-                            Text("기본 1억원 · 게임 중 추가 입금 없음", style = MarketType.label)
+                            Text("기본 1억원 · 추가 입금 없음", style = MarketType.label)
                         },
                     )
                     Spacer(Modifier.height(10.dp))
