@@ -1,7 +1,6 @@
 package com.amond.kmpbook.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,11 +12,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.OutlinedTextField
@@ -32,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amond.kmpbook.domain.model.Currency
@@ -88,6 +85,39 @@ fun SettingsScreen(
         modifier.fillMaxSize().padding(MarketLayout.screenPadding),
         verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
     ) {
+        LedgerPanel(Modifier.fillMaxWidth().height(160.dp), padding = 16.dp) {
+            Column(Modifier.fillMaxSize()) {
+                SectionHeading(
+                    title = "계정 설정",
+                    eyebrow = "ACCOUNT CONTROL",
+                    action = {
+                        StatusLabel(
+                            text = if (hasSavedGame) "저장 장부 있음" else "저장 장부 없음",
+                            color = if (hasSavedGame) MarketColors.Positive else MarketColors.InkMuted,
+                        )
+                    },
+                )
+                Spacer(Modifier.height(13.dp))
+                Row(Modifier.fillMaxWidth()) {
+                    Metric(
+                        "초기 투자금",
+                        formatMoney(settings.initialCapitalKrw, Currency.KRW),
+                        Modifier.weight(1.25f),
+                    )
+                    Metric("시장 시드", settings.seed.toString(), Modifier.weight(1f), MarketColors.Primary)
+                    Metric("기본 턴", "1시간", Modifier.weight(0.8f))
+                    Metric("종료일", "2040.12.31", Modifier.weight(1f))
+                }
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "복수 시간 진행도 1시간 단위로 가격·주문·이벤트·배당·세금 경계를 순서대로 처리합니다.",
+                    style = MarketType.caption,
+                    color = MarketColors.InkMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         Row(
             Modifier.fillMaxWidth().weight(1f),
             horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
@@ -96,57 +126,10 @@ fun SettingsScreen(
                 Modifier.weight(1f).fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
             ) {
-                LedgerPanel(Modifier.fillMaxWidth().height(210.dp)) {
-                    Column {
-                        SectionHeading("규칙", eyebrow = "SESSION CONFIG")
-                        Spacer(Modifier.height(15.dp))
-                        Row {
-                            Metric("초기 투자금", formatMoney(settings.initialCapitalKrw, Currency.KRW), Modifier.weight(1f))
-                            Metric("시장 시드", settings.seed.toString(), Modifier.weight(1f), MarketColors.Primary)
-                            Metric("종료일", "2040.12.31", Modifier.weight(1f))
-                        }
-                        Spacer(Modifier.height(16.dp))
-                        LedgerDivider()
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            "한 턴은 항상 1시간입니다. 4시간·12시간·1일·1주일 버튼도 내부적으로 한 시간씩 순서대로 처리해 가격, 주문, 이벤트, 배당, 세금 경계를 건너뜁니다.",
-                            style = MarketType.body,
-                            color = MarketColors.InkMuted,
-                        )
-                    }
-                }
-                LedgerPanel(Modifier.fillMaxWidth().height(180.dp)) {
+                LedgerPanel(Modifier.fillMaxWidth().height(340.dp)) {
                     Column(Modifier.fillMaxSize()) {
-                        SectionHeading("장부 저장", eyebrow = "SAVE GAME · SCHEMA $CURRENT_GAME_SAVE_SCHEMA_VERSION")
+                        SectionHeading("거래 환경", eyebrow = "BROKERAGE")
                         Spacer(Modifier.height(9.dp))
-                        Text(saveStatus, style = MarketType.body, color = MarketColors.Ink)
-                        Text(savePath, style = MarketType.caption, color = MarketColors.InkMuted, maxLines = 1)
-                        Spacer(Modifier.weight(1f))
-                        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                            SaveActionButton("현재 장부 저장", Modifier.weight(1.25f), MarketColors.Navy, onSaveGame)
-                            SaveActionButton("불러오기", Modifier.weight(1f), MarketColors.Primary, onLoadGame, hasSavedGame)
-                            SaveActionButton(
-                                if (deleteArmed) "삭제 확정" else "저장 삭제",
-                                Modifier.weight(1f),
-                                if (deleteArmed) MarketColors.Rise else MarketColors.PaperMuted,
-                                onClick = {
-                                    if (deleteArmed) {
-                                        onDeleteSave()
-                                        deleteArmed = false
-                                    } else {
-                                        deleteArmed = true
-                                    }
-                                },
-                                enabled = hasSavedGame,
-                                contentColor = if (deleteArmed) Color.White else MarketColors.Ink,
-                            )
-                        }
-                    }
-                }
-                LedgerPanel(Modifier.fillMaxWidth().weight(1f)) {
-                    Column {
-                        SectionHeading("거래 설정", eyebrow = "BROKERAGE ACCOUNT")
-                        Spacer(Modifier.height(14.dp))
                         SettingCheck(
                             checked = settings.autoExchange,
                             onChange = onAutoExchangeChanged,
@@ -160,12 +143,85 @@ fun SettingsScreen(
                             title = "미국주식 소수점 거래",
                             detail = "시작 시 선택한 값이며 진행 중에는 바꿀 수 없습니다.",
                         )
+                        Spacer(Modifier.height(7.dp))
+                        LedgerDivider()
                         Spacer(Modifier.height(10.dp))
-                        Box(Modifier.fillMaxWidth().background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.small)).padding(16.dp)) {
+                        Text("적용 비용", style = MarketType.label.copy(fontWeight = FontWeight.SemiBold), color = MarketColors.Ink)
+                        Spacer(Modifier.height(8.dp))
+                        Row(Modifier.fillMaxWidth()) {
+                            Metric("국내 온라인", "0.015%", Modifier.weight(1f))
+                            Metric("미국 온라인", "0.07%", Modifier.weight(1f))
+                            Metric("환전 스프레드", "0.10%", Modifier.weight(1f))
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.small))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                        ) {
                             Text(
-                                "기본 비용표: 국내 온라인 0.015% · 미국 0.07% · 환전 스프레드 0.10% · SEC/FINRA 매도 규제비 별도. 세금 원장과 수수료 원장은 분리됩니다.",
-                                style = MarketType.label.copy(lineHeight = 15.sp),
+                                "미국 매도 규제비는 별도이며 세금 원장과 수수료 원장은 분리됩니다.",
+                                style = MarketType.caption,
                                 color = MarketColors.InkMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+                LedgerPanel(Modifier.fillMaxWidth().weight(1f)) {
+                    Column(Modifier.fillMaxSize()) {
+                        SectionHeading(
+                            "장부 저장",
+                            eyebrow = "SAVE · SCHEMA $CURRENT_GAME_SAVE_SCHEMA_VERSION",
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            saveStatus,
+                            style = MarketType.body.copy(fontWeight = FontWeight.Medium),
+                            color = MarketColors.Ink,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (savePath.isNotBlank()) {
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                savePath,
+                                style = MarketType.caption,
+                                color = MarketColors.InkMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            MarketButton(
+                                text = "지금 저장",
+                                onClick = onSaveGame,
+                                modifier = Modifier.weight(1.2f),
+                            )
+                            MarketButton(
+                                text = "불러오기",
+                                onClick = onLoadGame,
+                                enabled = hasSavedGame,
+                                modifier = Modifier.weight(1f),
+                                variant = MarketButtonVariant.Weak,
+                            )
+                            MarketButton(
+                                text = if (deleteArmed) "삭제 확정" else "저장 삭제",
+                                onClick = {
+                                    if (deleteArmed) {
+                                        onDeleteSave()
+                                        deleteArmed = false
+                                    } else {
+                                        deleteArmed = true
+                                    }
+                                },
+                                enabled = hasSavedGame,
+                                modifier = Modifier.weight(1f),
+                                variant = if (deleteArmed) MarketButtonVariant.Fill else MarketButtonVariant.Weak,
+                                tone = MarketButtonTone.Danger,
                             )
                         }
                     }
@@ -175,7 +231,7 @@ fun SettingsScreen(
                 Modifier.width(MarketLayout.settingsRailWidth).fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
             ) {
-                LedgerPanel(Modifier.fillMaxWidth().height(355.dp)) {
+                LedgerPanel(Modifier.fillMaxWidth().weight(1f)) {
                     Column(Modifier.fillMaxSize()) {
                         SectionHeading("외화 환전", eyebrow = "FX DESK")
                         Spacer(Modifier.height(12.dp))
@@ -183,29 +239,43 @@ fun SettingsScreen(
                             Metric("KRW 예수금", formatMoney(settings.cashKrw, Currency.KRW), Modifier.weight(1f))
                             Metric("USD 예수금", formatMoney(settings.cashUsd, Currency.USD), Modifier.weight(1f))
                         }
-                        Spacer(Modifier.height(12.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("환율", style = MarketType.label, color = MarketColors.InkMuted)
+                        Spacer(Modifier.height(14.dp))
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.small))
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("적용 환율", style = MarketType.label, color = MarketColors.InkMuted)
                             Spacer(Modifier.weight(1f))
-                            Text("1 USD = ${formatMoney(settings.usdKrw, Currency.KRW)}", style = MarketType.number, color = MarketColors.Ink)
+                            Text(
+                                "1 USD = ${formatMoney(settings.usdKrw, Currency.KRW)}",
+                                style = MarketType.number.copy(fontWeight = FontWeight.SemiBold),
+                                color = MarketColors.Ink,
+                            )
                         }
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(14.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             SettingTab("KRW → USD", exchangeDirection == 0, Modifier.weight(1f)) { exchangeDirection = 0 }
                             SettingTab("USD → KRW", exchangeDirection == 1, Modifier.weight(1f)) { exchangeDirection = 1 }
                         }
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(12.dp))
                         OutlinedTextField(
                             value = amountText,
                             onValueChange = { amountText = it.filter { c -> c.isDigit() || c == '.' }.take(16) },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().height(MarketComponentSize.textFieldHeight),
                             label = { Text(if (exchangeDirection == 0) "환전할 원화" else "환전할 달러", style = MarketType.label) },
                             suffix = { Text(if (exchangeDirection == 0) "KRW" else "USD", style = MarketType.label) },
                             textStyle = MarketType.number,
                             singleLine = true,
                         )
-                        Spacer(Modifier.height(8.dp))
-                        Text("예상 환전금액은 0.10% 스프레드를 차감해 계산됩니다.", style = MarketType.caption, color = MarketColors.InkMuted)
+                        Spacer(Modifier.height(7.dp))
+                        Text(
+                            "입력 금액에서 0.10% 스프레드를 차감합니다.",
+                            style = MarketType.caption,
+                            color = MarketColors.InkMuted,
+                        )
                         Spacer(Modifier.weight(1f))
                         MarketButton(
                             text = "환전 실행",
@@ -219,14 +289,15 @@ fun SettingsScreen(
                         )
                     }
                 }
-                LedgerPanel(Modifier.fillMaxWidth().weight(1f), background = MarketColors.RiseSoft) {
-                    Column {
-                        SectionHeading("초기화", eyebrow = "DANGER ZONE")
-                        Spacer(Modifier.height(12.dp))
+                LedgerPanel(Modifier.fillMaxWidth().height(174.dp), background = MarketColors.RiseSoft) {
+                    Column(Modifier.fillMaxSize()) {
+                        SectionHeading("기록 초기화", eyebrow = "DANGER ZONE")
+                        Spacer(Modifier.height(8.dp))
                         Text(
-                            "현재 거래·보유·세금·이벤트 기록을 모두 버리고 시작 화면으로 돌아갑니다.",
-                            style = MarketType.body,
+                            "거래·보유·세금·이벤트 기록을 삭제하고 시작 화면으로 돌아갑니다.",
+                            style = MarketType.label,
                             color = MarketColors.InkMuted,
+                            maxLines = 2,
                         )
                         Spacer(Modifier.weight(1f))
                         if (!resetArmed) {
@@ -257,38 +328,20 @@ fun SettingsScreen(
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().background(MarketColors.NavyRaised, RoundedCornerShape(MarketRadii.small)).padding(16.dp)) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .background(MarketColors.NavyRaised, RoundedCornerShape(MarketRadii.small))
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+        ) {
             Text(
                 "일반 증권계좌 · KRX 장내거래 · 대한민국 세법상 거주 개인 · 법률 기준일 2026-08-07 · 미래 법률과 실제 투자 성과를 보장하지 않음",
                 style = MarketType.caption,
                 color = Color.White.copy(alpha = 0.58f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
-    }
-}
-
-@Composable
-private fun SaveActionButton(
-    text: String,
-    modifier: Modifier,
-    background: Color,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-    contentColor: Color = Color.White,
-) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.height(MarketComponentSize.minimumInteractiveTarget),
-        shape = RoundedCornerShape(MarketRadii.medium),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = background,
-            contentColor = contentColor,
-            disabledContainerColor = MarketColors.PaperMuted,
-            disabledContentColor = MarketColors.InkMuted,
-        ),
-    ) {
-        Text(text, style = MarketType.caption.copy(fontWeight = FontWeight.Bold), maxLines = 1)
     }
 }
 
