@@ -71,7 +71,7 @@ fun TaxCenterScreen(data: TaxCenterData, modifier: Modifier = Modifier) {
                     Modifier.fillMaxWidth().background(MarketColors.AmberSoft, RoundedCornerShape(MarketRadii.small)).padding(16.dp),
                 ) {
                     Column {
-                        Text("2026 세법 동결 시나리오", style = MarketType.label.copy(fontWeight = FontWeight.Bold), color = MarketColors.Amber)
+                        Text("2026 세법 기준", style = MarketType.label.copy(fontWeight = FontWeight.Bold), color = MarketColors.Amber)
                         Text(
                             "2040년까지 알려지지 않은 법 개정은 예측하지 않습니다. 표시 세액은 교육용 추정치이며 실제 신고는 전체 계좌·소득·가족 합산 정보가 필요합니다.",
                             style = MarketType.caption,

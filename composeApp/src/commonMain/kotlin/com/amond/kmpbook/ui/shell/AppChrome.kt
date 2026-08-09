@@ -62,7 +62,7 @@ private val navigationItems = listOf(
     NavigationItem(Screen.EVENTS, "뉴스·이벤트", "뉴"),
     NavigationItem(Screen.ANALYTICS, "투자 분석", "분"),
     NavigationItem(Screen.TAX_REPORT, "세금 센터", "세"),
-    NavigationItem(Screen.SETTINGS, "게임 설정", "설"),
+    NavigationItem(Screen.SETTINGS, "설정", "설"),
 )
 
 @Composable
@@ -138,8 +138,6 @@ fun SimulatorSidebar(
         }
 
         Spacer(Modifier.height(MarketSpacing.lg))
-        Text("시뮬레이션", style = MarketType.caption, color = MarketColors.Grey400)
-        Spacer(Modifier.height(MarketSpacing.xs))
         navigationItems.forEach { item ->
             SidebarItem(
                 item = item,
@@ -152,27 +150,6 @@ fun SimulatorSidebar(
         }
 
         Spacer(Modifier.weight(1f))
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = MarketColors.NavyRaised,
-            shape = RoundedCornerShape(MarketRadii.medium),
-        ) {
-            Column(
-                modifier = Modifier.padding(MarketSpacing.sm),
-                verticalArrangement = Arrangement.spacedBy(MarketSpacing.xxs),
-            ) {
-                Text(
-                    "2026 세법 동결 시나리오",
-                    style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
-                    color = Color.White,
-                )
-                Text(
-                    "법률 기준일 2026.08.07\n미래 시세는 게임 데이터입니다.",
-                    style = MarketType.caption,
-                    color = MarketColors.Grey400,
-                )
-            }
-        }
     }
 }
 
@@ -307,7 +284,7 @@ fun SimulationClockRail(
                 verticalArrangement = Arrangement.spacedBy(MarketSpacing.xs),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("시뮬레이션 여정", style = MarketType.caption, color = MarketColors.InkMuted)
+                    Text("진행", style = MarketType.caption, color = MarketColors.InkMuted)
                     Spacer(Modifier.weight(1f))
                     Text("2026.08", style = MarketType.caption, color = MarketColors.InkMuted)
                     Text("  —  ", style = MarketType.caption, color = MarketColors.Grey400)
