@@ -23,7 +23,9 @@ import com.amond.kmpbook.domain.model.ListingLifecycleStatus
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.MarketActionKind
 import com.amond.kmpbook.domain.model.MarketActionTransition
+import com.amond.kmpbook.domain.model.MAX_FUND_REFERENCE_VALUE
 import com.amond.kmpbook.domain.model.MIN_CAUSAL_SIGNAL_STRENGTH
+import com.amond.kmpbook.domain.model.MIN_FUND_REFERENCE_VALUE
 import com.amond.kmpbook.domain.model.Sector
 import com.amond.kmpbook.domain.model.ScheduledEventKind
 import com.amond.kmpbook.domain.model.TradingHaltReason
@@ -59,7 +61,8 @@ import java.nio.file.StandardOpenOption
 import java.nio.channels.FileChannel
 import kotlin.time.Instant
 
-private const val MAX_GAME_SAVE_FILE_BYTES: Long = 64L * 1024L * 1024L
+private const val MAX_GAME_SAVE_FILE_BYTES: Long = 128L * 1024L * 1024L
+private const val MAX_SAVED_FUND_FLOW_RATE: Double = 0.20
 
 private fun defaultGameSavePath(): Path {
     val osName = System.getProperty("os.name").orEmpty()
@@ -307,6 +310,10 @@ actual class GameSaveStorage actual constructor() {
         }
         if (!root.isJsonObject) throw JsonParseException("저장 파일 루트가 JSON 객체가 아닙니다.")
         val objectValue = root.asJsonObject
+        objectValue.requireExactFields(
+            expected = CURRENT_ENVELOPE_FIELDS,
+            path = "save",
+        )
         val format = objectValue.requiredString("format")
         if (format != GAME_SAVE_FORMAT_ID) {
             throw JsonParseException("알 수 없는 저장 포맷 '$format'입니다.")
@@ -341,6 +348,82 @@ actual class GameSaveStorage actual constructor() {
         state.requiredArray("stocks").forEachIndexed { index, element ->
             element.requireObject("state.stocks[$index]")
                 .requiredEnumArray<IndustrySegment>("industrySegments", "state.stocks[$index].industrySegments")
+        }
+        state.requiredObject("corporateFundamentals").entrySet().forEach { (stockId, element) ->
+            val path = "state.corporateFundamentals[$stockId]"
+            element.requireObject(path).apply {
+                requireExactFields(CORPORATE_FUNDAMENTAL_FIELDS, path)
+                requiredStrictString("stockId", "$path.stockId")
+                requiredArray("quarters").forEachIndexed { index, reportElement ->
+                    val reportPath = "$path.quarters[$index]"
+                    reportElement.requireObject(reportPath).apply {
+                        requireExactFields(QUARTERLY_FINANCIAL_REPORT_FIELDS, reportPath)
+                        requiredStrictString("periodId", "$reportPath.periodId")
+                        requiredStrictString("reportedAt", "$reportPath.reportedAt")
+                        val revenue = requiredFiniteDouble("revenue", "$reportPath.revenue")
+                        if (revenue < 0.0) {
+                            throw JsonParseException("필드 '$reportPath.revenue'는 0 이상이어야 합니다.")
+                        }
+                        requiredFiniteDouble("netIncome", "$reportPath.netIncome")
+                        val dilutedShares = requiredFiniteDouble(
+                            "dilutedShares",
+                            "$reportPath.dilutedShares",
+                        )
+                        if (dilutedShares <= 0.0) {
+                            throw JsonParseException("필드 '$reportPath.dilutedShares'는 0보다 커야 합니다.")
+                        }
+                        nullableStrictString("sourceOccurrenceId", "$reportPath.sourceOccurrenceId")
+                    }
+                }
+                val bookEquity = requiredFiniteDouble("bookEquity", "$path.bookEquity")
+                if (bookEquity <= 0.0) {
+                    throw JsonParseException("필드 '$path.bookEquity'는 0보다 커야 합니다.")
+                }
+                val openingEquity = requiredFiniteDouble("equityAtTtmStart", "$path.equityAtTtmStart")
+                if (openingEquity <= 0.0) {
+                    throw JsonParseException("필드 '$path.equityAtTtmStart'는 0보다 커야 합니다.")
+                }
+                requiredArray("appliedEarningsOccurrenceIds").forEachIndexed { index, idElement ->
+                    idElement.requireStrictString("$path.appliedEarningsOccurrenceIds[$index]")
+                }
+                requiredStrictString("asOf", "$path.asOf")
+            }
+        }
+        state.requiredObject("fundFinancialStates").entrySet().forEach { (stockId, element) ->
+            val path = "state.fundFinancialStates[$stockId]"
+            element.requireObject(path).apply {
+                requireExactFields(FUND_FINANCIAL_STATE_FIELDS, path)
+                requiredStrictString("stockId", "$path.stockId")
+                listOf(
+                    "navPerUnit",
+                    "indicativeValuePerUnit",
+                ).forEach { field ->
+                    val value = requiredFiniteDouble(field, "$path.$field")
+                    if (value !in MIN_FUND_REFERENCE_VALUE..MAX_FUND_REFERENCE_VALUE) {
+                        throw JsonParseException(
+                            "필드 '$path.$field'는 ${MIN_FUND_REFERENCE_VALUE}와 " +
+                                "${MAX_FUND_REFERENCE_VALUE} 사이여야 합니다.",
+                        )
+                    }
+                }
+                if (requiredFiniteDouble("unitsOrNotesOutstanding", "$path.unitsOrNotesOutstanding") <= 0.0) {
+                    throw JsonParseException("필드 '$path.unitsOrNotesOutstanding'는 0보다 커야 합니다.")
+                }
+                requiredFiniteDouble("lastNetFlow", "$path.lastNetFlow")
+                requiredStrictString("asOf", "$path.asOf")
+            }
+        }
+        state.requiredObject("pendingFundFlowRates").apply {
+            entrySet().forEach { (stockId, _) ->
+                val path = "state.pendingFundFlowRates[$stockId]"
+                val rate = requiredFiniteDouble(stockId, path)
+                if (rate !in -MAX_SAVED_FUND_FLOW_RATE..MAX_SAVED_FUND_FLOW_RATE) {
+                    throw JsonParseException(
+                        "필드 '$path'은 -${MAX_SAVED_FUND_FLOW_RATE}와 " +
+                            "${MAX_SAVED_FUND_FLOW_RATE} 사이여야 합니다.",
+                    )
+                }
+            }
         }
         state.requiredObject("macro").apply {
             requiredObject("fxRatesToKrw")
@@ -755,6 +838,13 @@ actual class GameSaveStorage actual constructor() {
     private class SaveFileTooLargeException(val actualSize: Long) : IOException()
 
     private companion object {
+        val CURRENT_ENVELOPE_FIELDS: Set<String> = setOf(
+            "format",
+            "schemaVersion",
+            "savedAt",
+            "state",
+        )
+
         val CURRENT_STATE_FIELDS: Set<String> = setOf(
             "options",
             "phase",
@@ -763,6 +853,9 @@ actual class GameSaveStorage actual constructor() {
             "turn",
             "selectedTurnStep",
             "stocks",
+            "corporateFundamentals",
+            "fundFinancialStates",
+            "pendingFundFlowRates",
             "selectedStockId",
             "quotes",
             "priceHistory",
@@ -830,13 +923,39 @@ actual class GameSaveStorage actual constructor() {
             "marketChangeFromPreviousClose",
         )
 
+        val CORPORATE_FUNDAMENTAL_FIELDS: Set<String> = setOf(
+            "stockId",
+            "quarters",
+            "bookEquity",
+            "equityAtTtmStart",
+            "appliedEarningsOccurrenceIds",
+            "asOf",
+        )
+
+        val QUARTERLY_FINANCIAL_REPORT_FIELDS: Set<String> = setOf(
+            "periodId",
+            "reportedAt",
+            "revenue",
+            "netIncome",
+            "dilutedShares",
+            "sourceOccurrenceId",
+        )
+
+        val FUND_FINANCIAL_STATE_FIELDS: Set<String> = setOf(
+            "stockId",
+            "navPerUnit",
+            "indicativeValuePerUnit",
+            "unitsOrNotesOutstanding",
+            "lastNetFlow",
+            "asOf",
+        )
+
         fun createSaveGson(): Gson = GsonBuilder()
             .registerTypeAdapter(Instant::class.java, InstantTypeAdapter().nullSafe())
             .registerTypeAdapter(LocalDate::class.java, LocalDateTypeAdapter().nullSafe())
             .enableComplexMapKeySerialization()
             .disableHtmlEscaping()
             .serializeNulls()
-            .setPrettyPrinting()
             .setStrictness(Strictness.STRICT)
             .create()
 
@@ -882,6 +1001,23 @@ private fun JsonObject.requiredString(name: String): String = try {
     required(name).asString
 } catch (error: RuntimeException) {
     throw JsonParseException("필드 '$name'은 문자열이어야 합니다.", error)
+}
+
+private fun JsonObject.requiredStrictString(name: String, path: String): String =
+    required(name).requireStrictString(path)
+
+private fun JsonObject.nullableStrictString(name: String, path: String): String? {
+    requireMember(name)
+    val element = get(name)
+    return if (element.isJsonNull) null else element.requireStrictString(path)
+}
+
+private fun JsonElement.requireStrictString(path: String): String {
+    val primitive = takeIf(JsonElement::isJsonPrimitive)?.asJsonPrimitive
+    if (primitive?.isString != true) {
+        throw JsonParseException("필드 '$path'은 문자열이어야 합니다.")
+    }
+    return primitive.asString
 }
 
 private inline fun <reified E : Enum<E>> JsonObject.requiredEnum(name: String, path: String): E {
