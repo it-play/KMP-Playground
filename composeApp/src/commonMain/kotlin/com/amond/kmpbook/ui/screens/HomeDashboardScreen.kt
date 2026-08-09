@@ -205,7 +205,7 @@ private fun MarketPulsePanel(
     LedgerPanel(modifier) {
         Column(Modifier.fillMaxSize()) {
             SectionHeading("미국 대표 지수", eyebrow = "SIMULATION INDEX") {
-                StatusLabel("게임 지수", MarketColors.Primary)
+                StatusLabel("시장 지수", MarketColors.Primary)
             }
             Spacer(Modifier.height(10.dp))
             val indexIds = listOf(
@@ -267,7 +267,7 @@ private fun EquityCurvePanel(
             )
             Spacer(Modifier.height(8.dp))
             Row {
-                Text("게임 시작", style = MarketType.caption, color = MarketColors.InkMuted)
+                Text("시작일", style = MarketType.caption, color = MarketColors.InkMuted)
                 Spacer(Modifier.weight(1f))
                 Text("현재 · ${history.size}개 일별 기록", style = MarketType.caption, color = MarketColors.InkMuted)
             }

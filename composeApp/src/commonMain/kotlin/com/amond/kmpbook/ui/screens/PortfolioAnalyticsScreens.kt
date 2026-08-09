@@ -230,7 +230,7 @@ fun AnalyticsScreen(
                         Text(
                             "• 일별 스냅샷으로 성과를 계산합니다.\n" +
                                 "• 배당·세금·수수료를 모두 순자산에 반영합니다.\n" +
-                                "• 샤프 지수는 게임 내 3% 무위험수익률을 가정합니다.\n" +
+                                "• 샤프 지수는 무위험수익률 3%를 가정합니다.\n" +
                                 "• 짧은 표본에서는 통계가 크게 흔들릴 수 있습니다.",
                             style = MarketType.label.copy(lineHeight = 17.sp),
                             color = MarketColors.InkMuted,
