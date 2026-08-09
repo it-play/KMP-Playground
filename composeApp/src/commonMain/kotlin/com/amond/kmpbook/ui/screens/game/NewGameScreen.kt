@@ -1,7 +1,15 @@
 package com.amond.kmpbook.ui.screens.game
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,11 +23,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -30,21 +38,39 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.amond.kmpbook.domain.model.market.Market
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.amond.kmpbook.domain.simulation.market.ExternalMarketForces
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
 import com.amond.kmpbook.ui.components.MarketButton
+import com.amond.kmpbook.ui.components.MarketButtonVariant
 import com.amond.kmpbook.ui.theme.MarketColors
+import com.amond.kmpbook.ui.theme.MarketMotion
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
 import kotlin.math.roundToInt
+import kotlin.random.Random
+import kmpbook.composeapp.generated.resources.Res
+import kmpbook.composeapp.generated.resources.market_scenario_august_2026
+import org.jetbrains.compose.resources.painterResource
+
+private val seedMoneyAmounts = listOf(10_000_000.0, 100_000_000.0, 500_000_000.0)
+private val seedMoneyLabels = listOf("1천만원", "1억원", "5억원")
+private val seedMoneyDetails = listOf("₩10,000,000", "₩100,000,000", "₩500,000,000")
+private val difficultyLabels = listOf("입문", "표준", "전문가")
+private val difficultyDetails = listOf("낮은 시장 변동", "기본 시장 환경", "높은 시장 변동")
 
 @Composable
 fun NewGameScreen(
@@ -53,259 +79,573 @@ fun NewGameScreen(
     modifier: Modifier = Modifier,
     embedded: Boolean = false,
 ) {
-    var capitalText by remember { mutableStateOf("100000000") }
-    var seedText by remember { mutableStateOf(NewGameOptions.DEFAULT_SEED.toString()) }
+    var selectedSeedMoney by remember { mutableStateOf(1) }
+    var selectedDifficulty by remember { mutableStateOf(1) }
+    var marketSeed by remember { mutableStateOf(NewGameOptions.DEFAULT_SEED) }
     var fractional by remember { mutableStateOf(false) }
     var autoExchange by remember { mutableStateOf(true) }
-    var externalForces by remember { mutableStateOf(ExternalMarketForces()) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var externalForces by remember { mutableStateOf(forcesForDifficulty(1)) }
+    var showDetailedSettings by remember { mutableStateOf(false) }
+    var showScenarioBackground by remember { mutableStateOf(false) }
 
-    Row(modifier.fillMaxSize().background(MarketColors.Ledger)) {
-        if (!embedded) Column(
-            modifier = Modifier
-                .weight(1.08f)
-                .fillMaxHeight()
-                .background(MarketColors.Navy)
-                .padding(horizontal = 54.dp, vertical = 46.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(44.dp).background(MarketColors.Primary, RoundedCornerShape(MarketRadii.small)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("40", style = MarketType.numberLarge.copy(fontSize = 17.sp), color = Color.White)
-                }
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text("Market Ledger 2040", style = MarketType.heading.copy(fontSize = 20.sp), color = Color.White)
-                    Text(
-                        "TURN-BASED MARKET LEDGER",
-                        style = MarketType.caption.copy(letterSpacing = 0.3.sp),
-                        color = Color.White.copy(alpha = 0.68f),
-                    )
-                }
+    Box(modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxSize().background(MarketColors.Ledger)) {
+            if (!embedded) {
+                NewGameHero(Modifier.weight(1.08f).fillMaxHeight())
             }
 
-            Spacer(Modifier.weight(0.7f))
-            Text(
-                "시간을 사고,\n판단을 기록하다.",
-                style = MarketType.display.copy(fontSize = 42.sp, lineHeight = 51.sp),
-                color = Color.White,
-            )
-            Spacer(Modifier.height(16.dp))
-            Text(
-                "2026년 8월 7일부터 2040년 마지막 거래일까지.\n한국과 미국 시장을 한 시간씩 움직이며 나만의 투자 기록을 만드세요.",
-                style = MarketType.body,
-                color = Color.White.copy(alpha = 0.62f),
-            )
-
-            Spacer(Modifier.height(34.dp))
-            MarketTimeline(Modifier.fillMaxWidth().height(46.dp))
-            Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth()) {
-                TimelineLabel("2026.08", "시작", Modifier.weight(1f))
-                TimelineLabel("2030", "첫 장기 결산", Modifier.weight(1f))
-                TimelineLabel("2035", "전략 전환", Modifier.weight(1f))
-                TimelineLabel("2040.12", "최종 정산", Modifier.weight(1f), alignEnd = true)
-            }
-
-            Spacer(Modifier.weight(1f))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MarketStamp("KOSPI", "KRX")
-                MarketStamp("KOSDAQ", "KRX")
-                MarketStamp("NASDAQ", "US")
-                MarketStamp("NYSE", "US")
-            }
-        }
-
-        Box(
-            modifier = if (embedded) {
-                Modifier.fillMaxSize()
-            } else {
-                Modifier.weight(0.92f).fillMaxHeight().padding(32.dp)
-            },
-            contentAlignment = Alignment.Center,
-        ) {
-            LedgerPanel(
-                modifier = if (embedded) Modifier.fillMaxSize() else Modifier.width(500.dp).fillMaxHeight(),
-                padding = 28.dp,
+            Box(
+                modifier = if (embedded) {
+                    Modifier.fillMaxSize()
+                } else {
+                    Modifier.weight(0.92f).fillMaxHeight().padding(32.dp)
+                },
+                contentAlignment = Alignment.Center,
             ) {
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                LedgerPanel(
+                    modifier = if (embedded) Modifier.fillMaxSize() else Modifier.width(520.dp).fillMaxHeight(),
+                    padding = 30.dp,
+                ) {
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "새 투자 계정",
-                            style = MarketType.display.copy(fontSize = 28.sp),
-                            color = MarketColors.Ink,
-                        )
-                        Spacer(Modifier.weight(1f))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "새 게임",
+                                style = MarketType.display.copy(fontSize = 29.sp),
+                                color = MarketColors.Ink,
+                            )
+                        }
                         TextButton(onClick = onBack) {
                             Text(if (embedded) "닫기" else "← 로비", style = MarketType.label, color = MarketColors.InkMuted)
                         }
                     }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "일반 증권계좌 · 대한민국 거주 개인",
-                        style = MarketType.body,
-                        color = MarketColors.InkMuted,
-                    )
+
+                    Spacer(Modifier.height(24.dp))
+                    LedgerDivider()
                     Spacer(Modifier.height(22.dp))
-                    LedgerDivider()
-                    Spacer(Modifier.height(18.dp))
 
-                    FormLabel("초기 투자금 · KRW")
-                    OutlinedTextField(
-                        value = capitalText,
-                        onValueChange = { capitalText = it.filter(Char::isDigit).take(15) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        textStyle = MarketType.number,
-                        prefix = { Text("₩ ", style = MarketType.number, color = MarketColors.InkMuted) },
-                        supportingText = {
-                            Text("기본 1억원 · 추가 입금 없음", style = MarketType.label)
-                        },
-                    )
+                    SetupSectionTitle(title = "시나리오 선택")
                     Spacer(Modifier.height(10.dp))
-
-                    FormLabel("시장 시드")
-                    OutlinedTextField(
-                        value = seedText,
-                        onValueChange = { seedText = it.filter { char -> char.isDigit() || char == '-' }.take(18) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        textStyle = MarketType.number,
-                        supportingText = {
-                            Text("같은 시드라면 같은 시장 흐름이 재현됩니다.", style = MarketType.label)
-                        },
+                    ScenarioSelectionCard(
+                        compact = true,
+                        onShowBackground = { showScenarioBackground = true },
                     )
 
-                    Spacer(Modifier.height(12.dp))
-                    LedgerDivider()
+                    Spacer(Modifier.height(24.dp))
+                    SetupSectionTitle(title = "시장 시드", detail = "주사위 버튼으로만 변경할 수 있습니다.")
                     Spacer(Modifier.height(10.dp))
-                    CheckRow(
-                        checked = fractional,
-                        onCheckedChange = { fractional = it },
-                        title = "미국주식 소수점 거래",
-                        detail = "최소 0.000001주 · 기본값은 온주 거래",
-                    )
-                    CheckRow(
-                        checked = autoExchange,
-                        onCheckedChange = { autoExchange = it },
-                        title = "주문 시 자동 환전",
-                        detail = "USD 부족분만 환전 스프레드를 반영",
+                    MarketSeedSelector(
+                        marketSeed = marketSeed,
+                        onMarketSeedChange = { marketSeed = it },
                     )
 
-                    Spacer(Modifier.height(12.dp))
-                    LedgerDivider()
-                    Spacer(Modifier.height(14.dp))
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            FormLabel("초기 시장 환경")
-                            Text(
-                                "시작 상태에 즉시 반영되며, 진행 중 변경은 서서히 반영됩니다.",
-                                style = MarketType.caption,
-                                color = MarketColors.InkMuted,
+                    Spacer(Modifier.height(24.dp))
+                    SetupSectionTitle(title = "시드머니 수준")
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                        seedMoneyLabels.forEachIndexed { index, label ->
+                            SetupChoiceCard(
+                                title = label,
+                                detail = seedMoneyDetails[index],
+                                selected = selectedSeedMoney == index,
+                                onClick = { selectedSeedMoney = index },
+                                modifier = Modifier.weight(1f),
                             )
                         }
-                        Text(
-                            "0 — 100",
-                            style = MarketType.number,
-                            color = MarketColors.Primary,
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    NewGameForceSlider(
-                        title = "카오스",
-                        detail = "변동성과 뉴스 혼선",
-                        value = externalForces.chaos,
-                        onValueChange = { externalForces = externalForces.copy(chaos = it) },
-                    )
-                    NewGameForceSlider(
-                        title = "세계 긴장",
-                        detail = "전쟁·지정학 위험",
-                        value = externalForces.worldTension,
-                        onValueChange = { externalForces = externalForces.copy(worldTension = it) },
-                    )
-                    NewGameForceSlider(
-                        title = "개인 투자력",
-                        detail = "개인 투자자 수급",
-                        value = externalForces.retailBuyingPower,
-                        onValueChange = { externalForces = externalForces.copy(retailBuyingPower = it) },
-                    )
-                    NewGameForceSlider(
-                        title = "기관 투자력",
-                        detail = "기관 투자자 수급",
-                        value = externalForces.institutionalBuyingPower,
-                        onValueChange = { externalForces = externalForces.copy(institutionalBuyingPower = it) },
-                    )
-                    NewGameForceSlider(
-                        title = "시장 유동성",
-                        detail = "주문 흡수와 체결 깊이",
-                        value = externalForces.marketLiquidity,
-                        onValueChange = { externalForces = externalForces.copy(marketLiquidity = it) },
-                    )
-                    NewGameForceSlider(
-                        title = "경기 모멘텀",
-                        detail = "성장·실적의 기초 체력",
-                        value = externalForces.economicMomentum,
-                        onValueChange = { externalForces = externalForces.copy(economicMomentum = it) },
-                    )
-                    Spacer(Modifier.height(8.dp))
-
-                    if (error != null) {
-                        Text(
-                            error.orEmpty(),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MarketColors.RiseSoft, RoundedCornerShape(MarketRadii.small))
-                                .padding(10.dp),
-                            style = MarketType.label,
-                            color = MarketColors.Rise,
-                        )
-                        Spacer(Modifier.height(10.dp))
                     }
 
+                    Spacer(Modifier.height(24.dp))
+                    SetupSectionTitle(title = "난이도")
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                        difficultyLabels.forEachIndexed { index, label ->
+                            SetupChoiceCard(
+                                title = label,
+                                detail = difficultyDetails[index],
+                                selected = selectedDifficulty == index,
+                                onClick = {
+                                    selectedDifficulty = index
+                                    externalForces = forcesForDifficulty(index)
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(24.dp))
                     MarketButton(
-                        text = "2026년 시장 열기  →",
+                        text = "게임 세부 설정",
+                        onClick = { showDetailedSettings = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = MarketButtonVariant.Weak,
+                    )
+                    Spacer(Modifier.height(24.dp))
+                    LedgerDivider()
+                    Spacer(Modifier.height(18.dp))
+                    MarketButton(
+                        text = "게임 시작  →",
                         onClick = {
-                            val capital = capitalText.toDoubleOrNull()
-                            val seed = seedText.toLongOrNull()
-                            when {
-                                capital == null || capital < NewGameOptions.MIN_INITIAL_CAPITAL_KRW ->
-                                    error = "초기 투자금은 100만원 이상 입력하세요."
-                                seed == null -> error = "시장 시드를 정수로 입력하세요."
-                                else -> {
-                                    error = null
-                                    onStart(
-                                        NewGameOptions(
-                                            initialCapitalKrw = capital,
-                                            seed = seed,
-                                            usFractionalTrading = fractional,
-                                            autoExchange = autoExchange,
-                                            initialExternalMarketForces = externalForces,
-                                        ),
-                                    )
-                                }
-                            }
+                            onStart(
+                                NewGameOptions(
+                                    initialCapitalKrw = seedMoneyAmounts[selectedSeedMoney],
+                                    seed = marketSeed,
+                                    usFractionalTrading = fractional,
+                                    autoExchange = autoExchange,
+                                    initialExternalMarketForces = externalForces,
+                                ),
+                            )
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     TextButton(
                         onClick = {
-                            capitalText = "100000000"
-                            seedText = NewGameOptions.DEFAULT_SEED.toString()
+                            selectedSeedMoney = 1
+                            selectedDifficulty = 1
+                            marketSeed = NewGameOptions.DEFAULT_SEED
                             fractional = false
                             autoExchange = true
-                            externalForces = ExternalMarketForces()
-                            error = null
+                            externalForces = forcesForDifficulty(1)
                         },
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                     ) {
                         Text("기본값으로 되돌리기", style = MarketType.label, color = MarketColors.InkMuted)
                     }
+                    }
                 }
             }
         }
+
+        AnimatedVisibility(
+            visible = showScenarioBackground,
+            modifier = Modifier.fillMaxSize(),
+            enter = fadeIn(tween(MarketMotion.standard)),
+            exit = fadeOut(tween(MarketMotion.standard)),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(MarketColors.Scrim)
+                    .clickable(role = Role.Button) { showScenarioBackground = false }
+                    .semantics { contentDescription = "시나리오 배경 닫기" },
+            )
+        }
+
+        AnimatedVisibility(
+            visible = showScenarioBackground,
+            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+            enter = slideInHorizontally(
+                animationSpec = tween(MarketMotion.emphasized),
+                initialOffsetX = { fullWidth -> fullWidth },
+            ),
+            exit = slideOutHorizontally(
+                animationSpec = tween(MarketMotion.standard),
+                targetOffsetX = { fullWidth -> fullWidth },
+            ),
+        ) {
+            ScenarioBackgroundPanel(onDismiss = { showScenarioBackground = false })
+        }
     }
+
+    if (showDetailedSettings) {
+        NewGameDetailedSettingsDialog(
+            fractional = fractional,
+            autoExchange = autoExchange,
+            externalForces = externalForces,
+            onFractionalChange = { fractional = it },
+            onAutoExchangeChange = { autoExchange = it },
+            onExternalForcesChange = { externalForces = it },
+            onDismiss = { showDetailedSettings = false },
+        )
+    }
+}
+
+@Composable
+private fun NewGameHero(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .background(MarketColors.Navy)
+            .padding(horizontal = 54.dp, vertical = 46.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(44.dp).background(MarketColors.Primary, RoundedCornerShape(MarketRadii.small)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("40", style = MarketType.numberLarge.copy(fontSize = 17.sp), color = Color.White)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("Market Ledger 2040", style = MarketType.heading.copy(fontSize = 20.sp), color = Color.White)
+                Text(
+                    "TURN-BASED MARKET LEDGER",
+                    style = MarketType.caption.copy(letterSpacing = 0.3.sp),
+                    color = Color.White.copy(alpha = 0.68f),
+                )
+            }
+        }
+
+        Spacer(Modifier.weight(0.7f))
+        Text(
+            "시간을 사고,\n판단을 기록하다.",
+            style = MarketType.display.copy(fontSize = 42.sp, lineHeight = 51.sp),
+            color = Color.White,
+        )
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "선택한 시나리오의 기간과 시장 조건으로 한국과 미국 시장을 진행합니다.",
+            style = MarketType.body,
+            color = Color.White.copy(alpha = 0.62f),
+        )
+
+        Spacer(Modifier.weight(1f))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MarketStamp("KOSPI", "KRX")
+            MarketStamp("KOSDAQ", "KRX")
+            MarketStamp("NASDAQ", "US")
+            MarketStamp("NYSE", "US")
+        }
+    }
+}
+
+@Composable
+private fun SetupSectionTitle(title: String, detail: String? = null) {
+    Text(title, style = MarketType.heading.copy(fontSize = 17.sp), color = MarketColors.Ink)
+    if (detail != null) {
+        Spacer(Modifier.height(3.dp))
+        Text(detail, style = MarketType.caption, color = MarketColors.InkMuted)
+    }
+}
+
+@Composable
+private fun SetupChoiceCard(
+    title: String,
+    detail: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(MarketRadii.medium)
+    Column(
+        modifier = modifier
+            .height(78.dp)
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) MarketColors.Primary else MarketColors.Line,
+                shape = shape,
+            )
+            .background(if (selected) MarketColors.PrimaryWeak else MarketColors.Paper, shape)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            title,
+            style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+            color = if (selected) MarketColors.PrimaryText else MarketColors.Ink,
+            maxLines = 1,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            detail,
+            style = MarketType.caption,
+            color = MarketColors.InkMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun NewGameDetailedSettingsDialog(
+    fractional: Boolean,
+    autoExchange: Boolean,
+    externalForces: ExternalMarketForces,
+    onFractionalChange: (Boolean) -> Unit,
+    onAutoExchangeChange: (Boolean) -> Unit,
+    onExternalForcesChange: (ExternalMarketForces) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        LedgerPanel(
+            modifier = Modifier.width(900.dp).fillMaxHeight(0.92f),
+            padding = 0.dp,
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 30.dp, end = 18.dp, top = 22.dp, bottom = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("게임 세부 설정", style = MarketType.display.copy(fontSize = 25.sp), color = MarketColors.Ink)
+                    }
+                    TextButton(onClick = onDismiss) {
+                        Text("닫기  ×", style = MarketType.label, color = MarketColors.InkMuted)
+                    }
+                }
+                LedgerDivider()
+
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 30.dp, vertical = 24.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            SetupSectionTitle("초기 시장 환경", "선택한 시나리오의 시작값입니다.")
+                        }
+                        Text("0 — 100", style = MarketType.number, color = MarketColors.PrimaryText)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    NewGameForceSlider(
+                        title = "카오스",
+                        detail = "변동성과 뉴스 혼선",
+                        value = externalForces.chaos,
+                        onValueChange = { onExternalForcesChange(externalForces.copy(chaos = it)) },
+                    )
+                    NewGameForceSlider(
+                        title = "세계 긴장",
+                        detail = "전쟁·지정학 위험",
+                        value = externalForces.worldTension,
+                        onValueChange = { onExternalForcesChange(externalForces.copy(worldTension = it)) },
+                    )
+                    NewGameForceSlider(
+                        title = "개인 투자력",
+                        detail = "개인 투자자 수급",
+                        value = externalForces.retailBuyingPower,
+                        onValueChange = { onExternalForcesChange(externalForces.copy(retailBuyingPower = it)) },
+                    )
+                    NewGameForceSlider(
+                        title = "기관 투자력",
+                        detail = "기관 투자자 수급",
+                        value = externalForces.institutionalBuyingPower,
+                        onValueChange = { onExternalForcesChange(externalForces.copy(institutionalBuyingPower = it)) },
+                    )
+                    NewGameForceSlider(
+                        title = "시장 유동성",
+                        detail = "주문 흡수와 체결 깊이",
+                        value = externalForces.marketLiquidity,
+                        onValueChange = { onExternalForcesChange(externalForces.copy(marketLiquidity = it)) },
+                    )
+                    NewGameForceSlider(
+                        title = "경기 모멘텀",
+                        detail = "성장·실적의 기초 체력",
+                        value = externalForces.economicMomentum,
+                        onValueChange = { onExternalForcesChange(externalForces.copy(economicMomentum = it)) },
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+                    LedgerDivider()
+                    Spacer(Modifier.height(12.dp))
+                    CheckRow(
+                        checked = fractional,
+                        onCheckedChange = onFractionalChange,
+                        title = "미국주식 소수점 거래",
+                        detail = "최소 0.000001주 · 기본값은 온주 거래",
+                    )
+                    CheckRow(
+                        checked = autoExchange,
+                        onCheckedChange = onAutoExchangeChange,
+                        title = "주문 시 자동 환전",
+                        detail = "USD 부족분만 환전 스프레드를 반영",
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                LedgerDivider()
+                MarketButton(
+                    text = "이 설정으로 계속하기",
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 30.dp, vertical = 18.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScenarioSelectionCard(
+    compact: Boolean = false,
+    onShowBackground: () -> Unit = {},
+) {
+    val shape = RoundedCornerShape(MarketRadii.medium)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .border(2.dp, MarketColors.Primary, shape)
+            .background(MarketColors.Paper, shape)
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Image(
+            painter = painterResource(Res.drawable.market_scenario_august_2026),
+            contentDescription = "태극기가 걸린 JP모건 사옥",
+            modifier = Modifier
+                .width(if (compact) 220.dp else 360.dp)
+                .height(if (compact) 124.dp else 190.dp)
+                .clip(RoundedCornerShape(MarketRadii.small)),
+            contentScale = ContentScale.Crop,
+        )
+        Spacer(Modifier.width(20.dp))
+        Column(Modifier.weight(1f).padding(end = 14.dp)) {
+            Text(
+                "선택됨",
+                modifier = Modifier
+                    .background(MarketColors.PrimaryWeak, RoundedCornerShape(MarketRadii.pill))
+                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                color = MarketColors.PrimaryText,
+            )
+            Spacer(Modifier.height(if (compact) 8.dp else 13.dp))
+            Text(
+                "2026년 8월",
+                style = MarketType.display.copy(fontSize = if (compact) 21.sp else 25.sp),
+                color = MarketColors.Ink,
+            )
+            Spacer(Modifier.height(if (compact) 5.dp else 8.dp))
+            Text(
+                if (compact) {
+                    "2026.08—2040.12\nKRX · NASDAQ · NYSE"
+                } else {
+                    "시작  2026.08\n종료  2040.12\n시장  KRX · NASDAQ · NYSE"
+                },
+                style = MarketType.label,
+                color = MarketColors.Ink,
+            )
+            Spacer(Modifier.height(5.dp))
+            Row(
+                Modifier
+                    .clickable(role = Role.Button, onClick = onShowBackground)
+                    .padding(vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "배경 보기",
+                    style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                    color = MarketColors.PrimaryText,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("→", style = MarketType.number, color = MarketColors.PrimaryText)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScenarioBackgroundPanel(onDismiss: () -> Unit) {
+    Column(
+        Modifier
+            .width(430.dp)
+            .fillMaxHeight()
+            .background(MarketColors.Paper)
+            .border(1.dp, MarketColors.Line)
+            .verticalScroll(rememberScrollState()),
+    ) {
+        Image(
+            painter = painterResource(Res.drawable.market_scenario_august_2026),
+            contentDescription = "태극기가 걸린 JP모건 사옥",
+            modifier = Modifier.fillMaxWidth().height(238.dp),
+            contentScale = ContentScale.Crop,
+        )
+        Column(Modifier.fillMaxWidth().padding(26.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("시나리오 배경", style = MarketType.caption, color = MarketColors.InkMuted)
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onDismiss) {
+                    Text("닫기  ×", style = MarketType.label, color = MarketColors.InkMuted)
+                }
+            }
+            Text("2026년 8월", style = MarketType.display.copy(fontSize = 28.sp), color = MarketColors.Ink)
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "한국과 미국 시장을 동시에 거래하는 기본 시나리오입니다. 세계 긴장은 높은 편이고, 시장 유동성은 보통이며 경기 모멘텀은 중립보다 낮게 시작합니다.",
+                style = MarketType.body,
+                color = MarketColors.Ink,
+            )
+
+            Spacer(Modifier.height(24.dp))
+            LedgerDivider()
+            Spacer(Modifier.height(18.dp))
+            ScenarioBackgroundFact("기간", "2026.08—2040.12")
+            ScenarioBackgroundFact("대상 시장", "KRX · NASDAQ · NYSE")
+            ScenarioBackgroundFact("세계 긴장", "67 / 100")
+            ScenarioBackgroundFact("시장 유동성", "58 / 100")
+            ScenarioBackgroundFact("경기 모멘텀", "48 / 100")
+
+            Spacer(Modifier.height(18.dp))
+            Text(
+                "뉴스와 가격 경로는 시장 시드에 따라 달라집니다.",
+                style = MarketType.label,
+                color = MarketColors.InkMuted,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScenarioBackgroundFact(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MarketType.label, color = MarketColors.InkMuted)
+        Spacer(Modifier.weight(1f))
+        Text(value, style = MarketType.number, color = MarketColors.Ink)
+    }
+}
+
+@Composable
+private fun MarketSeedSelector(
+    marketSeed: Long,
+    onMarketSeedChange: (Long) -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier
+                .weight(1f)
+                .height(58.dp)
+                .border(1.dp, MarketColors.Line, RoundedCornerShape(MarketRadii.medium))
+                .background(MarketColors.Grey50, RoundedCornerShape(MarketRadii.medium))
+                .padding(horizontal = 15.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text("시장 시드", style = MarketType.caption, color = MarketColors.InkMuted)
+            Text(marketSeed.toString(), style = MarketType.number, color = MarketColors.Ink)
+        }
+        Box(
+            Modifier
+                .size(58.dp)
+                .background(MarketColors.Primary, RoundedCornerShape(MarketRadii.medium))
+                .clickable(role = Role.Button) {
+                    onMarketSeedChange(Random.nextLong(1L, Long.MAX_VALUE))
+                }
+                .semantics { contentDescription = "시장 시드 무작위 생성" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("⚄", style = MarketType.headingLarge.copy(fontSize = 27.sp), color = Color.White)
+        }
+    }
+}
+
+private fun forcesForDifficulty(index: Int): ExternalMarketForces = when (index) {
+    0 -> ExternalMarketForces(
+        chaos = 0.34,
+        worldTension = 0.42,
+        retailBuyingPower = 0.62,
+        institutionalBuyingPower = 0.64,
+        marketLiquidity = 0.72,
+        economicMomentum = 0.60,
+    )
+    2 -> ExternalMarketForces(
+        chaos = 0.78,
+        worldTension = 0.82,
+        retailBuyingPower = 0.44,
+        institutionalBuyingPower = 0.46,
+        marketLiquidity = 0.36,
+        economicMomentum = 0.34,
+    )
+    else -> ExternalMarketForces()
 }
 
 @Composable
@@ -328,7 +668,7 @@ private fun NewGameForceSlider(
             Text(
                 (value * 100.0).roundToInt().toString(),
                 style = MarketType.number,
-                color = MarketColors.Primary,
+                color = MarketColors.PrimaryText,
             )
         }
         Slider(
@@ -339,16 +679,6 @@ private fun NewGameForceSlider(
             steps = 99,
         )
     }
-}
-
-@Composable
-private fun FormLabel(text: String) {
-    Text(
-        text,
-        style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
-        color = MarketColors.Ink,
-    )
-    Spacer(Modifier.height(6.dp))
 }
 
 @Composable
@@ -371,35 +701,6 @@ private fun CheckRow(
             Text(title, style = MarketType.body.copy(fontWeight = FontWeight.Medium), color = MarketColors.Ink)
             Text(detail, style = MarketType.label, color = MarketColors.InkMuted)
         }
-    }
-}
-
-@Composable
-private fun MarketTimeline(modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        val y = size.height / 2f
-        drawLine(Color.White.copy(alpha = 0.18f), Offset(0f, y), Offset(size.width, y), 2f)
-        drawLine(MarketColors.Primary, Offset(0f, y), Offset(size.width * 0.18f, y), 3f)
-        listOf(0f, 0.26f, 0.61f, 1f).forEachIndexed { index, fraction ->
-            drawCircle(
-                color = if (index == 0) MarketColors.Rise else Color.White.copy(alpha = 0.5f),
-                radius = if (index == 0) 6f else 4f,
-                center = Offset(size.width * fraction, y),
-            )
-        }
-    }
-}
-
-@Composable
-private fun TimelineLabel(
-    year: String,
-    label: String,
-    modifier: Modifier,
-    alignEnd: Boolean = false,
-) {
-    Column(modifier, horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start) {
-        Text(year, style = MarketType.number, color = Color.White.copy(alpha = 0.88f))
-        Text(label, style = MarketType.caption, color = Color.White.copy(alpha = 0.62f))
     }
 }
 
