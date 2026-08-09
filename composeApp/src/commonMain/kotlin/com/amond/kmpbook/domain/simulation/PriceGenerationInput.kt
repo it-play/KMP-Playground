@@ -50,6 +50,10 @@ data class PriceGenerationInput(
     val referenceTradingFraction: Double? = null,
     /** 상장시장 폐장 중 누적된 기초자산·환율 fair-value 로그수익률. 개장 시 한 번 적용한다. */
     val carriedReferenceLogReturn: Double = 0.0,
+    /** 상장시장 폐장 중 누적된 상품 자체 사건의 가격 전용 로그수익률. */
+    val carriedPriceDislocationLogReturn: Double = 0.0,
+    /** 직전 시장가격/NAV(또는 ETN 지표가치)의 로그 괴리. 가격 계층의 평균회귀에만 사용한다. */
+    val priceToReferenceLogGap: Double = 0.0,
     /** 이번 봉이 현지 거래일의 첫 정규장 봉인지를 런타임이 지정한다. */
     val isFirstRegularBarOfDay: Boolean = false,
 ) {
@@ -75,6 +79,8 @@ data class PriceGenerationInput(
             "Reference trading fraction must be in [0, 1]"
         }
         require(carriedReferenceLogReturn.isFinite())
+        require(carriedPriceDislocationLogReturn.isFinite())
+        require(priceToReferenceLogGap.isFinite())
     }
 
     companion object {
