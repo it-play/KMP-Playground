@@ -19,6 +19,7 @@ import com.amond.kmpbook.domain.model.OrderType
 import com.amond.kmpbook.domain.model.PortfolioSnapshot
 import com.amond.kmpbook.domain.model.PendingCorporateAction
 import com.amond.kmpbook.domain.model.PriceBar
+import com.amond.kmpbook.domain.model.PriceBarInterval
 import com.amond.kmpbook.domain.model.Quote
 import com.amond.kmpbook.domain.model.Screen
 import com.amond.kmpbook.domain.model.ScheduledEventOccurrence
@@ -66,8 +67,8 @@ data class SimulatorUiState(
     val quotes: Map<String, Quote>,
     /** 최근 시간봉. 장중 시세 복원과 1일·1주 차트에 사용한다. */
     val priceHistory: Map<String, List<PriceBar>>,
-    /** 엔진이 거래일별로 직접 집계한 OHLCV. 진행 중인 거래일의 부분 일봉도 포함한다. */
-    val dailyPriceHistory: Map<String, List<PriceBar>>,
+    /** 엔진이 일·주·월·분기별로 직접 집계한 OHLCV. 현재 진행 중인 봉도 포함한다. */
+    val chartPriceHistory: Map<String, Map<PriceBarInterval, List<PriceBar>>>,
     val cashByCurrency: Map<Currency, Double>,
     val holdings: Map<String, Holding>,
     val orders: List<Order>,
@@ -133,7 +134,8 @@ data class SimulatorUiState(
     val selectedQuote: Quote? get() = selectedStockId?.let(quotes::get)
     val selectedHolding: Holding? get() = selectedStockId?.let(holdings::get)
     val selectedHistory: List<PriceBar> get() = selectedStockId?.let(priceHistory::get).orEmpty()
-    val selectedDailyHistory: List<PriceBar> get() = selectedStockId?.let(dailyPriceHistory::get).orEmpty()
+    val selectedChartHistory: Map<PriceBarInterval, List<PriceBar>>
+        get() = selectedStockId?.let(chartPriceHistory::get).orEmpty()
     val orderBook: OrderBookSnapshot? get() = selectedOrderBook
     val sessions: Map<Market, MarketSession> get() = marketSessions
     val selectedSession: MarketSession? get() = selectedStock?.let { marketSessions[it.market] }

@@ -393,8 +393,7 @@ private fun ScreenContent(
         -> MarketTradingScreen(
             stocks = state.stocks,
             quotes = state.quotes,
-            priceHistory = state.priceHistory,
-            dailyPriceHistory = state.dailyPriceHistory,
+            chartPriceHistory = state.chartPriceHistory,
             selectedStockId = state.selectedStockId,
             holding = state.selectedHolding,
             orderBook = state.selectedOrderBook?.toOrderBook(),

@@ -859,7 +859,7 @@ actual class GameSaveStorage actual constructor() {
             "selectedStockId",
             "quotes",
             "priceHistory",
-            "dailyPriceHistory",
+            "chartPriceHistory",
             "cashByCurrency",
             "holdings",
             "orders",

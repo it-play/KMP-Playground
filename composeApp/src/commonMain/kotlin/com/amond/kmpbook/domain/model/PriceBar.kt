@@ -9,7 +9,7 @@ data class PriceBar(
     val stockId: String,
     val startTime: Instant,
     val endTime: Instant,
-    val step: TurnStep,
+    val step: PriceBarInterval,
     val open: Double,
     val high: Double,
     val low: Double,
@@ -27,7 +27,7 @@ data class PriceBar(
         require(volume >= 0L) { "거래량은 음수일 수 없습니다." }
     }
 
-    val interval: TurnStep get() = step
+    val interval: PriceBarInterval get() = step
     val change: Double get() = close - open
     val changeRate: Double get() = if (open == 0.0) 0.0 else change / open
     val isRising: Boolean get() = close > open

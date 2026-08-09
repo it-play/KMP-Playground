@@ -23,7 +23,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import com.amond.kmpbook.domain.model.Market
 import com.amond.kmpbook.domain.model.PriceBar
-import com.amond.kmpbook.domain.model.TurnStep
+import com.amond.kmpbook.domain.model.PriceBarInterval
 import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketType
@@ -88,7 +88,6 @@ fun CandlestickVolumeChart(
             val maxVolume = max(1L, visibleBars.maxOf { it.volume })
             val datesDiffer = GameCalendar.marketLocalDateTime(market, visibleBars.first().startTime).date !=
                 GameCalendar.marketLocalDateTime(market, visibleBars.last().startTime).date
-            val daily = visibleBars.all { it.step == TurnStep.ONE_DAY }
 
             fun candleX(index: Int): Float = plotLeft + slot * index + slot / 2f
             fun priceY(value: Double): Float =
@@ -140,7 +139,6 @@ fun CandlestickVolumeChart(
                     text = visibleBars[index].axisLabel(
                         market = market,
                         includeDate = datesDiffer,
-                        daily = daily,
                     ),
                     style = tickTextStyle,
                 )
@@ -263,17 +261,19 @@ fun CandlestickVolumeChart(
 private fun PriceBar.axisLabel(
     market: Market,
     includeDate: Boolean,
-    daily: Boolean,
 ): String {
     val local = GameCalendar.marketLocalDateTime(market, startTime)
+    val year = local.year.toString()
     val month = local.month.number.toString().padStart(2, '0')
     val day = local.day.toString().padStart(2, '0')
     val hour = local.hour.toString().padStart(2, '0')
     val minute = local.minute.toString().padStart(2, '0')
-    return when {
-        daily -> "$month.$day"
-        includeDate -> "$month.$day $hour:$minute"
-        else -> "$hour:$minute"
+    return when (step) {
+        PriceBarInterval.ONE_HOUR -> if (includeDate) "$month.$day $hour:$minute" else "$hour:$minute"
+        PriceBarInterval.ONE_DAY -> "$month.$day"
+        PriceBarInterval.ONE_WEEK -> "$month.$day 주"
+        PriceBarInterval.ONE_MONTH -> "$year.$month"
+        PriceBarInterval.THREE_MONTHS -> "$year Q${local.month.ordinal / 3 + 1}"
     }
 }
 

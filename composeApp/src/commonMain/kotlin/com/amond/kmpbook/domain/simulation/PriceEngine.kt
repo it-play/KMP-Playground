@@ -12,7 +12,7 @@ import com.amond.kmpbook.domain.model.Quote
 import com.amond.kmpbook.domain.model.ReferenceCurrency
 import com.amond.kmpbook.domain.model.Sector
 import com.amond.kmpbook.domain.model.StockDefinition
-import com.amond.kmpbook.domain.model.TurnStep
+import com.amond.kmpbook.domain.model.PriceBarInterval
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.ln
@@ -169,7 +169,7 @@ class PriceEngine(private val seed: Long) {
             stockId = stock.id,
             startTime = input.startTime,
             endTime = endTime,
-            step = TurnStep.ONE_HOUR,
+            step = PriceBarInterval.ONE_HOUR,
             open = open.price,
             high = high.price,
             low = low.price,
@@ -478,7 +478,7 @@ class PriceEngine(private val seed: Long) {
             stockId = input.stock.id,
             startTime = input.startTime,
             endTime = endTime,
-            step = TurnStep.ONE_HOUR,
+            step = PriceBarInterval.ONE_HOUR,
             open = price,
             high = price,
             low = price,

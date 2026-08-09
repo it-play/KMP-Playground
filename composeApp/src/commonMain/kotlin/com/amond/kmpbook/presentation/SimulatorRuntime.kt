@@ -33,6 +33,7 @@ import com.amond.kmpbook.domain.model.OrderType
 import com.amond.kmpbook.domain.model.PortfolioSnapshot
 import com.amond.kmpbook.domain.model.PendingCorporateAction
 import com.amond.kmpbook.domain.model.PriceBar
+import com.amond.kmpbook.domain.model.PriceBarInterval
 import com.amond.kmpbook.domain.model.Quote
 import com.amond.kmpbook.domain.model.ReferenceCurrency
 import com.amond.kmpbook.domain.model.Screen
@@ -526,7 +527,8 @@ internal class SimulatorRuntime(
     private val stockById = mutableStocks.associateByTo(linkedMapOf(), StockDefinition::id)
     private val quotes = linkedMapOf<String, Quote>()
     private val history = linkedMapOf<String, ArrayDeque<PriceBar>>()
-    private val dailyPriceHistory = linkedMapOf<String, ArrayDeque<PriceBar>>()
+    private val chartPriceHistory =
+        linkedMapOf<String, MutableMap<PriceBarInterval, ArrayDeque<PriceBar>>>()
     private val pendingEtfReferenceReturns = mutableMapOf<String, Double>()
     /** Event level changes observed while a listing is closed, consumed by its next opening auction. */
     private val pendingClosedEventLogReturns = mutableMapOf<String, Double>()
@@ -880,7 +882,9 @@ internal class SimulatorRuntime(
             selectedStockId = selectedStockId,
             quotes = stateQuotes.toMap(),
             priceHistory = history.mapValues { (_, bars) -> bars.toList() },
-            dailyPriceHistory = dailyPriceHistory.mapValues { (_, bars) -> bars.toList() },
+            chartPriceHistory = chartPriceHistory.mapValues { (_, histories) ->
+                histories.mapValues { (_, bars) -> bars.toList() }
+            },
             cashByCurrency = cash.toMap(),
             holdings = holdings.toMap(),
             orders = orders.toList(),
@@ -945,9 +949,9 @@ internal class SimulatorRuntime(
             "저장된 상품 재무 상태가 현재 ETF·ETN·펀드 종목과 일치하지 않습니다."
         }
         require(
-            state.quotes.keys == savedIds.toSet() &&
+                state.quotes.keys == savedIds.toSet() &&
                 state.priceHistory.keys == savedIds.toSet() &&
-                state.dailyPriceHistory.keys == savedIds.toSet(),
+                state.chartPriceHistory.keys == savedIds.toSet(),
         ) {
             "저장된 모든 상품의 시세와 차트 기록이 필요합니다."
         }
@@ -1057,14 +1061,23 @@ internal class SimulatorRuntime(
         history.clear()
         state.priceHistory.forEach { (stockId, bars) ->
             require(bars.isNotEmpty()) { "차트 기록이 비어 있습니다." }
+            require(bars.all { it.step == PriceBarInterval.ONE_HOUR }) {
+                "엔진 가격 기록에는 시간봉만 포함되어야 합니다."
+            }
             history[stockId] = ArrayDeque(bars.takeLast(MAX_RECENT_BARS))
         }
-        dailyPriceHistory.clear()
-        state.dailyPriceHistory.forEach { (stockId, bars) ->
-            require(bars.all { it.step == TurnStep.ONE_DAY }) {
-                "일봉 차트 기록에는 일봉만 포함되어야 합니다."
+        chartPriceHistory.clear()
+        state.chartPriceHistory.forEach { (stockId, savedHistories) ->
+            require(savedHistories.keys == CHART_INTERVALS) {
+                "차트 주기별 가격 기록이 모두 필요합니다."
             }
-            dailyPriceHistory[stockId] = ArrayDeque(bars.takeLast(MAX_DAILY_CHART_BARS))
+            chartPriceHistory[stockId] = CHART_INTERVALS.associateWithTo(linkedMapOf()) { interval ->
+                val bars = savedHistories.getValue(interval)
+                require(bars.all { it.step == interval }) {
+                    "차트 가격 기록의 봉 주기가 일치하지 않습니다."
+                }
+                ArrayDeque(bars.takeLast(MAX_CHART_BARS_PER_INTERVAL))
+            }
         }
         pendingEtfReferenceReturns.clear()
         pendingEtfReferenceReturns.putAll(state.pendingEtfReferenceReturns)
@@ -1262,7 +1275,7 @@ internal class SimulatorRuntime(
                     stockId = stock.id,
                     startTime = at - 1.hours,
                     endTime = at,
-                    step = TurnStep.ONE_HOUR,
+                    step = PriceBarInterval.ONE_HOUR,
                     open = stock.initialPrice,
                     high = stock.initialPrice,
                     low = stock.initialPrice,
@@ -1271,7 +1284,7 @@ internal class SimulatorRuntime(
                 ),
             )
         }
-        dailyPriceHistory[stock.id] = ArrayDeque()
+        chartPriceHistory[stock.id] = CHART_INTERVALS.associateWithTo(linkedMapOf()) { ArrayDeque() }
         dailyTrackers[stock.id] = DailyPriceTracker(
             date = marketDate(stock.market, at),
             basePrice = stock.initialPrice,
@@ -1535,7 +1548,7 @@ internal class SimulatorRuntime(
                     stockId = stock.id,
                     startTime = from,
                     endTime = to,
-                    step = TurnStep.ONE_HOUR,
+                    step = PriceBarInterval.ONE_HOUR,
                     open = previousQuote.price,
                     high = previousQuote.price,
                     low = previousQuote.price,
@@ -3408,7 +3421,7 @@ internal class SimulatorRuntime(
             bars.clear()
             bars.addAll(adjustedBars)
         }
-        dailyPriceHistory[stock.id]?.let { bars ->
+        chartPriceHistory[stock.id]?.values?.forEach { bars ->
             val adjustedBars = bars.map { bar ->
                 bar.copy(
                     open = adjustedPrice(bar.open),
@@ -3818,10 +3831,24 @@ internal class SimulatorRuntime(
             random.nextGaussian() * 0.00008).coerceIn(-0.02, 0.15)
         val growth = (macro.growthRate + (0.02 - macro.growthRate) * 0.0015 +
             random.nextGaussian() * 0.0001).coerceIn(-0.10, 0.15)
-        val riskSentiment = (macro.riskSentiment * 0.97 + random.nextGaussian() * 0.035)
+        val riskSentiment = (
+            macro.riskSentiment * RISK_SENTIMENT_PERSISTENCE +
+                random.nextGaussian() * RISK_SENTIMENT_HOURLY_VOLATILITY
+            )
             .coerceIn(-1.0, 1.0)
-        val volatilityRegime = (1.0 + abs(riskSentiment) * 0.8 + random.nextGaussian() * 0.04)
-            .coerceIn(0.4, 3.0)
+        val previousMarketMove = macro.marketHourlyReturns.values.maxOfOrNull(::abs) ?: 0.0
+        val realizedStress = (
+            previousMarketMove / MARKET_FACTOR_VOLATILITY - VOLATILITY_SHOCK_FREE_MULTIPLE
+            ).coerceIn(0.0, VOLATILITY_MAX_REALIZED_STRESS)
+        val volatilityTarget = 1.0 +
+            maxOf(-riskSentiment, 0.0) * VOLATILITY_DOWNSIDE_SENTIMENT_SENSITIVITY +
+            maxOf(riskSentiment, 0.0) * VOLATILITY_UPSIDE_SENTIMENT_SENSITIVITY +
+            realizedStress * VOLATILITY_REALIZED_STRESS_SENSITIVITY
+        val volatilityRegime = (
+            macro.volatilityRegime +
+                (volatilityTarget - macro.volatilityRegime) * VOLATILITY_REGIME_REVERSION +
+                random.nextGaussian() * VOLATILITY_REGIME_INNOVATION
+            ).coerceIn(MIN_VOLATILITY_REGIME, MAX_VOLATILITY_REGIME)
         val krCommonReturn = random.nextGaussian() * MARKET_FACTOR_VOLATILITY * volatilityRegime
         val usCommonReturn = random.nextGaussian() * MARKET_FACTOR_VOLATILITY * volatilityRegime
         val marketReturns = Market.entries.associateWith { market ->
@@ -4164,14 +4191,18 @@ internal class SimulatorRuntime(
         if (bars.size == 1 && bars.first().volume == 0L) bars.clear()
         bars.addLast(bar)
         while (bars.size > MAX_RECENT_BARS) bars.removeFirst()
-        appendDailyPriceHistory(stockById.getValue(stockId), bar)
+        val stock = stockById.getValue(stockId)
+        CHART_INTERVALS.forEach { interval -> appendChartPriceHistory(stock, bar, interval) }
     }
 
-    private fun appendDailyPriceHistory(stock: StockDefinition, bar: PriceBar) {
-        val bars = dailyPriceHistory.getValue(stock.id)
-        val tradingDate = marketDate(stock.market, bar.startTime)
+    private fun appendChartPriceHistory(
+        stock: StockDefinition,
+        bar: PriceBar,
+        interval: PriceBarInterval,
+    ) {
+        val bars = chartPriceHistory.getValue(stock.id).getValue(interval)
         val previous = bars.lastOrNull()
-        if (previous != null && marketDate(stock.market, previous.startTime) == tradingDate) {
+        if (previous != null && belongsToSameChartPeriod(stock.market, previous, bar, interval)) {
             bars.removeLast()
             bars.addLast(
                 previous.copy(
@@ -4188,7 +4219,7 @@ internal class SimulatorRuntime(
                     stockId = stock.id,
                     startTime = bar.startTime,
                     endTime = bar.endTime,
-                    step = TurnStep.ONE_DAY,
+                    step = interval,
                     open = bar.open,
                     high = bar.high,
                     low = bar.low,
@@ -4197,7 +4228,40 @@ internal class SimulatorRuntime(
                 ),
             )
         }
-        while (bars.size > MAX_DAILY_CHART_BARS) bars.removeFirst()
+        while (bars.size > MAX_CHART_BARS_PER_INTERVAL) bars.removeFirst()
+    }
+
+    private fun belongsToSameChartPeriod(
+        market: Market,
+        previous: PriceBar,
+        next: PriceBar,
+        interval: PriceBarInterval,
+    ): Boolean {
+        val previousDate = marketDate(market, previous.startTime)
+        val nextDate = marketDate(market, next.startTime)
+        return when (interval) {
+            PriceBarInterval.ONE_HOUR -> false
+            PriceBarInterval.ONE_DAY -> previousDate == nextDate
+            PriceBarInterval.ONE_WEEK -> chartWeekStart(previousDate) == chartWeekStart(nextDate)
+            PriceBarInterval.ONE_MONTH ->
+                previousDate.year == nextDate.year && previousDate.month == nextDate.month
+
+            PriceBarInterval.THREE_MONTHS ->
+                previousDate.year == nextDate.year && previousDate.month.ordinal / 3 == nextDate.month.ordinal / 3
+        }
+    }
+
+    private fun chartWeekStart(date: LocalDate): LocalDate {
+        val daysSinceMonday = when (date.dayOfWeek) {
+            DayOfWeek.MONDAY -> 0
+            DayOfWeek.TUESDAY -> 1
+            DayOfWeek.WEDNESDAY -> 2
+            DayOfWeek.THURSDAY -> 3
+            DayOfWeek.FRIDAY -> 4
+            DayOfWeek.SATURDAY -> 5
+            DayOfWeek.SUNDAY -> 6
+        }
+        return date.minus(daysSinceMonday, DateTimeUnit.DAY)
     }
 
     private fun processOpenOrders(
@@ -5160,8 +5224,7 @@ internal class SimulatorRuntime(
             val sessionInterval = runtimeTradableIntervals(market, from, to).firstOrNull() ?: continue
             val local = GameCalendar.marketLocalDateTime(market, to)
             val previousRate = krxMarketProxyRate(market, previousPrices)
-            val lowRate = krxMarketProxyRate(market, bars.mapValues { it.value.low })
-            val highRate = krxMarketProxyRate(market, bars.mapValues { it.value.high })
+            val (lowRate, highRate) = krxMarketProxyIntervalRates(market, bars)
             var cbState = cbStates[market]
                 ?: TradingProtectionEngine.initialKrxCircuitBreaker(market, local.date)
             val targetRate = nextKrxCircuitBreakerTargetRate(market, cbState)
@@ -5186,7 +5249,7 @@ internal class SimulatorRuntime(
                 )
             } ?: sessionInterval.endsAt
             val observationLocal = GameCalendar.marketLocalDateTime(market, observationAt)
-            val observedRate = targetRate?.let { minOf(lowRate, it) } ?: lowRate
+            val observedRate = lowRate
             val clockTransition = TradingProtectionEngine.advanceKrxCircuitBreaker(cbState, observationAt)
             recordKrxCircuitBreakerTransition(
                 market = market,
@@ -5736,7 +5799,23 @@ internal class SimulatorRuntime(
         } / weight
     }
 
-    /** Current-hour low only; daily [MarketIndexSnapshot.low] must never be re-interpolated next hour. */
+    /**
+     * 종목별 고가·저가는 서로 다른 시각에 형성되므로 그대로 합산하면 존재하지 않았던
+     * 시장 전체 극값이 만들어진다. 시간봉 안에서 동시에 관측 가능한 시가·종가 포트폴리오
+     * 두 점으로 지수 경로를 근사해 개별 종목 변동성을 시장 급락으로 오인하지 않는다.
+     */
+    private fun krxMarketProxyIntervalRates(
+        market: Market,
+        bars: Map<String, PriceBar>,
+    ): Pair<Double, Double> {
+        val opens = bars.mapValues { (_, bar) -> bar.open }
+        val closes = bars.mapValues { (_, bar) -> bar.close }
+        val openRate = krxMarketProxyRate(market, opens)
+        val closeRate = krxMarketProxyRate(market, closes)
+        return minOf(openRate, closeRate) to maxOf(openRate, closeRate)
+    }
+
+    /** Coherent current-hour endpoint low; a daily [MarketIndexSnapshot.low] is never reused next hour. */
     private fun sp500IntervalLow(
         bars: Map<String, PriceBar>,
         previousPrices: Map<String, Double>,
@@ -5749,10 +5828,13 @@ internal class SimulatorRuntime(
         }
         val weight = constituents.sumOf(StockDefinition::marketCap)
         if (weight <= 0.0) return previousIndexValue
-        val factor = constituents.sumOf { stock ->
-            stock.marketCap * bars.getValue(stock.id).low / previousPrices.getValue(stock.id)
+        val openFactor = constituents.sumOf { stock ->
+            stock.marketCap * bars.getValue(stock.id).open / previousPrices.getValue(stock.id)
         } / weight
-        return (previousIndexValue * factor).coerceAtLeast(0.01)
+        val closeFactor = constituents.sumOf { stock ->
+            stock.marketCap * bars.getValue(stock.id).close / previousPrices.getValue(stock.id)
+        } / weight
+        return (previousIndexValue * minOf(openFactor, closeFactor)).coerceAtLeast(0.01)
     }
 
     private fun nextKrxCircuitBreakerTargetRate(
@@ -6733,8 +6815,14 @@ internal class SimulatorRuntime(
     companion object {
         /** 장외·거래정지 봉을 제외한 최근 거래 시간봉을 종목별로 보존한다. */
         const val MAX_RECENT_BARS = 256
-        /** 3개월 차트와 휴장 구간을 충분히 포함하는 거래일별 OHLCV 보존 한도. */
-        const val MAX_DAILY_CHART_BARS = 100
+        /** 각 캔들 주기별로 같은 화면 밀도를 유지하는 OHLCV 보존 한도. */
+        const val MAX_CHART_BARS_PER_INTERVAL = 84
+        val CHART_INTERVALS = setOf(
+            PriceBarInterval.ONE_DAY,
+            PriceBarInterval.ONE_WEEK,
+            PriceBarInterval.ONE_MONTH,
+            PriceBarInterval.THREE_MONTHS,
+        )
         const val MAX_INDEX_BARS = 256
         const val MAX_DAILY_SURVEILLANCE_POINTS = 140
         const val INVESTMENT_ALERT_NOTICE_TRADING_DAYS = 10
@@ -6753,6 +6841,17 @@ internal class SimulatorRuntime(
         const val MIN_USD_KRW = 800.0
         const val MAX_USD_KRW = 2_500.0
         const val POLICY_CHANGE_PROBABILITY_PER_HOUR = 1.0 / (24.0 * 120.0)
+        const val RISK_SENTIMENT_PERSISTENCE = 0.985
+        const val RISK_SENTIMENT_HOURLY_VOLATILITY = 0.018
+        const val VOLATILITY_REGIME_REVERSION = 0.08
+        const val VOLATILITY_REGIME_INNOVATION = 0.012
+        const val VOLATILITY_DOWNSIDE_SENTIMENT_SENSITIVITY = 1.15
+        const val VOLATILITY_UPSIDE_SENTIMENT_SENSITIVITY = 0.15
+        const val VOLATILITY_SHOCK_FREE_MULTIPLE = 1.25
+        const val VOLATILITY_MAX_REALIZED_STRESS = 4.0
+        const val VOLATILITY_REALIZED_STRESS_SENSITIVITY = 0.07
+        const val MIN_VOLATILITY_REGIME = 0.65
+        const val MAX_VOLATILITY_REGIME = 3.0
         const val MARKET_FACTOR_VOLATILITY = 0.0016
         const val VENUE_FACTOR_VOLATILITY = 0.00018
         const val SECTOR_FACTOR_VOLATILITY = 0.0010

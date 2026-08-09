@@ -51,7 +51,7 @@ import com.amond.kmpbook.domain.model.StockDefinition
 import com.amond.kmpbook.domain.model.TradingHaltReason
 import com.amond.kmpbook.domain.model.TradingHaltStatus
 import com.amond.kmpbook.domain.model.TradeSettlementKind
-import com.amond.kmpbook.domain.model.TurnStep
+import com.amond.kmpbook.domain.model.PriceBarInterval
 import com.amond.kmpbook.domain.model.UsLuldPhase
 import com.amond.kmpbook.domain.model.UsMwcbPhase
 import com.amond.kmpbook.domain.model.investmentAlertOccurrenceId
@@ -121,15 +121,26 @@ internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
     if (state.cashByCurrency.values.any { !it.isFinite() || it < 0.0 }) return "현금 잔액이 유효하지 않습니다."
     if (state.holdings.any { (id, holding) -> id != holding.stockId }) return "보유 종목 맵 키가 일치하지 않습니다."
     if (state.quotes.any { (id, quote) -> id != quote.stockId }) return "시세 맵 키가 일치하지 않습니다."
-    if (state.priceHistory.any { (id, bars) -> bars.any { it.stockId != id } }) {
-        return "가격 히스토리 종목 키가 일치하지 않습니다."
-    }
-    if (state.dailyPriceHistory.keys != stockIds || state.dailyPriceHistory.any { (id, bars) ->
-            bars.any { it.stockId != id || it.step != TurnStep.ONE_DAY } ||
-                bars.zipWithNext().any { (previous, next) -> previous.startTime >= next.startTime }
+    if (state.priceHistory.any { (id, bars) ->
+            bars.any { it.stockId != id || it.step != PriceBarInterval.ONE_HOUR }
         }
     ) {
-        return "일봉 가격 히스토리의 종목·주기·시간 순서가 올바르지 않습니다."
+        return "시간봉 가격 히스토리의 종목·주기가 올바르지 않습니다."
+    }
+    val chartIntervals = setOf(
+        PriceBarInterval.ONE_DAY,
+        PriceBarInterval.ONE_WEEK,
+        PriceBarInterval.ONE_MONTH,
+        PriceBarInterval.THREE_MONTHS,
+    )
+    if (state.chartPriceHistory.keys != stockIds || state.chartPriceHistory.any { (id, histories) ->
+            histories.keys != chartIntervals || histories.any { (interval, bars) ->
+                bars.any { it.stockId != id || it.step != interval } ||
+                    bars.zipWithNext().any { (previous, next) -> previous.startTime >= next.startTime }
+            }
+        }
+    ) {
+        return "주기별 차트 히스토리의 종목·주기·시간 순서가 올바르지 않습니다."
     }
     if (state.portfolioSnapshots.any { snapshot ->
             snapshot.holdingCostBasisKrw.keys != snapshot.holdings.mapTo(linkedSetOf()) { it.stockId } ||

@@ -58,6 +58,7 @@ import com.amond.kmpbook.domain.model.OrderBook
 import com.amond.kmpbook.domain.model.OrderSide
 import com.amond.kmpbook.domain.model.OrderType
 import com.amond.kmpbook.domain.model.PriceBar
+import com.amond.kmpbook.domain.model.PriceBarInterval
 import com.amond.kmpbook.domain.model.Quote
 import com.amond.kmpbook.domain.model.ReferenceCurrency
 import com.amond.kmpbook.domain.model.StockDefinition
@@ -96,8 +97,7 @@ import com.amond.kmpbook.ui.theme.MarketType
 fun MarketTradingScreen(
     stocks: List<StockDefinition>,
     quotes: Map<String, Quote>,
-    priceHistory: Map<String, List<PriceBar>>,
-    dailyPriceHistory: Map<String, List<PriceBar>>,
+    chartPriceHistory: Map<String, Map<PriceBarInterval, List<PriceBar>>>,
     selectedStockId: String?,
     holding: Holding?,
     orderBook: OrderBook?,
@@ -125,8 +125,7 @@ fun MarketTradingScreen(
 ) {
     val selectedStock = stocks.firstOrNull { it.id == selectedStockId } ?: stocks.firstOrNull()
     val quote = selectedStock?.let { quotes[it.id] }
-    val bars = selectedStock?.let { priceHistory[it.id].orEmpty() }.orEmpty()
-    val dailyBars = selectedStock?.let { dailyPriceHistory[it.id].orEmpty() }.orEmpty()
+    val chartBars = selectedStock?.let { chartPriceHistory[it.id].orEmpty() }.orEmpty()
     var showSelectedProtectionDetail by remember(selectedStock?.id) { mutableStateOf(false) }
     var orderSide by remember(selectedStock?.id) { mutableStateOf(OrderSide.BUY) }
     var orderType by remember(selectedStock?.id) { mutableStateOf(OrderType.MARKET) }
@@ -160,8 +159,7 @@ fun MarketTradingScreen(
             StockChartPanel(
                 stock = selectedStock,
                 quote = quote,
-                bars = bars,
-                dailyBars = dailyBars,
+                chartBars = chartBars,
                 holding = holding,
                 relatedNews = selectedNews,
                 readRelatedNewsEventIds = readStockNewsEventIds[selectedStock.id].orEmpty(),
@@ -574,8 +572,7 @@ private fun WatchlistRow(
 private fun StockChartPanel(
     stock: StockDefinition,
     quote: Quote,
-    bars: List<PriceBar>,
-    dailyBars: List<PriceBar>,
+    chartBars: Map<PriceBarInterval, List<PriceBar>>,
     holding: Holding?,
     relatedNews: List<NewsStoryUi>,
     readRelatedNewsEventIds: Set<String>,
@@ -587,7 +584,7 @@ private fun StockChartPanel(
     onOpenProtectionDetail: () -> Unit,
     modifier: Modifier,
 ) {
-    var range by remember { mutableStateOf(MarketChartRange.ONE_MONTH) }
+    var candleInterval by remember { mutableStateOf(MarketCandleInterval.ONE_DAY) }
     var selectedIntelligenceTab by remember { mutableStateOf(IntelligenceTab.IMPACT) }
     var isIntelligenceDeckExpanded by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
@@ -633,12 +630,8 @@ private fun StockChartPanel(
             onRelatedNewsListViewed(relatedNewsEventIds)
         }
     }
-    val displayedBars = remember(bars, dailyBars, stock.market, range) {
-        range.selectBars(
-            intradayBars = bars,
-            dailyBars = dailyBars,
-            market = stock.market,
-        )
+    val displayedBars = remember(chartBars, candleInterval) {
+        chartBars[candleInterval.priceBarInterval].orEmpty()
     }
     LedgerPanel(modifier, padding = 0.dp) {
         Box(Modifier.fillMaxSize()) {
@@ -781,8 +774,8 @@ private fun StockChartPanel(
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                MarketChartRange.entries.forEach { item ->
-                    FilterCell(item.displayName, item == range) { range = item }
+                MarketCandleInterval.entries.forEach { item ->
+                    FilterCell(item.displayName, item == candleInterval) { candleInterval = item }
                     Spacer(Modifier.width(3.dp))
                 }
             }
@@ -867,7 +860,7 @@ private fun MarketIntelligenceDeck(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .then(if (activeTab == IntelligenceTab.STRUCTURE) Modifier else Modifier.height(260.dp))
+                    .height(260.dp)
                     .padding(top = 28.dp),
             ) {
                 IntelligenceDeckHeader(
@@ -894,7 +887,7 @@ private fun MarketIntelligenceDeck(
                     IntelligenceTab.STRUCTURE -> ProductStructurePanel(
                         stock,
                         holding,
-                        Modifier.fillMaxWidth(),
+                        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
                     )
                 }
             }
