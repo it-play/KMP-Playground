@@ -21,6 +21,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -100,19 +105,12 @@ fun SimulatorSidebar(
                 )
             }
             Spacer(Modifier.width(MarketSpacing.sm))
-            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text(
-                    "Market Ledger",
-                    style = MarketType.heading,
-                    color = Color.White,
-                    maxLines = 1,
-                )
-                Text(
-                    "CAUSAL MARKET · 2040",
-                    style = MarketType.caption.copy(letterSpacing = 0.35.sp),
-                    color = MarketColors.Grey400,
-                )
-            }
+            Text(
+                "Market Ledger",
+                style = MarketType.heading,
+                color = Color.White,
+                maxLines = 1,
+            )
         }
 
         Spacer(Modifier.height(MarketSpacing.lg))
@@ -259,7 +257,7 @@ fun SimulationClockRail(
                             .background(MarketColors.Signal, RoundedCornerShape(MarketRadii.pill)),
                     )
                     Text(
-                        "MARKET PULSE · ${if (finalUsSessionTail) "ET" else "KST"}",
+                        "MARKET PULSE",
                         style = MarketType.caption.copy(
                             fontWeight = FontWeight.SemiBold,
                             letterSpacing = 0.3.sp,
@@ -301,11 +299,11 @@ fun SimulationClockRail(
                 Row(horizontalArrangement = Arrangement.spacedBy(MarketSpacing.xs)) {
                     StatusLabel(
                         text = "KRX ${koreanSession.displayName}",
-                        color = if (koreanSession.isTradable) MarketColors.Positive else MarketColors.InkMuted,
+                        color = koreanSession.statusColor(),
                     )
                     StatusLabel(
                         text = "US ${usSession.displayName}",
-                        color = if (usSession.isTradable) MarketColors.Positive else MarketColors.InkMuted,
+                        color = usSession.statusColor(),
                     )
                 }
             }
@@ -329,32 +327,55 @@ fun SimulationClockRail(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun StepButton(step: TurnStep, selected: Boolean, onClick: () -> Unit) {
     val background by animateColorAsState(
         targetValue = if (selected) MarketColors.PrimaryWeak else MarketColors.Grey100,
         animationSpec = tween(MarketMotion.quick),
     )
-    Box(
-        modifier = Modifier
-            .width(48.dp)
-            .height(MarketComponentSize.minimumInteractiveTarget)
-            .background(background, RoundedCornerShape(MarketRadii.small))
-            .border(
-                width = 1.dp,
-                color = if (selected) MarketColors.Primary.copy(alpha = 0.34f) else Color.Transparent,
-                shape = RoundedCornerShape(MarketRadii.small),
-            )
-            .semantics {
-                contentDescription = "${step.displayName} 진행 간격${if (selected) ", 선택됨" else ""}"
+    val level = TurnStep.entries.indexOf(step) + 1
+    val tooltipText = "${level}단계 (${step.hours}배속) · ${step.displayName} 진행"
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(),
+        tooltip = {
+            PlainTooltip(
+                containerColor = MarketColors.NavyRaised,
+                contentColor = Color.White,
+            ) {
+                Text(tooltipText, style = MarketType.caption)
             }
-            .selectable(selected = selected, role = Role.Button, onClick = onClick),
-        contentAlignment = Alignment.Center,
+        },
+        state = rememberTooltipState(),
     ) {
-        TurnStepMarker(
-            step = step,
-            color = if (selected) MarketColors.Primary else MarketColors.InkMuted,
-        )
+        Box(
+            modifier = Modifier
+                .width(48.dp)
+                .height(MarketComponentSize.minimumInteractiveTarget)
+                .background(background, RoundedCornerShape(MarketRadii.small))
+                .border(
+                    width = 1.dp,
+                    color = if (selected) MarketColors.Primary.copy(alpha = 0.34f) else Color.Transparent,
+                    shape = RoundedCornerShape(MarketRadii.small),
+                )
+                .semantics {
+                    contentDescription = "$tooltipText${if (selected) ", 선택됨" else ""}"
+                }
+                .selectable(selected = selected, role = Role.Button, onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            TurnStepMarker(
+                step = step,
+                color = if (selected) MarketColors.Primary else MarketColors.InkMuted,
+            )
+        }
     }
+}
+
+private fun MarketSession.statusColor(): Color = when (this) {
+    MarketSession.CLOSED -> MarketColors.InkMuted
+    MarketSession.PRE_MARKET -> MarketColors.AmberText
+    MarketSession.REGULAR -> MarketColors.Positive
+    MarketSession.AFTER_HOURS -> MarketColors.PrimaryText
 }
 
 @Composable
