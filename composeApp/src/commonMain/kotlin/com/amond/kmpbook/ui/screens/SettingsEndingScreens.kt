@@ -98,7 +98,7 @@ fun SettingsScreen(
             ) {
                 LedgerPanel(Modifier.fillMaxWidth().height(210.dp)) {
                     Column {
-                        SectionHeading("게임 규칙", eyebrow = "SESSION CONFIG")
+                        SectionHeading("규칙", eyebrow = "SESSION CONFIG")
                         Spacer(Modifier.height(15.dp))
                         Row {
                             Metric("초기 투자금", formatMoney(settings.initialCapitalKrw, Currency.KRW), Modifier.weight(1f))
@@ -158,7 +158,7 @@ fun SettingsScreen(
                             onChange = {},
                             enabled = false,
                             title = "미국주식 소수점 거래",
-                            detail = "게임 시작 시 선택한 값이며 세션 중에는 바꿀 수 없습니다.",
+                            detail = "시작 시 선택한 값이며 진행 중에는 바꿀 수 없습니다.",
                         )
                         Spacer(Modifier.height(10.dp))
                         Box(Modifier.fillMaxWidth().background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.small)).padding(16.dp)) {
@@ -185,7 +185,7 @@ fun SettingsScreen(
                         }
                         Spacer(Modifier.height(12.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("게임 환율", style = MarketType.label, color = MarketColors.InkMuted)
+                            Text("환율", style = MarketType.label, color = MarketColors.InkMuted)
                             Spacer(Modifier.weight(1f))
                             Text("1 USD = ${formatMoney(settings.usdKrw, Currency.KRW)}", style = MarketType.number, color = MarketColors.Ink)
                         }
@@ -221,10 +221,10 @@ fun SettingsScreen(
                 }
                 LedgerPanel(Modifier.fillMaxWidth().weight(1f), background = MarketColors.RiseSoft) {
                     Column {
-                        SectionHeading("게임 초기화", eyebrow = "DANGER ZONE")
+                        SectionHeading("초기화", eyebrow = "DANGER ZONE")
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            "현재 거래·보유·세금·이벤트 기록을 모두 버리고 새 게임 화면으로 돌아갑니다.",
+                            "현재 거래·보유·세금·이벤트 기록을 모두 버리고 시작 화면으로 돌아갑니다.",
                             style = MarketType.body,
                             color = MarketColors.InkMuted,
                         )
@@ -365,7 +365,7 @@ fun EndingScreen(
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "2026년 세법 동결 시나리오에 따른 게임 정산입니다. 실제 2040년 세법을 예측한 값이 아닙니다.",
+                        "2026년 세법 기준으로 정산합니다.",
                         style = MarketType.caption,
                         color = MarketColors.InkMuted,
                     )
