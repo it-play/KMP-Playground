@@ -6,6 +6,7 @@ import com.amond.kmpbook.domain.model.CorporateActionKind
 import com.amond.kmpbook.domain.model.CorporateActionMath
 import com.amond.kmpbook.domain.model.CorporateActionRecord
 import com.amond.kmpbook.domain.model.CorporateActionSource
+import com.amond.kmpbook.domain.model.CorporateFundamentalState
 import com.amond.kmpbook.domain.model.toAnnouncementNewsReference
 import com.amond.kmpbook.domain.model.toAppliedNewsReference
 import com.amond.kmpbook.domain.model.toCancellationNewsReference
@@ -14,6 +15,7 @@ import com.amond.kmpbook.domain.model.DistributionFrequency
 import com.amond.kmpbook.domain.model.EtfExposureRegion
 import com.amond.kmpbook.domain.model.GameEndReason
 import com.amond.kmpbook.domain.model.GameEvent
+import com.amond.kmpbook.domain.model.FundFinancialState
 import com.amond.kmpbook.domain.model.EventRecordKind
 import com.amond.kmpbook.domain.model.GamePhase
 import com.amond.kmpbook.domain.model.Holding
@@ -111,6 +113,7 @@ import com.amond.kmpbook.domain.simulation.DeterministicRandom
 import com.amond.kmpbook.domain.simulation.EventEngine
 import com.amond.kmpbook.domain.simulation.EventGenerationContext
 import com.amond.kmpbook.domain.simulation.EventShockCalculator
+import com.amond.kmpbook.domain.simulation.InstrumentMetricsEngine
 import com.amond.kmpbook.domain.simulation.MacroEnvironment
 import com.amond.kmpbook.domain.simulation.MarketMicrostructure
 import com.amond.kmpbook.domain.simulation.ListingLifecycleEngine
@@ -124,6 +127,7 @@ import com.amond.kmpbook.domain.simulation.OrderBookEngine
 import com.amond.kmpbook.domain.simulation.OrderBookGenerationInput
 import com.amond.kmpbook.domain.simulation.OrderBookSnapshot
 import com.amond.kmpbook.domain.simulation.PriceEngine
+import com.amond.kmpbook.domain.simulation.PriceAttribution
 import com.amond.kmpbook.domain.simulation.PriceGenerationInput
 import com.amond.kmpbook.domain.simulation.ScheduledEventEngine
 import com.amond.kmpbook.domain.tax.AnnualStockTaxCalculator
@@ -525,6 +529,10 @@ internal class SimulatorRuntime(
     private val pendingEtfReferenceReturns = mutableMapOf<String, Double>()
     /** Event level changes observed while a listing is closed, consumed by its next opening auction. */
     private val pendingClosedEventLogReturns = mutableMapOf<String, Double>()
+    private val corporateFundamentals = linkedMapOf<String, CorporateFundamentalState>()
+    private val fundFinancialStates = linkedMapOf<String, FundFinancialState>()
+    /** 휴장·거래정지 중에도 유실되지 않고 다음 거래 가능 시간에 한 번 소비되는 설정·환매 신호다. */
+    private val pendingFundFlowRates = mutableMapOf<String, Double>()
     private val marketIndices = linkedMapOf<MarketIndexId, MarketIndexSnapshot>()
     private val marketIndexHistory = linkedMapOf<MarketIndexId, ArrayDeque<MarketIndexSnapshot>>()
     private val dailyTrackers = mutableMapOf<String, DailyPriceTracker>()
@@ -577,6 +585,9 @@ internal class SimulatorRuntime(
     private val scheduledEventEngine = ScheduledEventEngine(
         DeterministicRandom.mixSeed(options.seed, ScheduledEventEngine.STREAM_ID),
     )
+    private val instrumentMetricsEngine = InstrumentMetricsEngine(
+        DeterministicRandom.mixSeed(options.seed, InstrumentMetricsEngine.STREAM_ID),
+    )
     private val domesticSaleTaxCalculator = DomesticSaleTaxCalculator()
     private val domesticEtfSaleTaxCalculator = DomesticEtfSaleTaxCalculator()
     private val majorShareholderCalculator = MajorShareholderCalculator()
@@ -597,6 +608,7 @@ internal class SimulatorRuntime(
         selectedStockId = stocks.firstOrNull()?.id
         stocks.associateTo(listingLifecycleStates) { stock -> stock.id to listingLifecycleEngine.initialState(stock) }
         initializeMarketData()
+        initializeInstrumentFinancialStates()
         initializeMarketIndices(currentTime)
         initializeTradingProtections(currentTime)
         recalculateAnnualTax(gameDate(currentTime).year)
@@ -850,6 +862,9 @@ internal class SimulatorRuntime(
             turn = turn,
             selectedTurnStep = selectedTurnStep,
             stocks = stocks.toList(),
+            corporateFundamentals = corporateFundamentals.toMap(),
+            fundFinancialStates = fundFinancialStates.toMap(),
+            pendingFundFlowRates = pendingFundFlowRates.toMap(),
             selectedStockId = selectedStockId,
             quotes = stateQuotes.toMap(),
             priceHistory = history.mapValues { (_, bars) -> bars.toList() },
@@ -904,6 +919,16 @@ internal class SimulatorRuntime(
         val savedIds = state.stocks.map(StockDefinition::id)
         require(savedIds.distinct().size == savedIds.size && savedIds.toSet() == ids) {
             "저장 종목 카탈로그가 현재 버전과 일치하지 않습니다."
+        }
+        val expectedCorporateIds = stocks.filter(StockDefinition::hasCorporateEarnings)
+            .mapTo(linkedSetOf(), StockDefinition::id)
+        val expectedFundIds = stocks.filter(StockDefinition::isFundLike)
+            .mapTo(linkedSetOf(), StockDefinition::id)
+        require(state.corporateFundamentals.keys == expectedCorporateIds) {
+            "저장된 기업 재무 상태가 현재 기업 종목과 일치하지 않습니다."
+        }
+        require(state.fundFinancialStates.keys == expectedFundIds) {
+            "저장된 상품 재무 상태가 현재 ETF·ETN·펀드 종목과 일치하지 않습니다."
         }
         require(state.quotes.keys == savedIds.toSet() && state.priceHistory.keys == savedIds.toSet()) {
             "저장된 모든 상품의 시세와 차트 기록이 필요합니다."
@@ -1041,6 +1066,12 @@ internal class SimulatorRuntime(
         require(state.stocks.all { saved ->
             stockById[saved.id]?.sharesOutstanding == saved.sharesOutstanding
         }) { "저장된 유통주식수가 기업행동 원장과 일치하지 않습니다." }
+        corporateFundamentals.clear()
+        corporateFundamentals.putAll(state.corporateFundamentals)
+        fundFinancialStates.clear()
+        fundFinancialStates.putAll(state.fundFinancialStates)
+        pendingFundFlowRates.clear()
+        pendingFundFlowRates.putAll(state.pendingFundFlowRates)
         listingLifecycleStates.clear()
         listingLifecycleStates.putAll(state.listingLifecycleStates)
         require(listingLifecycleStates.values.all { lifecycle ->
@@ -1109,6 +1140,19 @@ internal class SimulatorRuntime(
     private fun initializeMarketData() {
         for (stock in stocks) {
             initializeInstrumentMarketData(stock, currentTime)
+        }
+    }
+
+    private fun initializeInstrumentFinancialStates() {
+        corporateFundamentals.clear()
+        fundFinancialStates.clear()
+        for (stock in stocks) {
+            when {
+                stock.hasCorporateEarnings -> corporateFundamentals[stock.id] =
+                    instrumentMetricsEngine.initialCorporateState(stock, currentTime)
+                stock.isFundLike -> fundFinancialStates[stock.id] =
+                    instrumentMetricsEngine.initialFundState(stock, currentTime)
+            }
         }
     }
 
@@ -1269,6 +1313,7 @@ internal class SimulatorRuntime(
             temporaryProtectionMarkets = protectionImpact.temporaryProtectionMarkets,
             commit = true,
         )
+        advanceFundFinancialStates(to, finalized)
 
         updateMarketIndices(to, finalized.bars, previousClosesByStockId, tradingFractions)
         updateMarketChange(finalized.bars, tradingFractions)
@@ -1306,6 +1351,7 @@ internal class SimulatorRuntime(
                 recalculateAnnualTax(toGameDate.year)
             }
             recordDailySnapshot(fromGameDate, to)
+            trimMarketActionNewsArchive()
         }
     }
 
@@ -1313,6 +1359,7 @@ internal class SimulatorRuntime(
         val bars: Map<String, PriceBar>,
         val stockTradingFractions: Map<String, Double>,
         val stockFirstExecutionTimes: Map<String, Instant>,
+        val priceAttributions: Map<String, PriceAttribution>,
     )
 
     private data class TurnProtectionImpact(
@@ -1390,18 +1437,53 @@ internal class SimulatorRuntime(
         val generatedBars = linkedMapOf<String, PriceBar>()
         val stockTradingFractions = mutableMapOf<String, Double>()
         val stockFirstExecutionTimes = mutableMapOf<String, Instant>()
+        val priceAttributions = mutableMapOf<String, PriceAttribution>()
 
         for (stock in stocks) {
             val previousQuote = quotes.getValue(stock.id)
-            val listingTradable = listingLifecycleStates.getValue(stock.id).isTradable
-            if (isInstrumentMatured(stock, from) || !listingTradable) {
+            val listingState = listingLifecycleStates.getValue(stock.id)
+            val matured = isInstrumentMatured(stock, from)
+            if (matured || !listingState.isTradable) {
                 stockTradingFractions[stock.id] = 0.0
-                if (commit && !isInstrumentMatured(stock, from)) {
+                if (commit && !matured && !listingState.isSettlementPending && !listingState.isTerminal) {
                     val haltedImpulse = EventShockCalculator.aggregate(turnEvents, stock, from, to)
-                    val haltedEventReturn = priceEngine.eventLogReturn(stock, haltedImpulse)
-                    if (haltedEventReturn != 0.0) {
+                    val haltedReferenceReturn = if (stock.isFundLike) {
+                        val referenceFraction = regionalTradingFraction(
+                            requireNotNull(stock.etfProfile).exposureRegion,
+                            from,
+                            effectiveMarketFractions,
+                        )
+                        priceEngine.referenceLogReturn(
+                            stock = stock,
+                            macro = macro,
+                            referenceTradingFraction = referenceFraction,
+                            fxTradingFraction = 1.0,
+                        ) + priceEngine.referenceEventLogReturn(stock, haltedImpulse) +
+                            priceEngine.referenceResidualLogReturn(
+                                stock = stock,
+                                startTime = from,
+                                macro = macro,
+                                eventImpulse = haltedImpulse,
+                                tradingFraction = effectiveMarketFractions.getValue(stock.market),
+                            ) +
+                            priceEngine.fundAccrualLogReturn(
+                                stock,
+                                ordinaryTradingFractions.getValue(stock.market),
+                            )
+                    } else {
+                        priceEngine.referenceEventLogReturn(stock, haltedImpulse)
+                    }
+                    val haltedDirectReturn = priceEngine.directProductEventLogReturn(haltedImpulse)
+                    if (stock.isFundLike && haltedReferenceReturn != 0.0) {
+                        pendingEtfReferenceReturns[stock.id] = (
+                            (pendingEtfReferenceReturns[stock.id] ?: 0.0) + haltedReferenceReturn
+                            ).coerceIn(-2.5, 2.5)
+                    }
+                    val haltedPriceReturn = haltedDirectReturn +
+                        if (stock.isFundLike) 0.0 else haltedReferenceReturn
+                    if (haltedPriceReturn != 0.0) {
                         pendingClosedEventLogReturns[stock.id] = (
-                            (pendingClosedEventLogReturns[stock.id] ?: 0.0) + haltedEventReturn
+                            (pendingClosedEventLogReturns[stock.id] ?: 0.0) + haltedPriceReturn
                             ).coerceIn(-2.5, 2.5)
                     }
                 }
@@ -1482,33 +1564,54 @@ internal class SimulatorRuntime(
                 0.0
             }
             val closedEventFraction = (1.0 - fairValueFraction).coerceIn(0.0, 1.0)
-            val closedEventReturn = if (closedEventFraction > 0.0) {
-                priceEngine.eventLogReturn(
+            val closedReferenceEventReturn = if (closedEventFraction > 0.0) {
+                priceEngine.referenceEventLogReturn(
                     stock = stock,
                     eventImpulse = impulse,
                     referenceFraction = closedEventFraction,
+                )
+            } else {
+                0.0
+            }
+            val closedDirectProductEventReturn = if (closedEventFraction > 0.0) {
+                priceEngine.directProductEventLogReturn(
+                    eventImpulse = impulse,
                     fairValueFraction = closedEventFraction,
                 )
             } else {
                 0.0
             }
-            val hasLeadingClosedComplement = fraction > 0.0 &&
-                runtimeTradableIntervals(stock.market, from, to).firstOrNull()?.startsAt?.let { it > from } == true
-            val carriedReference = previousCarry + previousEventCarry + if (hasLeadingClosedComplement) {
-                closedFairValueReturn + closedEventReturn
+            val closedReferenceCarry = if (stock.isFundLike) {
+                closedFairValueReturn + closedReferenceEventReturn
             } else {
                 0.0
             }
-            if (commit && !hasLeadingClosedComplement && closedFairValueReturn != 0.0 && stock.isFundLike) {
+            val closedPriceCarry = closedDirectProductEventReturn +
+                if (stock.isFundLike) 0.0 else closedReferenceEventReturn
+            val hasLeadingClosedComplement = fraction > 0.0 &&
+                tradingIntervals.firstOrNull()?.startsAt?.let { it > from } == true
+            val carriedReference = previousCarry + if (hasLeadingClosedComplement) closedReferenceCarry else 0.0
+            val carriedPriceDislocation = previousEventCarry +
+                if (hasLeadingClosedComplement) closedPriceCarry else 0.0
+            if (commit && !hasLeadingClosedComplement && closedReferenceCarry != 0.0) {
                 pendingEtfReferenceReturns[stock.id] =
-                    (pendingEtfReferenceReturns[stock.id] ?: 0.0) + closedFairValueReturn
+                    ((pendingEtfReferenceReturns[stock.id] ?: 0.0) + closedReferenceCarry)
+                        .coerceIn(-2.5, 2.5)
             }
-            if (commit && !hasLeadingClosedComplement && closedEventReturn != 0.0) {
+            if (commit && !hasLeadingClosedComplement && closedPriceCarry != 0.0) {
                 pendingClosedEventLogReturns[stock.id] = (
-                    (pendingClosedEventLogReturns[stock.id] ?: 0.0) + closedEventReturn
+                    (pendingClosedEventLogReturns[stock.id] ?: 0.0) + closedPriceCarry
                     ).coerceIn(-2.5, 2.5)
             }
             val firstRegularBar = fraction > 0.0 && !tracker.hasRegularTrading
+            val priceToReferenceLogGap = fundFinancialStates[stock.id]?.let { financialState ->
+                val referenceValue = if (stock.instrumentType == InstrumentType.ETN) {
+                    financialState.indicativeValuePerUnit
+                } else {
+                    financialState.navPerUnit
+                }
+                ln(previousQuote.price / referenceValue)
+            } ?: 0.0
             val result = priceEngine.generateHour(
                 PriceGenerationInput(
                     stock = stock,
@@ -1525,9 +1628,12 @@ internal class SimulatorRuntime(
                     fairValueTradingFraction = fairValueFraction,
                     referenceTradingFraction = activeReferenceFraction,
                     carriedReferenceLogReturn = carriedReference,
+                    carriedPriceDislocationLogReturn = carriedPriceDislocation,
+                    priceToReferenceLogGap = priceToReferenceLogGap,
                     isFirstRegularBarOfDay = firstRegularBar,
                 ),
             )
+            priceAttributions[stock.id] = result.attribution
             val effectiveBounds = if (commit) effectiveProtectionPriceBounds(stock, priceBounds[stock.id]) else null
             val bar = effectiveBounds?.let { runtimeClampBarToBounds(result.bar, it) } ?: result.bar
             generatedBars[stock.id] = bar
@@ -1558,7 +1664,43 @@ internal class SimulatorRuntime(
                 }
             }
         }
-        return TurnGenerationResult(generatedBars, stockTradingFractions, stockFirstExecutionTimes)
+        return TurnGenerationResult(
+            bars = generatedBars,
+            stockTradingFractions = stockTradingFractions,
+            stockFirstExecutionTimes = stockFirstExecutionTimes,
+            priceAttributions = priceAttributions,
+        )
+    }
+
+    private fun advanceFundFinancialStates(
+        at: Instant,
+        turn: TurnGenerationResult,
+    ) {
+        for ((stockId, previousState) in fundFinancialStates.toMap()) {
+            val stock = stockById.getValue(stockId)
+            if (isInstrumentMatured(stock, at)) {
+                pendingFundFlowRates.remove(stockId)
+                continue
+            }
+            val attribution = turn.priceAttributions[stockId] ?: continue
+            val tradingFraction = turn.stockTradingFractions[stockId] ?: 0.0
+            val externalFlowRate = if (tradingFraction > 0.0) {
+                pendingFundFlowRates[stockId] ?: 0.0
+            } else {
+                0.0
+            }
+            fundFinancialStates[stockId] = instrumentMetricsEngine.advanceFund(
+                state = previousState,
+                stock = stock,
+                fairValueLogReturn = attribution.fairValueLogReturn - attribution.carriedReference,
+                carriedFairValueLogReturn = attribution.carriedReference,
+                tradingFraction = tradingFraction,
+                riskSentiment = macro.riskSentiment,
+                externalFlowRate = externalFlowRate,
+                at = at,
+            )
+            if (tradingFraction > 0.0) pendingFundFlowRates.remove(stockId)
+        }
     }
 
     private fun dailyTrackerSnapshot(
@@ -3247,6 +3389,13 @@ internal class SimulatorRuntime(
             }
         }
         applyDynamicShareMultiplier(stock.id, multiplier)
+        fundFinancialStates[stock.id]?.let { state ->
+            fundFinancialStates[stock.id] = instrumentMetricsEngine.applyFundUnitAdjustment(
+                state = state,
+                quantityMultiplier = multiplier,
+                at = effectiveAt,
+            )
+        }
         val settledFraction = action.kind == CorporateActionKind.REVERSE_SPLIT &&
             !stock.supportsFractional && settleCorporateActionFraction(stock, postPrice, effectiveAt)
         val record = CorporateActionRecord(
@@ -3661,6 +3810,7 @@ internal class SimulatorRuntime(
         activeEvents += result.activeEvents
         if (result.newEvents.isNotEmpty()) {
             newsEvents += result.newEvents
+            recordFundFlowSignals(result.newEvents)
             trimStochasticNews()
         }
 
@@ -3670,6 +3820,7 @@ internal class SimulatorRuntime(
         if (scheduled.emissions.isNotEmpty()) {
             val existingIds = newsEvents.mapTo(mutableSetOf(), GameEvent::id)
             newsEvents += scheduled.newEvents.filter { existingIds.add(it.id) }
+            applyScheduledCorporateFundamentals(scheduled.emissions)
             applyScheduledMacro(scheduled.emissions)
         }
 
@@ -3678,6 +3829,36 @@ internal class SimulatorRuntime(
         if (systemicSentimentEvents.isNotEmpty()) {
             val sentiment = systemicSentimentEvents.map { it.impact.sentiment }.average()
             macro = macro.copy(riskSentiment = (macro.riskSentiment + sentiment * 0.15).coerceIn(-1.0, 1.0))
+        }
+    }
+
+    private fun recordFundFlowSignals(events: List<GameEvent>) {
+        for (event in events) {
+            val flowRate = when (event.generatorTemplateId) {
+                "etf_inflow" -> abs(event.impact.shockReturn).coerceIn(0.003, 0.030)
+                "etf_outflow" -> -abs(event.impact.shockReturn).coerceIn(0.004, 0.035)
+                else -> continue
+            }
+            val stockId = event.affectedStockIds.singleOrNull()
+                ?.takeIf(fundFinancialStates::containsKey)
+                ?: continue
+            pendingFundFlowRates[stockId] = (
+                (pendingFundFlowRates[stockId] ?: 0.0) + flowRate
+                ).coerceIn(-0.20, 0.20)
+        }
+    }
+
+    private fun applyScheduledCorporateFundamentals(emissions: List<ScheduledEventEmission>) {
+        for (emission in emissions) {
+            if (emission.occurrence.kind != ScheduledEventKind.EARNINGS) continue
+            val stockId = emission.occurrence.affectedStockIds.single()
+            val stock = stockById[stockId] ?: continue
+            val current = corporateFundamentals[stockId] ?: continue
+            corporateFundamentals[stockId] = instrumentMetricsEngine.applyEarnings(
+                state = current,
+                stock = stock,
+                emission = emission,
+            )
         }
     }
 
@@ -3694,6 +3875,130 @@ internal class SimulatorRuntime(
                 iterator.remove()
                 historicalStochasticCount -= 1
             }
+        }
+    }
+
+    /**
+     * 시장조치 전이는 같은 발생 ID의 선행 조치와 함께 검증되므로 개별 뉴스가 아닌
+     * `(종류, 발생 ID)` 그룹 전체를 보존·제거한다. 최근 그룹과 현재 상태가 참조하거나
+     * 아직 효력이 남은 그룹만 유지해 2040년 캠페인 저장 JSON의 크기에 상한을 둔다.
+     */
+    private fun trimMarketActionNewsArchive() {
+        val eventsByOccurrence = linkedMapOf<Pair<MarketActionKind, String>, MutableList<GameEvent>>()
+        for (event in newsEvents) {
+            val action = event.marketAction ?: continue
+            eventsByOccurrence.getOrPut(action.kind to action.occurrenceId, ::mutableListOf) += event
+        }
+        if (eventsByOccurrence.size <= MAX_MARKET_ACTION_OCCURRENCE_GROUPS) return
+
+        val retainedOccurrences = currentRequiredMarketActionOccurrences().toMutableSet()
+        eventsByOccurrence.forEach { (occurrence, events) ->
+            if (events.any { event ->
+                    val action = requireNotNull(event.marketAction)
+                    event.isActiveAt(currentTime) || action.effectiveAt > currentTime ||
+                        action.endsAt?.let { endsAt -> endsAt > currentTime } == true
+                }
+            ) {
+                retainedOccurrences += occurrence
+            }
+        }
+        eventsByOccurrence.entries
+            .sortedWith(
+                compareBy<Map.Entry<Pair<MarketActionKind, String>, MutableList<GameEvent>>>(
+                    { entry -> entry.value.maxOf(GameEvent::startsAt) },
+                    { entry -> entry.key.first.ordinal },
+                    { entry -> entry.key.second },
+                ),
+            )
+            .takeLast(MAX_MARKET_ACTION_OCCURRENCE_GROUPS)
+            .mapTo(retainedOccurrences) { entry -> entry.key }
+
+        val removedEventIds = mutableSetOf<String>()
+        newsEvents.removeAll { event ->
+            val action = event.marketAction ?: return@removeAll false
+            val remove = (action.kind to action.occurrenceId) !in retainedOccurrences
+            if (remove) removedEventIds += event.id
+            remove
+        }
+        readEventIds.removeAll(removedEventIds)
+    }
+
+    private fun currentRequiredMarketActionOccurrences(): Set<Pair<MarketActionKind, String>> = buildSet {
+        val protection = tradingProtectionSnapshot
+        protection.krxCircuitBreakers.values.forEach { state ->
+            val level = state.activeLevel
+            val triggeredAt = state.triggeredAt
+            if (state.phase != KrxCircuitBreakerPhase.NORMAL && level != null && triggeredAt != null) {
+                add(MarketActionKind.KRX_CIRCUIT_BREAKER to krxCircuitBreakerOccurrenceId(
+                    state.market,
+                    level,
+                    triggeredAt,
+                ))
+            }
+        }
+        protection.krxSidecars.values.forEach { state ->
+            val triggeredAt = state.triggeredAt
+            if (state.phase == KrxSidecarPhase.PROGRAM_FLOW_SUSPENDED && triggeredAt != null) {
+                add(MarketActionKind.KRX_SIDECAR to krxSidecarOccurrenceId(state.market, triggeredAt))
+            }
+        }
+        protection.krxVolatilityInterruptions.values.forEach { state ->
+            val triggeredAt = state.triggeredAt
+            if (state.phase == KrxViPhase.CALL_AUCTION && triggeredAt != null) {
+                add(MarketActionKind.KRX_VOLATILITY_INTERRUPTION to krxViOccurrenceId(
+                    state.stockId,
+                    state.triggerCount,
+                    triggeredAt,
+                ))
+            }
+        }
+        protection.usMarketWideCircuitBreaker?.let { state ->
+            val level = state.activeLevel
+            val triggeredAt = state.triggeredAt
+            if (state.phase != UsMwcbPhase.NORMAL && level != null && triggeredAt != null) {
+                add(MarketActionKind.US_MARKET_WIDE_CIRCUIT_BREAKER to usMwcbOccurrenceId(level, triggeredAt))
+            }
+        }
+        protection.usLuldStates.values.forEach { state ->
+            val pauseStartedAt = state.pauseStartedAt
+            if (state.phase in setOf(
+                    UsLuldPhase.TRADING_PAUSE,
+                    UsLuldPhase.REOPENING_AUCTION,
+                    UsLuldPhase.CLOSING_AUCTION_ONLY,
+                ) && pauseStartedAt != null
+            ) {
+                add(MarketActionKind.US_LIMIT_UP_LIMIT_DOWN to usLuldOccurrenceId(
+                    state.stockId,
+                    pauseStartedAt,
+                ))
+            }
+        }
+        (protection.instrumentTradingHalts.values + protection.scheduledInstrumentTradingHalts.values)
+            .forEach { halt ->
+                add(MarketActionKind.INSTRUMENT_TRADING_HALT to halt.occurrenceId)
+            }
+        protection.investmentAlerts.values.forEach { designation ->
+            add(MarketActionKind.INVESTMENT_ALERT to investmentAlertOccurrenceId(
+                designation.stockId,
+                designation.designatedAt,
+            ))
+            if (designation.status == InvestmentAlertStatus.ACTIVE) {
+                val haltOccurrenceId = when (designation.level) {
+                    InvestmentAlertLevel.CAUTION -> null
+                    InvestmentAlertLevel.WARNING ->
+                        "investment-warning-additional-rise-halt:${designation.stockId}:${designation.designatedOn}"
+                    InvestmentAlertLevel.DANGER ->
+                        "investment-danger-initial-halt:${designation.stockId}:${designation.designatedOn}"
+                }
+                haltOccurrenceId?.let { occurrenceId ->
+                    add(MarketActionKind.INSTRUMENT_TRADING_HALT to occurrenceId)
+                }
+            }
+        }
+        listingLifecycleStates.values.forEach { state ->
+            if (state.status == ListingLifecycleStatus.LISTED || state.isTerminal) return@forEach
+            val stock = stockById.getValue(state.stockId)
+            add(MarketActionKind.LISTING_REMEDIATION to listingRemediationEventId(stock, state))
         }
     }
 
@@ -4133,6 +4438,13 @@ internal class SimulatorRuntime(
                 bidQuantity = 0.0,
                 askQuantity = 0.0,
             )
+            fundFinancialStates[stock.id]?.let { financialState ->
+                fundFinancialStates[stock.id] = instrumentMetricsEngine.applyFundDistribution(
+                    state = financialState,
+                    grossPerUnit = grossPerUnit,
+                    at = to,
+                )
+            }
             holdings[stock.id]?.let { holding ->
                 holdings[stock.id] = holding.copy(currentPrice = adjustedPrice)
             }
@@ -6278,12 +6590,13 @@ internal class SimulatorRuntime(
     )
 
     companion object {
-        /** The full instrument universe stays comfortably below the 64 MiB save limit. */
+        /** 차트 이력은 종목 수와 무관하게 저장 크기가 유한하도록 최근 구간만 보존한다. */
         const val MAX_RECENT_BARS = 256
         const val MAX_INDEX_BARS = 256
         const val MAX_DAILY_SURVEILLANCE_POINTS = 140
         const val INVESTMENT_ALERT_NOTICE_TRADING_DAYS = 10
         const val MAX_NEWS_EVENTS = 1_000
+        const val MAX_MARKET_ACTION_OCCURRENCE_GROUPS = 4_000
         /** 축소 게임 유니버스에서 2026 KRX 합산 시총 상위100 제외를 재현하는 기준일 프록시. */
         const val KRX_TOP_100_MARKET_CAP_PROXY_KRW = 3_000_000_000_000.0
         const val BENCHMARK_START = 100.0
