@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -58,6 +57,7 @@ import com.amond.kmpbook.ui.components.StatusLabel
 import com.amond.kmpbook.ui.format.formatDateTimeKst
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketComponentSize
+import com.amond.kmpbook.ui.theme.MarketLayout
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketSpacing
 import com.amond.kmpbook.ui.theme.MarketType
@@ -109,67 +109,31 @@ internal fun EventsScreen(
                 )
             },
         )
-        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-            val showRail = maxWidth >= 1_120.dp
-            if (showRail) {
-                Row(
-                    Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.spacedBy(MarketSpacing.md),
-                ) {
-                    NewsGroupRail(
-                        groups = groups,
-                        selectedKey = activeGroupKey,
-                        onSelect = { key ->
-                            onFilterStateChange(filterState.copy(groupKey = key, selectedEventId = null))
-                        },
-                        modifier = Modifier.width(188.dp).fillMaxHeight(),
-                    )
-                    NewsListPanel(
-                        stories = visibleStories,
-                        selectedId = selected?.event?.id,
-                        upcomingEvents = upcomingEvents,
-                        showUpcoming = filterState.tab == NewsBrowseTab.SCHEDULES,
-                        onSelect = { id -> onFilterStateChange(filterState.copy(selectedEventId = id)) },
-                        modifier = Modifier.width(372.dp).fillMaxHeight(),
-                    )
-                    NewsDetailPanel(
-                        story = selected,
-                        onOpenStock = onOpenStock,
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                    )
-                }
-            } else {
-                Column(
-                    Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(MarketSpacing.sm),
-                ) {
-                    CompactGroupRail(
-                        groups = groups,
-                        selectedKey = activeGroupKey,
-                        onSelect = { key ->
-                            onFilterStateChange(filterState.copy(groupKey = key, selectedEventId = null))
-                        },
-                    )
-                    Row(
-                        Modifier.fillMaxWidth().weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(MarketSpacing.md),
-                    ) {
-                        NewsListPanel(
-                            stories = visibleStories,
-                            selectedId = selected?.event?.id,
-                            upcomingEvents = upcomingEvents,
-                            showUpcoming = filterState.tab == NewsBrowseTab.SCHEDULES,
-                            onSelect = { id -> onFilterStateChange(filterState.copy(selectedEventId = id)) },
-                            modifier = Modifier.weight(0.78f).fillMaxHeight(),
-                        )
-                        NewsDetailPanel(
-                            story = selected,
-                            onOpenStock = onOpenStock,
-                            modifier = Modifier.weight(1.22f).fillMaxHeight(),
-                        )
-                    }
-                }
-            }
+        Row(
+            Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(MarketSpacing.md),
+        ) {
+            NewsGroupRail(
+                groups = groups,
+                selectedKey = activeGroupKey,
+                onSelect = { key ->
+                    onFilterStateChange(filterState.copy(groupKey = key, selectedEventId = null))
+                },
+                modifier = Modifier.width(MarketLayout.newsGroupRailWidth).fillMaxHeight(),
+            )
+            NewsListPanel(
+                stories = visibleStories,
+                selectedId = selected?.event?.id,
+                upcomingEvents = upcomingEvents,
+                showUpcoming = filterState.tab == NewsBrowseTab.SCHEDULES,
+                onSelect = { id -> onFilterStateChange(filterState.copy(selectedEventId = id)) },
+                modifier = Modifier.width(MarketLayout.newsStoryListWidth).fillMaxHeight(),
+            )
+            NewsDetailPanel(
+                story = selected,
+                onOpenStock = onOpenStock,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
         }
     }
 }
@@ -274,23 +238,6 @@ private fun NewsGroupRail(
                     NewsGroupRow(group, selected = group.key == selectedKey) { onSelect(group.key) }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun CompactGroupRail(
-    groups: List<NewsGroupItem>,
-    selectedKey: String?,
-    onSelect: (String) -> Unit,
-) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(MarketSpacing.xs)) {
-        items(groups, key = NewsGroupItem::key) { group ->
-            NewsTab(
-                text = "${group.label} ${group.count}",
-                selected = group.key == selectedKey,
-                onClick = { onSelect(group.key) },
-            )
         }
     }
 }
