@@ -526,6 +526,7 @@ internal class SimulatorRuntime(
     private val stockById = mutableStocks.associateByTo(linkedMapOf(), StockDefinition::id)
     private val quotes = linkedMapOf<String, Quote>()
     private val history = linkedMapOf<String, ArrayDeque<PriceBar>>()
+    private val dailyPriceHistory = linkedMapOf<String, ArrayDeque<PriceBar>>()
     private val pendingEtfReferenceReturns = mutableMapOf<String, Double>()
     /** Event level changes observed while a listing is closed, consumed by its next opening auction. */
     private val pendingClosedEventLogReturns = mutableMapOf<String, Double>()
@@ -550,6 +551,7 @@ internal class SimulatorRuntime(
     private val activeEvents = mutableListOf<GameEvent>()
     private val newsEvents = mutableListOf<GameEvent>()
     private val readEventIds = mutableSetOf<String>()
+    private val readStockNewsEventIds = linkedMapOf<String, MutableSet<String>>()
     private val watchlistedStockIds = linkedSetOf<String>()
     private val pendingCorporateActions = mutableListOf<PendingCorporateAction>()
     private val corporateActionLedger = mutableListOf<CorporateActionRecord>()
@@ -643,6 +645,12 @@ internal class SimulatorRuntime(
 
     fun markEventRead(eventId: String) {
         if (newsEvents.any { it.id == eventId }) readEventIds += eventId
+    }
+
+    fun markStockNewsListViewed(stockId: String, eventIds: Set<String>) {
+        if (stockId !in stockById || eventIds.isEmpty()) return
+        val currentEventIds = newsEvents.mapTo(linkedSetOf()) { it.id }
+        readStockNewsEventIds.getOrPut(stockId, ::linkedSetOf) += eventIds.intersect(currentEventIds)
     }
 
     fun markAllEventsRead() {
@@ -872,6 +880,7 @@ internal class SimulatorRuntime(
             selectedStockId = selectedStockId,
             quotes = stateQuotes.toMap(),
             priceHistory = history.mapValues { (_, bars) -> bars.toList() },
+            dailyPriceHistory = dailyPriceHistory.mapValues { (_, bars) -> bars.toList() },
             cashByCurrency = cash.toMap(),
             holdings = holdings.toMap(),
             orders = orders.toList(),
@@ -883,6 +892,7 @@ internal class SimulatorRuntime(
                 .distinctBy(GameEvent::id),
             newsEvents = newsEvents.sortedByDescending(GameEvent::startsAt),
             readEventIds = readEventIds.toSet(),
+            readStockNewsEventIds = readStockNewsEventIds.mapValues { (_, eventIds) -> eventIds.toSet() },
             portfolioSnapshots = portfolioSnapshots.toList(),
             dailyStatistics = dailyStatistics.toList(),
             benchmarkHistory = benchmarkHistory.toList(),
@@ -934,7 +944,11 @@ internal class SimulatorRuntime(
         require(state.fundFinancialStates.keys == expectedFundIds) {
             "저장된 상품 재무 상태가 현재 ETF·ETN·펀드 종목과 일치하지 않습니다."
         }
-        require(state.quotes.keys == savedIds.toSet() && state.priceHistory.keys == savedIds.toSet()) {
+        require(
+            state.quotes.keys == savedIds.toSet() &&
+                state.priceHistory.keys == savedIds.toSet() &&
+                state.dailyPriceHistory.keys == savedIds.toSet(),
+        ) {
             "저장된 모든 상품의 시세와 차트 기록이 필요합니다."
         }
         require(state.cashByCurrency.keys.containsAll(Currency.entries)) { "통화별 현금 잔액이 누락되었습니다." }
@@ -1045,6 +1059,13 @@ internal class SimulatorRuntime(
             require(bars.isNotEmpty()) { "차트 기록이 비어 있습니다." }
             history[stockId] = ArrayDeque(bars.takeLast(MAX_RECENT_BARS))
         }
+        dailyPriceHistory.clear()
+        state.dailyPriceHistory.forEach { (stockId, bars) ->
+            require(bars.all { it.step == TurnStep.ONE_DAY }) {
+                "일봉 차트 기록에는 일봉만 포함되어야 합니다."
+            }
+            dailyPriceHistory[stockId] = ArrayDeque(bars.takeLast(MAX_DAILY_CHART_BARS))
+        }
         pendingEtfReferenceReturns.clear()
         pendingEtfReferenceReturns.putAll(state.pendingEtfReferenceReturns)
         pendingClosedEventLogReturns.clear()
@@ -1118,6 +1139,10 @@ internal class SimulatorRuntime(
         newsEvents += state.newsEvents.sortedBy(GameEvent::startsAt)
         readEventIds.clear()
         readEventIds += state.readEventIds
+        readStockNewsEventIds.clear()
+        state.readStockNewsEventIds.forEach { (stockId, eventIds) ->
+            readStockNewsEventIds[stockId] = eventIds.toMutableSet()
+        }
         watchlistedStockIds.clear()
         watchlistedStockIds += state.watchlistedStockIds
         pendingCorporateActions.clear()
@@ -1246,6 +1271,7 @@ internal class SimulatorRuntime(
                 ),
             )
         }
+        dailyPriceHistory[stock.id] = ArrayDeque()
         dailyTrackers[stock.id] = DailyPriceTracker(
             date = marketDate(stock.market, at),
             basePrice = stock.initialPrice,
@@ -3382,6 +3408,19 @@ internal class SimulatorRuntime(
             bars.clear()
             bars.addAll(adjustedBars)
         }
+        dailyPriceHistory[stock.id]?.let { bars ->
+            val adjustedBars = bars.map { bar ->
+                bar.copy(
+                    open = adjustedPrice(bar.open),
+                    high = adjustedPrice(bar.high),
+                    low = adjustedPrice(bar.low),
+                    close = adjustedPrice(bar.close),
+                    volume = round(bar.volume.toDouble() * multiplier).toLong().coerceAtLeast(0L),
+                )
+            }
+            bars.clear()
+            bars.addAll(adjustedBars)
+        }
         dailyTradingSurveillance[stock.id]?.let { points ->
             val adjustedPoints = points.map { point ->
                 point.copy(
@@ -3971,6 +4010,8 @@ internal class SimulatorRuntime(
             remove
         }
         readEventIds.removeAll(removedEventIds)
+        readStockNewsEventIds.values.forEach { eventIds -> eventIds.removeAll(removedEventIds) }
+        readStockNewsEventIds.entries.removeAll { (_, eventIds) -> eventIds.isEmpty() }
     }
 
     private fun currentRequiredMarketActionOccurrences(): Set<Pair<MarketActionKind, String>> = buildSet {
@@ -4118,9 +4159,45 @@ internal class SimulatorRuntime(
     }
 
     private fun appendHistory(stockId: String, bar: PriceBar) {
+        if (bar.volume == 0L) return
         val bars = history.getValue(stockId)
+        if (bars.size == 1 && bars.first().volume == 0L) bars.clear()
         bars.addLast(bar)
         while (bars.size > MAX_RECENT_BARS) bars.removeFirst()
+        appendDailyPriceHistory(stockById.getValue(stockId), bar)
+    }
+
+    private fun appendDailyPriceHistory(stock: StockDefinition, bar: PriceBar) {
+        val bars = dailyPriceHistory.getValue(stock.id)
+        val tradingDate = marketDate(stock.market, bar.startTime)
+        val previous = bars.lastOrNull()
+        if (previous != null && marketDate(stock.market, previous.startTime) == tradingDate) {
+            bars.removeLast()
+            bars.addLast(
+                previous.copy(
+                    endTime = maxOf(previous.endTime, bar.endTime),
+                    high = maxOf(previous.high, bar.high),
+                    low = minOf(previous.low, bar.low),
+                    close = bar.close,
+                    volume = previous.volume + bar.volume,
+                ),
+            )
+        } else {
+            bars.addLast(
+                PriceBar(
+                    stockId = stock.id,
+                    startTime = bar.startTime,
+                    endTime = bar.endTime,
+                    step = TurnStep.ONE_DAY,
+                    open = bar.open,
+                    high = bar.high,
+                    low = bar.low,
+                    close = bar.close,
+                    volume = bar.volume,
+                ),
+            )
+        }
+        while (bars.size > MAX_DAILY_CHART_BARS) bars.removeFirst()
     }
 
     private fun processOpenOrders(
@@ -6654,8 +6731,10 @@ internal class SimulatorRuntime(
     )
 
     companion object {
-        /** 차트 이력은 종목 수와 무관하게 저장 크기가 유한하도록 최근 구간만 보존한다. */
+        /** 장외·거래정지 봉을 제외한 최근 거래 시간봉을 종목별로 보존한다. */
         const val MAX_RECENT_BARS = 256
+        /** 3개월 차트와 휴장 구간을 충분히 포함하는 거래일별 OHLCV 보존 한도. */
+        const val MAX_DAILY_CHART_BARS = 100
         const val MAX_INDEX_BARS = 256
         const val MAX_DAILY_SURVEILLANCE_POINTS = 140
         const val INVESTMENT_ALERT_NOTICE_TRADING_DAYS = 10

@@ -39,11 +39,8 @@ fun CandlestickVolumeChart(
     priceFormatter: (Double) -> String,
     modifier: Modifier = Modifier,
     showMovingAverages: Boolean = true,
-    aggregateByTradingDay: Boolean = false,
 ) {
-    val visibleBars = remember(bars, market, aggregateByTradingDay) {
-        if (aggregateByTradingDay) aggregateDailyBars(bars, market) else bars
-    }
+    val visibleBars = remember(bars) { bars.sortedBy(PriceBar::startTime) }
     val currentPriceFormatter = rememberUpdatedState(priceFormatter)
     val textMeasurer = rememberTextMeasurer()
     val tickTextStyle = MarketType.caption.copy(color = MarketColors.InkMuted)
@@ -78,7 +75,7 @@ fun CandlestickVolumeChart(
             val priceBottom = volumeTop - 13.dp.toPx()
             val priceHeight = (priceBottom - priceTop).coerceAtLeast(1f)
             val slot = plotWidth / visibleBars.size
-            val maximumBodyWidth = min(8.dp.toPx(), slot * 0.72f)
+            val maximumBodyWidth = min(48.dp.toPx(), slot * 0.72f)
             val minimumBodyWidth = min(2.dp.toPx(), maximumBodyWidth)
             val bodyWidth = (slot * 0.58f).coerceIn(minimumBodyWidth, maximumBodyWidth)
             val rawPriceLow = visibleBars.minOf { it.low }
@@ -91,6 +88,7 @@ fun CandlestickVolumeChart(
             val maxVolume = max(1L, visibleBars.maxOf { it.volume })
             val datesDiffer = GameCalendar.marketLocalDateTime(market, visibleBars.first().startTime).date !=
                 GameCalendar.marketLocalDateTime(market, visibleBars.last().startTime).date
+            val daily = visibleBars.all { it.step == TurnStep.ONE_DAY }
 
             fun candleX(index: Int): Float = plotLeft + slot * index + slot / 2f
             fun priceY(value: Double): Float =
@@ -142,7 +140,7 @@ fun CandlestickVolumeChart(
                     text = visibleBars[index].axisLabel(
                         market = market,
                         includeDate = datesDiffer,
-                        daily = aggregateByTradingDay,
+                        daily = daily,
                     ),
                     style = tickTextStyle,
                 )
@@ -261,26 +259,6 @@ fun CandlestickVolumeChart(
         }
     }
 }
-
-private fun aggregateDailyBars(bars: List<PriceBar>, market: Market): List<PriceBar> = bars
-    .sortedBy(PriceBar::startTime)
-    .groupBy { bar -> GameCalendar.marketLocalDateTime(market, bar.startTime).date }
-    .values
-    .map { sessionBars ->
-        val first = sessionBars.first()
-        val last = sessionBars.last()
-        PriceBar(
-            stockId = first.stockId,
-            startTime = first.startTime,
-            endTime = last.endTime,
-            step = TurnStep.ONE_DAY,
-            open = first.open,
-            high = sessionBars.maxOf(PriceBar::high),
-            low = sessionBars.minOf(PriceBar::low),
-            close = last.close,
-            volume = sessionBars.sumOf(PriceBar::volume),
-        )
-    }
 
 private fun PriceBar.axisLabel(
     market: Market,

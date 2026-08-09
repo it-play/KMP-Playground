@@ -97,6 +97,7 @@ fun MarketTradingScreen(
     stocks: List<StockDefinition>,
     quotes: Map<String, Quote>,
     priceHistory: Map<String, List<PriceBar>>,
+    dailyPriceHistory: Map<String, List<PriceBar>>,
     selectedStockId: String?,
     holding: Holding?,
     orderBook: OrderBook?,
@@ -117,12 +118,15 @@ fun MarketTradingScreen(
     selectedMetrics: InstrumentMetricsSnapshot? = null,
     orderUnavailableReason: (stockId: String, orderType: OrderType) -> String? = { _, _ -> null },
     relatedNews: List<NewsStoryUi> = emptyList(),
-    onOpenEvent: (String) -> Unit = {},
+    readStockNewsEventIds: Map<String, Set<String>> = emptyMap(),
+    onRelatedNewsListViewed: (stockId: String, eventIds: Set<String>) -> Unit = { _, _ -> },
+    onOpenEvent: (stockId: String, eventId: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val selectedStock = stocks.firstOrNull { it.id == selectedStockId } ?: stocks.firstOrNull()
     val quote = selectedStock?.let { quotes[it.id] }
     val bars = selectedStock?.let { priceHistory[it.id].orEmpty() }.orEmpty()
+    val dailyBars = selectedStock?.let { dailyPriceHistory[it.id].orEmpty() }.orEmpty()
     var showSelectedProtectionDetail by remember(selectedStock?.id) { mutableStateOf(false) }
     var orderSide by remember(selectedStock?.id) { mutableStateOf(OrderSide.BUY) }
     var orderType by remember(selectedStock?.id) { mutableStateOf(OrderType.MARKET) }
@@ -157,9 +161,14 @@ fun MarketTradingScreen(
                 stock = selectedStock,
                 quote = quote,
                 bars = bars,
+                dailyBars = dailyBars,
                 holding = holding,
                 relatedNews = selectedNews,
-                onOpenEvent = onOpenEvent,
+                readRelatedNewsEventIds = readStockNewsEventIds[selectedStock.id].orEmpty(),
+                onRelatedNewsListViewed = { eventIds ->
+                    onRelatedNewsListViewed(selectedStock.id, eventIds)
+                },
+                onOpenEvent = { eventId -> onOpenEvent(selectedStock.id, eventId) },
                 watched = selectedStock.id in watchlistedStockIds,
                 onToggleWatchlist = { onToggleWatchlist(selectedStock.id) },
                 protectionBadge = protectionBadges[selectedStock.id],
@@ -566,8 +575,11 @@ private fun StockChartPanel(
     stock: StockDefinition,
     quote: Quote,
     bars: List<PriceBar>,
+    dailyBars: List<PriceBar>,
     holding: Holding?,
     relatedNews: List<NewsStoryUi>,
+    readRelatedNewsEventIds: Set<String>,
+    onRelatedNewsListViewed: (Set<String>) -> Unit,
     onOpenEvent: (String) -> Unit,
     watched: Boolean,
     onToggleWatchlist: () -> Unit,
@@ -575,12 +587,18 @@ private fun StockChartPanel(
     onOpenProtectionDetail: () -> Unit,
     modifier: Modifier,
 ) {
-    var range by remember { mutableStateOf("1개월") }
-    var selectedIntelligenceTab by remember(stock.id) { mutableStateOf(IntelligenceTab.IMPACT) }
-    var isStructureExpanded by remember(stock.id) { mutableStateOf(false) }
+    var range by remember { mutableStateOf(MarketChartRange.ONE_MONTH) }
+    var selectedIntelligenceTab by remember { mutableStateOf(IntelligenceTab.IMPACT) }
+    var isIntelligenceDeckExpanded by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val signals = remember(relatedNews, stock) {
         relatedNews.mapNotNull { story -> story.signalFor(stock) }
+    }
+    val unreadRelatedNewsCount = remember(signals, readRelatedNewsEventIds) {
+        signals.count { signal -> signal.story.event.id !in readRelatedNewsEventIds }
+    }
+    val relatedNewsEventIds = remember(signals) {
+        signals.mapTo(linkedSetOf()) { signal -> signal.story.event.id }
     }
     val tracedSignals = remember(signals) { signals.filter(StockNewsSignal::hasCausalTrace) }
     val availableIntelligenceTabs = remember(signals.isNotEmpty(), tracedSignals.isNotEmpty()) {
@@ -593,26 +611,35 @@ private fun StockChartPanel(
     val activeIntelligenceTab = selectedIntelligenceTab
         .takeIf(availableIntelligenceTabs::contains)
         ?: availableIntelligenceTabs.first()
-    val structureVisibility = remember(stock.id) { MutableTransitionState(false) }
-    structureVisibility.targetState =
-        activeIntelligenceTab == IntelligenceTab.STRUCTURE && isStructureExpanded
+    val intelligenceDeckVisibility = remember { MutableTransitionState(false) }
+    intelligenceDeckVisibility.targetState = isIntelligenceDeckExpanded
     LaunchedEffect(stock.id, availableIntelligenceTabs) {
         if (selectedIntelligenceTab != activeIntelligenceTab) {
             selectedIntelligenceTab = activeIntelligenceTab
         }
     }
-    val displayedBars = bars
-        .asSequence()
-        .filter { it.volume > 0L }
-        .toList()
-        .takeLast(
-            when (range) {
-                "1일" -> 8
-                "1주" -> 40
-                "3개월" -> 520
-                else -> 180
-            },
+    LaunchedEffect(
+        stock.id,
+        activeIntelligenceTab,
+        isIntelligenceDeckExpanded,
+        relatedNewsEventIds,
+        unreadRelatedNewsCount,
+    ) {
+        if (
+            isIntelligenceDeckExpanded &&
+            activeIntelligenceTab == IntelligenceTab.NEWS &&
+            unreadRelatedNewsCount > 0
+        ) {
+            onRelatedNewsListViewed(relatedNewsEventIds)
+        }
+    }
+    val displayedBars = remember(bars, dailyBars, stock.market, range) {
+        range.selectBars(
+            intradayBars = bars,
+            dailyBars = dailyBars,
+            market = stock.market,
         )
+    }
     LedgerPanel(modifier, padding = 0.dp) {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
@@ -754,8 +781,8 @@ private fun StockChartPanel(
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                listOf("1일", "1주", "1개월", "3개월").forEach { item ->
-                    FilterCell(item, item == range) { range = item }
+                MarketChartRange.entries.forEach { item ->
+                    FilterCell(item.displayName, item == range) { range = item }
                     Spacer(Modifier.width(3.dp))
                 }
             }
@@ -763,7 +790,6 @@ private fun StockChartPanel(
                 bars = displayedBars,
                 market = stock.market,
                 priceFormatter = { value -> formatPrice(value, stock.currency) },
-                aggregateByTradingDay = range == "1개월" || range == "3개월",
                 modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp),
             )
             LedgerDivider()
@@ -774,21 +800,18 @@ private fun StockChartPanel(
                     tracedSignals = tracedSignals,
                     activeTab = activeIntelligenceTab,
                     availableTabs = availableIntelligenceTabs,
-                    structureVisibility = structureVisibility,
+                    unreadRelatedNewsCount = unreadRelatedNewsCount,
+                    intelligenceDeckVisibility = intelligenceDeckVisibility,
                     onTabSelected = { selectedIntelligenceTab = it },
-                    onToggleStructure = { isStructureExpanded = !isStructureExpanded },
+                    onToggleDeck = { isIntelligenceDeckExpanded = !isIntelligenceDeckExpanded },
                     onOpenEvent = onOpenEvent,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            if (
-                activeIntelligenceTab == IntelligenceTab.STRUCTURE &&
-                !structureVisibility.currentState &&
-                !structureVisibility.targetState
-            ) {
-                StructureBookmarkHandle(
+            if (!intelligenceDeckVisibility.currentState && !intelligenceDeckVisibility.targetState) {
+                IntelligenceDeckHandle(
                     expanded = false,
-                    onClick = { isStructureExpanded = true },
+                    onClick = { isIntelligenceDeckExpanded = true },
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
@@ -827,61 +850,59 @@ private fun MarketIntelligenceDeck(
     tracedSignals: List<StockNewsSignal>,
     activeTab: IntelligenceTab,
     availableTabs: List<IntelligenceTab>,
-    structureVisibility: MutableTransitionState<Boolean>,
+    unreadRelatedNewsCount: Int,
+    intelligenceDeckVisibility: MutableTransitionState<Boolean>,
     onTabSelected: (IntelligenceTab) -> Unit,
-    onToggleStructure: () -> Unit,
+    onToggleDeck: () -> Unit,
     onOpenEvent: (String) -> Unit,
     modifier: Modifier,
 ) {
-    if (activeTab == IntelligenceTab.STRUCTURE) {
-        AnimatedVisibility(
-            visibleState = structureVisibility,
-            modifier = modifier,
-            enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
-            exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
-        ) {
-            Box(Modifier.fillMaxWidth().background(MarketColors.Grey50)) {
-                Column(Modifier.fillMaxWidth().padding(top = 28.dp)) {
-                    IntelligenceDeckHeader(
-                        activeTab = activeTab,
-                        availableTabs = availableTabs,
-                        signalCount = signals.size,
-                        onTabSelected = onTabSelected,
+    AnimatedVisibility(
+        visibleState = intelligenceDeckVisibility,
+        modifier = modifier,
+        enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+        exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
+    ) {
+        Box(Modifier.fillMaxWidth().background(MarketColors.Grey50)) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .then(if (activeTab == IntelligenceTab.STRUCTURE) Modifier else Modifier.height(260.dp))
+                    .padding(top = 28.dp),
+            ) {
+                IntelligenceDeckHeader(
+                    activeTab = activeTab,
+                    availableTabs = availableTabs,
+                    signalCount = signals.size,
+                    unreadRelatedNewsCount = unreadRelatedNewsCount,
+                    onTabSelected = onTabSelected,
+                )
+                LedgerDivider()
+                when (activeTab) {
+                    IntelligenceTab.IMPACT -> ImpactPathPanel(
+                        stock = stock,
+                        signals = tracedSignals,
+                        onOpenEvent = onOpenEvent,
+                        modifier = Modifier.fillMaxSize(),
                     )
-                    LedgerDivider()
-                    ProductStructurePanel(stock, holding, Modifier.fillMaxWidth())
+                    IntelligenceTab.NEWS -> RelatedNewsPanel(
+                        stock = stock,
+                        signals = signals,
+                        onOpenEvent = onOpenEvent,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    IntelligenceTab.STRUCTURE -> ProductStructurePanel(
+                        stock,
+                        holding,
+                        Modifier.fillMaxWidth(),
+                    )
                 }
-                StructureBookmarkHandle(
-                    expanded = true,
-                    onClick = onToggleStructure,
-                    modifier = Modifier.align(Alignment.TopCenter),
-                )
             }
-        }
-    } else {
-        Column(modifier.height(260.dp).background(MarketColors.Grey50)) {
-            IntelligenceDeckHeader(
-                activeTab = activeTab,
-                availableTabs = availableTabs,
-                signalCount = signals.size,
-                onTabSelected = onTabSelected,
+            IntelligenceDeckHandle(
+                expanded = true,
+                onClick = onToggleDeck,
+                modifier = Modifier.align(Alignment.TopCenter),
             )
-            LedgerDivider()
-            when (activeTab) {
-                IntelligenceTab.IMPACT -> ImpactPathPanel(
-                    stock = stock,
-                    signals = tracedSignals,
-                    onOpenEvent = onOpenEvent,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                IntelligenceTab.NEWS -> RelatedNewsPanel(
-                    stock = stock,
-                    signals = signals,
-                    onOpenEvent = onOpenEvent,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                IntelligenceTab.STRUCTURE -> Unit
-            }
         }
     }
 }
@@ -891,6 +912,7 @@ private fun IntelligenceDeckHeader(
     activeTab: IntelligenceTab,
     availableTabs: List<IntelligenceTab>,
     signalCount: Int,
+    unreadRelatedNewsCount: Int,
     onTabSelected: (IntelligenceTab) -> Unit,
 ) {
     if (availableTabs.size == 1) {
@@ -907,14 +929,14 @@ private fun IntelligenceDeckHeader(
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                "WHY IT MOVES",
+                "STOCK BRIEFING",
                 style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
                 color = MarketColors.Signal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "왜 움직이는가",
+                "종목 브리핑",
                 style = MarketType.heading,
                 color = MarketColors.Ink,
                 maxLines = 1,
@@ -929,6 +951,7 @@ private fun IntelligenceDeckHeader(
                     tab.label
                 },
                 selected = activeTab == tab,
+                showUnreadMarker = tab == IntelligenceTab.NEWS && unreadRelatedNewsCount > 0,
                 onClick = { onTabSelected(tab) },
             )
         }
@@ -939,6 +962,7 @@ private fun IntelligenceDeckHeader(
 private fun IntelligenceTabButton(
     text: String,
     selected: Boolean,
+    showUnreadMarker: Boolean,
     onClick: () -> Unit,
 ) {
     Box(
@@ -963,6 +987,17 @@ private fun IntelligenceTabButton(
                     .fillMaxWidth()
                     .height(2.dp)
                     .background(MarketColors.SignalLine),
+            )
+        }
+        if (showUnreadMarker) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 8.dp, end = 5.dp)
+                    .size(6.dp)
+                    .clip(RoundedCornerShape(MarketRadii.pill))
+                    .background(MarketColors.Rise)
+                    .semantics { contentDescription = "미확인 관련 뉴스 있음" },
             )
         }
     }
@@ -1331,7 +1366,7 @@ private fun ProductStructurePanel(
 }
 
 @Composable
-private fun StructureBookmarkHandle(
+private fun IntelligenceDeckHandle(
     expanded: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1349,7 +1384,7 @@ private fun StructureBookmarkHandle(
             .background(MarketColors.Primary)
             .clickable(role = Role.Button, onClick = onClick)
             .semantics {
-                contentDescription = if (expanded) "상품 구조 상세 접기" else "상품 구조 상세 펼치기"
+                contentDescription = if (expanded) "종목 브리핑 접기" else "종목 브리핑 펼치기"
             },
         contentAlignment = Alignment.Center,
     ) {

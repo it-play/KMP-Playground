@@ -64,7 +64,10 @@ data class SimulatorUiState(
     val pendingFundFlowRates: Map<String, Double>,
     val selectedStockId: String?,
     val quotes: Map<String, Quote>,
+    /** 최근 시간봉. 장중 시세 복원과 1일·1주 차트에 사용한다. */
     val priceHistory: Map<String, List<PriceBar>>,
+    /** 엔진이 거래일별로 직접 집계한 OHLCV. 진행 중인 거래일의 부분 일봉도 포함한다. */
+    val dailyPriceHistory: Map<String, List<PriceBar>>,
     val cashByCurrency: Map<Currency, Double>,
     val holdings: Map<String, Holding>,
     val orders: List<Order>,
@@ -75,6 +78,8 @@ data class SimulatorUiState(
     val activeEvents: List<GameEvent>,
     val newsEvents: List<GameEvent>,
     val readEventIds: Set<String>,
+    /** 종목 화면에서 확인한 연관 뉴스를 종목별로 분리한 읽음 원장. */
+    val readStockNewsEventIds: Map<String, Set<String>>,
     val portfolioSnapshots: List<PortfolioSnapshot>,
     val dailyStatistics: List<DailyPortfolioStat>,
     val benchmarkHistory: List<BenchmarkPoint>,
@@ -128,6 +133,7 @@ data class SimulatorUiState(
     val selectedQuote: Quote? get() = selectedStockId?.let(quotes::get)
     val selectedHolding: Holding? get() = selectedStockId?.let(holdings::get)
     val selectedHistory: List<PriceBar> get() = selectedStockId?.let(priceHistory::get).orEmpty()
+    val selectedDailyHistory: List<PriceBar> get() = selectedStockId?.let(dailyPriceHistory::get).orEmpty()
     val orderBook: OrderBookSnapshot? get() = selectedOrderBook
     val sessions: Map<Market, MarketSession> get() = marketSessions
     val selectedSession: MarketSession? get() = selectedStock?.let { marketSessions[it.market] }

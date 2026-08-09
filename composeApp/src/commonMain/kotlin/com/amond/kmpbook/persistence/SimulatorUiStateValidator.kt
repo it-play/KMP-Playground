@@ -51,6 +51,7 @@ import com.amond.kmpbook.domain.model.StockDefinition
 import com.amond.kmpbook.domain.model.TradingHaltReason
 import com.amond.kmpbook.domain.model.TradingHaltStatus
 import com.amond.kmpbook.domain.model.TradeSettlementKind
+import com.amond.kmpbook.domain.model.TurnStep
 import com.amond.kmpbook.domain.model.UsLuldPhase
 import com.amond.kmpbook.domain.model.UsMwcbPhase
 import com.amond.kmpbook.domain.model.investmentAlertOccurrenceId
@@ -122,6 +123,13 @@ internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
     if (state.quotes.any { (id, quote) -> id != quote.stockId }) return "시세 맵 키가 일치하지 않습니다."
     if (state.priceHistory.any { (id, bars) -> bars.any { it.stockId != id } }) {
         return "가격 히스토리 종목 키가 일치하지 않습니다."
+    }
+    if (state.dailyPriceHistory.keys != stockIds || state.dailyPriceHistory.any { (id, bars) ->
+            bars.any { it.stockId != id || it.step != TurnStep.ONE_DAY } ||
+                bars.zipWithNext().any { (previous, next) -> previous.startTime >= next.startTime }
+        }
+    ) {
+        return "일봉 가격 히스토리의 종목·주기·시간 순서가 올바르지 않습니다."
     }
     if (state.portfolioSnapshots.any { snapshot ->
             snapshot.holdingCostBasisKrw.keys != snapshot.holdings.mapTo(linkedSetOf()) { it.stockId } ||
@@ -218,6 +226,12 @@ internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
     }
     if (state.newsEvents.map { it.id }.distinct().size != state.newsEvents.size) {
         return "뉴스 이벤트 ID가 중복되었습니다."
+    }
+    val newsEventIds = state.newsEvents.mapTo(linkedSetOf()) { it.id }
+    if (state.readStockNewsEventIds.keys.any { it !in stockIds } ||
+        state.readStockNewsEventIds.values.any { readIds -> readIds.any { it !in newsEventIds } }
+    ) {
+        return "종목별 연관 뉴스 읽음 원장이 현재 종목·뉴스 원장과 일치하지 않습니다."
     }
     if (state.newsEvents.any { it.startsAt > state.currentTime }) {
         return "아직 발표되지 않은 이벤트가 뉴스 원장에 포함되었습니다."

@@ -112,6 +112,11 @@ class SimulatorViewModel(
         publish()
     }
 
+    fun markStockNewsListViewed(stockId: String, eventIds: Set<String>) {
+        runtime.markStockNewsListViewed(stockId, eventIds)
+        publish()
+    }
+
     fun markAllEventsRead() {
         runtime.markAllEventsRead()
         publish()

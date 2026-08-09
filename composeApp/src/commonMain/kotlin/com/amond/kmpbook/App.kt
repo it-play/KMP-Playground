@@ -394,6 +394,7 @@ private fun ScreenContent(
             stocks = state.stocks,
             quotes = state.quotes,
             priceHistory = state.priceHistory,
+            dailyPriceHistory = state.dailyPriceHistory,
             selectedStockId = state.selectedStockId,
             holding = state.selectedHolding,
             orderBook = state.selectedOrderBook?.toOrderBook(),
@@ -414,7 +415,9 @@ private fun ScreenContent(
                 state.orderSubmissionBlockReason(stockId, orderType)
             },
             relatedNews = newsProjection.stories,
-            onOpenEvent = { eventId -> openNews(eventId) },
+            readStockNewsEventIds = state.readStockNewsEventIds,
+            onRelatedNewsListViewed = viewModel::markStockNewsListViewed,
+            onOpenEvent = { _, eventId -> openNews(eventId) },
         )
 
         Screen.ORDER -> OrdersScreen(
