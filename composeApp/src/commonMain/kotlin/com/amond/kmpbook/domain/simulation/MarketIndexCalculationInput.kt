@@ -34,6 +34,14 @@ data class MarketIndexCalculationInput(
     val usTradingFraction: Double,
 ) {
     init {
+        val stockIds = stocks.mapTo(linkedSetOf(), StockDefinition::id)
+        require(stockIds.size == stocks.size) { "지수 구성종목 ID는 중복될 수 없습니다." }
+        require(barsByStockId.keys.all(stockIds::contains)) {
+            "시간 봉에는 지수 계산 대상이 아닌 종목을 포함할 수 없습니다."
+        }
+        require(previousCloseByStockId.keys.all(stockIds::contains)) {
+            "직전 종가에는 지수 계산 대상이 아닌 종목을 포함할 수 없습니다."
+        }
         require(usTradingFraction in 0.0..1.0) { "미국 정규장 비율은 0에서 1 사이여야 합니다." }
         require(previousIndices.all { (id, snapshot) -> id == snapshot.id }) {
             "이전 지수 맵의 키와 스냅샷 ID가 일치해야 합니다."

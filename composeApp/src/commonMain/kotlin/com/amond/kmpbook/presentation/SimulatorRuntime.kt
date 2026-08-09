@@ -4665,13 +4665,18 @@ internal class SimulatorRuntime(
         previousClosesByStockId: Map<String, Double>,
         fractions: Map<Market, Double>,
     ): Map<MarketIndexId, MarketIndexSnapshot> {
+        val indexStocks = stocks.filter { stock ->
+            stock.market.isUnitedStates && stock.hasCorporateEarnings &&
+                listingLifecycleStates.getValue(stock.id).isIndexEligible
+        }
+        val indexStockIds = indexStocks.mapTo(linkedSetOf(), StockDefinition::id)
         val hasUsTrading = fractions.any { (market, fraction) -> market.isUnitedStates && fraction > 0.0 }
         return marketIndexEngine.calculate(
             MarketIndexCalculationInput(
                 timestamp = timestamp,
-                stocks = stocks.filter { listingLifecycleStates.getValue(it.id).isIndexEligible },
-                barsByStockId = bars,
-                previousCloseByStockId = previousClosesByStockId,
+                stocks = indexStocks,
+                barsByStockId = bars.filterKeys(indexStockIds::contains),
+                previousCloseByStockId = previousClosesByStockId.filterKeys(indexStockIds::contains),
                 previousIndices = marketIndices,
                 macro = macro,
                 // Price bars already contain the 09:30 half-hour fraction, so do not scale twice.
@@ -4975,7 +4980,9 @@ internal class SimulatorRuntime(
         }
 
         val luldStates = tradingProtectionSnapshot.usLuldStates.toMutableMap()
-        for (stock in stocks.filter { it.market.isUnitedStates }) {
+        for (stock in stocks.filter { stock ->
+            stock.market.isUnitedStates && listingLifecycleStates.getValue(stock.id).isIndexEligible
+        }) {
             var luld = luldStates[stock.id]
             val quote = quotes.getValue(stock.id)
             val local = GameCalendar.marketLocalDateTime(stock.market, at)
@@ -5249,7 +5256,9 @@ internal class SimulatorRuntime(
         impact: TurnProtectionImpactBuilder,
     ) {
         val states = tradingProtectionSnapshot.krxVolatilityInterruptions.toMutableMap()
-        for (stock in stocks.filter { it.market.isKorean }) {
+        for (stock in stocks.filter { stock ->
+            stock.market.isKorean && listingLifecycleStates.getValue(stock.id).isIndexEligible
+        }) {
             if (ordinaryTradingFractions.getValue(stock.market) <= 0.0) continue
             val sessionInterval = runtimeTradableIntervals(stock.market, from, to).firstOrNull() ?: continue
             val bar = bars.getValue(stock.id)
@@ -5463,7 +5472,9 @@ internal class SimulatorRuntime(
     ) {
         val states = tradingProtectionSnapshot.usLuldStates.toMutableMap()
         if (impact.usMwcbControlledTurn) {
-            for (stock in stocks.filter { it.market.isUnitedStates }) {
+            for (stock in stocks.filter { stock ->
+                stock.market.isUnitedStates && listingLifecycleStates.getValue(stock.id).isIndexEligible
+            }) {
                 val bar = bars.getValue(stock.id)
                 val local = GameCalendar.marketLocalDateTime(stock.market, to)
                 val previous = states[stock.id]
@@ -5481,7 +5492,9 @@ internal class SimulatorRuntime(
             tradingProtectionSnapshot = tradingProtectionSnapshot.copy(usLuldStates = states)
             return
         }
-        for (stock in stocks.filter { it.market.isUnitedStates }) {
+        for (stock in stocks.filter { stock ->
+            stock.market.isUnitedStates && listingLifecycleStates.getValue(stock.id).isIndexEligible
+        }) {
             val bar = bars.getValue(stock.id)
             var state = states[stock.id] ?: continue
             if (ordinaryTradingFractions.getValue(stock.market) <= 0.0 ||
