@@ -160,8 +160,6 @@ fun App(
                 GamePhase.SETUP -> when (entryDestination) {
                     GameEntryDestination.LOBBY -> GameLobbyScreen(
                         saves = saves,
-                        saveStatus = saveStatus,
-                        saveDirectory = storage.saveDirectory,
                         onContinue = loadGame,
                         onLoad = loadGame,
                         onNewGame = { entryDestination = GameEntryDestination.NEW_GAME },
