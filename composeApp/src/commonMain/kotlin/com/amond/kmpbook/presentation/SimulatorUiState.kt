@@ -2,6 +2,8 @@ package com.amond.kmpbook.presentation
 
 import com.amond.kmpbook.domain.model.Currency
 import com.amond.kmpbook.domain.model.CorporateActionRecord
+import com.amond.kmpbook.domain.model.CorporateFundamentalState
+import com.amond.kmpbook.domain.model.FundFinancialState
 import com.amond.kmpbook.domain.model.GameEvent
 import com.amond.kmpbook.domain.model.GamePhase
 import com.amond.kmpbook.domain.model.Holding
@@ -54,6 +56,12 @@ data class SimulatorUiState(
     val turn: Long,
     val selectedTurnStep: TurnStep,
     val stocks: List<StockDefinition>,
+    /** PER·PSR·ROE 계산의 원천이며, 파생 지표 스냅샷은 저장하지 않는다. */
+    val corporateFundamentals: Map<String, CorporateFundamentalState>,
+    /** AUM·괴리율 계산의 원천인 좌당 기준가와 존속 좌수 상태다. */
+    val fundFinancialStates: Map<String, FundFinancialState>,
+    /** 거래정지·폐장 중 소비되지 않은 ETF·ETN 설정·환매 충격이다. */
+    val pendingFundFlowRates: Map<String, Double>,
     val selectedStockId: String?,
     val quotes: Map<String, Quote>,
     val priceHistory: Map<String, List<PriceBar>>,
