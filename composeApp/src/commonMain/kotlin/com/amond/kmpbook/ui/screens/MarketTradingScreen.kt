@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
@@ -40,7 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -776,13 +774,14 @@ private fun MarketIntelligenceDeck(
     }
 
     if (activeTab == IntelligenceTab.STRUCTURE) {
-        Column(modifier.background(MarketColors.Grey50)) {
+        Box(modifier.background(MarketColors.Grey50)) {
             AnimatedVisibility(
                 visible = isStructureExpanded,
+                modifier = Modifier.fillMaxWidth(),
                 enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
                 exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
             ) {
-                Column(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().padding(top = 28.dp)) {
                     IntelligenceDeckHeader(
                         activeTab = activeTab,
                         availableTabs = availableTabs,
@@ -796,6 +795,9 @@ private fun MarketIntelligenceDeck(
             StructureBookmarkHandle(
                 expanded = isStructureExpanded,
                 onClick = { isStructureExpanded = !isStructureExpanded },
+                modifier = Modifier.align(
+                    if (isStructureExpanded) Alignment.TopCenter else Alignment.BottomCenter,
+                ),
             )
         }
     } else {
@@ -1274,41 +1276,31 @@ private fun ProductStructurePanel(
 private fun StructureBookmarkHandle(
     expanded: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-        Box(
-            modifier = Modifier
-                .width(48.dp)
-                .height(28.dp)
-                .clickable(role = Role.Button, onClick = onClick)
-                .semantics {
-                    contentDescription = if (expanded) "상품 구조 상세 접기" else "상품 구조 상세 펼치기"
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .graphicsLayer { scaleY = if (expanded) 1f else -1f }
-                    .clip(StructureBookmarkShape)
-                    .background(MarketColors.Primary),
-            )
-            Text(
-                text = if (expanded) "↓" else "↑",
-                style = MarketType.label.copy(fontWeight = FontWeight.Bold),
-                color = Color.White,
-            )
-        }
+    val shape = if (expanded) {
+        RoundedCornerShape(bottomStart = 10.dp, bottomEnd = 10.dp)
+    } else {
+        RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)
     }
-}
-
-private val StructureBookmarkShape = GenericShape { size, _ ->
-    moveTo(0f, 0f)
-    lineTo(size.width, 0f)
-    lineTo(size.width, size.height)
-    lineTo(size.width / 2f, size.height * 0.72f)
-    lineTo(0f, size.height)
-    close()
+    Box(
+        modifier = modifier
+            .width(48.dp)
+            .height(28.dp)
+            .clip(shape)
+            .background(MarketColors.Primary)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics {
+                contentDescription = if (expanded) "상품 구조 상세 접기" else "상품 구조 상세 펼치기"
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = if (expanded) "↓" else "↑",
+            style = MarketType.label.copy(fontWeight = FontWeight.Bold),
+            color = Color.White,
+        )
+    }
 }
 
 private fun StockDefinition.structureClassification(): String = when (instrumentType) {
