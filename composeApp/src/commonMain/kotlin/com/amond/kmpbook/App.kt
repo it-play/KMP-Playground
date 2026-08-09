@@ -42,6 +42,7 @@ import com.amond.kmpbook.persistence.GameSaveDeleteResult
 import com.amond.kmpbook.persistence.GameSavePresenceResult
 import com.amond.kmpbook.persistence.GameSaveResult
 import com.amond.kmpbook.persistence.GameSaveStorage
+import com.amond.kmpbook.presentation.InstrumentMetricsProjection
 import com.amond.kmpbook.presentation.NewGameOptions
 import com.amond.kmpbook.presentation.ProtectionUiProjection
 import com.amond.kmpbook.presentation.SimulatorUiState
@@ -354,6 +355,23 @@ private fun ScreenContent(
         )
         viewModel.selectScreen(Screen.EVENTS)
     }
+    val selectedMetrics = remember(
+        state.selectedStockId,
+        state.stocks,
+        state.quotes,
+        state.corporateFundamentals,
+        state.fundFinancialStates,
+    ) {
+        val stockId = state.selectedStockId ?: state.stocks.firstOrNull()?.id ?: return@remember null
+        val stock = state.stocks.firstOrNull { it.id == stockId } ?: return@remember null
+        val quote = state.quotes[stockId] ?: return@remember null
+        InstrumentMetricsProjection.project(
+            stock = stock,
+            quote = quote,
+            corporateState = state.corporateFundamentals[stockId],
+            fundState = state.fundFinancialStates[stockId],
+        )
+    }
 
     when (state.screen) {
         Screen.HOME -> HomeDashboardScreen(
@@ -391,6 +409,7 @@ private fun ScreenContent(
             },
             protectionBadges = protectionProjection.symbolBadges,
             selectedProtectionDetail = protectionProjection.selectedSymbolDetail,
+            selectedMetrics = selectedMetrics,
             orderUnavailableReason = { stockId, orderType ->
                 state.orderSubmissionBlockReason(stockId, orderType)
             },

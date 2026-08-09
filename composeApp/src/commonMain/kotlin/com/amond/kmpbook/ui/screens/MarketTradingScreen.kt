@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,6 +56,9 @@ import com.amond.kmpbook.domain.model.Quote
 import com.amond.kmpbook.domain.model.ReferenceCurrency
 import com.amond.kmpbook.domain.model.StockDefinition
 import com.amond.kmpbook.domain.model.TimeInForce
+import com.amond.kmpbook.presentation.CorporateMetricsSnapshot
+import com.amond.kmpbook.presentation.FundMetricsSnapshot
+import com.amond.kmpbook.presentation.InstrumentMetricsSnapshot
 import com.amond.kmpbook.presentation.NewsEffectState
 import com.amond.kmpbook.presentation.NewsRelatedStockUi
 import com.amond.kmpbook.presentation.NewsStockRelationKind
@@ -103,6 +108,7 @@ fun MarketTradingScreen(
     ) -> Unit,
     protectionBadges: Map<String, ProtectionStatusBadgeUi> = emptyMap(),
     selectedProtectionDetail: ProtectionDetailUi? = null,
+    selectedMetrics: InstrumentMetricsSnapshot? = null,
     orderUnavailableReason: (stockId: String, orderType: OrderType) -> String? = { _, _ -> null },
     relatedNews: List<NewsStoryUi> = emptyList(),
     onOpenEvent: (String) -> Unit = {},
@@ -115,6 +121,11 @@ fun MarketTradingScreen(
     var orderSide by remember(selectedStock?.id) { mutableStateOf(OrderSide.BUY) }
     var orderType by remember(selectedStock?.id) { mutableStateOf(OrderType.MARKET) }
     var selectedBookPrice by remember(selectedStock?.id) { mutableStateOf<Double?>(null) }
+    var showOrderBook by remember(selectedStock?.id) { mutableStateOf(false) }
+
+    LaunchedEffect(selectedStock?.id, orderType, orderBook != null) {
+        showOrderBook = orderType == OrderType.LIMIT && orderBook != null
+    }
 
     Row(
         modifier = modifier.fillMaxSize().padding(MarketLayout.screenPadding),
@@ -149,17 +160,19 @@ fun MarketTradingScreen(
                 onOpenProtectionDetail = { showSelectedProtectionDetail = true },
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
-            if (orderType == OrderType.LIMIT && orderBook != null) {
-                OrderBookPanel(
-                    stock = selectedStock,
-                    quote = quote,
-                    orderBook = orderBook,
-                    side = orderSide,
-                    selectedPrice = selectedBookPrice,
-                    onSelectPrice = { selectedBookPrice = it },
-                    modifier = Modifier.width(MarketLayout.marketOrderBookWidth).fillMaxHeight(),
-                )
-            }
+            InstrumentSideRail(
+                stock = selectedStock,
+                quote = quote,
+                metrics = selectedMetrics,
+                orderBook = orderBook,
+                side = orderSide,
+                selectedPrice = selectedBookPrice,
+                showOrderBook = showOrderBook,
+                onShowMetrics = { showOrderBook = false },
+                onShowOrderBook = { showOrderBook = true },
+                onSelectPrice = { selectedBookPrice = it },
+                modifier = Modifier.width(MarketLayout.marketOrderBookWidth).fillMaxHeight(),
+            )
             OrderTicketPanel(
                 stock = selectedStock,
                 quote = quote,
@@ -169,7 +182,11 @@ fun MarketTradingScreen(
                 side = orderSide,
                 onSideChange = { orderSide = it },
                 type = orderType,
-                onTypeChange = { orderType = it },
+                onTypeChange = { nextType ->
+                    orderType = nextType
+                    showOrderBook = nextType == OrderType.LIMIT && orderBook != null
+                    if (nextType == OrderType.MARKET) selectedBookPrice = null
+                },
                 selectedBookPrice = selectedBookPrice,
                 onLimitPriceEdited = { selectedBookPrice = null },
                 protectionDetail = selectedProtectionDetail,
@@ -681,14 +698,7 @@ private fun StockChartPanel(
                     Metric("고가", formatPrice(quote.high, stock.currency), Modifier.weight(1f), MarketColors.Rise)
                     Metric("저가", formatPrice(quote.low, stock.currency), Modifier.weight(1f), MarketColors.Fall)
                     Metric("거래량", formatQuantity(quote.volume.toDouble()), Modifier.weight(1f))
-                    stock.etfProfile?.let { profile ->
-                        Metric(
-                            "연 보수",
-                            formatPercent(profile.annualExpenseRatio, withSign = false),
-                            Modifier.weight(1f),
-                            detail = "배율 ${profile.leverage}x",
-                        )
-                    } ?: Metric("연 변동성", formatPercent(stock.volatility, withSign = false), Modifier.weight(1f))
+                    Metric("연 변동성", formatPercent(stock.volatility, withSign = false), Modifier.weight(1f))
                 }
             }
             LedgerDivider()
@@ -1135,6 +1145,20 @@ private fun ProductStructurePanel(
             add("1 ADR/ADS = 본주 ${formatQuantity(ratio)}")
         }
     }
+    val structureFacts = buildList {
+        add(
+            "분류" to buildString {
+                append(stock.instrumentType.displayName)
+                stock.etfProfile?.let { append(" · ${it.assetClass.displayName}") }
+                append(" · ${stock.behavior.strategy.displayName}")
+            },
+        )
+        add("핵심 위험" to stock.behavior.principalRisk.displayName)
+        identity?.issuerOrManager?.takeIf(String::isNotBlank)?.let { add("운용·발행" to it) }
+        identity?.distributionNotes?.takeIf(String::isNotBlank)?.let { add("분배 정책" to it) }
+        if (contractFacts.isNotEmpty()) add("계약" to contractFacts.joinToString(" · "))
+        identity?.let { add("공식 확인" to "${it.legalName} · ${it.verifiedOn} 검증") }
+    }
 
     Column(
         modifier = modifier.padding(horizontal = 16.dp, vertical = 9.dp),
@@ -1172,49 +1196,20 @@ private fun ProductStructurePanel(
             }
             LedgerDivider()
         }
-        Row(
-            Modifier.fillMaxWidth().weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(
-                    if (stock.isFundLike) "상품 구조와 위험" else "기업 구조와 위험",
-                    style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
-                    color = MarketColors.Ink,
-                )
-                Text(
-                    identity?.strategySummary ?: stock.description,
-                    style = MarketType.caption,
-                    color = MarketColors.Ink,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                ProductInfoLine(
-                    label = "기본 구조",
-                    value = buildString {
-                        append(stock.instrumentType.displayName)
-                        append(" · ${stock.behavior.strategy.displayName}")
-                        append(" · ${stock.behavior.distributionFrequency.displayName}")
-                        stock.etfProfile?.let { append(" · 목표배율 ${it.leverage}x") }
-                    },
-                )
-                ProductInfoLine(
-                    "핵심 위험",
-                    "${stock.behavior.principalRisk.displayName} · ${stock.behavior.principalRisk.explanation}",
-                )
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                stock.etfProfile?.let { profile ->
-                    ProductInfoLine("기초자산", "${profile.assetClass.displayName} · ${profile.benchmark}")
-                    ProductInfoLine("세금 분류", profile.taxCategory.displayName, maxLines = 1)
-                }
-                identity?.let {
-                    ProductInfoLine("운용·발행", it.issuerOrManager, maxLines = 1)
-                    ProductInfoLine("분배", it.distributionNotes, maxLines = 1)
-                    ProductInfoLine("공식 확인", "${it.legalName} · ${it.verifiedOn} 검증", maxLines = 1)
-                }
-                if (contractFacts.isNotEmpty()) {
-                    ProductInfoLine("계약", contractFacts.joinToString(" · "))
+        Text(
+            identity?.strategySummary ?: stock.description,
+            style = MarketType.caption,
+            color = MarketColors.Ink,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            structureFacts.chunked(2).forEach { facts ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    facts.forEach { (label, value) ->
+                        ProductInfoLine(label, value, Modifier.weight(1f))
+                    }
+                    if (facts.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
         }
@@ -1222,8 +1217,13 @@ private fun ProductStructurePanel(
 }
 
 @Composable
-private fun ProductInfoLine(label: String, value: String, maxLines: Int = 2) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+private fun ProductInfoLine(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    maxLines: Int = 2,
+) {
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         Text(
             label,
             modifier = Modifier.width(72.dp),
@@ -1241,6 +1241,305 @@ private fun ProductInfoLine(label: String, value: String, maxLines: Int = 2) {
             overflow = TextOverflow.Ellipsis,
         )
     }
+}
+
+@Composable
+private fun InstrumentSideRail(
+    stock: StockDefinition,
+    quote: Quote,
+    metrics: InstrumentMetricsSnapshot?,
+    orderBook: OrderBook?,
+    side: OrderSide,
+    selectedPrice: Double?,
+    showOrderBook: Boolean,
+    onShowMetrics: () -> Unit,
+    onShowOrderBook: () -> Unit,
+    onSelectPrice: (Double) -> Unit,
+    modifier: Modifier,
+) {
+    val isShowingOrderBook = showOrderBook && orderBook != null
+    Column(modifier) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            SideRailTab(
+                label = "지표",
+                selected = !isShowingOrderBook,
+                onClick = onShowMetrics,
+                modifier = Modifier.weight(1f),
+            )
+            if (orderBook != null) {
+                SideRailTab(
+                    label = "호가",
+                    selected = isShowingOrderBook,
+                    onClick = onShowOrderBook,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        if (isShowingOrderBook) {
+            OrderBookPanel(
+                stock = stock,
+                quote = quote,
+                orderBook = requireNotNull(orderBook),
+                side = side,
+                selectedPrice = selectedPrice,
+                onSelectPrice = onSelectPrice,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
+        } else {
+            InstrumentMetricsPanel(
+                stock = stock,
+                metrics = metrics,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SideRailTab(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier
+            .clip(RoundedCornerShape(MarketRadii.pill))
+            .background(if (selected) MarketColors.Navy else MarketColors.PaperMuted)
+            .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = if (selected) "✓ $label" else label,
+            style = MarketType.label,
+            color = if (selected) Color.White else MarketColors.InkMuted,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun InstrumentMetricsPanel(
+    stock: StockDefinition,
+    metrics: InstrumentMetricsSnapshot?,
+    modifier: Modifier,
+) {
+    LedgerPanel(modifier, padding = 0.dp) {
+        Column(Modifier.fillMaxSize()) {
+            SectionHeading(
+                title = if (stock.isFundLike) "상품 핵심 지표" else "기업 핵심 지표",
+                eyebrow = "KEY METRICS",
+                modifier = Modifier.padding(12.dp),
+            )
+            LedgerDivider()
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "시뮬레이션 · TTM/최근 산출",
+                    style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                    color = MarketColors.InkMuted,
+                )
+                when (metrics) {
+                    is CorporateMetricsSnapshot -> CorporateMetricsContent(stock, metrics)
+                    is FundMetricsSnapshot -> FundMetricsContent(stock, metrics)
+                    null -> MetricsUnavailableContent()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CorporateMetricsContent(
+    stock: StockDefinition,
+    metrics: CorporateMetricsSnapshot,
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Metric(
+            "시가총액",
+            formatMoney(metrics.marketCapitalization, metrics.currency, compact = true),
+            Modifier.weight(1f),
+            detail = "현재가 × 발행주식",
+        )
+        Metric(
+            "PER (TTM)",
+            formatPriceEarnings(metrics),
+            Modifier.weight(1f),
+            detail = if (metrics.ttmNetIncome <= 0.0) "적자/이익 없음" else "최근 4분기",
+        )
+    }
+    Spacer(Modifier.height(12.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Metric(
+            "PSR (TTM)",
+            formatMultiple(metrics.priceSalesRatio),
+            Modifier.weight(1f),
+            detail = "최근 4분기",
+        )
+        Metric(
+            "ROE (TTM)",
+            formatNullablePercent(metrics.returnOnEquity),
+            Modifier.weight(1f),
+            detail = "평균 자기자본",
+        )
+    }
+    Spacer(Modifier.height(12.dp))
+    LedgerDivider()
+    Spacer(Modifier.height(12.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Metric("PBR", formatMultiple(metrics.priceToBookRatio), Modifier.weight(1f))
+        Metric(
+            "EPS (TTM)",
+            formatNullableMoney(metrics.earningsPerShare, metrics.currency),
+            Modifier.weight(1f),
+        )
+    }
+    Spacer(Modifier.height(12.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Metric(
+            "배당수익률",
+            formatPercent(stock.dividendYield, withSign = false),
+            Modifier.weight(1f),
+            detail = "기준 배당 정책",
+        )
+        Metric(
+            "발행주식",
+            formatQuantity(metrics.sharesOutstanding, stock.quantityUnit),
+            Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun FundMetricsContent(
+    stock: StockDefinition,
+    metrics: FundMetricsSnapshot,
+) {
+    val isEtn = stock.instrumentType == InstrumentType.ETN
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Metric(
+            "목표배율",
+            formatRatio(metrics.targetLeverage, "x"),
+            Modifier.weight(1f),
+            detail = "계약값",
+        )
+        Metric(
+            "연 운용보수",
+            formatPercent(metrics.annualExpenseRatio, withSign = false),
+            Modifier.weight(1f),
+            detail = "계약값",
+        )
+    }
+    Spacer(Modifier.height(12.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Metric(
+            if (isEtn) "발행잔액" else "운용자산 (AUM)",
+            formatNullableCompactMoney(
+                if (isEtn) metrics.outstandingNotional else metrics.assetsUnderManagement,
+                metrics.currency,
+            ),
+            Modifier.weight(1f),
+        )
+        Metric(
+            "시가총액",
+            formatMoney(metrics.marketCapitalization, metrics.currency, compact = true),
+            Modifier.weight(1f),
+        )
+    }
+    Spacer(Modifier.height(12.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Metric(
+            if (isEtn) "지표가치" else "NAV",
+            formatPrice(
+                if (isEtn) metrics.indicativeValuePerUnit else metrics.navPerUnit,
+                metrics.currency,
+            ),
+            Modifier.weight(1f),
+            detail = "1${stock.quantityUnit} 기준",
+        )
+        Metric(
+            "괴리율",
+            formatNullableSignedPercent(metrics.premiumDiscountRate),
+            Modifier.weight(1f),
+            detail = premiumDiscountLabel(metrics.premiumDiscountRate),
+        )
+    }
+    Spacer(Modifier.height(12.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Metric(
+            "최근 순유입",
+            formatNetFlow(metrics.lastNetFlow, metrics.currency),
+            Modifier.weight(1f),
+            valueColor = deltaColor(metrics.lastNetFlow),
+            detail = "방향을 기호·문자로 병기",
+        )
+        Metric(
+            if (isEtn) "발행증권" else "존속좌수",
+            formatQuantity(metrics.unitsOrNotesOutstanding, stock.quantityUnit),
+            Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun MetricsUnavailableContent() {
+    Text(
+        "지표 원시 상태를 산출하는 중이에요.",
+        style = MarketType.body,
+        color = MarketColors.Ink,
+    )
+    Text(
+        "가격·실적·NAV가 준비되면 이 영역에서 같은 시점의 지표를 확인할 수 있어요.",
+        style = MarketType.caption,
+        color = MarketColors.InkMuted,
+    )
+}
+
+private fun formatPriceEarnings(metrics: CorporateMetricsSnapshot): String =
+    if (metrics.ttmNetIncome <= 0.0) "N/M" else formatMultiple(metrics.priceEarningsRatio)
+
+private fun formatMultiple(value: Double?): String = value?.let { "${formatRatio(it)}배" } ?: "-"
+
+private fun formatNullablePercent(value: Double?): String =
+    value?.let { formatPercent(it, withSign = false) } ?: "-"
+
+private fun formatNullableSignedPercent(value: Double?): String =
+    value?.let { formatPercent(it, withSign = true) } ?: "-"
+
+private fun formatNullableMoney(value: Double?, currency: Currency): String =
+    value?.let { formatMoney(it, currency) } ?: "-"
+
+private fun formatNullableCompactMoney(value: Double?, currency: Currency): String =
+    value?.let { formatMoney(it, currency, compact = true) } ?: "-"
+
+private fun premiumDiscountLabel(value: Double?): String = when {
+    value == null -> "산출 불가"
+    value > 0.0 -> "프리미엄 (+)"
+    value < 0.0 -> "디스카운트 (-)"
+    else -> "기준가와 일치 (=)"
+}
+
+private fun formatNetFlow(value: Double, currency: Currency): String = when {
+    value > 0.0 -> "▲ 순유입 ${formatMoney(kotlin.math.abs(value), currency, compact = true)}"
+    value < 0.0 -> "▼ 순유출 ${formatMoney(kotlin.math.abs(value), currency, compact = true)}"
+    else -> "— 변동 없음"
+}
+
+private fun formatRatio(value: Double, suffix: String = ""): String {
+    val rounded = kotlin.math.round(value * 100.0) / 100.0
+    return "$rounded$suffix"
 }
 
 /**
