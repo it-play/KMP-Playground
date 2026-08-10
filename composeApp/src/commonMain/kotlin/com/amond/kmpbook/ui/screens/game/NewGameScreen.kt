@@ -63,13 +63,13 @@ import com.amond.kmpbook.ui.theme.MarketType
 import kotlin.math.roundToInt
 import kotlin.random.Random
 import kmpbook.composeapp.generated.resources.Res
-import kmpbook.composeapp.generated.resources.market_scenario_august_2026
+import kmpbook.composeapp.generated.resources.jpmorgan_taegeukgi_july_2026
 import org.jetbrains.compose.resources.painterResource
 
 private val seedMoneyAmounts = listOf(10_000_000.0, 100_000_000.0, 500_000_000.0)
-private val seedMoneyLabels = listOf("1천만원", "1억원", "5억원")
-private val seedMoneyDetails = listOf("₩10,000,000", "₩100,000,000", "₩500,000,000")
-private val difficultyLabels = listOf("입문", "표준", "전문가")
+private val seedMoneyLabels = listOf("학생", "직장인", "자산가")
+private val seedMoneyDetails = listOf("적은 시작 자금", "보통 시작 자금", "많은 시작 자금")
+private val difficultyLabels = listOf("신병", "정규병", "숙련병")
 private val difficultyDetails = listOf("낮은 시장 변동", "기본 시장 환경", "높은 시장 변동")
 
 @Composable
@@ -482,7 +482,7 @@ private fun ScenarioSelectionCard(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Image(
-            painter = painterResource(Res.drawable.market_scenario_august_2026),
+            painter = painterResource(Res.drawable.jpmorgan_taegeukgi_july_2026),
             contentDescription = "태극기가 걸린 JP모건 사옥",
             modifier = Modifier
                 .width(if (compact) 220.dp else 360.dp)
@@ -504,16 +504,6 @@ private fun ScenarioSelectionCard(
             Text(
                 "2026년 8월",
                 style = MarketType.display.copy(fontSize = if (compact) 21.sp else 25.sp),
-                color = MarketColors.Ink,
-            )
-            Spacer(Modifier.height(if (compact) 5.dp else 8.dp))
-            Text(
-                if (compact) {
-                    "2026.08—2040.12\nKRX · NASDAQ · NYSE"
-                } else {
-                    "시작  2026.08\n종료  2040.12\n시장  KRX · NASDAQ · NYSE"
-                },
-                style = MarketType.label,
                 color = MarketColors.Ink,
             )
             Spacer(Modifier.height(5.dp))
@@ -546,7 +536,7 @@ private fun ScenarioBackgroundPanel(onDismiss: () -> Unit) {
             .verticalScroll(rememberScrollState()),
     ) {
         Image(
-            painter = painterResource(Res.drawable.market_scenario_august_2026),
+            painter = painterResource(Res.drawable.jpmorgan_taegeukgi_july_2026),
             contentDescription = "태극기가 걸린 JP모건 사옥",
             modifier = Modifier.fillMaxWidth().height(238.dp),
             contentScale = ContentScale.Crop,
@@ -562,36 +552,24 @@ private fun ScenarioBackgroundPanel(onDismiss: () -> Unit) {
             Text("2026년 8월", style = MarketType.display.copy(fontSize = 28.sp), color = MarketColors.Ink)
             Spacer(Modifier.height(16.dp))
             Text(
-                "한국과 미국 시장을 동시에 거래하는 기본 시나리오입니다. 세계 긴장은 높은 편이고, 시장 유동성은 보통이며 경기 모멘텀은 중립보다 낮게 시작합니다.",
+                "세계 시장에 먹구름이 몰려오고 있습니다. 중동에서는 전쟁이 이어지고, 호르무즈 해협을 둘러싼 긴장은 원유의 흐름을 위협하고 있습니다. 유가가 오를 때마다 물가는 다시 고개를 들고, 중앙은행들은 경기 둔화를 감수하고서라도 금리를 붙들어야 할지 선택을 강요받고 있습니다.",
                 style = MarketType.body,
                 color = MarketColors.Ink,
             )
 
-            Spacer(Modifier.height(24.dp))
-            LedgerDivider()
-            Spacer(Modifier.height(18.dp))
-            ScenarioBackgroundFact("기간", "2026.08—2040.12")
-            ScenarioBackgroundFact("대상 시장", "KRX · NASDAQ · NYSE")
-            ScenarioBackgroundFact("세계 긴장", "67 / 100")
-            ScenarioBackgroundFact("시장 유동성", "58 / 100")
-            ScenarioBackgroundFact("경기 모멘텀", "48 / 100")
-
             Spacer(Modifier.height(18.dp))
             Text(
-                "뉴스와 가격 경로는 시장 시드에 따라 달라집니다.",
-                style = MarketType.label,
-                color = MarketColors.InkMuted,
+                "미국의 7월 고용은 뜻밖의 감소를 기록했습니다. 경기 둔화의 경고였지만, 시장은 오히려 금리 인상이 미뤄질 수 있다는 희망에 반응했습니다. 한편 한국에서는 반도체 호황이 성장을 떠받치고 있으나, AI 투자가 지금의 속도로 계속될 것이라는 믿음에는 균열이 생기고 있습니다.",
+                style = MarketType.body,
+                color = MarketColors.Ink,
+            )
+            Spacer(Modifier.height(18.dp))
+            Text(
+                "호황과 침체, 인플레이션과 금리 완화의 기대가 한데 뒤엉킨 지금, 세계의 자금은 작은 소식 하나에도 방향을 바꾸고 있습니다. 이 불안한 균형이 새로운 상승장의 출발점이 될지, 더 큰 붕괴의 전조가 될지는 아직 누구도 알 수 없습니다.",
+                style = MarketType.body,
+                color = MarketColors.Ink,
             )
         }
-    }
-}
-
-@Composable
-private fun ScenarioBackgroundFact(label: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MarketType.label, color = MarketColors.InkMuted)
-        Spacer(Modifier.weight(1f))
-        Text(value, style = MarketType.number, color = MarketColors.Ink)
     }
 }
 
