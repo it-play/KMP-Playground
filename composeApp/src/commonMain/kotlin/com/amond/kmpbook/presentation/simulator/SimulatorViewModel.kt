@@ -1,6 +1,7 @@
 package com.amond.kmpbook.presentation.simulator
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.amond.kmpbook.domain.model.game.Screen
 import com.amond.kmpbook.domain.model.game.TurnStep
 import com.amond.kmpbook.domain.model.market.Currency
@@ -9,9 +10,12 @@ import com.amond.kmpbook.domain.model.trading.OrderType
 import com.amond.kmpbook.domain.model.trading.TimeInForce
 import com.amond.kmpbook.domain.simulation.market.ExternalMarketForces
 import com.amond.kmpbook.presentation.trading.OrderRequest
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SimulatorViewModel(
     initialOptions: NewGameOptions = NewGameOptions(),
@@ -47,6 +51,7 @@ class SimulatorViewModel(
     }
 
     fun selectScreen(screen: Screen) {
+        if (_uiState.value.isAdvancing) return
         runtime.selectScreen(screen)
         publish()
     }
@@ -63,9 +68,18 @@ class SimulatorViewModel(
     }
 
     fun advance(step: TurnStep = _uiState.value.selectedTurnStep) {
+        if (_uiState.value.isAdvancing) return
+        val advancingRuntime = runtime
         _uiState.value = _uiState.value.copy(isAdvancing = true, lastMessage = null)
-        runtime.advance(step)
-        publish()
+        viewModelScope.launch {
+            val advancedState = withContext(Dispatchers.Default) {
+                advancingRuntime.advance(step)
+                advancingRuntime.snapshot()
+            }
+            if (runtime === advancingRuntime) {
+                _uiState.value = advancedState
+            }
+        }
     }
 
     fun placeOrder(request: OrderRequest): Boolean {
