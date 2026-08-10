@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -60,6 +62,8 @@ import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketMotion
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
+import com.composables.icons.lucide.Dices
+import com.composables.icons.lucide.Lucide
 import kotlin.math.roundToInt
 import kotlin.random.Random
 import kmpbook.composeapp.generated.resources.Res
@@ -67,10 +71,11 @@ import kmpbook.composeapp.generated.resources.jpmorgan_taegeukgi_july_2026
 import org.jetbrains.compose.resources.painterResource
 
 private val seedMoneyAmounts = listOf(10_000_000.0, 100_000_000.0, 500_000_000.0)
-private val seedMoneyLabels = listOf("학생", "직장인", "자산가")
-private val seedMoneyDetails = listOf("적은 시작 자금", "보통 시작 자금", "많은 시작 자금")
-private val difficultyLabels = listOf("신병", "정규병", "숙련병")
-private val difficultyDetails = listOf("낮은 시장 변동", "기본 시장 환경", "높은 시장 변동")
+private val seedMoneyLabels = listOf("개미", "슈퍼개미", "큰손")
+private val seedMoneyDetails = listOf("1천만원", "1억원", "5억원")
+private val difficultyLabels = listOf("순항", "혼조", "격변", "커스텀")
+private val difficultyDetails = listOf("완만한 시장", "잦은 등락", "거센 시장 충격", "직접 환경 설정")
+private const val CUSTOM_DIFFICULTY_INDEX = 3
 
 @Composable
 fun NewGameScreen(
@@ -81,11 +86,12 @@ fun NewGameScreen(
 ) {
     var selectedSeedMoney by remember { mutableStateOf(1) }
     var selectedDifficulty by remember { mutableStateOf(1) }
-    var marketSeed by remember { mutableStateOf(NewGameOptions.DEFAULT_SEED) }
+    var marketSeed by remember { mutableStateOf(randomMarketSeed()) }
     var fractional by remember { mutableStateOf(false) }
     var autoExchange by remember { mutableStateOf(true) }
     var externalForces by remember { mutableStateOf(forcesForDifficulty(1)) }
     var showDetailedSettings by remember { mutableStateOf(false) }
+    var showCustomDifficultySettings by remember { mutableStateOf(false) }
     var showScenarioBackground by remember { mutableStateOf(false) }
 
     Box(modifier.fillMaxSize()) {
@@ -164,8 +170,12 @@ fun NewGameScreen(
                                 detail = difficultyDetails[index],
                                 selected = selectedDifficulty == index,
                                 onClick = {
-                                    selectedDifficulty = index
-                                    externalForces = forcesForDifficulty(index)
+                                    if (index == CUSTOM_DIFFICULTY_INDEX) {
+                                        showCustomDifficultySettings = true
+                                    } else {
+                                        selectedDifficulty = index
+                                        externalForces = forcesForDifficulty(index)
+                                    }
                                 },
                                 modifier = Modifier.weight(1f),
                             )
@@ -201,7 +211,7 @@ fun NewGameScreen(
                         onClick = {
                             selectedSeedMoney = 1
                             selectedDifficulty = 1
-                            marketSeed = NewGameOptions.DEFAULT_SEED
+                            marketSeed = randomMarketSeed()
                             fractional = false
                             autoExchange = true
                             externalForces = forcesForDifficulty(1)
@@ -250,11 +260,21 @@ fun NewGameScreen(
         NewGameDetailedSettingsDialog(
             fractional = fractional,
             autoExchange = autoExchange,
-            externalForces = externalForces,
             onFractionalChange = { fractional = it },
             onAutoExchangeChange = { autoExchange = it },
-            onExternalForcesChange = { externalForces = it },
             onDismiss = { showDetailedSettings = false },
+        )
+    }
+
+    if (showCustomDifficultySettings) {
+        NewGameCustomDifficultyDialog(
+            initialForces = externalForces,
+            onApply = {
+                externalForces = it
+                selectedDifficulty = CUSTOM_DIFFICULTY_INDEX
+                showCustomDifficultySettings = false
+            },
+            onDismiss = { showCustomDifficultySettings = false },
         )
     }
 }
@@ -359,10 +379,8 @@ private fun SetupChoiceCard(
 private fun NewGameDetailedSettingsDialog(
     fractional: Boolean,
     autoExchange: Boolean,
-    externalForces: ExternalMarketForces,
     onFractionalChange: (Boolean) -> Unit,
     onAutoExchangeChange: (Boolean) -> Unit,
-    onExternalForcesChange: (ExternalMarketForces) -> Unit,
     onDismiss: () -> Unit,
 ) {
     Dialog(
@@ -370,16 +388,16 @@ private fun NewGameDetailedSettingsDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         LedgerPanel(
-            modifier = Modifier.width(900.dp).fillMaxHeight(0.92f),
+            modifier = Modifier.width(460.dp).heightIn(max = 640.dp),
             padding = 0.dp,
         ) {
-            Column(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxWidth()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 30.dp, end = 18.dp, top = 22.dp, bottom = 18.dp),
+                    Modifier.fillMaxWidth().padding(start = 22.dp, end = 12.dp, top = 16.dp, bottom = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("게임 세부 설정", style = MarketType.display.copy(fontSize = 25.sp), color = MarketColors.Ink)
+                        Text("게임 세부 설정", style = MarketType.display.copy(fontSize = 21.sp), color = MarketColors.Ink)
                     }
                     TextButton(onClick = onDismiss) {
                         Text("닫기  ×", style = MarketType.label, color = MarketColors.InkMuted)
@@ -389,58 +407,13 @@ private fun NewGameDetailedSettingsDialog(
 
                 Column(
                     Modifier
-                        .weight(1f)
+                        .weight(1f, fill = false)
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 30.dp, vertical = 24.dp),
+                        .padding(horizontal = 22.dp, vertical = 16.dp),
                 ) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            SetupSectionTitle("초기 시장 환경", "선택한 시나리오의 시작값입니다.")
-                        }
-                        Text("0 — 100", style = MarketType.number, color = MarketColors.PrimaryText)
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    NewGameForceSlider(
-                        title = "카오스",
-                        detail = "변동성과 뉴스 혼선",
-                        value = externalForces.chaos,
-                        onValueChange = { onExternalForcesChange(externalForces.copy(chaos = it)) },
-                    )
-                    NewGameForceSlider(
-                        title = "세계 긴장",
-                        detail = "전쟁·지정학 위험",
-                        value = externalForces.worldTension,
-                        onValueChange = { onExternalForcesChange(externalForces.copy(worldTension = it)) },
-                    )
-                    NewGameForceSlider(
-                        title = "개인 투자력",
-                        detail = "개인 투자자 수급",
-                        value = externalForces.retailBuyingPower,
-                        onValueChange = { onExternalForcesChange(externalForces.copy(retailBuyingPower = it)) },
-                    )
-                    NewGameForceSlider(
-                        title = "기관 투자력",
-                        detail = "기관 투자자 수급",
-                        value = externalForces.institutionalBuyingPower,
-                        onValueChange = { onExternalForcesChange(externalForces.copy(institutionalBuyingPower = it)) },
-                    )
-                    NewGameForceSlider(
-                        title = "시장 유동성",
-                        detail = "주문 흡수와 체결 깊이",
-                        value = externalForces.marketLiquidity,
-                        onValueChange = { onExternalForcesChange(externalForces.copy(marketLiquidity = it)) },
-                    )
-                    NewGameForceSlider(
-                        title = "경기 모멘텀",
-                        detail = "성장·실적의 기초 체력",
-                        value = externalForces.economicMomentum,
-                        onValueChange = { onExternalForcesChange(externalForces.copy(economicMomentum = it)) },
-                    )
-
-                    Spacer(Modifier.height(16.dp))
-                    LedgerDivider()
-                    Spacer(Modifier.height(12.dp))
+                    SetupSectionTitle("거래 설정")
+                    Spacer(Modifier.height(8.dp))
                     CheckRow(
                         checked = fractional,
                         onCheckedChange = onFractionalChange,
@@ -453,14 +426,109 @@ private fun NewGameDetailedSettingsDialog(
                         title = "주문 시 자동 환전",
                         detail = "USD 부족분만 환전 스프레드를 반영",
                     )
-                    Spacer(Modifier.height(8.dp))
                 }
 
                 LedgerDivider()
                 MarketButton(
                     text = "이 설정으로 계속하기",
                     onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 30.dp, vertical = 18.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 14.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NewGameCustomDifficultyDialog(
+    initialForces: ExternalMarketForces,
+    onApply: (ExternalMarketForces) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var draftForces by remember(initialForces) { mutableStateOf(initialForces) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        LedgerPanel(
+            modifier = Modifier.width(460.dp).heightIn(max = 640.dp),
+            padding = 0.dp,
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 22.dp, end = 12.dp, top = 16.dp, bottom = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "커스텀 난이도",
+                        modifier = Modifier.weight(1f),
+                        style = MarketType.display.copy(fontSize = 21.sp),
+                        color = MarketColors.Ink,
+                    )
+                    TextButton(onClick = onDismiss) {
+                        Text("닫기  ×", style = MarketType.label, color = MarketColors.InkMuted)
+                    }
+                }
+                LedgerDivider()
+
+                Column(
+                    Modifier
+                        .weight(1f, fill = false)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 22.dp, vertical = 16.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            SetupSectionTitle("초기 시장 환경", "게임 시작 시 적용할 시장 조건입니다.")
+                        }
+                        Text("0 — 100", style = MarketType.number, color = MarketColors.PrimaryText)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    NewGameForceSlider(
+                        title = "카오스",
+                        detail = "변동성과 뉴스 혼선",
+                        value = draftForces.chaos,
+                        onValueChange = { draftForces = draftForces.copy(chaos = it) },
+                    )
+                    NewGameForceSlider(
+                        title = "세계 긴장",
+                        detail = "전쟁·지정학 위험",
+                        value = draftForces.worldTension,
+                        onValueChange = { draftForces = draftForces.copy(worldTension = it) },
+                    )
+                    NewGameForceSlider(
+                        title = "개인 투자력",
+                        detail = "개인 투자자 수급",
+                        value = draftForces.retailBuyingPower,
+                        onValueChange = { draftForces = draftForces.copy(retailBuyingPower = it) },
+                    )
+                    NewGameForceSlider(
+                        title = "기관 투자력",
+                        detail = "기관 투자자 수급",
+                        value = draftForces.institutionalBuyingPower,
+                        onValueChange = { draftForces = draftForces.copy(institutionalBuyingPower = it) },
+                    )
+                    NewGameForceSlider(
+                        title = "시장 유동성",
+                        detail = "주문 흡수와 체결 깊이",
+                        value = draftForces.marketLiquidity,
+                        onValueChange = { draftForces = draftForces.copy(marketLiquidity = it) },
+                    )
+                    NewGameForceSlider(
+                        title = "경기 모멘텀",
+                        detail = "성장·실적의 기초 체력",
+                        value = draftForces.economicMomentum,
+                        onValueChange = { draftForces = draftForces.copy(economicMomentum = it) },
+                    )
+                }
+
+                LedgerDivider()
+                MarketButton(
+                    text = "커스텀 난이도 적용",
+                    onClick = { onApply(draftForces) },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 14.dp),
                 )
             }
         }
@@ -596,15 +664,22 @@ private fun MarketSeedSelector(
                 .size(58.dp)
                 .background(MarketColors.Primary, RoundedCornerShape(MarketRadii.medium))
                 .clickable(role = Role.Button) {
-                    onMarketSeedChange(Random.nextLong(1L, Long.MAX_VALUE))
+                    onMarketSeedChange(randomMarketSeed())
                 }
                 .semantics { contentDescription = "시장 시드 무작위 생성" },
             contentAlignment = Alignment.Center,
         ) {
-            Text("⚄", style = MarketType.headingLarge.copy(fontSize = 27.sp), color = Color.White)
+            Icon(
+                imageVector = Lucide.Dices,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = Color.White,
+            )
         }
     }
 }
+
+private fun randomMarketSeed(): Long = Random.nextLong(1L, Long.MAX_VALUE)
 
 private fun forcesForDifficulty(index: Int): ExternalMarketForces = when (index) {
     0 -> ExternalMarketForces(
@@ -641,8 +716,15 @@ private fun NewGameForceSlider(
                 color = MarketColors.Ink,
             )
             Spacer(Modifier.width(7.dp))
-            Text(detail, style = MarketType.caption, color = MarketColors.InkMuted)
-            Spacer(Modifier.weight(1f))
+            Text(
+                detail,
+                modifier = Modifier.weight(1f),
+                style = MarketType.caption,
+                color = MarketColors.InkMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.width(7.dp))
             Text(
                 (value * 100.0).roundToInt().toString(),
                 style = MarketType.number,
