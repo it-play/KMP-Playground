@@ -25,12 +25,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -708,7 +708,15 @@ private fun NewGameForceSlider(
     value: Double,
     onValueChange: (Double) -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+    val shape = RoundedCornerShape(MarketRadii.medium)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 5.dp)
+            .border(1.dp, MarketColors.Line, shape)
+            .background(MarketColors.Paper, shape)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 title,
@@ -725,18 +733,32 @@ private fun NewGameForceSlider(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.width(7.dp))
-            Text(
-                (value * 100.0).roundToInt().toString(),
-                style = MarketType.number,
-                color = MarketColors.PrimaryText,
-            )
+            Box(
+                Modifier
+                    .background(MarketColors.PrimaryWeak, RoundedCornerShape(MarketRadii.small))
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    (value * 100.0).roundToInt().toString(),
+                    style = MarketType.number,
+                    color = MarketColors.PrimaryText,
+                )
+            }
         }
         Slider(
             value = value.toFloat(),
             onValueChange = { onValueChange(it.toDouble()) },
-            modifier = Modifier.fillMaxWidth().height(28.dp),
+            modifier = Modifier.fillMaxWidth().height(26.dp),
             valueRange = 0f..1f,
             steps = 99,
+            colors = SliderDefaults.colors(
+                thumbColor = MarketColors.Primary,
+                activeTrackColor = MarketColors.Primary,
+                inactiveTrackColor = MarketColors.Grey200,
+                activeTickColor = Color.Transparent,
+                inactiveTickColor = Color.Transparent,
+            ),
         )
     }
 }
@@ -748,16 +770,45 @@ private fun CheckRow(
     title: String,
     detail: String,
 ) {
+    val shape = RoundedCornerShape(MarketRadii.medium)
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 5.dp)
+            .border(
+                width = if (checked) 2.dp else 1.dp,
+                color = if (checked) MarketColors.Primary else MarketColors.Line,
+                shape = shape,
+            )
+            .background(if (checked) MarketColors.PrimaryWeak else MarketColors.Paper, shape)
+            .toggleable(
+                value = checked,
+                role = Role.Checkbox,
+                onValueChange = onCheckedChange,
+            )
+            .padding(horizontal = 13.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Checkbox(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = CheckboxDefaults.colors(checkedColor = MarketColors.Primary),
-        )
-        Column {
+        Box(
+            modifier = Modifier
+                .size(20.dp)
+                .border(
+                    width = if (checked) 0.dp else 1.dp,
+                    color = if (checked) Color.Transparent else MarketColors.Grey400,
+                    shape = RoundedCornerShape(MarketRadii.small),
+                )
+                .background(
+                    color = if (checked) MarketColors.Primary else MarketColors.Paper,
+                    shape = RoundedCornerShape(MarketRadii.small),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (checked) {
+                Text("✓", style = MarketType.label.copy(fontWeight = FontWeight.Bold), color = Color.White)
+            }
+        }
+        Spacer(Modifier.width(11.dp))
+        Column(Modifier.weight(1f)) {
             Text(title, style = MarketType.body.copy(fontWeight = FontWeight.Medium), color = MarketColors.Ink)
             Text(detail, style = MarketType.label, color = MarketColors.InkMuted)
         }
