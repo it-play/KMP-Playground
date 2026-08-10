@@ -676,6 +676,10 @@ internal class SimulatorRuntime(
     }
 
     fun setExternalMarketForces(target: ExternalMarketForces) {
+        if (options.ironmanMode) {
+            lastMessage = "철인 모드에서는 시장 동역학을 변경할 수 없습니다."
+            return
+        }
         externalMarketForcesTarget = target.copy()
         lastMessage = "시장 환경 목표를 변경했습니다. 실제 시장에는 시간에 따라 반영됩니다."
     }

@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.amond.kmpbook.domain.model.event.ImpactDirection
 import com.amond.kmpbook.domain.model.instrument.EtfTaxCategory
 import com.amond.kmpbook.domain.model.instrument.InstrumentType
@@ -109,6 +110,9 @@ fun MarketTradingScreen(
     orderBook: OrderBook?,
     cashKrw: Double,
     cashUsd: Double,
+    usdKrw: Double,
+    onExchangeKrwToUsd: (Double) -> Unit,
+    onExchangeUsdToKrw: (Double) -> Unit,
     onSelectStock: (String) -> Unit,
     watchlistedStockIds: Set<String> = emptySet(),
     onToggleWatchlist: (String) -> Unit = {},
@@ -137,6 +141,7 @@ fun MarketTradingScreen(
     var orderType by remember(selectedStock?.id) { mutableStateOf(OrderType.MARKET) }
     var selectedBookPrice by remember(selectedStock?.id) { mutableStateOf<Double?>(null) }
     var showOrderBook by remember(selectedStock?.id) { mutableStateOf(false) }
+    var showForeignExchange by remember { mutableStateOf(false) }
 
     LaunchedEffect(selectedStock?.id, orderType, orderBook != null) {
         showOrderBook = orderType == OrderType.LIMIT && orderBook != null
@@ -210,6 +215,7 @@ fun MarketTradingScreen(
                 onLimitPriceEdited = { selectedBookPrice = null },
                 protectionDetail = selectedProtectionDetail,
                 orderUnavailableReason = { type -> orderUnavailableReason(selectedStock.id, type) },
+                onOpenExchange = { showForeignExchange = true },
                 onSubmitOrder = onSubmitOrder,
                 modifier = Modifier.width(MarketLayout.marketOrderTicketWidth).fillMaxHeight(),
             )
@@ -220,6 +226,16 @@ fun MarketTradingScreen(
                 }
             }
         }
+    }
+    if (showForeignExchange) {
+        ForeignExchangeDialog(
+            cashKrw = cashKrw,
+            cashUsd = cashUsd,
+            usdKrw = usdKrw,
+            onExchangeKrwToUsd = onExchangeKrwToUsd,
+            onExchangeUsdToKrw = onExchangeUsdToKrw,
+            onDismiss = { showForeignExchange = false },
+        )
     }
     if (showSelectedProtectionDetail) {
         selectedProtectionDetail?.let { detail ->
@@ -232,6 +248,138 @@ fun MarketTradingScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ForeignExchangeDialog(
+    cashKrw: Double,
+    cashUsd: Double,
+    usdKrw: Double,
+    onExchangeKrwToUsd: (Double) -> Unit,
+    onExchangeUsdToKrw: (Double) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var direction by remember { mutableStateOf(0) }
+    var amountText by remember { mutableStateOf("") }
+    val amount = amountText.toDoubleOrNull() ?: 0.0
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        LedgerPanel(modifier = Modifier.width(460.dp), padding = 0.dp) {
+            Column(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 22.dp, end = 18.dp, top = 18.dp, bottom = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "외화 환전",
+                        modifier = Modifier.weight(1f),
+                        style = MarketType.display.copy(fontSize = 22.sp),
+                        color = MarketColors.Ink,
+                    )
+                    Text(
+                        "닫기  ×",
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(MarketRadii.small))
+                            .clickable(role = Role.Button, onClick = onDismiss)
+                            .padding(6.dp),
+                        style = MarketType.label,
+                        color = MarketColors.InkMuted,
+                    )
+                }
+                LedgerDivider()
+                Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 18.dp)) {
+                    Row {
+                        Metric("KRW 예수금", formatMoney(cashKrw, Currency.KRW), Modifier.weight(1f))
+                        Metric("USD 예수금", formatMoney(cashUsd, Currency.USD), Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.small))
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("적용 환율", style = MarketType.label, color = MarketColors.InkMuted)
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            "1 USD = ${formatMoney(usdKrw, Currency.KRW)}",
+                            style = MarketType.number,
+                            color = MarketColors.Ink,
+                        )
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ExchangeDirectionTab(
+                            text = "KRW → USD",
+                            selected = direction == 0,
+                            modifier = Modifier.weight(1f),
+                            onClick = { direction = 0 },
+                        )
+                        ExchangeDirectionTab(
+                            text = "USD → KRW",
+                            selected = direction == 1,
+                            modifier = Modifier.weight(1f),
+                            onClick = { direction = 1 },
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = amountText,
+                        onValueChange = { amountText = it.filter { char -> char.isDigit() || char == '.' }.take(16) },
+                        modifier = Modifier.fillMaxWidth().height(MarketComponentSize.textFieldHeight),
+                        label = { Text(if (direction == 0) "환전할 원화" else "환전할 달러", style = MarketType.label) },
+                        suffix = { Text(if (direction == 0) "KRW" else "USD", style = MarketType.label) },
+                        textStyle = MarketType.number,
+                        singleLine = true,
+                    )
+                    Spacer(Modifier.height(7.dp))
+                    Text(
+                        "입력 금액에서 0.10% 스프레드를 차감합니다.",
+                        style = MarketType.caption,
+                        color = MarketColors.InkMuted,
+                    )
+                }
+                LedgerDivider()
+                MarketButton(
+                    text = "환전 실행",
+                    onClick = {
+                        if (direction == 0) onExchangeKrwToUsd(amount) else onExchangeUsdToKrw(amount)
+                        amountText = ""
+                    },
+                    enabled = amount > 0.0,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 14.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExchangeDirectionTab(
+    text: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(MarketRadii.medium)
+    Box(
+        modifier
+            .height(MarketComponentSize.minimumInteractiveTarget)
+            .border(1.dp, if (selected) MarketColors.Primary else MarketColors.Line, shape)
+            .background(if (selected) MarketColors.PrimaryWeak else MarketColors.Paper, shape)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+            color = if (selected) MarketColors.PrimaryText else MarketColors.InkMuted,
+        )
     }
 }
 
@@ -1898,6 +2046,7 @@ private fun OrderTicketPanel(
     onLimitPriceEdited: () -> Unit,
     protectionDetail: ProtectionDetailUi?,
     orderUnavailableReason: (OrderType) -> String?,
+    onOpenExchange: () -> Unit,
     onSubmitOrder: (OrderSide, OrderType, TimeInForce, Double, Double?) -> Unit,
     modifier: Modifier,
 ) {
@@ -1925,6 +2074,21 @@ private fun OrderTicketPanel(
                 }
                 SideTab("매도", side == OrderSide.SELL, MarketColors.Fall, Modifier.weight(1f)) {
                     onSideChange(OrderSide.SELL)
+                }
+                Box(
+                    Modifier
+                        .height(MarketComponentSize.minimumInteractiveTarget)
+                        .border(1.dp, MarketColors.Line, RoundedCornerShape(MarketRadii.medium))
+                        .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.medium))
+                        .clickable(role = Role.Button, onClick = onOpenExchange)
+                        .padding(horizontal = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "환전",
+                        style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                        color = MarketColors.PrimaryText,
+                    )
                 }
             }
             Spacer(Modifier.height(9.dp))

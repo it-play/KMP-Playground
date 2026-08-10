@@ -1098,6 +1098,7 @@ actual class GameSaveStorage actual constructor() {
             "seed",
             "usFractionalTrading",
             "autoExchange",
+            "ironmanMode",
             "initialUsdKrw",
             "initialExternalMarketForces",
         )

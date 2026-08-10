@@ -25,12 +25,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,6 +55,8 @@ import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
 import com.amond.kmpbook.ui.components.MarketButton
 import com.amond.kmpbook.ui.components.MarketButtonVariant
+import com.amond.kmpbook.ui.components.MarketCheckRow
+import com.amond.kmpbook.ui.components.MarketSlider
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketMotion
 import com.amond.kmpbook.ui.theme.MarketRadii
@@ -89,6 +88,7 @@ fun NewGameScreen(
     var marketSeed by remember { mutableStateOf(randomMarketSeed()) }
     var fractional by remember { mutableStateOf(false) }
     var autoExchange by remember { mutableStateOf(true) }
+    var ironmanMode by remember { mutableStateOf(false) }
     var externalForces by remember { mutableStateOf(forcesForDifficulty(1)) }
     var showDetailedSettings by remember { mutableStateOf(false) }
     var showCustomDifficultySettings by remember { mutableStateOf(false) }
@@ -201,6 +201,7 @@ fun NewGameScreen(
                                     seed = marketSeed,
                                     usFractionalTrading = fractional,
                                     autoExchange = autoExchange,
+                                    ironmanMode = ironmanMode,
                                     initialExternalMarketForces = externalForces,
                                 ),
                             )
@@ -214,6 +215,7 @@ fun NewGameScreen(
                             marketSeed = randomMarketSeed()
                             fractional = false
                             autoExchange = true
+                            ironmanMode = false
                             externalForces = forcesForDifficulty(1)
                         },
                         modifier = Modifier.align(Alignment.CenterHorizontally),
@@ -260,8 +262,10 @@ fun NewGameScreen(
         NewGameDetailedSettingsDialog(
             fractional = fractional,
             autoExchange = autoExchange,
+            ironmanMode = ironmanMode,
             onFractionalChange = { fractional = it },
             onAutoExchangeChange = { autoExchange = it },
+            onIronmanModeChange = { ironmanMode = it },
             onDismiss = { showDetailedSettings = false },
         )
     }
@@ -379,8 +383,10 @@ private fun SetupChoiceCard(
 private fun NewGameDetailedSettingsDialog(
     fractional: Boolean,
     autoExchange: Boolean,
+    ironmanMode: Boolean,
     onFractionalChange: (Boolean) -> Unit,
     onAutoExchangeChange: (Boolean) -> Unit,
+    onIronmanModeChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     Dialog(
@@ -414,17 +420,26 @@ private fun NewGameDetailedSettingsDialog(
                 ) {
                     SetupSectionTitle("거래 설정")
                     Spacer(Modifier.height(8.dp))
-                    CheckRow(
+                    MarketCheckRow(
                         checked = fractional,
                         onCheckedChange = onFractionalChange,
                         title = "미국주식 소수점 거래",
                         detail = "최소 0.000001주 · 기본값은 온주 거래",
                     )
-                    CheckRow(
+                    MarketCheckRow(
                         checked = autoExchange,
                         onCheckedChange = onAutoExchangeChange,
                         title = "주문 시 자동 환전",
                         detail = "USD 부족분만 환전 스프레드를 반영",
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    SetupSectionTitle("게임 규칙")
+                    Spacer(Modifier.height(8.dp))
+                    MarketCheckRow(
+                        checked = ironmanMode,
+                        onCheckedChange = onIronmanModeChange,
+                        title = "철인 모드",
+                        detail = "게임 불러오기와 시장 동역학 변경을 사용할 수 없습니다.",
                     )
                 }
 
@@ -708,111 +723,14 @@ private fun NewGameForceSlider(
     value: Double,
     onValueChange: (Double) -> Unit,
 ) {
-    val shape = RoundedCornerShape(MarketRadii.medium)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 5.dp)
-            .border(1.dp, MarketColors.Line, shape)
-            .background(MarketColors.Paper, shape)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                title,
-                style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
-                color = MarketColors.Ink,
-            )
-            Spacer(Modifier.width(7.dp))
-            Text(
-                detail,
-                modifier = Modifier.weight(1f),
-                style = MarketType.caption,
-                color = MarketColors.InkMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.width(7.dp))
-            Box(
-                Modifier
-                    .background(MarketColors.PrimaryWeak, RoundedCornerShape(MarketRadii.small))
-                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    (value * 100.0).roundToInt().toString(),
-                    style = MarketType.number,
-                    color = MarketColors.PrimaryText,
-                )
-            }
-        }
-        Slider(
-            value = value.toFloat(),
-            onValueChange = { onValueChange(it.toDouble()) },
-            modifier = Modifier.fillMaxWidth().height(26.dp),
-            valueRange = 0f..1f,
-            steps = 99,
-            colors = SliderDefaults.colors(
-                thumbColor = MarketColors.Primary,
-                activeTrackColor = MarketColors.Primary,
-                inactiveTrackColor = MarketColors.Grey200,
-                activeTickColor = Color.Transparent,
-                inactiveTickColor = Color.Transparent,
-            ),
-        )
-    }
-}
-
-@Composable
-private fun CheckRow(
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    title: String,
-    detail: String,
-) {
-    val shape = RoundedCornerShape(MarketRadii.medium)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 5.dp)
-            .border(
-                width = if (checked) 2.dp else 1.dp,
-                color = if (checked) MarketColors.Primary else MarketColors.Line,
-                shape = shape,
-            )
-            .background(if (checked) MarketColors.PrimaryWeak else MarketColors.Paper, shape)
-            .toggleable(
-                value = checked,
-                role = Role.Checkbox,
-                onValueChange = onCheckedChange,
-            )
-            .padding(horizontal = 13.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(20.dp)
-                .border(
-                    width = if (checked) 0.dp else 1.dp,
-                    color = if (checked) Color.Transparent else MarketColors.Grey400,
-                    shape = RoundedCornerShape(MarketRadii.small),
-                )
-                .background(
-                    color = if (checked) MarketColors.Primary else MarketColors.Paper,
-                    shape = RoundedCornerShape(MarketRadii.small),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (checked) {
-                Text("✓", style = MarketType.label.copy(fontWeight = FontWeight.Bold), color = Color.White)
-            }
-        }
-        Spacer(Modifier.width(11.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MarketType.body.copy(fontWeight = FontWeight.Medium), color = MarketColors.Ink)
-            Text(detail, style = MarketType.label, color = MarketColors.InkMuted)
-        }
-    }
+    MarketSlider(
+        title = title,
+        detail = detail,
+        value = value,
+        valueText = (value * 100.0).roundToInt().toString(),
+        onValueChange = onValueChange,
+        modifier = Modifier.padding(vertical = 5.dp),
+    )
 }
 
 @Composable

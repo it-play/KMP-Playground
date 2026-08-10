@@ -2,6 +2,7 @@ package com.amond.kmpbook.presentation.simulator
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.amond.kmpbook.domain.model.game.GamePhase
 import com.amond.kmpbook.domain.model.game.Screen
 import com.amond.kmpbook.domain.model.game.TurnStep
 import com.amond.kmpbook.domain.model.market.Currency
@@ -40,6 +41,13 @@ class SimulatorViewModel(
 
     /** 파일 I/O 없이 저장 계층이 전달한 불변 상태를 검증·복원한다. */
     fun restoreGame(state: SimulatorUiState): Boolean {
+        if (
+            _uiState.value.options.ironmanMode &&
+            _uiState.value.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED)
+        ) {
+            _uiState.value = _uiState.value.copy(lastMessage = "철인 모드에서는 게임을 불러올 수 없습니다.")
+            return false
+        }
         val restored = SimulatorRuntime.restore(state) ?: run {
             _uiState.value = _uiState.value.copy(lastMessage = "저장 데이터를 복원할 수 없습니다.")
             return false

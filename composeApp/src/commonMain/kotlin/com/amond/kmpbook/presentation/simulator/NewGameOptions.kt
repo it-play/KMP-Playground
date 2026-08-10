@@ -7,6 +7,7 @@ data class NewGameOptions(
     val seed: Long = DEFAULT_SEED,
     val usFractionalTrading: Boolean = false,
     val autoExchange: Boolean = true,
+    val ironmanMode: Boolean = false,
     val initialUsdKrw: Double = 1_350.0,
     /** 2026년 8월 기본 시나리오이자 게임 시작 시 동역학 엔진에 주입할 목표 환경. */
     val initialExternalMarketForces: ExternalMarketForces = ExternalMarketForces(),

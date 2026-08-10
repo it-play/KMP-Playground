@@ -100,15 +100,15 @@ fun App(
     val state by viewModel.uiState.collectAsState()
     var entryDestination by remember { mutableStateOf(GameEntryDestination.LOBBY) }
     var saves by remember { mutableStateOf(emptyList<GameSaveEntry>()) }
-    var saveStatus by remember { mutableStateOf("아직 확인된 저장 장부가 없습니다.") }
+    var saveStatus by remember { mutableStateOf("저장된 게임을 확인하고 있습니다.") }
 
     LaunchedEffect(storage) {
         val catalog = storage.list()
         saves = catalog.entries
         saveStatus = catalog.error?.message ?: if (saves.isEmpty()) {
-            "저장 장부가 없습니다."
+            "저장된 게임이 없습니다."
         } else {
-            "최근 저장 순으로 ${saves.size}개 장부를 찾았습니다."
+            "저장된 게임 ${saves.size}개를 찾았습니다."
         }
     }
     LaunchedEffect(escapeRequest) {
@@ -137,14 +137,21 @@ fun App(
             }
         }
     }
-    val loadGame: (GameSaveEntry) -> Unit = { save ->
+    val loadGame: (GameSaveEntry) -> Unit = loadGameAction@{ save ->
+        if (
+            viewModel.currentState.options.ironmanMode &&
+            viewModel.currentState.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED)
+        ) {
+            saveStatus = "철인 모드에서는 게임을 불러올 수 없습니다."
+            return@loadGameAction
+        }
         scope.launch {
             when (val result = storage.load(save.fileName)) {
                 is GameLoadSuccess -> {
                     if (viewModel.restoreGame(result.state)) {
-                        saveStatus = "${save.name} 장부를 불러왔습니다."
+                        saveStatus = "${save.name} 게임을 불러왔습니다."
                     } else {
-                        saveStatus = "저장 장부의 게임 상태 검증에 실패했습니다."
+                        saveStatus = "저장된 게임을 확인할 수 없습니다."
                     }
                 }
                 is GameLoadNotFound -> saveStatus = result.message
@@ -156,10 +163,10 @@ fun App(
         scope.launch {
             when (val result = storage.delete(save.fileName)) {
                 is GameSaveDeleted -> {
-                    saveStatus = "${save.name} 장부를 삭제했습니다."
+                    saveStatus = "${save.name} 게임을 삭제했습니다."
                     refreshSaves()
                 }
-                is GameSaveDeleteNotFound -> saveStatus = "삭제할 저장 장부가 없습니다."
+                is GameSaveDeleteNotFound -> saveStatus = "삭제할 게임이 없습니다."
                 is GameSaveDeleteFailure -> saveStatus = result.error.message
             }
         }
@@ -483,6 +490,9 @@ private fun ScreenContent(
             orderBook = state.selectedOrderBook?.toOrderBook(),
             cashKrw = state.cashByCurrency[Currency.KRW] ?: 0.0,
             cashUsd = state.cashByCurrency[Currency.USD] ?: 0.0,
+            usdKrw = state.macro.usdKrw,
+            onExchangeKrwToUsd = { viewModel.exchange(Currency.KRW, Currency.USD, it) },
+            onExchangeUsdToKrw = { viewModel.exchange(Currency.USD, Currency.KRW, it) },
             onSelectStock = viewModel::selectStock,
             watchlistedStockIds = state.watchlist,
             onToggleWatchlist = viewModel::toggleWatchlist,
@@ -548,17 +558,11 @@ private fun ScreenContent(
                 initialCapitalKrw = state.initialCapitalKrw,
                 seed = state.seed,
                 fractionalUsTrading = state.usFractionalTrading,
-                autoExchange = state.autoExchange,
-                usdKrw = state.macro.usdKrw,
-                cashKrw = state.cashByCurrency[Currency.KRW] ?: 0.0,
-                cashUsd = state.cashByCurrency[Currency.USD] ?: 0.0,
+                ironmanMode = state.options.ironmanMode,
                 externalMarketForcesTarget = state.externalMarketForcesTarget,
                 marketDynamicsSnapshot = state.marketDynamicsSnapshot,
             ),
-            onAutoExchangeChanged = viewModel::setAutoExchange,
             onExternalMarketForcesChanged = viewModel::setExternalMarketForces,
-            onExchangeKrwToUsd = { viewModel.exchange(Currency.KRW, Currency.USD, it) },
-            onExchangeUsdToKrw = { viewModel.exchange(Currency.USD, Currency.KRW, it) },
             saves = saves,
             saveDirectory = saveDirectory,
             saveStatus = saveStatus,
