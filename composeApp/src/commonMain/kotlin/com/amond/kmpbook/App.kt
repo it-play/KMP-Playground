@@ -3,13 +3,17 @@ package com.amond.kmpbook
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -22,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.amond.kmpbook.domain.model.game.GamePhase
@@ -78,8 +83,11 @@ import com.amond.kmpbook.ui.shell.SimulatorSidebar
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketSimulatorTheme
 import com.amond.kmpbook.ui.theme.MarketType
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.toLocalDateTime
+
+private const val GAME_MESSAGE_DISPLAY_MILLIS = 3_000L
 
 @Composable
 fun App(
@@ -104,7 +112,11 @@ fun App(
         }
     }
     LaunchedEffect(escapeRequest) {
-        if (escapeRequest > 0 && state.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED)) {
+        if (
+            escapeRequest > 0 &&
+            !state.isAdvancing &&
+            state.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED)
+        ) {
             viewModel.selectScreen(Screen.SETTINGS)
         }
     }
@@ -240,6 +252,12 @@ private fun RunningGame(
     LaunchedEffect(protectionProjection.marketStrip) {
         if (protectionProjection.marketStrip == null) showMarketProtectionDetail = false
     }
+    LaunchedEffect(state.lastMessage, state.turn) {
+        if (state.lastMessage != null) {
+            delay(GAME_MESSAGE_DISPLAY_MILLIS)
+            viewModel.clearMessage()
+        }
+    }
     Box(Modifier.fillMaxSize().background(MarketColors.Ledger)) {
         Row(Modifier.fillMaxSize()) {
             SimulatorSidebar(
@@ -314,6 +332,51 @@ private fun RunningGame(
                     style = MarketType.body,
                     color = Color.White,
                 )
+            }
+        }
+
+        if (state.isAdvancing) {
+            TurnAdvanceLoadingDialog(hours = state.selectedTurnStep.hours)
+        }
+    }
+}
+
+@Composable
+private fun TurnAdvanceLoadingDialog(hours: Int) {
+    Dialog(onDismissRequest = {}) {
+        Surface(
+            modifier = Modifier.width(420.dp),
+            color = MarketColors.NavyRaised,
+            shape = RoundedCornerShape(14.dp),
+            shadowElevation = 6.dp,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(38.dp),
+                    color = MarketColors.SignalLine,
+                    strokeWidth = 3.dp,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(
+                        text = "턴 처리 중",
+                        style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                        color = MarketColors.SignalLine,
+                    )
+                    Text(
+                        text = "시장을 계산하고 있습니다",
+                        style = MarketType.heading,
+                        color = Color.White,
+                    )
+                    Text(
+                        text = "${hours}시간 동안의 시세·주문·이벤트를 순서대로 반영합니다.",
+                        style = MarketType.body,
+                        color = MarketColors.Grey200,
+                    )
+                }
             }
         }
     }
