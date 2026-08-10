@@ -71,6 +71,7 @@ import com.amond.kmpbook.domain.simulation.market.MarketRegimeProbabilities
 import com.amond.kmpbook.domain.simulation.price.DeterministicRandom
 import com.amond.kmpbook.domain.simulation.schedule.ScheduledEventEngine
 import com.amond.kmpbook.domain.time.GameCalendar
+import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
 import kotlin.math.round
 import kotlin.time.Duration.Companion.nanoseconds
@@ -92,6 +93,14 @@ internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
     if (state.turn < 0L) return "턴 번호가 음수입니다."
     if (state.nextSequence < 0L) return "다음 원장 시퀀스가 음수입니다."
     if (state.eventEngineSnapshot.sequence < 0L) return "이벤트 엔진 시퀀스가 음수입니다."
+    if (
+        state.options.scenarioName.isBlank() ||
+        state.options.scenarioName.length > NewGameOptions.MAX_GAME_LABEL_LENGTH ||
+        state.options.difficultyName.isBlank() ||
+        state.options.difficultyName.length > NewGameOptions.MAX_GAME_LABEL_LENGTH
+    ) {
+        return "시나리오 또는 난이도 이름이 유효하지 않습니다."
+    }
     val macro = try {
         state.macro.validatedCopy()
     } catch (_: RuntimeException) {

@@ -197,6 +197,8 @@ fun NewGameScreen(
                         onClick = {
                             onStart(
                                 NewGameOptions(
+                                    scenarioName = NewGameOptions.DEFAULT_SCENARIO_NAME,
+                                    difficultyName = difficultyLabels[selectedDifficulty],
                                     initialCapitalKrw = seedMoneyAmounts[selectedSeedMoney],
                                     seed = marketSeed,
                                     usFractionalTrading = fractional,
@@ -585,7 +587,7 @@ private fun ScenarioSelectionCard(
             )
             Spacer(Modifier.height(if (compact) 8.dp else 13.dp))
             Text(
-                "2026년 8월",
+                NewGameOptions.DEFAULT_SCENARIO_NAME,
                 style = MarketType.display.copy(fontSize = if (compact) 21.sp else 25.sp),
                 color = MarketColors.Ink,
             )
@@ -632,7 +634,11 @@ private fun ScenarioBackgroundPanel(onDismiss: () -> Unit) {
                     Text("닫기  ×", style = MarketType.label, color = MarketColors.InkMuted)
                 }
             }
-            Text("2026년 8월", style = MarketType.display.copy(fontSize = 28.sp), color = MarketColors.Ink)
+            Text(
+                NewGameOptions.DEFAULT_SCENARIO_NAME,
+                style = MarketType.display.copy(fontSize = 28.sp),
+                color = MarketColors.Ink,
+            )
             Spacer(Modifier.height(16.dp))
             Text(
                 "세계 시장에 먹구름이 몰려오고 있습니다. 중동에서는 전쟁이 이어지고, 호르무즈 해협을 둘러싼 긴장은 원유의 흐름을 위협하고 있습니다. 유가가 오를 때마다 물가는 다시 고개를 들고, 중앙은행들은 경기 둔화를 감수하고서라도 금리를 붙들어야 할지 선택을 강요받고 있습니다.",
