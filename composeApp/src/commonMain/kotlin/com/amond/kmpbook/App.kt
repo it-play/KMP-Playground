@@ -56,6 +56,8 @@ import com.amond.kmpbook.presentation.metrics.InstrumentMetricsProjection
 import com.amond.kmpbook.presentation.news.buildNewsUiProjection
 import com.amond.kmpbook.presentation.protection.ProtectionUiProjection
 import com.amond.kmpbook.presentation.protection.buildProtectionUiProjection
+import com.amond.kmpbook.presentation.settings.AppSettingsStorage
+import com.amond.kmpbook.presentation.settings.AudioSettings
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
 import com.amond.kmpbook.presentation.simulator.SimulatorViewModel
 import com.amond.kmpbook.ui.components.MarketProtectionDetailSurface
@@ -84,10 +86,13 @@ import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketSimulatorTheme
 import com.amond.kmpbook.ui.theme.MarketType
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.toLocalDateTime
 
 private const val GAME_MESSAGE_DISPLAY_MILLIS = 3_000L
+private const val APP_SETTINGS_SAVE_DEBOUNCE_MILLIS = 250L
 
 @Composable
 fun App(
@@ -96,11 +101,17 @@ fun App(
 ) {
     val viewModel = remember { SimulatorViewModel() }
     val storage = remember { GameSaveStorage() }
+    val appSettingsStorage = remember { AppSettingsStorage() }
     val scope = rememberCoroutineScope()
     val state by viewModel.uiState.collectAsState()
     var entryDestination by remember { mutableStateOf(GameEntryDestination.LOBBY) }
     var saves by remember { mutableStateOf(emptyList<GameSaveEntry>()) }
     var saveStatus by remember { mutableStateOf("저장된 게임을 확인하고 있습니다.") }
+    var isSavingGame by remember { mutableStateOf(false) }
+    var isLoadingGame by remember { mutableStateOf(false) }
+    var audioSettings by remember(appSettingsStorage) {
+        mutableStateOf(appSettingsStorage.loadAudioSettings())
+    }
 
     LaunchedEffect(storage) {
         val catalog = storage.list()
@@ -120,24 +131,37 @@ fun App(
             viewModel.selectScreen(Screen.SETTINGS)
         }
     }
+    LaunchedEffect(appSettingsStorage, audioSettings) {
+        delay(APP_SETTINGS_SAVE_DEBOUNCE_MILLIS)
+        withContext(Dispatchers.IO) {
+            appSettingsStorage.saveAudioSettings(audioSettings)
+        }
+    }
 
     val refreshSaves: suspend () -> Unit = {
         val catalog = storage.list()
         saves = catalog.entries
         catalog.error?.let { saveStatus = it.message }
     }
-    val saveGame: (String) -> Unit = { name ->
+    val saveGame: (String) -> Unit = saveGameAction@{ name ->
+        if (isSavingGame || isLoadingGame) return@saveGameAction
+        isSavingGame = true
         scope.launch {
-            when (val result = storage.save(viewModel.currentState, name)) {
-                is GameSaveSuccess -> {
-                    saveStatus = "${result.path.substringAfterLast('/').substringAfterLast('\\')} 파일로 저장했습니다."
-                    refreshSaves()
+            try {
+                when (val result = storage.save(viewModel.currentState, name)) {
+                    is GameSaveSuccess -> {
+                        saveStatus = "${result.path.substringAfterLast('/').substringAfterLast('\\')} 파일로 저장했습니다."
+                        refreshSaves()
+                    }
+                    is GameSaveFailure -> saveStatus = result.error.message
                 }
-                is GameSaveFailure -> saveStatus = result.error.message
+            } finally {
+                isSavingGame = false
             }
         }
     }
     val loadGame: (GameSaveEntry) -> Unit = loadGameAction@{ save ->
+        if (isSavingGame || isLoadingGame) return@loadGameAction
         if (
             viewModel.currentState.options.ironmanMode &&
             viewModel.currentState.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED)
@@ -145,21 +169,27 @@ fun App(
             saveStatus = "철인 모드에서는 게임을 불러올 수 없습니다."
             return@loadGameAction
         }
+        isLoadingGame = true
         scope.launch {
-            when (val result = storage.load(save.fileName)) {
-                is GameLoadSuccess -> {
-                    if (viewModel.restoreGame(result.state)) {
-                        saveStatus = "${save.name} 게임을 불러왔습니다."
-                    } else {
-                        saveStatus = "저장된 게임을 확인할 수 없습니다."
+            try {
+                when (val result = storage.load(save.fileName)) {
+                    is GameLoadSuccess -> {
+                        if (viewModel.restoreGame(result.state)) {
+                            saveStatus = "${save.name} 게임을 불러왔습니다."
+                        } else {
+                            saveStatus = "저장된 게임을 확인할 수 없습니다."
+                        }
                     }
+                    is GameLoadNotFound -> saveStatus = result.message
+                    is GameLoadFailure -> saveStatus = result.error.message
                 }
-                is GameLoadNotFound -> saveStatus = result.message
-                is GameLoadFailure -> saveStatus = result.error.message
+            } finally {
+                isLoadingGame = false
             }
         }
     }
-    val deleteSave: (GameSaveEntry) -> Unit = { save ->
+    val deleteSave: (GameSaveEntry) -> Unit = deleteSaveAction@{ save ->
+        if (isSavingGame || isLoadingGame) return@deleteSaveAction
         scope.launch {
             when (val result = storage.delete(save.fileName)) {
                 is GameSaveDeleted -> {
@@ -169,6 +199,12 @@ fun App(
                 is GameSaveDeleteNotFound -> saveStatus = "삭제할 게임이 없습니다."
                 is GameSaveDeleteFailure -> saveStatus = result.error.message
             }
+        }
+    }
+    val openSaveDirectory: () -> Unit = {
+        scope.launch {
+            val error = storage.openSaveDirectory()
+            saveStatus = error ?: "저장 폴더를 탐색기로 열었습니다."
         }
     }
 
@@ -187,6 +223,9 @@ fun App(
                     GameEntryDestination.SETTINGS -> LobbySettingsScreen(
                         saveDirectory = storage.saveDirectory,
                         saveCount = saves.size,
+                        audioSettings = audioSettings,
+                        onAudioSettingsChanged = { audioSettings = it },
+                        onOpenSaveDirectory = openSaveDirectory,
                         onBack = { entryDestination = GameEntryDestination.LOBBY },
                     )
                 }
@@ -214,14 +253,59 @@ fun App(
                     saves = saves,
                     saveDirectory = storage.saveDirectory,
                     saveStatus = saveStatus,
+                    isSavingGame = isSavingGame,
+                    isLoadingGame = isLoadingGame,
+                    audioSettings = audioSettings,
+                    onAudioSettingsChanged = { audioSettings = it },
                     onSaveGame = saveGame,
                     onLoadGame = loadGame,
                     onDeleteSave = deleteSave,
+                    onOpenSaveDirectory = openSaveDirectory,
                     onReturnToLobby = {
                         viewModel.resetGame()
                         entryDestination = GameEntryDestination.LOBBY
                     },
                 )
+            }
+
+            if (isSavingGame || isLoadingGame) {
+                GameSaveLoadingDialog(isSaving = isSavingGame)
+            }
+        }
+    }
+}
+
+@Composable
+private fun GameSaveLoadingDialog(isSaving: Boolean) {
+    Dialog(onDismissRequest = {}) {
+        Surface(
+            modifier = Modifier.width(380.dp),
+            color = MarketColors.NavyRaised,
+            shape = RoundedCornerShape(14.dp),
+            shadowElevation = 6.dp,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(38.dp),
+                    color = MarketColors.SignalLine,
+                    strokeWidth = 3.dp,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(
+                        text = if (isSaving) "게임 저장 중" else "게임 불러오는 중",
+                        style = MarketType.heading,
+                        color = Color.White,
+                    )
+                    Text(
+                        text = if (isSaving) "현재 게임 상태를 파일에 기록하고 있습니다." else "저장된 게임 상태를 확인하고 복원하고 있습니다.",
+                        style = MarketType.body,
+                        color = MarketColors.Grey200,
+                    )
+                }
             }
         }
     }
@@ -234,9 +318,14 @@ private fun RunningGame(
     saves: List<GameSaveEntry>,
     saveDirectory: String,
     saveStatus: String,
+    isSavingGame: Boolean,
+    isLoadingGame: Boolean,
+    audioSettings: AudioSettings,
+    onAudioSettingsChanged: (AudioSettings) -> Unit,
     onSaveGame: (String) -> Unit,
     onLoadGame: (GameSaveEntry) -> Unit,
     onDeleteSave: (GameSaveEntry) -> Unit,
+    onOpenSaveDirectory: () -> Unit,
     onReturnToLobby: () -> Unit,
 ) {
     val selectedMarket = state.selectedStock?.market
@@ -303,9 +392,14 @@ private fun RunningGame(
                         saves = saves,
                         saveDirectory = saveDirectory,
                         saveStatus = saveStatus,
+                        isSavingGame = isSavingGame,
+                        isLoadingGame = isLoadingGame,
+                        audioSettings = audioSettings,
+                        onAudioSettingsChanged = onAudioSettingsChanged,
                         onSaveGame = onSaveGame,
                         onLoadGame = onLoadGame,
                         onDeleteSave = onDeleteSave,
+                        onOpenSaveDirectory = onOpenSaveDirectory,
                         onReturnToLobby = onReturnToLobby,
                     )
                 }
@@ -397,9 +491,14 @@ private fun ScreenContent(
     saves: List<GameSaveEntry>,
     saveDirectory: String,
     saveStatus: String,
+    isSavingGame: Boolean,
+    isLoadingGame: Boolean,
+    audioSettings: AudioSettings,
+    onAudioSettingsChanged: (AudioSettings) -> Unit,
     onSaveGame: (String) -> Unit,
     onLoadGame: (GameSaveEntry) -> Unit,
     onDeleteSave: (GameSaveEntry) -> Unit,
+    onOpenSaveDirectory: () -> Unit,
     onReturnToLobby: () -> Unit,
 ) {
     var eventNewsFilterState by remember { mutableStateOf(EventNewsFilterState()) }
@@ -555,6 +654,8 @@ private fun ScreenContent(
 
         Screen.SETTINGS -> SettingsScreen(
             settings = GameSettingsDisplay(
+                scenarioName = state.options.scenarioName,
+                difficultyName = state.options.difficultyName,
                 initialCapitalKrw = state.initialCapitalKrw,
                 seed = state.seed,
                 fractionalUsTrading = state.usFractionalTrading,
@@ -566,9 +667,14 @@ private fun ScreenContent(
             saves = saves,
             saveDirectory = saveDirectory,
             saveStatus = saveStatus,
+            isSaving = isSavingGame,
+            isLoading = isLoadingGame,
+            audioSettings = audioSettings,
+            onAudioSettingsChanged = onAudioSettingsChanged,
             onSaveGame = onSaveGame,
             onLoadGame = onLoadGame,
             onDeleteSave = onDeleteSave,
+            onOpenSaveDirectory = onOpenSaveDirectory,
             onResetGame = onReturnToLobby,
         )
 

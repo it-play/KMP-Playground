@@ -6,7 +6,7 @@ import com.amond.kmpbook.persistence.result.GameSaveResult
 import com.amond.kmpbook.persistence.model.GameSaveCatalog
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
 
-const val CURRENT_GAME_SAVE_SCHEMA_VERSION: Int = 20
+const val CURRENT_GAME_SAVE_SCHEMA_VERSION: Int = 21
 const val GAME_SAVE_FORMAT_ID: String = "market-ledger-2040.game-save"
 
 /**
@@ -17,6 +17,9 @@ const val GAME_SAVE_FORMAT_ID: String = "market-ledger-2040.game-save"
  */
 expect class GameSaveStorage() {
     val saveDirectory: String
+
+    /** Opens the save directory in the platform file browser. Returns an error message on failure. */
+    suspend fun openSaveDirectory(): String?
 
     suspend fun save(state: SimulatorUiState, name: String): GameSaveResult
 

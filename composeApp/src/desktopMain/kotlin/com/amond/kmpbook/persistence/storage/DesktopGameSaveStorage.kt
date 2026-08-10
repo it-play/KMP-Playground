@@ -49,6 +49,7 @@ import com.amond.kmpbook.persistence.result.GameSaveFailure
 import com.amond.kmpbook.persistence.result.GameSaveResult
 import com.amond.kmpbook.persistence.result.GameSaveSuccess
 import com.amond.kmpbook.persistence.validation.validateSimulatorUiState
+import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -59,6 +60,7 @@ import com.google.gson.JsonParser
 import com.google.gson.Strictness
 import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonToken
+import java.awt.Desktop
 import java.io.IOException
 import java.io.StringReader
 import java.nio.ByteBuffer
@@ -107,6 +109,23 @@ actual class GameSaveStorage actual constructor() {
     private val gson: Gson = createSaveGson()
 
     actual val saveDirectory: String = targetDirectory.toString()
+
+    actual suspend fun openSaveDirectory(): String? = withContext(Dispatchers.IO) {
+        try {
+            Files.createDirectories(targetDirectory)
+            if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
+                return@withContext "이 환경에서는 저장 폴더를 탐색기로 열 수 없습니다."
+            }
+            Desktop.getDesktop().open(targetDirectory.toFile())
+            null
+        } catch (error: IOException) {
+            "저장 폴더를 열지 못했습니다: ${safeMessage(error)}"
+        } catch (error: SecurityException) {
+            "저장 폴더에 접근할 권한이 없습니다: ${safeMessage(error)}"
+        } catch (error: UnsupportedOperationException) {
+            "이 환경에서는 저장 폴더를 탐색기로 열 수 없습니다."
+        }
+    }
 
     actual suspend fun save(state: SimulatorUiState, name: String): GameSaveResult = withContext(Dispatchers.IO) {
         val targetPath = try {
@@ -454,6 +473,14 @@ actual class GameSaveStorage actual constructor() {
 
         state.requiredObject("options").apply {
             requireExactFields(NEW_GAME_OPTIONS_FIELDS, "state.options")
+            val scenarioName = requiredString("scenarioName")
+            if (scenarioName.isBlank() || scenarioName.length > NewGameOptions.MAX_GAME_LABEL_LENGTH) {
+                throw JsonParseException("필드 'state.options.scenarioName'의 길이가 올바르지 않습니다.")
+            }
+            val difficultyName = requiredString("difficultyName")
+            if (difficultyName.isBlank() || difficultyName.length > NewGameOptions.MAX_GAME_LABEL_LENGTH) {
+                throw JsonParseException("필드 'state.options.difficultyName'의 길이가 올바르지 않습니다.")
+            }
             requiredObject("initialExternalMarketForces")
                 .requireExternalMarketForces("state.options.initialExternalMarketForces")
         }
@@ -1094,6 +1121,8 @@ actual class GameSaveStorage actual constructor() {
         )
 
         val NEW_GAME_OPTIONS_FIELDS: Set<String> = setOf(
+            "scenarioName",
+            "difficultyName",
             "initialCapitalKrw",
             "seed",
             "usFractionalTrading",

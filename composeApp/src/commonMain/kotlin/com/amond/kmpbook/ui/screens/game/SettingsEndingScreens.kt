@@ -1,9 +1,12 @@
 package com.amond.kmpbook.ui.screens.game
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -12,12 +15,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -33,7 +40,9 @@ import com.amond.kmpbook.domain.model.market.Currency
 import com.amond.kmpbook.domain.model.portfolio.PortfolioSnapshot
 import com.amond.kmpbook.domain.simulation.market.ExternalMarketForces
 import com.amond.kmpbook.domain.simulation.market.MarketDynamicsSnapshot
+import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.persistence.model.GameSaveEntry
+import com.amond.kmpbook.presentation.settings.AudioSettings
 import com.amond.kmpbook.ui.charts.LineAreaChart
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
@@ -48,6 +57,7 @@ import com.amond.kmpbook.ui.components.StatusLabel
 import com.amond.kmpbook.ui.components.deltaColor
 import com.amond.kmpbook.ui.format.formatMoney
 import com.amond.kmpbook.ui.format.formatPercent
+import com.amond.kmpbook.ui.format.formatDateTimeKst
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketComponentSize
 import com.amond.kmpbook.ui.theme.MarketLayout
@@ -55,8 +65,14 @@ import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+import kotlin.time.Clock
+import kotlin.time.Instant
+import kotlinx.datetime.number
+import kotlinx.datetime.toLocalDateTime
 
 data class GameSettingsDisplay(
+    val scenarioName: String,
+    val difficultyName: String,
     val initialCapitalKrw: Double,
     val seed: Long,
     val fractionalUsTrading: Boolean,
@@ -72,15 +88,37 @@ fun SettingsScreen(
     saves: List<GameSaveEntry>,
     saveDirectory: String,
     saveStatus: String,
+    isSaving: Boolean,
+    isLoading: Boolean,
+    audioSettings: AudioSettings,
+    onAudioSettingsChanged: (AudioSettings) -> Unit,
     onSaveGame: (String) -> Unit,
     onLoadGame: (GameSaveEntry) -> Unit,
     onDeleteSave: (GameSaveEntry) -> Unit,
+    onOpenSaveDirectory: () -> Unit,
     onResetGame: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var saveName by remember { mutableStateOf("내 게임") }
+    var saveName by remember(settings.scenarioName, settings.difficultyName) {
+        mutableStateOf(
+            buildDefaultGameSaveName(
+                scenarioName = settings.scenarioName,
+                difficultyName = settings.difficultyName,
+                savedAt = Clock.System.now(),
+            ),
+        )
+    }
     var resetArmed by remember { mutableStateOf(false) }
     var deleteArmed by remember { mutableStateOf(false) }
+    var selectedSaveFileName by remember { mutableStateOf<String?>(null) }
+    val selectedSave = saves.firstOrNull { it.fileName == selectedSaveFileName }
+    val saveOperationInProgress = isSaving || isLoading
+    LaunchedEffect(saves) {
+        if (saves.none { it.fileName == selectedSaveFileName }) selectedSaveFileName = null
+    }
+    LaunchedEffect(selectedSaveFileName) {
+        deleteArmed = false
+    }
     Column(
         modifier
             .fillMaxSize()
@@ -120,7 +158,7 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth().height(338.dp),
         )
         Row(
-            Modifier.fillMaxWidth().height(740.dp),
+            Modifier.fillMaxWidth().height(940.dp),
             horizontalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
         ) {
             Column(
@@ -180,43 +218,86 @@ fun SettingsScreen(
                             suffix = { Text(".ml2", style = MarketType.label, color = MarketColors.InkMuted) },
                             singleLine = true,
                             textStyle = MarketType.body,
+                            enabled = !saveOperationInProgress,
                         )
                         Spacer(Modifier.height(8.dp))
                         MarketButton(
-                            text = "이 이름으로 저장",
+                            text = if (isSaving) "저장 중…" else "이 이름으로 저장",
                             onClick = { onSaveGame(saveName) },
-                            enabled = saveName.isNotBlank(),
+                            enabled = saveName.isNotBlank() && !saveOperationInProgress,
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        Spacer(Modifier.weight(1f))
-                        val latestSave = saves.firstOrNull()
-                        Text(
-                            latestSave?.let { "최근 저장 · ${it.name}.ml2" } ?: "저장된 게임이 없습니다.",
-                            style = MarketType.caption,
-                            color = MarketColors.InkMuted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(12.dp))
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "저장 파일",
+                                style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                                color = MarketColors.Ink,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            Text("${saves.size}개", style = MarketType.caption, color = MarketColors.InkMuted)
+                        }
+                        Spacer(Modifier.height(7.dp))
+                        if (saves.isEmpty()) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.small)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("저장된 게임이 없습니다.", style = MarketType.body, color = MarketColors.InkMuted)
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth().weight(1f),
+                                contentPadding = PaddingValues(vertical = 2.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                itemsIndexed(saves, key = { _, save -> save.fileName }) { index, save ->
+                                    SaveSelectionRow(
+                                        save = save,
+                                        isLatest = index == 0,
+                                        selected = save.fileName == selectedSaveFileName,
+                                        enabled = !saveOperationInProgress,
+                                        onClick = {
+                                            selectedSaveFileName = if (selectedSaveFileName == save.fileName) {
+                                                null
+                                            } else {
+                                                save.fileName
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             MarketButton(
-                                text = if (settings.ironmanMode) "철인 모드 · 불러오기 잠김" else "최근 게임 불러오기",
-                                onClick = { latestSave?.let(onLoadGame) },
-                                enabled = latestSave != null && !settings.ironmanMode,
+                                text = when {
+                                    selectedSave == null -> "탐색기로 보기"
+                                    isLoading -> "불러오는 중…"
+                                    settings.ironmanMode -> "철인 모드 · 불러오기 잠김"
+                                    else -> "선택한 게임 불러오기"
+                                },
+                                onClick = {
+                                    if (selectedSave == null) onOpenSaveDirectory() else onLoadGame(selectedSave)
+                                },
+                                enabled = !saveOperationInProgress && (selectedSave == null || !settings.ironmanMode),
                                 modifier = Modifier.weight(1f),
                                 variant = MarketButtonVariant.Weak,
                             )
                             MarketButton(
-                                text = if (deleteArmed) "삭제 확정" else "저장 삭제",
+                                text = if (deleteArmed) "삭제 확정" else "게임 삭제",
                                 onClick = {
                                     if (deleteArmed) {
-                                        latestSave?.let(onDeleteSave)
+                                        selectedSave?.let(onDeleteSave)
                                         deleteArmed = false
                                     } else {
                                         deleteArmed = true
                                     }
                                 },
-                                enabled = latestSave != null,
+                                enabled = selectedSave != null && !saveOperationInProgress,
                                 modifier = Modifier.weight(1f),
                                 variant = if (deleteArmed) MarketButtonVariant.Fill else MarketButtonVariant.Weak,
                                 tone = MarketButtonTone.Danger,
@@ -229,6 +310,11 @@ fun SettingsScreen(
                 Modifier.width(MarketLayout.settingsRailWidth).fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
             ) {
+                AudioSettingsPanel(
+                    settings = audioSettings,
+                    onSettingsChanged = onAudioSettingsChanged,
+                    modifier = Modifier.fillMaxWidth().height(410.dp),
+                )
                 LedgerPanel(Modifier.fillMaxWidth().weight(1f)) {
                     Column(Modifier.fillMaxSize()) {
                         SectionHeading(
@@ -301,6 +387,96 @@ fun SettingsScreen(
         }
     }
 }
+
+@Composable
+private fun SaveSelectionRow(
+    save: GameSaveEntry,
+    isLatest: Boolean,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(MarketRadii.small)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (selected) MarketColors.PrimaryWeak else MarketColors.PaperMuted, shape)
+            .border(1.dp, if (selected) MarketColors.Primary else MarketColors.Line, shape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .width(3.dp)
+                .height(38.dp)
+                .background(
+                    if (selected) MarketColors.Primary else MarketColors.Line,
+                    RoundedCornerShape(MarketRadii.pill),
+                ),
+        )
+        Spacer(Modifier.width(9.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    save.name,
+                    style = MarketType.body.copy(fontWeight = FontWeight.SemiBold),
+                    color = MarketColors.Ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (isLatest) {
+                    Spacer(Modifier.width(6.dp))
+                    Text("최근", style = MarketType.caption, color = MarketColors.Positive)
+                }
+            }
+            Spacer(Modifier.height(3.dp))
+            Text(
+                "저장 ${formatDateTimeKst(save.metadata.savedAt)} · 게임 ${formatDateTimeKst(save.metadata.gameTime)} · ${save.sizeBytes / 1024} KB",
+                style = MarketType.caption,
+                color = MarketColors.InkMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            if (selected) "선택됨" else "선택",
+            style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+            color = if (selected) MarketColors.PrimaryText else MarketColors.InkMuted,
+        )
+    }
+}
+
+private fun buildDefaultGameSaveName(
+    scenarioName: String,
+    difficultyName: String,
+    savedAt: Instant,
+): String {
+    val local = savedAt.toLocalDateTime(GameCalendar.KOREA_TIME_ZONE)
+    val timestamp = buildString {
+        append(local.year)
+        append(local.month.number.twoDigits())
+        append(local.day.twoDigits())
+        append('_')
+        append(local.hour.twoDigits())
+        append(local.minute.twoDigits())
+        append(local.second.twoDigits())
+    }
+    return "${scenarioName.toSaveNamePart()}_${difficultyName.toSaveNamePart()}_$timestamp"
+}
+
+private fun String.toSaveNamePart(): String =
+    trim()
+        .take(24)
+        .map { character -> if (character in INVALID_SAVE_NAME_CHARACTERS) '_' else character }
+        .joinToString("")
+        .ifBlank { "미지정" }
+
+private fun Int.twoDigits(): String = toString().padStart(2, '0')
+
+private val INVALID_SAVE_NAME_CHARACTERS: Set<Char> = setOf('\\', '/', ':', '*', '?', '"', '<', '>', '|')
 
 @Composable
 private fun ExternalMarketForcesPanel(
