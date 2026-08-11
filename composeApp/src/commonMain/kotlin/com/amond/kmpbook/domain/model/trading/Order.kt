@@ -24,9 +24,12 @@ data class Order(
     init {
         require(id.isNotBlank()) { "주문 ID는 비어 있을 수 없습니다." }
         require(stockId.isNotBlank()) { "종목 ID는 비어 있을 수 없습니다." }
-        require(quantity > 0.0) { "주문 수량은 0보다 커야 합니다." }
-        require(limitPrice == null || limitPrice > 0.0) { "지정가는 0보다 커야 합니다." }
+        require(quantity.isFinite() && quantity > 0.0) { "주문 수량은 유한한 양수여야 합니다." }
+        require(limitPrice == null || limitPrice.isFinite() && limitPrice > 0.0) {
+            "지정가는 유한한 양수여야 합니다."
+        }
         require(type != OrderType.LIMIT || limitPrice != null) { "지정가 주문에는 가격이 필요합니다." }
+        require(type == OrderType.LIMIT || limitPrice == null) { "시장가 주문에는 지정가를 지정할 수 없습니다." }
         require(filledQuantity >= 0.0 && filledQuantity <= quantity + QUANTITY_EPSILON) {
             "체결 수량은 0 이상 주문 수량 이하여야 합니다."
         }
