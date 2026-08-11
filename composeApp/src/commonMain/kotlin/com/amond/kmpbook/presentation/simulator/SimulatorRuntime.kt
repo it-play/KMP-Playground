@@ -116,8 +116,10 @@ import com.amond.kmpbook.domain.model.trading.Trade
 import com.amond.kmpbook.domain.model.trading.TradeSettlementKind
 import com.amond.kmpbook.domain.model.trading.TradingDayWindow
 import com.amond.kmpbook.domain.model.venue.MarketSession
+import com.amond.kmpbook.domain.simulation.event.DebugEventGuide
 import com.amond.kmpbook.domain.simulation.event.EventEngine
 import com.amond.kmpbook.domain.simulation.event.EventGenerationContext
+import com.amond.kmpbook.domain.simulation.event.EventGenerationResult
 import com.amond.kmpbook.domain.simulation.event.EventShockCalculator
 import com.amond.kmpbook.domain.simulation.listing.ListingLifecycleEngine
 import com.amond.kmpbook.domain.simulation.listing.ListingRemediationDecisionStatus
@@ -195,6 +197,8 @@ import kotlinx.datetime.Month
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /** Uses the real persistence deadline when it fits in this turn; otherwise leaves a pending observation at turn-end. */
 private fun runtimePersistenceObservationAt(
@@ -537,12 +541,12 @@ internal class SimulatorRuntime(
     var lastMessage: String? = "새 게임을 시작했습니다."
         private set
 
-    private val baseStockDefinitions: List<StockDefinition> = if (options.usFractionalTrading) {
+    private var baseStockDefinitions: List<StockDefinition> = if (options.usFractionalTrading) {
         StockCatalog.withUsFractionalTrading()
     } else {
         StockCatalog.definitions
     }
-    private val baseStockById = baseStockDefinitions.associateBy(StockDefinition::id)
+    private var baseStockById = baseStockDefinitions.associateBy(StockDefinition::id)
     private val mutableStocks = baseStockDefinitions.toMutableList()
     val stocks: List<StockDefinition> get() = mutableStocks
     private val stockById = mutableStocks.associateByTo(linkedMapOf(), StockDefinition::id)
@@ -684,6 +688,246 @@ internal class SimulatorRuntime(
         lastMessage = "시장 환경 목표를 변경했습니다. 실제 시장에는 시간에 따라 반영됩니다."
     }
 
+    internal fun debugSetInstrumentPrice(
+        stockId: String,
+        amount: Double,
+        inputCurrency: DebugPriceCurrency,
+    ): DebugRuntimeResult {
+        if (phase !in DEBUG_MUTABLE_PHASES) return debugFailure("진행 중이거나 일시 정지된 게임에서만 가격을 바꿀 수 있습니다.")
+        val stock = stockById[stockId] ?: return debugFailure("종목 '$stockId'을(를) 찾을 수 없습니다.")
+        val lifecycle = listingLifecycleStates.getValue(stock.id)
+        if (lifecycle.isTerminal || lifecycle.isSettlementPending) {
+            return debugFailure("상장 종료 또는 청산 중인 종목의 가격은 바꿀 수 없습니다.")
+        }
+        if (!amount.isFinite() || amount <= 0.0 || amount > MAX_DEBUG_PRICE_INPUT) {
+            return debugFailure("가격은 0보다 크고 $MAX_DEBUG_PRICE_INPUT 이하여야 합니다.")
+        }
+        val nativeAmount = when (inputCurrency) {
+            DebugPriceCurrency.NATIVE -> amount
+            DebugPriceCurrency.KRW -> if (stock.currency == Currency.KRW) amount else amount / macro.usdKrw
+            DebugPriceCurrency.USD -> if (stock.currency == Currency.USD) amount else amount * macro.usdKrw
+        }
+        if (!nativeAmount.isFinite() || nativeAmount <= 0.0 || nativeAmount > MAX_DEBUG_NATIVE_PRICE) {
+            return debugFailure("환산된 종목 가격이 허용 범위를 벗어났습니다.")
+        }
+        val price = MarketMicrostructure.roundNearest(stock, nativeAmount)
+        val heldQuantity = holdings[stock.id]?.quantity ?: 0.0
+        val openBuyQuantity = orders.asSequence()
+            .filter { order -> order.stockId == stock.id && order.isOpen && order.side == OrderSide.BUY }
+            .sumOf { order -> order.remainingQuantity }
+        val exposedQuantity = heldQuantity + openBuyQuantity
+        val exposureKrw = price * exposedQuantity * if (stock.currency == Currency.USD) macro.usdKrw else 1.0
+        if (!exposureKrw.isFinite() || exposureKrw > MAX_DEBUG_LEDGER_GROSS_KRW) {
+            return debugFailure(
+                "변경 가격과 현재 보유·주문 수량의 원화 평가액이 안전한 세무 원장 한도 " +
+                    "$MAX_DEBUG_LEDGER_GROSS_KRW 을(를) 넘습니다.",
+            )
+        }
+        val quote = quotes.getValue(stock.id)
+        quotes[stock.id] = quote.copy(
+            timestamp = currentTime,
+            price = price,
+            high = maxOf(quote.high, price),
+            low = minOf(quote.low, price),
+            bidPrice = null,
+            askPrice = null,
+            bidQuantity = 0.0,
+            askQuantity = 0.0,
+        )
+        replaceLatestBarPrice(history.getValue(stock.id), price)
+        chartPriceHistory.getValue(stock.id).values.forEach { bars -> replaceLatestBarPrice(bars, price) }
+        dailyTrackers[stock.id]?.let { tracker ->
+            tracker.high = maxOf(tracker.high, price)
+            tracker.low = minOf(tracker.low, price)
+        }
+        updateHoldingPrices()
+        refreshDebugPortfolioState()
+        lastMessage = "${stock.symbol} 가격을 ${stock.currency.symbol}$price(으)로 조정했습니다."
+        return DebugRuntimeResult.success(lastMessage.orEmpty(), price.toString())
+    }
+
+    internal fun debugChangeInstrumentPrice(stockId: String, percent: Double): DebugRuntimeResult {
+        if (!percent.isFinite() || percent <= -100.0 || percent > MAX_DEBUG_PRICE_CHANGE_PERCENT) {
+            return debugFailure("가격 변화율은 -100% 초과, $MAX_DEBUG_PRICE_CHANGE_PERCENT% 이하여야 합니다.")
+        }
+        val current = quotes[stockId]?.price ?: return debugFailure("종목 '$stockId'을(를) 찾을 수 없습니다.")
+        return debugSetInstrumentPrice(
+            stockId = stockId,
+            amount = current * (1.0 + percent / 100.0),
+            inputCurrency = DebugPriceCurrency.NATIVE,
+        )
+    }
+
+    internal fun debugSetCash(currency: Currency, amount: Double): DebugRuntimeResult {
+        if (phase !in DEBUG_MUTABLE_PHASES) return debugFailure("현재 게임 단계에서는 현금을 바꿀 수 없습니다.")
+        val maximum = when (currency) {
+            Currency.KRW -> MAX_DEBUG_CASH_KRW
+            Currency.USD -> MAX_DEBUG_CASH_USD
+        }
+        if (!amount.isFinite() || amount < 0.0 || amount > maximum) {
+            return debugFailure("${currency.name} 현금은 0 이상 $maximum 이하여야 합니다.")
+        }
+        val rounded = roundCurrency(amount, currency)
+        cash[currency] = rounded
+        refreshDebugPortfolioState()
+        lastMessage = "${currency.displayName} 현금을 ${currency.symbol}$rounded(으)로 설정했습니다."
+        return DebugRuntimeResult.success(lastMessage.orEmpty(), rounded.toString())
+    }
+
+    internal fun debugAddCash(currency: Currency, delta: Double): DebugRuntimeResult {
+        if (!delta.isFinite()) return debugFailure("현금 변화량은 유한한 수여야 합니다.")
+        val next = cash.getValue(currency) + delta
+        return debugSetCash(currency, next)
+    }
+
+    internal fun debugSetUsdKrw(rate: Double): DebugRuntimeResult {
+        if (phase !in DEBUG_MUTABLE_PHASES) return debugFailure("현재 게임 단계에서는 환율을 바꿀 수 없습니다.")
+        if (!rate.isFinite() || rate !in MIN_USD_KRW..MAX_USD_KRW) {
+            return debugFailure("USD/KRW는 $MIN_USD_KRW..$MAX_USD_KRW 범위여야 합니다.")
+        }
+        val ratio = rate / macro.usdKrw
+        fun rebased(source: Map<ReferenceCurrency, Double>?): Map<ReferenceCurrency, Double> {
+            val base = source ?: initialFxRates(macro.usdKrw)
+            return base.mapValues { (currency, value) ->
+                when (currency) {
+                    ReferenceCurrency.KRW -> 1.0
+                    ReferenceCurrency.USD -> rate
+                    else -> value * ratio
+                }
+            }
+        }
+        val rates = rebased(macro.fxRatesToKrw)
+        macro = macro.copy(
+            usdKrw = rate,
+            previousUsdKrw = rate,
+            fxRatesToKrw = rates,
+            previousFxRatesToKrw = rates.toMap(),
+        )
+        options = options.copy(initialUsdKrw = rate)
+        refreshDebugPortfolioState()
+        lastMessage = "USD/KRW를 $rate(으)로 설정하고 FX 기준선을 재설정했습니다."
+        return DebugRuntimeResult.success(lastMessage.orEmpty(), rate.toString())
+    }
+
+    internal fun debugSetAutoExchange(enabled: Boolean): DebugRuntimeResult {
+        options = options.copy(autoExchange = enabled)
+        lastMessage = "자동 환전을 ${if (enabled) "켰습니다" else "껐습니다"}."
+        return DebugRuntimeResult.success(lastMessage.orEmpty(), enabled.toString())
+    }
+
+    internal fun debugSetIronman(enabled: Boolean): DebugRuntimeResult {
+        options = options.copy(ironmanMode = enabled)
+        lastMessage = "철인 모드를 ${if (enabled) "켰습니다" else "껐습니다"}."
+        return DebugRuntimeResult.success(lastMessage.orEmpty(), enabled.toString())
+    }
+
+    internal fun debugSetFractionalTrading(enabled: Boolean): DebugRuntimeResult {
+        if (options.usFractionalTrading == enabled) {
+            return DebugRuntimeResult.success("미국 종목 소수점 거래가 이미 ${if (enabled) "켜져" else "꺼져"} 있습니다.")
+        }
+        options = options.copy(usFractionalTrading = enabled)
+        baseStockDefinitions = if (enabled) StockCatalog.withUsFractionalTrading() else StockCatalog.definitions
+        baseStockById = baseStockDefinitions.associateBy(StockDefinition::id)
+        rebuildDynamicStockDefinitions(corporateActionLedger)
+        var cancelled = 0
+        if (!enabled) {
+            for (index in orders.indices) {
+                val order = orders[index]
+                val stock = stockById[order.stockId] ?: continue
+                if (order.isOpen && !stock.acceptsQuantity(order.remainingQuantity)) {
+                    orders[index] = order.copy(
+                        status = OrderStatus.CANCELLED,
+                        updatedAt = currentTime,
+                        rejectionReason = "디버그 규칙 변경으로 주문 수량 단위가 달라졌습니다.",
+                    )
+                    cancelled++
+                }
+            }
+        }
+        lastMessage = "미국 종목 소수점 거래를 ${if (enabled) "켰습니다" else "껐습니다"}. 취소 주문 ${cancelled}건."
+        return DebugRuntimeResult.success(lastMessage.orEmpty(), enabled.toString())
+    }
+
+    internal fun debugSetExternalMarketForces(target: ExternalMarketForces): DebugRuntimeResult {
+        externalMarketForcesTarget = target.copy()
+        options = options.copy(initialExternalMarketForces = target.copy())
+        lastMessage = "외부 시장 환경 목표를 즉시 변경했습니다. 실제 동역학은 다음 시간부터 수렴합니다."
+        return DebugRuntimeResult.success(lastMessage.orEmpty())
+    }
+
+    internal fun debugEventGuide(query: String?): List<DebugEventGuide> {
+        val guides = eventEngine.debugGuideEntries(eventEligibleStocks())
+        val normalizedQuery = query?.trim()?.takeIf(String::isNotEmpty) ?: return guides
+        return guides.filter { guide ->
+            guide.templateId.contains(normalizedQuery, ignoreCase = true) ||
+                guide.title.contains(normalizedQuery, ignoreCase = true) ||
+                guide.scope.name.contains(normalizedQuery, ignoreCase = true) ||
+                guide.condition.name.contains(normalizedQuery, ignoreCase = true) ||
+                guide.argumentName?.contains(normalizedQuery, ignoreCase = true) == true ||
+                guide.eligibleTargets.any { target -> target.contains(normalizedQuery, ignoreCase = true) }
+        }
+    }
+
+    internal fun debugTriggerEvent(templateId: String, target: String?): DebugRuntimeResult {
+        if (phase !in DEBUG_MUTABLE_PHASES) {
+            return debugFailure("진행 중이거나 일시 정지된 게임에서만 이벤트를 발동할 수 있습니다.")
+        }
+        val trigger = eventEngine.debugForceTrigger(
+            templateId = templateId.trim(),
+            targetArgument = target,
+            timestamp = currentTime,
+            stocks = eventEligibleStocks(),
+            macro = macro,
+            existingEvents = activeEvents,
+            suppressedTemplateIds = stochasticNarrativeSuppressions(currentTime),
+        )
+        val rejectionMessage = trigger.rejectionMessage
+        if (rejectionMessage != null) return debugFailure(rejectionMessage)
+        val result = requireNotNull(trigger.generation)
+        applyGeneratedEventResult(result)
+        marketDynamicsEngine.recordEvents(result.newEvents)
+        val event = result.newEvents.single()
+        lastMessage = "이벤트 '${event.title}'을(를) 발동했습니다."
+        return DebugRuntimeResult.success(lastMessage.orEmpty(), event.id)
+    }
+
+    internal fun debugCancelAllOrders(): DebugRuntimeResult {
+        var cancelled = 0
+        for (index in orders.indices) {
+            val order = orders[index]
+            if (!order.isOpen) continue
+            orders[index] = order.copy(
+                status = OrderStatus.CANCELLED,
+                updatedAt = currentTime,
+                rejectionReason = "디버그 콘솔에서 일괄 취소했습니다.",
+            )
+            cancelled++
+        }
+        lastMessage = "미체결 주문 ${cancelled}건을 취소했습니다."
+        return DebugRuntimeResult.success(lastMessage.orEmpty(), cancelled.toString())
+    }
+
+    private fun replaceLatestBarPrice(bars: ArrayDeque<PriceBar>, price: Double) {
+        val previous = bars.removeLastOrNull() ?: return
+        bars.addLast(
+            previous.copy(
+                close = price,
+                high = maxOf(previous.high, price),
+                low = minOf(previous.low, price),
+            ),
+        )
+    }
+
+    private fun refreshDebugPortfolioState() {
+        updateDrawdown()
+        recordDailySnapshot(gameDate(currentTime), currentTime)
+    }
+
+    private fun debugFailure(message: String): DebugRuntimeResult {
+        lastMessage = message
+        return DebugRuntimeResult.failure(message)
+    }
+
     fun clearMessage() {
         lastMessage = null
     }
@@ -693,8 +937,11 @@ internal class SimulatorRuntime(
     }
 
     fun markStockNewsListViewed(stockId: String, eventIds: Set<String>) {
-        if (stockId !in stockById || eventIds.isEmpty()) return
-        val currentEventIds = newsEvents.mapTo(linkedSetOf()) { it.id }
+        val stock = stockById[stockId] ?: return
+        if (eventIds.isEmpty()) return
+        val currentEventIds = newsEvents.asSequence()
+            .filter { event -> event.affects(stock) }
+            .mapTo(linkedSetOf()) { event -> event.id }
         readStockNewsEventIds.getOrPut(stockId, ::linkedSetOf) += eventIds.intersect(currentEventIds)
     }
 
@@ -748,6 +995,30 @@ internal class SimulatorRuntime(
         if (phase == GamePhase.PLAYING) lastMessage = "${advanced}시간 진행했습니다."
     }
 
+    /** Canonical hourly advance with a cancellation boundary between every simulated hour. */
+    internal suspend fun debugAdvance(step: TurnStep) {
+        if (phase != GamePhase.PLAYING) {
+            fail(if (phase == GamePhase.PAUSED) "게임이 일시 정지되어 있습니다." else "종료된 게임은 진행할 수 없습니다.")
+            return
+        }
+        isAdvancing = true
+        lastMessage = null
+        var advanced = 0
+        try {
+            repeat(step.hours) {
+                currentCoroutineContext().ensureActive()
+                if (GameCalendar.isFinished(currentTime)) return@repeat
+                advanceOneHour()
+                advanced++
+            }
+            currentCoroutineContext().ensureActive()
+        } finally {
+            if (GameCalendar.isFinished(currentTime) && phase == GamePhase.PLAYING) enterSettlement()
+            isAdvancing = false
+        }
+        if (phase == GamePhase.PLAYING) lastMessage = "${advanced}시간 진행했습니다."
+    }
+
     fun placeOrder(request: OrderRequest): Boolean {
         if (phase != GamePhase.PLAYING) return fail("진행 중인 게임에서만 주문할 수 있습니다.")
         val stock = stockById[request.stockId] ?: return fail("존재하지 않는 종목입니다.")
@@ -790,8 +1061,17 @@ internal class SimulatorRuntime(
         ) {
             return fail("주문 수량은 ${stock.quantityStep} 단위의 양수여야 합니다.")
         }
-        if (request.type == OrderType.LIMIT && (request.limitPrice == null || request.limitPrice <= 0.0)) {
-            return fail("지정가 주문에는 0보다 큰 가격이 필요합니다.")
+        if (
+            request.type == OrderType.LIMIT &&
+            (request.limitPrice == null || !request.limitPrice.isFinite() || request.limitPrice <= 0.0)
+        ) {
+            return fail("지정가 주문에는 유한한 양수 가격이 필요합니다.")
+        }
+        if (request.limitPrice?.isFinite() == false) {
+            return fail("지정가는 유한한 양수여야 합니다.")
+        }
+        if (request.type != OrderType.LIMIT && request.limitPrice != null) {
+            return fail("시장가 주문에는 지정가를 함께 보낼 수 없습니다.")
         }
         if (request.limitPrice != null) {
             val rounded = MarketMicrostructure.roundNearest(stock, request.limitPrice)
@@ -832,7 +1112,9 @@ internal class SimulatorRuntime(
                 -> Unit
             }
         }
-        if (orders[index].status == OrderStatus.REJECTED) return false
+        if (orders[index].status == OrderStatus.REJECTED) {
+            return fail(orders[index].rejectionReason ?: "주문이 거부되었습니다.")
+        }
         lastMessage = when (orders[index].status) {
             OrderStatus.FILLED -> "주문이 체결되었습니다."
             OrderStatus.CANCELLED -> "즉시 체결되지 않아 주문을 취소했습니다."
@@ -3950,11 +4232,7 @@ internal class SimulatorRuntime(
     }
 
     private fun generateEvents(from: Instant, to: Instant) {
-        val eligibleStocks = stocks.filterNot { stock ->
-            listingLifecycleStates.getValue(stock.id).let { state ->
-                state.isTerminal || state.isSettlementPending
-            }
-        }
+        val eligibleStocks = eventEligibleStocks()
 
         // Calendar releases own their reported fact and direct repricing. Emit them first so a
         // stochastic template cannot immediately restate the same CPI/GDP/rate narrative.
@@ -3988,18 +4266,27 @@ internal class SimulatorRuntime(
                 maxNewEvents = 1,
             ),
         )
-        activeEvents.clear()
-        activeEvents += result.activeEvents
-        if (result.newEvents.isNotEmpty()) {
-            newsEvents += result.newEvents
-            recordFundFlowSignals(result.newEvents)
-            trimStochasticNews()
-        }
+        applyGeneratedEventResult(result)
 
         val allNewEvents = result.newEvents + scheduled.newEvents
         // Direct repricing is consumed this hour by EventShockCalculator. Sentiment and news
         // clustering enter only the next dynamics frame, preventing same-hour double counting.
         marketDynamicsEngine.recordEvents(allNewEvents)
+    }
+
+    private fun eventEligibleStocks(): List<StockDefinition> = stocks.filterNot { stock ->
+        listingLifecycleStates.getValue(stock.id).let { state ->
+            state.isTerminal || state.isSettlementPending
+        }
+    }
+
+    private fun applyGeneratedEventResult(result: EventGenerationResult) {
+        activeEvents.clear()
+        activeEvents += result.activeEvents
+        if (result.newEvents.isEmpty()) return
+        newsEvents += result.newEvents
+        recordFundFlowSignals(result.newEvents)
+        trimStochasticNews()
     }
 
     private fun stochasticNarrativeSuppressions(at: Instant): Set<String> {
@@ -6912,6 +7199,12 @@ internal class SimulatorRuntime(
         const val MAX_DAILY_SURVEILLANCE_POINTS = 140
         const val INVESTMENT_ALERT_NOTICE_TRADING_DAYS = 10
         const val MAX_NEWS_EVENTS = 1_000
+        const val MAX_DEBUG_CASH_KRW = 1.0e15
+        const val MAX_DEBUG_CASH_USD = 1.0e12
+        const val MAX_DEBUG_LEDGER_GROSS_KRW = 1.0e16
+        const val MAX_DEBUG_PRICE_INPUT = 1.0e18
+        const val MAX_DEBUG_NATIVE_PRICE = 1.0e15
+        const val MAX_DEBUG_PRICE_CHANGE_PERCENT = 100_000.0
         const val MAX_MARKET_ACTION_OCCURRENCE_GROUPS = 4_000
         const val NARRATIVE_FAMILY_COOLDOWN_HOURS = 72
         /** 축소 게임 유니버스에서 2026 KRX 합산 시총 상위100 제외를 재현하는 기준일 프록시. */
@@ -6993,6 +7286,7 @@ internal class SimulatorRuntime(
         const val BOOK_STREAM_ID = 0x424F4F4BL
         const val EVENT_STREAM_ID = 0x4556454E54L
         val WEEKEND = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
+        val DEBUG_MUTABLE_PHASES = setOf(GamePhase.PLAYING, GamePhase.PAUSED)
 
         fun restore(state: SimulatorUiState): SimulatorRuntime? = runCatching {
             SimulatorRuntime(state.options).apply { restoreFrom(state) }

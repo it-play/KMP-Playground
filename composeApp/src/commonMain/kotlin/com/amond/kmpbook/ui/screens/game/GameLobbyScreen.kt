@@ -33,6 +33,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.amond.kmpbook.modding.model.InstalledMod
+import com.amond.kmpbook.modding.model.ModLoadIssue
 import com.amond.kmpbook.persistence.model.GameSaveEntry
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.ui.components.LedgerDivider
@@ -46,9 +48,19 @@ import com.amond.kmpbook.ui.theme.MarketType
 @Composable
 fun GameLobbyScreen(
     saves: List<GameSaveEntry>,
+    saveStatus: String?,
+    mods: List<InstalledMod>,
+    modIssues: List<ModLoadIssue>,
+    modStatusMessage: String?,
+    isModCatalogBusy: Boolean,
+    areModControlsBusy: Boolean,
     onContinue: (GameSaveEntry) -> Unit,
     onLoad: (GameSaveEntry) -> Unit,
     onStartNewGame: (NewGameOptions) -> Unit,
+    onToggleMod: (InstalledMod, Boolean) -> Unit,
+    onModSettingChanged: (InstalledMod, String, String) -> Unit,
+    onRefreshMods: () -> Unit,
+    onOpenModsDirectory: () -> Unit,
     onSettings: () -> Unit,
     onExit: () -> Unit,
     modifier: Modifier = Modifier,
@@ -76,7 +88,12 @@ fun GameLobbyScreen(
                 value = latest?.name,
                 enabled = latest != null,
                 emphasized = true,
-                onClick = { latest?.let(onContinue) },
+                onClick = {
+                    latest?.let { save ->
+                        selectedPanel = LobbyPanel.LOAD_GAME
+                        onContinue(save)
+                    }
+                },
             )
             LobbyMenuItem(
                 label = "게임 불러오기",
@@ -102,8 +119,19 @@ fun GameLobbyScreen(
                     }
                 },
             )
+            LobbyMenuItem(
+                label = "모드",
+                selected = selectedPanel == LobbyPanel.MODS,
+                onClick = {
+                    selectedPanel = if (selectedPanel == LobbyPanel.MODS) {
+                        LobbyPanel.MARKET
+                    } else {
+                        LobbyPanel.MODS
+                    }
+                },
+            )
             LobbyMenuItem(label = "설정", onClick = onSettings)
-            LobbyMenuItem(label = "종료하기", onClick = onExit)
+            LobbyMenuItem(label = "종료하기", enabled = !areModControlsBusy, onClick = onExit)
             Spacer(Modifier.weight(1f))
         }
 
@@ -113,14 +141,35 @@ fun GameLobbyScreen(
                 LobbyPanel.LOAD_GAME -> SaveOverview(
                     title = "저장 파일",
                     saves = saves,
+                    statusMessage = saveStatus,
                     onLoad = onLoad,
                     modifier = Modifier.fillMaxSize(),
                 )
                 LobbyPanel.NEW_GAME -> NewGameScreen(
-                    onStart = onStartNewGame,
+                    onStart = { options ->
+                        if (
+                            isModCatalogBusy ||
+                            mods.count(InstalledMod::enabled) > NewGameOptions.MAX_ACTIVE_MODS
+                        ) {
+                            selectedPanel = LobbyPanel.MODS
+                        } else {
+                            onStartNewGame(options)
+                        }
+                    },
                     onBack = { selectedPanel = LobbyPanel.MARKET },
                     modifier = Modifier.fillMaxSize(),
                     embedded = true,
+                )
+                LobbyPanel.MODS -> ModsScreen(
+                    mods = mods,
+                    issues = modIssues,
+                    statusMessage = modStatusMessage,
+                    isScanning = areModControlsBusy,
+                    onToggleMod = onToggleMod,
+                    onSettingChanged = onModSettingChanged,
+                    onRefresh = onRefreshMods,
+                    onOpenModsDirectory = onOpenModsDirectory,
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
         }
@@ -183,6 +232,7 @@ private fun LobbyMenuItem(
 private fun SaveOverview(
     title: String,
     saves: List<GameSaveEntry>,
+    statusMessage: String?,
     onLoad: (GameSaveEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -194,6 +244,16 @@ private fun SaveOverview(
         }
         Spacer(Modifier.height(18.dp))
         LedgerDivider()
+        if (!statusMessage.isNullOrBlank()) {
+            Spacer(Modifier.height(14.dp))
+            LedgerPanel(
+                modifier = Modifier.fillMaxWidth(),
+                background = MarketColors.PrimaryWeak,
+                padding = 12.dp,
+            ) {
+                Text(statusMessage, style = MarketType.body, color = MarketColors.PrimaryText)
+            }
+        }
         if (saves.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("저장된 게임이 없습니다.", style = MarketType.body, color = MarketColors.InkMuted)

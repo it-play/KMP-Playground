@@ -32,6 +32,7 @@ import com.amond.kmpbook.domain.model.marketaction.MarketActionTransition
 import com.amond.kmpbook.domain.model.protection.core.TradingHaltReason
 import com.amond.kmpbook.domain.model.protection.core.TradingHaltStatus
 import com.amond.kmpbook.domain.model.schedule.ScheduledEventKind
+import com.amond.kmpbook.modding.model.ActiveModConfiguration
 import com.amond.kmpbook.persistence.model.GameSaveEnvelope
 import com.amond.kmpbook.persistence.model.GameSaveError
 import com.amond.kmpbook.persistence.model.GameSaveErrorCode
@@ -483,6 +484,31 @@ actual class GameSaveStorage actual constructor() {
             }
             requiredObject("initialExternalMarketForces")
                 .requireExternalMarketForces("state.options.initialExternalMarketForces")
+            requiredArray("activeMods").also { activeMods ->
+                if (activeMods.size() > NewGameOptions.MAX_ACTIVE_MODS) {
+                    throw JsonParseException("필드 'state.options.activeMods'의 항목이 너무 많습니다.")
+                }
+                activeMods.forEachIndexed { index, element ->
+                    val path = "state.options.activeMods[$index]"
+                    val activeMod = element.requireObject(path).apply {
+                        requireExactFields(ACTIVE_MOD_FIELDS, path)
+                    }
+                    val settings = activeMod.requiredObject("settings")
+                    if (settings.size() > ActiveModConfiguration.MAX_SETTINGS) {
+                        throw JsonParseException("필드 '$path.settings'의 항목이 너무 많습니다.")
+                    }
+                    val decoded = ActiveModConfiguration(
+                        id = activeMod.requiredStrictString("id", "$path.id"),
+                        version = activeMod.requiredStrictString("version", "$path.version"),
+                        settings = settings.entrySet().associate { (key, value) ->
+                            key to value.requireStrictString("$path.settings.$key")
+                        },
+                    )
+                    decoded.validate()?.let { message ->
+                        throw JsonParseException("필드 '$path'이 유효하지 않습니다: $message")
+                    }
+                }
+            }
         }
         state.requiredObject("externalMarketForcesTarget")
             .requireExternalMarketForces("state.externalMarketForcesTarget")
@@ -1130,6 +1156,13 @@ actual class GameSaveStorage actual constructor() {
             "ironmanMode",
             "initialUsdKrw",
             "initialExternalMarketForces",
+            "activeMods",
+        )
+
+        val ACTIVE_MOD_FIELDS: Set<String> = setOf(
+            "id",
+            "version",
+            "settings",
         )
 
         val EXTERNAL_MARKET_FORCES_FIELDS: Set<String> = setOf(

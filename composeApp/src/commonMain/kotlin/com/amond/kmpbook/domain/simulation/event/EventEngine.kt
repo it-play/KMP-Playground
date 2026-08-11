@@ -104,6 +104,93 @@ class EventEngine(
         return result(newEvents)
     }
 
+    /**
+     * 디버그 콘솔에 노출할 수 있는 구조적 대상만 반환한다. 반환된 대상 문자열은
+     * [debugForceTrigger]에 그대로 다시 전달할 수 있으며 임의 이벤트 payload는 받지 않는다.
+     */
+    internal fun debugGuideEntries(stocks: List<StockDefinition>): List<DebugEventGuide> {
+        requireUniqueStockIds(stocks)
+        return templates.sortedBy(EventTemplate::id).map { template ->
+            DebugEventGuide(
+                templateId = template.id,
+                title = template.titleTemplate,
+                scope = template.scope,
+                argumentName = debugArgumentName(template.scope),
+                eligibleTargets = structurallyEligibleTargets(template, stocks)
+                    .map { target -> debugTargetArgument(template.scope, target) }
+                    .filterNotNull()
+                    .distinct()
+                    .sorted(),
+                condition = template.condition,
+                oneShot = template.oneShot,
+            )
+        }
+    }
+
+    /**
+     * 확률과 거시 조건만 우회해 기존 템플릿을 강제로 발동한다. 대상 구조, 활성 중복,
+     * 쿨다운, one-shot, payload 조립, 난수 및 시퀀스는 정상 생성 경로와 동일하다.
+     */
+    internal fun debugForceTrigger(
+        templateId: String,
+        targetArgument: String?,
+        timestamp: Instant,
+        stocks: List<StockDefinition>,
+        macro: MacroEnvironment,
+        existingEvents: List<GameEvent>,
+        suppressedTemplateIds: Set<String> = emptySet(),
+    ): DebugEventTriggerResult {
+        requireUniqueStockIds(stocks)
+        val template = templatesById[templateId]
+            ?: return DebugEventTriggerResult.rejected("이벤트 템플릿 '$templateId'을(를) 찾을 수 없습니다.")
+        if (templateId in suppressedTemplateIds) {
+            return DebugEventTriggerResult.rejected("이벤트 '$templateId'은(는) 최근 정기 발표와 서사가 중복됩니다.")
+        }
+        val normalizedTarget = targetArgument?.trim()?.takeIf(String::isNotEmpty)
+        val targets = structurallyEligibleTargets(template, stocks)
+        val selectedTarget = when (template.scope) {
+            EventScope.GLOBAL -> {
+                if (normalizedTarget != null) {
+                    return DebugEventTriggerResult.rejected("전역 이벤트 '$templateId'에는 대상을 지정할 수 없습니다.")
+                }
+                targets.singleOrNull()
+            }
+
+            else -> {
+                if (normalizedTarget == null) {
+                    val argumentName = requireNotNull(debugArgumentName(template.scope))
+                    return DebugEventTriggerResult.rejected("이벤트 '$templateId'에는 $argumentName 대상이 필요합니다.")
+                }
+                targets.singleOrNull { target ->
+                    debugTargetArgument(template.scope, target) == normalizedTarget
+                }
+            }
+        } ?: return DebugEventTriggerResult.rejected(
+            "'$targetArgument'은(는) 이벤트 '$templateId'의 현재 대상이 아닙니다.",
+        )
+
+        val key = triggerKey(template, selectedTarget)
+        if (template.oneShot && oneShotTriggerKey(template) in lastTriggeredAt) {
+            return DebugEventTriggerResult.rejected("one-shot 이벤트 '$templateId'은(는) 이미 발생했습니다.")
+        }
+        val activeTriggerKeys = (generatedActiveEvents + existingEvents)
+            .asSequence()
+            .filter { event -> event.isActiveAt(timestamp) }
+            .mapNotNullTo(mutableSetOf(), ::triggerKeyFromEvent)
+        if (key in activeTriggerKeys) {
+            return DebugEventTriggerResult.rejected("이벤트 '$templateId'의 같은 대상 효과가 이미 활성 상태입니다.")
+        }
+        if (isCoolingDown(template, key, timestamp)) {
+            return DebugEventTriggerResult.rejected("이벤트 '$templateId'의 같은 대상이 아직 쿨다운 중입니다.")
+        }
+
+        advanceTo(timestamp)
+        val event = instantiate(template, selectedTarget, timestamp, macro)
+        generatedActiveEvents += event
+        lastTriggeredAt[key] = timestamp.epochSeconds
+        return DebugEventTriggerResult.success(result(listOf(event)))
+    }
+
     private fun hourlyHazard(template: EventTemplate, context: EventGenerationContext): Double {
         if (template.probabilityPerDay <= 0.0) return 0.0
         val boundedDailyProbability = template.probabilityPerDay.coerceAtMost(MAX_HAZARD_PROBABILITY)
@@ -612,6 +699,26 @@ class EventEngine(
     }
 
     private fun oneShotTriggerKey(template: EventTemplate): String = "${template.id}::one-shot"
+
+    private fun debugArgumentName(scope: EventScope): String? = when (scope) {
+        EventScope.GLOBAL -> null
+        EventScope.COUNTRY -> "country"
+        EventScope.MARKET -> "market"
+        EventScope.SECTOR -> "sector"
+        EventScope.STOCK -> "stockId"
+    }
+
+    private fun debugTargetArgument(scope: EventScope, target: SelectedEventTarget): String? = when (scope) {
+        EventScope.GLOBAL -> null
+        EventScope.COUNTRY -> when {
+            target.markets.isNotEmpty() && target.markets.all(Market::isKorean) -> "KR"
+            target.markets.isNotEmpty() && target.markets.none(Market::isKorean) -> "US"
+            else -> null
+        }
+        EventScope.MARKET -> target.markets.singleOrNull()?.name
+        EventScope.SECTOR -> target.sectors.singleOrNull()?.name
+        EventScope.STOCK -> target.stockIds.singleOrNull()
+    }
 
     companion object {
         private const val SECONDS_PER_HOUR: Long = 3_600L

@@ -3,6 +3,7 @@ package com.amond.kmpbook
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +31,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.amond.kmpbook.debug.console.DebugConsoleCommandProcessor
+import com.amond.kmpbook.debug.console.DebugConsoleSession
 import com.amond.kmpbook.domain.model.game.GamePhase
 import com.amond.kmpbook.domain.model.game.Screen
 import com.amond.kmpbook.domain.model.market.Currency
@@ -42,6 +46,12 @@ import com.amond.kmpbook.domain.simulation.protection.TradingProtectionEngine
 import com.amond.kmpbook.domain.tax.core.TaxCategory
 import com.amond.kmpbook.domain.tax.fee.FeeCategory
 import com.amond.kmpbook.domain.tax.liability.TaxLiabilityStatus
+import com.amond.kmpbook.modding.builtin.debug.DebugMod
+import com.amond.kmpbook.modding.model.ActiveModConfiguration
+import com.amond.kmpbook.modding.model.InstalledMod
+import com.amond.kmpbook.modding.model.ModCatalog
+import com.amond.kmpbook.modding.model.ModLoadIssue
+import com.amond.kmpbook.modding.storage.ModStorage
 import com.amond.kmpbook.persistence.model.GameSaveEntry
 import com.amond.kmpbook.persistence.result.GameLoadFailure
 import com.amond.kmpbook.persistence.result.GameLoadNotFound
@@ -58,11 +68,13 @@ import com.amond.kmpbook.presentation.protection.ProtectionUiProjection
 import com.amond.kmpbook.presentation.protection.buildProtectionUiProjection
 import com.amond.kmpbook.presentation.settings.AppSettingsStorage
 import com.amond.kmpbook.presentation.settings.AudioSettings
+import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
 import com.amond.kmpbook.presentation.simulator.SimulatorViewModel
 import com.amond.kmpbook.ui.components.MarketProtectionDetailSurface
 import com.amond.kmpbook.ui.components.MarketProtectionStrip
 import com.amond.kmpbook.ui.screens.dashboard.HomeDashboardScreen
+import com.amond.kmpbook.ui.screens.debug.DebugConsoleOverlay
 import com.amond.kmpbook.ui.screens.game.EndingScreen
 import com.amond.kmpbook.ui.screens.game.GameEntryDestination
 import com.amond.kmpbook.ui.screens.game.GameLobbyScreen
@@ -85,23 +97,63 @@ import com.amond.kmpbook.ui.shell.SimulatorSidebar
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketSimulatorTheme
 import com.amond.kmpbook.ui.theme.MarketType
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.toLocalDateTime
 
 private const val GAME_MESSAGE_DISPLAY_MILLIS = 3_000L
 private const val APP_SETTINGS_SAVE_DEBOUNCE_MILLIS = 250L
 
+private fun activeModCompatibilityError(
+    required: List<ActiveModConfiguration>,
+    installed: List<InstalledMod>,
+): String? {
+    if (required.isEmpty()) return null
+    val installedById = installed.associateBy(InstalledMod::id)
+    val missing = required.firstOrNull { it.id !in installedById }
+    if (missing != null) {
+        return "이 저장 게임에 필요한 ${missing.id} 모드가 설치되어 있지 않습니다."
+    }
+    val incompatible = required.firstOrNull { saved ->
+        installedById.getValue(saved.id).version != saved.version
+    }
+    if (incompatible != null) {
+        val currentVersion = installedById.getValue(incompatible.id).version
+        return "${incompatible.id} 모드 버전이 저장 게임과 다릅니다. " +
+            "필요 ${incompatible.version} · 설치 $currentVersion"
+    }
+    val invalidConfiguration = required.firstOrNull { saved ->
+        val current = installedById.getValue(saved.id)
+        val definitions = current.settings.associateBy { it.key }
+        saved.settings.keys != definitions.keys || saved.settings.any { (key, value) ->
+            definitions[key]?.validate(value) != null
+        }
+    }
+    if (invalidConfiguration != null) {
+        return "${invalidConfiguration.id} 모드 설정이 현재 manifest와 일치하지 않습니다."
+    }
+    return null
+}
+
 @Composable
 fun App(
     onExitRequest: () -> Unit = {},
+    onExitBlockedChanged: (Boolean) -> Unit = {},
     escapeRequest: Int = 0,
+    debugConsoleToggleRequest: Int = 0,
+    onDebugConsoleAvailabilityChanged: (Boolean) -> Unit = {},
 ) {
     val viewModel = remember { SimulatorViewModel() }
+    val debugConsoleProcessor = remember(viewModel) { DebugConsoleCommandProcessor(viewModel) }
+    val debugConsoleSession = remember { DebugConsoleSession() }
     val storage = remember { GameSaveStorage() }
     val appSettingsStorage = remember { AppSettingsStorage() }
+    val modStorage = remember { ModStorage() }
     val scope = rememberCoroutineScope()
     val state by viewModel.uiState.collectAsState()
     var entryDestination by remember { mutableStateOf(GameEntryDestination.LOBBY) }
@@ -109,8 +161,31 @@ fun App(
     var saveStatus by remember { mutableStateOf("저장된 게임을 확인하고 있습니다.") }
     var isSavingGame by remember { mutableStateOf(false) }
     var isLoadingGame by remember { mutableStateOf(false) }
+    var installedMods by remember { mutableStateOf(emptyList<InstalledMod>()) }
+    var modLoadIssues by remember { mutableStateOf(emptyList<ModLoadIssue>()) }
+    var modStatusMessage by remember { mutableStateOf("모드 폴더를 확인하고 있습니다.") }
+    var isScanningMods by remember { mutableStateOf(true) }
+    var activeModMutations by remember { mutableStateOf(0) }
+    var isStartingNewGame by remember { mutableStateOf(false) }
+    var isDebugConsoleVisible by remember { mutableStateOf(false) }
+    val modMutationMutex = remember { Mutex() }
+    val isModCatalogBusy = isScanningMods || activeModMutations > 0 || isStartingNewGame
+    val areModControlsBusy = isScanningMods || activeModMutations > 0
     var audioSettings by remember(appSettingsStorage) {
         mutableStateOf(appSettingsStorage.loadAudioSettings())
+    }
+    val activeDebugMod = state.options.activeMods.firstOrNull { activeMod ->
+        DebugMod.isCompatible(activeMod.id, activeMod.version)
+    }
+    val isDebugConsoleAvailable =
+        state.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED) &&
+            activeDebugMod != null &&
+            !isSavingGame &&
+            !isLoadingGame
+
+    SideEffect {
+        onExitBlockedChanged(activeModMutations > 0)
+        onDebugConsoleAvailabilityChanged(isDebugConsoleAvailable)
     }
 
     LaunchedEffect(storage) {
@@ -122,8 +197,71 @@ fun App(
             "저장된 게임 ${saves.size}개를 찾았습니다."
         }
     }
+    fun publishModCatalog(catalog: ModCatalog) {
+        installedMods = catalog.mods
+        modLoadIssues = catalog.issues
+        modStatusMessage = when {
+            catalog.mods.isEmpty() && catalog.issues.isEmpty() -> "설치된 모드가 없습니다."
+            catalog.mods.count(InstalledMod::enabled) > NewGameOptions.MAX_ACTIVE_MODS ->
+                "활성 모드는 ${NewGameOptions.MAX_ACTIVE_MODS}개까지만 새 게임에 적용할 수 있습니다."
+            catalog.issues.isNotEmpty() ->
+                "모드 ${catalog.mods.size}개를 찾았고 ${catalog.issues.size}개는 불러오지 못했습니다."
+            else -> "모드 ${catalog.mods.size}개를 불러왔습니다."
+        }
+    }
+    suspend fun refreshMods(): ModCatalog? {
+        isScanningMods = true
+        return try {
+            val catalog = modStorage.scan()
+            publishModCatalog(catalog)
+            catalog
+        } catch (_: RuntimeException) {
+            installedMods = emptyList()
+            modLoadIssues = listOf(ModLoadIssue("mods", "모드 폴더를 안전하게 읽지 못했습니다."))
+            modStatusMessage = "모드 폴더를 확인하지 못했습니다. 다시 새로고침하세요."
+            null
+        } finally {
+            isScanningMods = false
+        }
+    }
+    suspend fun persistModChange(
+        operation: suspend () -> String?,
+        successMessage: String,
+    ) {
+        activeModMutations++
+        try {
+            val (error, catalog) = modMutationMutex.withLock {
+                operation() to modStorage.scan()
+            }
+            publishModCatalog(catalog)
+            modStatusMessage = error ?: successMessage
+        } catch (_: RuntimeException) {
+            installedMods = emptyList()
+            modLoadIssues = listOf(ModLoadIssue("mods", "변경 후 모드 폴더를 안전하게 읽지 못했습니다."))
+            modStatusMessage = "모드 변경 결과를 확인하지 못했습니다. 다시 새로고침하세요."
+        } finally {
+            activeModMutations--
+        }
+    }
+    LaunchedEffect(modStorage) {
+        refreshMods()
+    }
+    LaunchedEffect(debugConsoleToggleRequest) {
+        if (debugConsoleToggleRequest > 0 && isDebugConsoleAvailable) {
+            isDebugConsoleVisible = !isDebugConsoleVisible
+        }
+    }
+    LaunchedEffect(isDebugConsoleAvailable) {
+        if (!isDebugConsoleAvailable) isDebugConsoleVisible = false
+    }
+    LaunchedEffect(activeDebugMod?.settings) {
+        activeDebugMod?.let { debugMod -> debugConsoleSession.configure(debugMod.settings) }
+    }
     LaunchedEffect(escapeRequest) {
-        if (
+        if (escapeRequest <= 0) return@LaunchedEffect
+        if (isDebugConsoleVisible) {
+            isDebugConsoleVisible = false
+        } else if (
             escapeRequest > 0 &&
             !state.isAdvancing &&
             state.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED)
@@ -162,6 +300,10 @@ fun App(
     }
     val loadGame: (GameSaveEntry) -> Unit = loadGameAction@{ save ->
         if (isSavingGame || isLoadingGame) return@loadGameAction
+        if (isModCatalogBusy) {
+            saveStatus = "모드 목록을 확인한 뒤 게임을 불러올 수 있습니다."
+            return@loadGameAction
+        }
         if (
             viewModel.currentState.options.ironmanMode &&
             viewModel.currentState.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED)
@@ -174,10 +316,21 @@ fun App(
             try {
                 when (val result = storage.load(save.fileName)) {
                     is GameLoadSuccess -> {
-                        if (viewModel.restoreGame(result.state)) {
-                            saveStatus = "${save.name} 게임을 불러왔습니다."
+                        val currentCatalog = refreshMods()
+                        if (currentCatalog == null) {
+                            saveStatus = "현재 모드 목록을 확인하지 못해 게임을 불러오지 않았습니다."
                         } else {
-                            saveStatus = "저장된 게임을 확인할 수 없습니다."
+                            val modCompatibilityError = activeModCompatibilityError(
+                                required = result.state.options.activeMods,
+                                installed = currentCatalog.mods,
+                            )
+                            if (modCompatibilityError != null) {
+                                saveStatus = modCompatibilityError
+                            } else if (viewModel.restoreGame(result.state)) {
+                                saveStatus = "${save.name} 게임을 불러왔습니다."
+                            } else {
+                                saveStatus = "저장된 게임을 확인할 수 없습니다."
+                            }
                         }
                     }
                     is GameLoadNotFound -> saveStatus = result.message
@@ -207,6 +360,64 @@ fun App(
             saveStatus = error ?: "저장 폴더를 탐색기로 열었습니다."
         }
     }
+    val refreshModsAction: () -> Unit = {
+        if (!isModCatalogBusy) scope.launch { refreshMods() }
+    }
+    val toggleMod: (InstalledMod, Boolean) -> Unit = toggleModAction@{ mod, enabled ->
+        if (isModCatalogBusy) {
+            modStatusMessage = "진행 중인 모드 작업이 끝난 뒤 활성 상태를 변경할 수 있습니다."
+            return@toggleModAction
+        }
+        if (
+            enabled &&
+            !mod.enabled &&
+            installedMods.count(InstalledMod::enabled) >= NewGameOptions.MAX_ACTIVE_MODS
+        ) {
+            modStatusMessage = "활성 모드는 ${NewGameOptions.MAX_ACTIVE_MODS}개까지 선택할 수 있습니다."
+            return@toggleModAction
+        }
+        installedMods = installedMods.map { installed ->
+            if (installed.id == mod.id) installed.copy(enabled = enabled) else installed
+        }
+        modStatusMessage = "${mod.name} 모드 상태를 저장하는 중입니다."
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            persistModChange(
+                operation = { modStorage.setEnabled(mod.id, enabled) },
+                successMessage = if (enabled) {
+                    "${mod.name} 모드를 활성화했습니다. 다음 새 게임부터 적용됩니다."
+                } else {
+                    "${mod.name} 모드를 비활성화했습니다."
+                },
+            )
+        }
+    }
+    val updateModSetting: (InstalledMod, String, String) -> Unit = updateModSettingAction@{ mod, key, value ->
+        if (areModControlsBusy) {
+            modStatusMessage = "진행 중인 모드 작업이 끝난 뒤 설정을 변경할 수 있습니다."
+            return@updateModSettingAction
+        }
+        installedMods = installedMods.map { installed ->
+            if (installed.id == mod.id) {
+                installed.copy(configuration = installed.configuration + (key to value))
+            } else {
+                installed
+            }
+        }
+        modStatusMessage = "${mod.name} 설정을 저장하는 중입니다."
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            persistModChange(
+                operation = { modStorage.setSetting(mod.id, key, value) },
+                successMessage = "${mod.name} 설정을 저장했습니다.",
+            )
+        }
+    }
+    val openModsDirectory: () -> Unit = {
+        scope.launch {
+            modStorage.openModsDirectory()?.let { error ->
+                modStatusMessage = error
+            }
+        }
+    }
 
     MarketSimulatorTheme {
         Box(Modifier.fillMaxSize()) {
@@ -214,11 +425,50 @@ fun App(
                 GamePhase.SETUP -> when (entryDestination) {
                     GameEntryDestination.LOBBY -> GameLobbyScreen(
                         saves = saves,
+                        saveStatus = saveStatus,
+                        mods = installedMods,
+                        modIssues = modLoadIssues,
+                        modStatusMessage = modStatusMessage,
+                        isModCatalogBusy = isModCatalogBusy,
+                        areModControlsBusy = areModControlsBusy,
                         onContinue = loadGame,
                         onLoad = loadGame,
-                        onStartNewGame = viewModel::newGame,
+                        onStartNewGame = startNewGame@{ options ->
+                            if (isModCatalogBusy || isStartingNewGame) return@startNewGame
+                            isStartingNewGame = true
+                            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                                try {
+                                    val currentCatalog = refreshMods() ?: return@launch
+                                    val enabledMods = currentCatalog.mods.filter(InstalledMod::enabled)
+                                    if (enabledMods.size > NewGameOptions.MAX_ACTIVE_MODS) return@launch
+                                    viewModel.newGame(
+                                        options.copy(
+                                            activeMods = enabledMods.map { mod ->
+                                                ActiveModConfiguration(
+                                                    id = mod.id,
+                                                    version = mod.version,
+                                                    settings = mod.settings.associate { definition ->
+                                                        definition.key to (
+                                                            mod.settingValue(definition.key) ?: definition.defaultValue
+                                                        )
+                                                    },
+                                                )
+                                            },
+                                        ),
+                                    )
+                                } finally {
+                                    isStartingNewGame = false
+                                }
+                            }
+                        },
+                        onToggleMod = toggleMod,
+                        onModSettingChanged = updateModSetting,
+                        onRefreshMods = refreshModsAction,
+                        onOpenModsDirectory = openModsDirectory,
                         onSettings = { entryDestination = GameEntryDestination.SETTINGS },
-                        onExit = onExitRequest,
+                        onExit = {
+                            if (activeModMutations == 0) onExitRequest()
+                        },
                     )
                     GameEntryDestination.SETTINGS -> LobbySettingsScreen(
                         saveDirectory = storage.saveDirectory,
@@ -242,6 +492,9 @@ fun App(
                         state.annualTaxLedgers.values.sumOf { it.totalPayableKrw }.toDouble(),
                     maxDrawdown = state.maximumDrawdown,
                     onNewGame = {
+                        if (state.phase == GamePhase.SETTLEMENT) {
+                            viewModel.finishSettlement()
+                        }
                         viewModel.resetGame()
                         entryDestination = GameEntryDestination.LOBBY
                     },
@@ -267,6 +520,17 @@ fun App(
                     },
                 )
             }
+
+            DebugConsoleOverlay(
+                visible = isDebugConsoleVisible,
+                session = debugConsoleSession,
+                onExecute = {
+                    scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                        debugConsoleSession.execute(debugConsoleProcessor)
+                    }
+                },
+                onDismiss = { isDebugConsoleVisible = false },
+            )
 
             if (isSavingGame || isLoadingGame) {
                 GameSaveLoadingDialog(isSaving = isSavingGame)
@@ -437,14 +701,30 @@ private fun RunningGame(
         }
 
         if (state.isAdvancing) {
-            TurnAdvanceLoadingDialog(hours = state.selectedTurnStep.hours)
+            TurnAdvanceLoadingOverlay(
+                hours = state.selectedTurnStep.hours,
+                detailMessage = state.lastMessage,
+            )
         }
     }
 }
 
 @Composable
-private fun TurnAdvanceLoadingDialog(hours: Int) {
-    Dialog(onDismissRequest = {}) {
+private fun TurnAdvanceLoadingOverlay(
+    hours: Int,
+    detailMessage: String?,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MarketColors.Scrim)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {},
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
         Surface(
             modifier = Modifier.width(420.dp),
             color = MarketColors.NavyRaised,
@@ -473,7 +753,8 @@ private fun TurnAdvanceLoadingDialog(hours: Int) {
                         color = Color.White,
                     )
                     Text(
-                        text = "${hours}시간 동안의 시세·주문·이벤트를 순서대로 반영합니다.",
+                        text = detailMessage
+                            ?: "${hours}시간 동안의 시세·주문·이벤트를 순서대로 반영합니다.",
                         style = MarketType.body,
                         color = MarketColors.Grey200,
                     )

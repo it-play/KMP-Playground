@@ -101,6 +101,13 @@ internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
     ) {
         return "시나리오 또는 난이도 이름이 유효하지 않습니다."
     }
+    if (
+        state.options.activeMods.size > NewGameOptions.MAX_ACTIVE_MODS ||
+        state.options.activeMods.map { it.id }.distinct().size != state.options.activeMods.size ||
+        state.options.activeMods.any { it.validate() != null }
+    ) {
+        return "활성 모드 정보가 유효하지 않습니다."
+    }
     val macro = try {
         state.macro.validatedCopy()
     } catch (_: RuntimeException) {
@@ -303,8 +310,13 @@ internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
         return "뉴스 이벤트 ID가 중복되었습니다."
     }
     val newsEventIds = state.newsEvents.mapTo(linkedSetOf()) { it.id }
+    val newsEventsById = state.newsEvents.associateBy(GameEvent::id)
     if (state.readStockNewsEventIds.keys.any { it !in stockIds } ||
-        state.readStockNewsEventIds.values.any { readIds -> readIds.any { it !in newsEventIds } }
+        state.readStockNewsEventIds.values.any { readIds -> readIds.any { it !in newsEventIds } } ||
+        state.readStockNewsEventIds.any { (stockId, readIds) ->
+            val stock = stocksById[stockId] ?: return@any true
+            readIds.any { eventId -> newsEventsById[eventId]?.affects(stock) != true }
+        }
     ) {
         return "종목별 연관 뉴스 읽음 원장이 현재 종목·뉴스 원장과 일치하지 않습니다."
     }
@@ -319,7 +331,6 @@ internal fun validateSimulatorUiState(state: SimulatorUiState): String? {
     if (state.eventEngineSnapshot.activeEvents.any { it.generatorTemplateId == null }) {
         return "이벤트 엔진 활성 이벤트에 생성 템플릿 참조가 없습니다."
     }
-    val newsEventsById = state.newsEvents.associateBy(GameEvent::id)
     val expectedActiveEventsById = state.newsEvents
         .filter { event ->
             when {

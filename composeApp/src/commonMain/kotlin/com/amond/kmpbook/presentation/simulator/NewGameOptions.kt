@@ -1,5 +1,6 @@
 package com.amond.kmpbook.presentation.simulator
 
+import com.amond.kmpbook.modding.model.ActiveModConfiguration
 import com.amond.kmpbook.domain.simulation.market.ExternalMarketForces
 
 data class NewGameOptions(
@@ -13,6 +14,8 @@ data class NewGameOptions(
     val initialUsdKrw: Double = 1_350.0,
     /** 2026년 8월 기본 시나리오이자 게임 시작 시 동역학 엔진에 주입할 목표 환경. */
     val initialExternalMarketForces: ExternalMarketForces = ExternalMarketForces(),
+    /** 새 게임 시작 시 고정되어 저장 파일과 함께 복원되는 활성 모드 집합이다. */
+    val activeMods: List<ActiveModConfiguration> = emptyList(),
 ) {
     init {
         require(scenarioName.isNotBlank() && scenarioName.length <= MAX_GAME_LABEL_LENGTH) {
@@ -27,6 +30,12 @@ data class NewGameOptions(
         require(initialUsdKrw > 0.0 && initialUsdKrw.isFinite()) {
             "초기 원·달러 환율은 0보다 커야 합니다."
         }
+        require(activeMods.size <= MAX_ACTIVE_MODS && activeMods.map(ActiveModConfiguration::id).distinct().size == activeMods.size) {
+            "활성 모드는 중복 없이 ${MAX_ACTIVE_MODS}개 이하로 선택해야 합니다."
+        }
+        require(activeMods.none { it.validate() != null }) {
+            "활성 모드 정보가 올바르지 않습니다."
+        }
     }
 
     companion object {
@@ -35,5 +44,6 @@ data class NewGameOptions(
         const val MAX_GAME_LABEL_LENGTH: Int = 24
         const val MIN_INITIAL_CAPITAL_KRW: Double = 1_000_000.0
         const val DEFAULT_SEED: Long = 20_260_807L
+        const val MAX_ACTIVE_MODS: Int = com.amond.kmpbook.modding.model.MAX_ACTIVE_MODS
     }
 }
