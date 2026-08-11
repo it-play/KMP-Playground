@@ -56,6 +56,7 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Msi)
+            modules("java.net.http")
             packageName = "MarketLedger2040"
             vendor = "Market Ledger 2040"
             description = "Turn-based Korean and U.S. stock market simulator"
