@@ -1,5 +1,6 @@
 package com.amond.kmpbook.modding.storage
 
+import com.amond.kmpbook.domain.data.DesktopInstrumentPackParser
 import com.amond.kmpbook.modding.builtin.debug.DebugMod
 import com.amond.kmpbook.modding.model.InstalledMod
 import com.amond.kmpbook.modding.model.ModCatalog
@@ -217,7 +218,7 @@ actual class ModStorage actual constructor() {
                     return@forEach
                 }
                 try {
-                    val parsed = DesktopManifestParser.parse(directory, rawDirectoryName)
+                    val parsed = loadInstrumentPack(DesktopManifestParser.parse(directory, rawDirectoryName))
                     if (parsed.id == DebugMod.ID && !bundledModInstaller.isManagedInstallValid()) {
                         issues += ModLoadIssue(
                             directoryName = displayName,
@@ -261,7 +262,7 @@ actual class ModStorage actual constructor() {
         ) {
             throw ModManifestException("설치된 모드를 찾을 수 없습니다.")
         }
-        val parsed = DesktopManifestParser.parse(directory, modId)
+        val parsed = loadInstrumentPack(DesktopManifestParser.parse(directory, modId))
         if (modId == DebugMod.ID && !bundledModInstaller.isManagedInstallValid()) {
             throw ModManifestException("모드 파일이 검사 중 변경되어 요청을 완료하지 못했습니다.")
         }
@@ -284,11 +285,41 @@ actual class ModStorage actual constructor() {
                 Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)
             if (!safeDirectory) return@filter false
             try {
-                DesktopManifestParser.parse(directory, id).version == state.version
+                DesktopManifestParser.parse(directory, id).mod.version == state.version
             } catch (_: Exception) {
                 false
             }
         }
+
+    private fun loadInstrumentPack(parsedManifest: DesktopParsedModManifest): InstalledMod {
+        val contentPath = parsedManifest.instrumentContentPath ?: return parsedManifest.mod
+        if (Files.isSymbolicLink(contentPath)) {
+            throw ModManifestException("종목 콘텐츠는 심볼릭 링크일 수 없습니다.")
+        }
+        if (!Files.isRegularFile(contentPath, LinkOption.NOFOLLOW_LINKS)) {
+            throw ModManifestException("종목 콘텐츠가 안전한 일반 파일이 아닙니다.")
+        }
+        val declaredSize = Files.size(contentPath)
+        if (declaredSize !in 1..MAX_INSTRUMENT_CONTENT_BYTES) {
+            throw ModManifestException("종목 콘텐츠 크기는 4 MiB 이하여야 합니다.")
+        }
+        val bytes = Files.newInputStream(contentPath, LinkOption.NOFOLLOW_LINKS).use { stream ->
+            stream.readNBytes((MAX_INSTRUMENT_CONTENT_BYTES + 1L).toInt())
+        }
+        if (bytes.isEmpty() || bytes.size.toLong() > MAX_INSTRUMENT_CONTENT_BYTES) {
+            throw ModManifestException("종목 콘텐츠 크기는 4 MiB 이하여야 합니다.")
+        }
+        val instrumentPack = try {
+            DesktopInstrumentPackParser.parse(
+                bytes = bytes,
+                sourceId = parsedManifest.mod.id,
+                maxInstruments = MAX_INSTRUMENTS_PER_MOD,
+            )
+        } catch (error: IllegalArgumentException) {
+            throw ModManifestException(error.message ?: "종목 콘텐츠를 해석하지 못했습니다.")
+        }
+        return parsedManifest.mod.copy(instrumentPack = instrumentPack)
+    }
 
     private fun ensureSafeDirectories(): String? = try {
         if (Files.exists(appDataDirectory, LinkOption.NOFOLLOW_LINKS) && Files.isSymbolicLink(appDataDirectory)) {

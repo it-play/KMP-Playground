@@ -29,6 +29,7 @@ internal object DesktopManifestParser {
     private const val MAX_AUTHOR_LENGTH: Int = 120
     private const val MAX_VERSION_LENGTH: Int = ActiveModConfiguration.MAX_VERSION_LENGTH
     private const val MAX_COVER_NAME_LENGTH: Int = 128
+    private const val MAX_INSTRUMENT_CONTENT_NAME_LENGTH: Int = 128
     private const val MAX_PERMISSIONS: Int = 16
     private const val MAX_SETTINGS: Int = ActiveModConfiguration.MAX_SETTINGS
     private const val MAX_SETTING_NAME_LENGTH: Int = 120
@@ -37,7 +38,7 @@ internal object DesktopManifestParser {
     private const val MAX_OPTION_LABEL_LENGTH: Int = 120
     private const val MAX_OPTIONS_PER_SETTING: Int = 128
 
-    fun parse(modDirectory: Path, directoryName: String): InstalledMod {
+    fun parse(modDirectory: Path, directoryName: String): DesktopParsedModManifest {
         if (!MOD_ID_PATTERN.matches(directoryName)) {
             throw ModManifestException("모드 폴더 이름 형식이 올바르지 않습니다.")
         }
@@ -134,7 +135,7 @@ internal object DesktopManifestParser {
         reader: XMLStreamReader,
         modDirectory: Path,
         directoryName: String,
-    ): InstalledMod {
+    ): DesktopParsedModManifest {
         while (reader.hasNext()) {
             when (reader.next()) {
                 XMLStreamConstants.START_ELEMENT -> {
@@ -165,7 +166,7 @@ internal object DesktopManifestParser {
         reader: XMLStreamReader,
         modDirectory: Path,
         directoryName: String,
-    ): InstalledMod {
+    ): DesktopParsedModManifest {
         requireAttributes(reader, setOf("schemaVersion", "apiVersion", "id"))
         val schemaVersion = requiredAttribute(reader, "schemaVersion")
         val apiVersion = requiredAttribute(reader, "apiVersion")
@@ -187,6 +188,7 @@ internal object DesktopManifestParser {
         var version: String? = null
         var lastModifiedText: String? = null
         var explicitCover: String? = null
+        var instrumentContentPath: Path? = null
         var capabilities: Set<ModCapability> = emptySet()
         var settings: List<ModSettingDefinition> = emptyList()
 
@@ -204,6 +206,7 @@ internal object DesktopManifestParser {
                         "version" -> version = readSimpleText(reader, MAX_VERSION_LENGTH, allowBlank = false)
                         "lastModified" -> lastModifiedText = readSimpleText(reader, 10, allowBlank = false)
                         "cover" -> explicitCover = readSimpleText(reader, MAX_COVER_NAME_LENGTH, allowBlank = false)
+                        "content" -> instrumentContentPath = parseContent(reader, modDirectory)
                         "permissions" -> capabilities = parsePermissions(reader)
                         "settings" -> settings = parseSettings(reader)
                         else -> throw ModManifestException(
@@ -232,19 +235,23 @@ internal object DesktopManifestParser {
                             }
                         }
                         ?: throw ModManifestException("lastModified는 YYYY-MM-DD 형식이어야 합니다.")
-                    return InstalledMod(
-                        id = id,
-                        name = resolvedName,
-                        description = resolvedDescription,
-                        author = resolvedAuthor,
-                        version = resolvedVersion,
-                        lastModified = resolvedDate,
-                        apiVersion = MOD_API_VERSION,
-                        coverPath = resolveCoverPath(modDirectory, explicitCover),
-                        settings = settings,
-                        requestedCapabilities = capabilities,
-                        configuration = emptyMap(),
-                        enabled = false,
+                    return DesktopParsedModManifest(
+                        mod = InstalledMod(
+                            id = id,
+                            name = resolvedName,
+                            description = resolvedDescription,
+                            author = resolvedAuthor,
+                            version = resolvedVersion,
+                            lastModified = resolvedDate,
+                            apiVersion = MOD_API_VERSION,
+                            coverPath = resolveCoverPath(modDirectory, explicitCover),
+                            instrumentPack = null,
+                            settings = settings,
+                            requestedCapabilities = capabilities,
+                            configuration = emptyMap(),
+                            enabled = false,
+                        ),
+                        instrumentContentPath = instrumentContentPath,
                     )
                 }
 
@@ -262,6 +269,76 @@ internal object DesktopManifestParser {
             }
         }
         throw ModManifestException("mod 요소가 닫히지 않았습니다.")
+    }
+
+    private fun parseContent(reader: XMLStreamReader, modDirectory: Path): Path {
+        requireElement(reader, "content")
+        requireAttributes(reader, emptySet())
+        var instrumentContentPath: Path? = null
+        while (reader.hasNext()) {
+            when (reader.next()) {
+                XMLStreamConstants.START_ELEMENT -> {
+                    requireElement(reader, "instruments")
+                    if (instrumentContentPath != null) {
+                        throw ModManifestException("content의 instruments 요소가 중복되었습니다.")
+                    }
+                    instrumentContentPath = parseInstruments(reader, modDirectory)
+                }
+
+                XMLStreamConstants.END_ELEMENT -> {
+                    if (reader.localName != "content") {
+                        throw ModManifestException("content 요소 구조가 올바르지 않습니다.")
+                    }
+                    return instrumentContentPath
+                        ?: throw ModManifestException("content에는 instruments 요소가 필요합니다.")
+                }
+
+                XMLStreamConstants.CHARACTERS,
+                XMLStreamConstants.SPACE,
+                XMLStreamConstants.CDATA,
+                -> requireWhitespace(reader.text)
+
+                XMLStreamConstants.COMMENT -> Unit
+                else -> rejectNestedXml(reader)
+            }
+        }
+        throw ModManifestException("content 요소가 닫히지 않았습니다.")
+    }
+
+    private fun parseInstruments(reader: XMLStreamReader, modDirectory: Path): Path {
+        requireAttributes(reader, setOf("file"))
+        val fileName = requiredAttribute(reader, "file")
+        validateInstrumentContentFileName(fileName)
+        val contentPath = modDirectory.resolve(fileName).normalize()
+        if (contentPath.parent != modDirectory.normalize()) {
+            throw ModManifestException("종목 콘텐츠는 모드 루트 폴더 안에 있어야 합니다.")
+        }
+        if (Files.isSymbolicLink(contentPath)) {
+            throw ModManifestException("종목 콘텐츠는 심볼릭 링크일 수 없습니다.")
+        }
+        if (!Files.isRegularFile(contentPath, LinkOption.NOFOLLOW_LINKS)) {
+            throw ModManifestException("종목 콘텐츠 파일을 찾을 수 없습니다.")
+        }
+
+        while (reader.hasNext()) {
+            when (reader.next()) {
+                XMLStreamConstants.END_ELEMENT -> {
+                    if (reader.localName != "instruments") {
+                        throw ModManifestException("instruments 요소 구조가 올바르지 않습니다.")
+                    }
+                    return contentPath
+                }
+
+                XMLStreamConstants.CHARACTERS,
+                XMLStreamConstants.SPACE,
+                XMLStreamConstants.CDATA,
+                -> requireWhitespace(reader.text)
+
+                XMLStreamConstants.COMMENT -> Unit
+                else -> rejectNestedXml(reader)
+            }
+        }
+        throw ModManifestException("instruments 요소가 닫히지 않았습니다.")
     }
 
     private fun parsePermissions(reader: XMLStreamReader): Set<ModCapability> {
@@ -615,6 +692,27 @@ internal object DesktopManifestParser {
         }
     }
 
+    private fun validateInstrumentContentFileName(value: String) {
+        val forbiddenWindowsCharacters = setOf(':', '*', '?', '"', '<', '>', '|')
+        val baseName = value.dropLast(JSON_EXTENSION.length)
+        if (value.isBlank() ||
+            value != value.trim() ||
+            value.length > MAX_INSTRUMENT_CONTENT_NAME_LENGTH ||
+            value == "." ||
+            value == ".." ||
+            !value.endsWith(JSON_EXTENSION, ignoreCase = true) ||
+            baseName.isBlank() ||
+            baseName == "." ||
+            baseName == ".." ||
+            baseName.endsWith('.') ||
+            baseName.endsWith(' ') ||
+            WINDOWS_RESERVED_FILE_STEM.matches(baseName) ||
+            value.any { it == '/' || it == '\\' || it.isISOControl() || it in forbiddenWindowsCharacters }
+        ) {
+            throw ModManifestException("instruments file은 모드 루트의 단일 JSON 파일 이름이어야 합니다.")
+        }
+    }
+
     private fun validateDocumentTail(reader: XMLStreamReader) {
         while (reader.hasNext()) {
             when (reader.next()) {
@@ -682,4 +780,10 @@ internal object DesktopManifestParser {
     }
 
     private fun safeXmlName(value: String): String = value.take(80)
+
+    private const val JSON_EXTENSION: String = ".json"
+    private val WINDOWS_RESERVED_FILE_STEM: Regex = Regex(
+        "^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\\..*)?$",
+        RegexOption.IGNORE_CASE,
+    )
 }

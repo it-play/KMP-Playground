@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mod schemaVersion="1" apiVersion="1" id="market-ledger.debug">
+<mod schemaVersion="2" apiVersion="1" id="market-ledger.debug">
     <name>Market Ledger 개발자 콘솔</name>
     <description>현재 캠페인을 점검하고 게임 이벤트와 시장 상태를 제어하는 신뢰된 기본 제공 디버그 도구입니다.</description>
     <author>Market Ledger 2040</author>

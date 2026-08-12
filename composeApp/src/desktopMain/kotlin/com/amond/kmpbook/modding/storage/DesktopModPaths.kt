@@ -4,8 +4,10 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.Locale
 
-internal const val CURRENT_MOD_SCHEMA_VERSION: Int = 1
+internal const val CURRENT_MOD_SCHEMA_VERSION: Int = 2
 internal const val MAX_MANIFEST_BYTES: Long = 256L * 1024L
+internal const val MAX_INSTRUMENT_CONTENT_BYTES: Long = 4L * 1024L * 1024L
+internal const val MAX_INSTRUMENTS_PER_MOD: Int = 512
 internal const val MAX_MOD_STATE_BYTES: Long = 256L * 1024L
 internal const val MAX_DISCOVERED_MOD_ENTRIES: Int = 512
 internal const val MAX_AUTOMATIC_COVER_SEARCH_ENTRIES: Int = 256

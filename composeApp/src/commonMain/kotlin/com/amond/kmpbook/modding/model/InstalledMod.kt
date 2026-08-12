@@ -1,5 +1,6 @@
 package com.amond.kmpbook.modding.model
 
+import com.amond.kmpbook.domain.data.InstrumentPack
 import kotlinx.datetime.LocalDate
 
 data class InstalledMod(
@@ -11,6 +12,7 @@ data class InstalledMod(
     val lastModified: LocalDate,
     val apiVersion: Int,
     val coverPath: String?,
+    val instrumentPack: InstrumentPack?,
     val settings: List<ModSettingDefinition>,
     val requestedCapabilities: Set<ModCapability>,
     val configuration: Map<String, String>,

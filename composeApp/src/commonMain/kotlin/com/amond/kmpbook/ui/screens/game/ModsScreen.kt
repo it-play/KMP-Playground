@@ -327,6 +327,10 @@ private fun ModListRow(
     val hovered by interaction.collectIsHoveredAsState()
     val focused by interaction.collectIsFocusedAsState()
     val highlighted = hovered || focused || selected
+    val packageSummary = buildList {
+        add(if (mod.settings.isEmpty()) "설정 없음" else "설정 ${mod.settings.size}개")
+        mod.instrumentPack?.let { pack -> add("등록 종목 ${pack.instrumentCount}개") }
+    }.joinToString(" · ")
 
     LedgerPanel(
         modifier = Modifier
@@ -388,7 +392,7 @@ private fun ModListRow(
             Spacer(Modifier.width(20.dp))
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    if (mod.settings.isEmpty()) "설정 없음" else "설정 ${mod.settings.size}개",
+                    packageSummary,
                     style = MarketType.caption,
                     color = MarketColors.InkMuted,
                 )
@@ -510,6 +514,10 @@ private fun ModDetailDrawer(
             }
             Spacer(Modifier.height(14.dp))
             ModMetadata("모드 ID", mod.id, Modifier.fillMaxWidth())
+            mod.instrumentPack?.let { pack ->
+                Spacer(Modifier.height(14.dp))
+                ModMetadata("선언형 종목팩", "등록 종목 ${pack.instrumentCount}개", Modifier.fillMaxWidth())
+            }
 
             Spacer(Modifier.height(20.dp))
             ModEnableControl(mod = mod, onToggle = onToggle, enabled = controlsEnabled)

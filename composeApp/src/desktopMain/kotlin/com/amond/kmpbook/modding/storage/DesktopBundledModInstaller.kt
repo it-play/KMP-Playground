@@ -329,7 +329,7 @@ internal class DesktopBundledModInstaller(
                 }
             }
             forceDirectoryBestEffort(stagingPath)
-            val parsed = DesktopManifestParser.parse(stagingPath, DebugMod.ID)
+            val parsed = DesktopManifestParser.parse(stagingPath, DebugMod.ID).mod
             if (parsed.version != DebugMod.VERSION || ModCapability.DEBUG_CONSOLE !in parsed.requestedCapabilities) {
                 throw BundledModInstallException("기본 제공 디버그 모드 manifest가 앱 코드와 일치하지 않습니다.")
             }
@@ -657,7 +657,7 @@ internal class DesktopBundledModInstaller(
 
     private companion object {
         /** Increment whenever a managed bundled file changes so untouched installs can update safely. */
-        const val BUNDLE_REVISION: Int = 2
+        const val BUNDLE_REVISION: Int = 3
         const val LEGACY_MARKER_SCHEMA_VERSION: Int = 1
         const val MARKER_SCHEMA_VERSION: Int = 2
         const val MAX_MARKER_BYTES: Long = 4L * 1024L
