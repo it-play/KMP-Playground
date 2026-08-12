@@ -1,5 +1,7 @@
 package com.amond.kmpbook.domain.tax.liability
 
+import com.amond.kmpbook.domain.tax.core.CheckedMonetaryArithmetic
+
 data class AnnualTaxLedger(
     val taxYear: Int,
     val policyId: String,
@@ -30,6 +32,14 @@ data class AnnualTaxLedger(
         }
     }
 
-    val totalPayableKrw: Long get() = liabilities.sumOf { it.payableKrw }
-    val totalRefundableKrw: Long get() = liabilities.sumOf { it.refundableKrw }
+    val totalPayableKrw: Long
+        get() = CheckedMonetaryArithmetic.sum(
+            liabilities.asSequence().map(TaxLiability::payableKrw),
+            "Annual payable tax",
+        )
+    val totalRefundableKrw: Long
+        get() = CheckedMonetaryArithmetic.sum(
+            liabilities.asSequence().map(TaxLiability::refundableKrw),
+            "Annual refundable tax",
+        )
 }

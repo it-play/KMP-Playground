@@ -2,6 +2,7 @@ package com.amond.kmpbook.domain.tax.liability
 
 import com.amond.kmpbook.domain.model.market.Currency
 import com.amond.kmpbook.domain.tax.core.EffectiveDateRange
+import com.amond.kmpbook.domain.tax.core.CheckedMonetaryArithmetic
 import com.amond.kmpbook.domain.tax.core.MoneyAmount
 import com.amond.kmpbook.domain.tax.core.RuleSource
 import com.amond.kmpbook.domain.tax.core.TaxCategory
@@ -26,16 +27,27 @@ class AnnualStockTaxCalculator(
             }
             .sortedBy { it.realizedOn }
 
-        val domesticGain = taxableEntries
-            .filter { it.treatment != StockGainTaxTreatment.FOREIGN_STANDARD }
-            .sumOf { it.gainKrw }
-        val foreignGain = taxableEntries
-            .filter { it.treatment == StockGainTaxTreatment.FOREIGN_STANDARD }
-            .sumOf { it.gainKrw }
-        val netGain = domesticGain + foreignGain
+        val domesticGain = CheckedMonetaryArithmetic.sum(
+            taxableEntries.asSequence()
+                .filter { it.treatment != StockGainTaxTreatment.FOREIGN_STANDARD }
+                .map { it.gainKrw },
+            "Domestic realized gains",
+        )
+        val foreignGain = CheckedMonetaryArithmetic.sum(
+            taxableEntries.asSequence()
+                .filter { it.treatment == StockGainTaxTreatment.FOREIGN_STANDARD }
+                .map { it.gainKrw },
+            "Foreign realized gains",
+        )
+        val netGain = CheckedMonetaryArithmetic.add(
+            domesticGain,
+            foreignGain,
+            "Net realized gains",
+        )
         val positiveNet = netGain.coerceAtLeast(0L)
         val deduction = minOf(positiveNet, policy.foreignStockCapitalGains.annualBasicDeductionKrw)
         val taxableBase = positiveNet - deduction
+        require(netGain != Long.MIN_VALUE) { "Expired stock loss exceeds the monetary range" }
         val expiredLoss = (-netGain).coerceAtLeast(0L)
 
         val allocatedBases = allocateTaxableBaseByTreatment(
@@ -115,7 +127,11 @@ class AnnualStockTaxCalculator(
             id = "foreign-stock-cgt-${request.taxYear}",
             label = "${request.taxYear}년 국외주식 양도세",
             taxYear = request.taxYear,
-            assessedTaxKrw = national + local,
+            assessedTaxKrw = CheckedMonetaryArithmetic.add(
+                national,
+                local,
+                "Foreign stock capital-gains tax",
+            ),
             dueDate = LocalDate(request.taxYear + 1, 5, 31),
             status = TaxLiabilityStatus.DUE,
             items = items,
@@ -151,7 +167,12 @@ class AnnualStockTaxCalculator(
         if (finalTaxableBaseKrw == 0L) return emptyMap()
         val positiveByTreatment = entries
             .groupBy { it.treatment }
-            .mapValues { (_, values) -> values.sumOf { it.gainKrw }.coerceAtLeast(0L) }
+            .mapValues { (_, values) ->
+                CheckedMonetaryArithmetic.sum(
+                    values.asSequence().map { it.gainKrw },
+                    "Taxable gains by treatment",
+                ).coerceAtLeast(0L)
+            }
             .filterValues { it > 0L }
         if (positiveByTreatment.isEmpty()) return emptyMap()
 

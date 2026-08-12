@@ -24,10 +24,18 @@ data class MoneyRoundingPolicy(
             RoundingDirection.HALF_UP -> if (scaled >= 0.0) floor(scaled + 0.5) else ceil(scaled - 0.5)
             RoundingDirection.UP -> if (scaled >= 0.0) ceil(scaled) else floor(scaled)
         }
-        require(rounded in Long.MIN_VALUE.toDouble()..Long.MAX_VALUE.toDouble()) {
-            "The rounded amount does not fit in Long."
-        }
-        return MoneyAmount(rounded.toLong() * minorUnitIncrement, currency)
+        val integralUnits = CheckedMonetaryArithmetic.roundedToLong(
+            rounded,
+            "Rounded monetary amount",
+        )
+        return MoneyAmount(
+            CheckedMonetaryArithmetic.multiply(
+                integralUnits,
+                minorUnitIncrement,
+                "Rounded monetary amount",
+            ),
+            currency,
+        )
     }
 
     fun fromMajorUnits(unroundedAmount: Double, currency: Currency): MoneyAmount =
