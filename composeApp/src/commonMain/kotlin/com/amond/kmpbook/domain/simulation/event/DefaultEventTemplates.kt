@@ -28,7 +28,7 @@ import com.amond.kmpbook.presentation.simulator.SimulatorRuntime
 
 /**
  * Built-in rules are deliberately data-only. Adding a stock requires no event
- * code change: market/sector/company scopes select it from StockCatalog data.
+ * code change: market/sector/company scopes select it from the injected instrument catalog.
  */
 object DefaultEventTemplates {
     val all: List<EventTemplate> = listOf(
@@ -511,8 +511,8 @@ object DefaultEventTemplates {
         // ETF-specific flows and fund operations. Ordinary corporate templates above are
         // explicitly stock-only, so funds never receive CEO, earnings-guidance, or recall news.
         fund(
-            "etf_rebalance", "{company} 정기 리밸런싱",
-            "기초지수 정기변경에 맞춘 편입·편출 수급이 발생했다.",
+            "etf_rebalance_execution_stress", "{company} 리밸런싱 체결 부담",
+            "기초지수 변경일의 집중 체결로 일시적인 추적 괴리와 거래비용이 발생했다.",
             ImpactDirection.MIXED, 0.006, 24..96, -0.012..0.012,
             instrumentTypes = setOf(InstrumentType.ETF),
         ),
@@ -591,13 +591,13 @@ object DefaultEventTemplates {
         ).copy(
             recordKind = EventRecordKind.INSTRUMENT_LIFECYCLE,
             terminationTemplate = EventTerminationTemplate(
-                kind = InstrumentTerminationKind.OPTIONAL_CALL,
-                valuationMethod = InstrumentTerminationValuationMethod.FINAL_INDICATIVE_VALUE_PROXY,
+                kind = InstrumentTerminationKind.ISSUER_ACCELERATION,
+                valuationMethod = InstrumentTerminationValuationMethod.ETN_CONTRACT_SETTLEMENT,
             ),
         ),
         fund(
-            "etn_issuer_acceleration", "{company} 발행사 가속상환 사유 발생",
-            "발행사 신용·계약상 가속상환 사유가 발생했다. 7일 뒤 회수율을 반영한 상환가격으로 거래가 종료될 수 있다.",
+            "etn_credit_default", "{company} 발행사 신용사건 발생",
+            "발행사 채무불이행 신용사건이 발생했다. 7일 뒤 최종 지표가치와 공시에 확정된 회수율을 반영해 상환 절차가 진행된다.",
             ImpactDirection.NEGATIVE, 0.00001, 168..168, -0.180..-0.060,
             strategies = setOf(InstrumentStrategy.ETN_LINKED),
             severity = EventSeverity.CRITICAL,
@@ -605,9 +605,9 @@ object DefaultEventTemplates {
         ).copy(
             recordKind = EventRecordKind.INSTRUMENT_LIFECYCLE,
             terminationTemplate = EventTerminationTemplate(
-                kind = InstrumentTerminationKind.ISSUER_ACCELERATION,
+                kind = InstrumentTerminationKind.CREDIT_DEFAULT,
                 valuationMethod =
-                    InstrumentTerminationValuationMethod.TRAILING_FIVE_SESSION_AVERAGE_WITH_RECOVERY,
+                    InstrumentTerminationValuationMethod.ETN_CREDIT_DEFAULT_RECOVERY,
                 accelerationRecoveryRate = 0.40..0.80,
             ),
         ),
@@ -643,7 +643,7 @@ object DefaultEventTemplates {
             recordKind = EventRecordKind.INSTRUMENT_LIFECYCLE,
             terminationTemplate = EventTerminationTemplate(
                 kind = InstrumentTerminationKind.FUND_LIQUIDATION,
-                valuationMethod = InstrumentTerminationValuationMethod.FINAL_NET_ASSET_VALUE_PROXY,
+                valuationMethod = InstrumentTerminationValuationMethod.FINAL_NET_ASSET_VALUE,
             ),
         ),
         fund(

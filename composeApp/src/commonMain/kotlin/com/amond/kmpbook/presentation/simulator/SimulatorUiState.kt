@@ -4,6 +4,30 @@ import com.amond.kmpbook.domain.model.corporateaction.CorporateActionRecord
 import com.amond.kmpbook.domain.model.corporateaction.CorporateFundamentalState
 import com.amond.kmpbook.domain.model.corporateaction.PendingCorporateAction
 import com.amond.kmpbook.domain.model.event.GameEvent
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioRecord
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioState
+import com.amond.kmpbook.domain.model.fund.BenchmarkRef
+import com.amond.kmpbook.domain.model.fundproduct.CashCollateralizedPutSpreadState
+import com.amond.kmpbook.domain.model.fundproduct.DailyResetState
+import com.amond.kmpbook.domain.model.fundproduct.OptionStrategyState
+import com.amond.kmpbook.domain.model.fundstructure.ClosedEndFundLedgerEntry
+import com.amond.kmpbook.domain.model.fundstructure.ClosedEndFundState
+import com.amond.kmpbook.domain.model.fundstructure.EtnLedgerEntry
+import com.amond.kmpbook.domain.model.fundstructure.EtnState
+import com.amond.kmpbook.domain.model.reference.FixedIncomeReferenceState
+import com.amond.kmpbook.domain.model.reference.FixedIncomeRollRecord
+import com.amond.kmpbook.domain.model.reference.CommoditySpotReferenceState
+import com.amond.kmpbook.domain.model.reference.EquityReferenceRebalanceRecord
+import com.amond.kmpbook.domain.model.reference.EquityReferenceState
+import com.amond.kmpbook.domain.model.reference.FuturesAllocationRecord
+import com.amond.kmpbook.domain.model.reference.FuturesReferenceState
+import com.amond.kmpbook.domain.model.reference.FuturesRollRecord
+import com.amond.kmpbook.domain.model.reference.FundOfFundsRebalanceRecord
+import com.amond.kmpbook.domain.model.reference.FundOfFundsState
+import com.amond.kmpbook.domain.model.reference.AlternativeRiskPremiaRebalanceRecord
+import com.amond.kmpbook.domain.model.reference.AlternativeRiskPremiaState
+import com.amond.kmpbook.domain.model.reference.CompositeReferenceRebalanceRecord
+import com.amond.kmpbook.domain.model.reference.CompositeReferenceState
 import com.amond.kmpbook.domain.model.game.GamePhase
 import com.amond.kmpbook.domain.model.game.Screen
 import com.amond.kmpbook.domain.model.game.TurnStep
@@ -25,6 +49,7 @@ import com.amond.kmpbook.domain.model.schedule.ScheduledEventOccurrence
 import com.amond.kmpbook.domain.model.trading.Order
 import com.amond.kmpbook.domain.model.trading.Trade
 import com.amond.kmpbook.domain.model.venue.MarketSession
+import com.amond.kmpbook.domain.data.InstrumentCatalogReference
 import com.amond.kmpbook.domain.simulation.event.EventEngineSnapshot
 import com.amond.kmpbook.domain.simulation.market.ExternalMarketForces
 import com.amond.kmpbook.domain.simulation.market.MacroEnvironment
@@ -53,6 +78,8 @@ import kotlinx.datetime.LocalDate
  */
 data class SimulatorUiState(
     val options: NewGameOptions,
+    /** 번들 및 활성 모드 종목팩의 순서와 SHA-256을 캠페인에 고정한다. */
+    val catalogReference: InstrumentCatalogReference,
     val phase: GamePhase,
     val screen: Screen,
     val currentTime: Instant,
@@ -61,8 +88,54 @@ data class SimulatorUiState(
     val stocks: List<StockDefinition>,
     /** PER·PSR·ROE 계산의 원천이며, 파생 지표 스냅샷은 저장하지 않는다. */
     val corporateFundamentals: Map<String, CorporateFundamentalState>,
-    /** AUM·괴리율 계산의 원천인 좌당 기준가와 존속 좌수 상태다. */
+    /** 개방형 ETF의 AUM·괴리율 계산 원천인 좌당 NAV와 설정·환매 좌수 상태다. */
     val fundFinancialStates: Map<String, FundFinancialState>,
+    /** 여러 상품이 공유하는 지수/기준 포트폴리오의 현재 구성·비중·대기 일정이다. */
+    val referencePortfolioStates: Map<String, ReferencePortfolioState>,
+    /** 기준 포트폴리오의 편입·편출·회전율을 재현하는 결정적 재조정 원장이다. */
+    val referencePortfolioLedger: List<ReferencePortfolioRecord>,
+    /** 일일 레버리지·인버스 상품의 전일 종가 기준점과 당일 누적 NAV 상태다. */
+    val dailyResetStates: Map<String, DailyResetState>,
+    /** 옵션 운용 상품의 기초 보유량·현금담보·옵션 레그와 roll 주기 상태다. */
+    val optionStrategyStates: Map<String, OptionStrategyState>,
+    /** 현금 기준수익과 주가지수 풋스프레드를 분리 계상하는 담보형 옵션 상태다. */
+    val cashCollateralizedPutSpreadStates: Map<String, CashCollateralizedPutSpreadState>,
+    /** ETN의 계약상 지표가치·발행수량·미지급 쿠폰·발행사 신용 상태다. */
+    val etnStates: Map<String, EtnState>,
+    /** ETN 쿠폰·발행/상환·계약 종료의 배치 원장이다. */
+    val etnLedger: List<EtnLedgerEntry>,
+    /** CEF의 총자산·고정 주식수·부채·우선주·UNII·시장 할인 상태다. */
+    val closedEndFundStates: Map<String, ClosedEndFundState>,
+    /** CEF 분배·자본행동·차입/상환의 배치 원장이다. */
+    val closedEndFundLedger: List<ClosedEndFundLedgerEntry>,
+    /** 채권·현금 benchmark의 금리곡선, 신용스프레드, 만기 ladder 상태다. */
+    val fixedIncomeReferenceStates: Map<String, FixedIncomeReferenceState>,
+    /** 만기 도래 sleeve의 편출·신규 만기군 편입 원장이다. */
+    val fixedIncomeRollLedger: List<FixedIncomeRollRecord>,
+    /** 실물·현물형 원자재 benchmark의 현물·담보·순 carry 상태다. */
+    val commoditySpotReferenceStates: Map<BenchmarkRef, CommoditySpotReferenceState>,
+    /** 선물형 benchmark의 만기곡선·계약비중·동적 sleeve 배분 상태다. */
+    val futuresReferenceStates: Map<BenchmarkRef, FuturesReferenceState>,
+    /** front/deferred 계약 교체를 재현하는 선물 roll 원장이다. */
+    val futuresRollLedger: List<FuturesRollRecord>,
+    /** 전술적 multi-sleeve benchmark의 목표 비중 변경 원장이다. */
+    val futuresAllocationLedger: List<FuturesAllocationRecord>,
+    /** 상세 holdings 규칙 전 주식 benchmark의 대표 구성·현재/목표 비중·요인 상태다. */
+    val equityReferenceStates: Map<BenchmarkRef, EquityReferenceState>,
+    /** 주식 대표 basket의 selection과 weight-only reweight를 구분하는 원장이다. */
+    val equityReferenceLedger: List<EquityReferenceRebalanceRecord>,
+    /** PCEF/YYY/YMAX 계열이 선택한 비거래 기초 펀드 basket과 현재/목표 비중이다. */
+    val fundOfFundsStates: Map<BenchmarkRef, FundOfFundsState>,
+    /** 펀드오브펀드의 구성 변경과 weight-only reweight를 구분하는 원장이다. */
+    val fundOfFundsRebalanceLedger: List<FundOfFundsRebalanceRecord>,
+    /** 시장중립·상대가치·추세 driver의 서명 노출과 bounded 신호 상태다. */
+    val alternativeRiskPremiaStates: Map<BenchmarkRef, AlternativeRiskPremiaState>,
+    /** 대체위험 프리미엄의 목표 노출 변경 원장이다. */
+    val alternativeRiskPremiaRebalanceLedger: List<AlternativeRiskPremiaRebalanceRecord>,
+    /** 실제 기업 및 typed benchmark sleeve를 합성한 동적 기준 상태다. */
+    val compositeReferenceStates: Map<BenchmarkRef, CompositeReferenceState>,
+    /** 복합 기준의 선정·재가중·회전율과 구성 해시 원장이다. */
+    val compositeReferenceRebalanceLedger: List<CompositeReferenceRebalanceRecord>,
     /** 거래정지·폐장 중 소비되지 않은 ETF·ETN 설정·환매 충격이다. */
     val pendingFundFlowRates: Map<String, Double>,
     val selectedStockId: String?,
@@ -88,10 +161,14 @@ data class SimulatorUiState(
     val readStockNewsEventIds: Map<String, Set<String>>,
     val portfolioSnapshots: List<PortfolioSnapshot>,
     val dailyStatistics: List<DailyPortfolioStat>,
+    /** 날짜별 이력 사이에서 진행 중인 장중 누적 벤치마크 값이다. */
+    val currentBenchmarkValue: Double,
     val benchmarkHistory: List<BenchmarkPoint>,
     val transactionCosts: List<TransactionCostRecord>,
     val realizedGains: List<RealizedGainRecord>,
     val fifoCostBasisBook: FifoCostBasisBook = FifoCostBasisBook(),
+    /** 보유·지급액과 무관하게 상품 분배 주기를 마지막으로 평가한 종목별 날짜다. */
+    val lastEvaluatedDistributionDateByStock: Map<String, LocalDate>,
     val dividendLedger: List<DividendLedgerEntry>,
     val foreignExchangeLedger: List<ForeignExchangeRecord>,
     val annualTaxLedgers: Map<Int, AnnualTaxLedger>,
@@ -222,9 +299,10 @@ data class SimulatorUiState(
     val annualTaxSummary: AnnualTaxLedger?
         get() = annualTaxLedgers[currentDate.year]
 
-    val benchmarkReturn: Double get() = benchmarkHistory.lastOrNull()?.cumulativeReturn ?: 0.0
+    val benchmarkReturn: Double get() = currentBenchmarkValue / BENCHMARK_START_VALUE - 1.0
 
     private companion object {
         const val UPCOMING_EVENT_LIMIT: Int = 12
+        const val BENCHMARK_START_VALUE: Double = 100.0
     }
 }

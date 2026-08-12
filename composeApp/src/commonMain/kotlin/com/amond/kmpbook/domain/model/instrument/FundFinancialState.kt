@@ -12,6 +12,8 @@ data class FundFinancialState(
     val indicativeValuePerUnit: Double,
     val unitsOrNotesOutstanding: Double,
     val lastNetFlow: Double,
+    val cumulativeUnitAdjustmentFactor: Double = 1.0,
+    val lastCorporateActionAccountingSequence: Long? = null,
     val asOf: Instant,
 ) {
     init {
@@ -20,5 +22,8 @@ data class FundFinancialState(
         require(indicativeValuePerUnit in MIN_FUND_REFERENCE_VALUE..MAX_FUND_REFERENCE_VALUE)
         require(unitsOrNotesOutstanding.isFinite() && unitsOrNotesOutstanding > 0.0)
         require(lastNetFlow.isFinite())
+        require(cumulativeUnitAdjustmentFactor.isFinite() && cumulativeUnitAdjustmentFactor > 0.0)
+        require(lastCorporateActionAccountingSequence == null || lastCorporateActionAccountingSequence > 0L)
+        if (lastCorporateActionAccountingSequence == null) require(cumulativeUnitAdjustmentFactor == 1.0)
     }
 }

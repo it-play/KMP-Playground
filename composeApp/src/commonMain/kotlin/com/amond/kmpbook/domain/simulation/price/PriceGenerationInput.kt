@@ -36,6 +36,21 @@ data class PriceGenerationInput(
     val fairValueTradingFraction: Double? = null,
     /** 기초자산 시장이 이 시간에 실제로 거래된 비율. 해외 ETF의 개장 갭에 사용한다. */
     val referenceTradingFraction: Double? = null,
+    /**
+     * 현재 구성 바스켓을 평가한 이번 구간의 비용 전 gross 로그수익률이다.
+     *
+     * 값이 있으면 편입·편출과 가중치를 소유한 포트폴리오 계층이 지역·섹터·수급
+     * 요인을 이미 합성했음을 뜻한다. 가격 엔진은 그 팩터를 다시 더하지 않고, FX·보수·상품
+     * 자체 사건·시장가/NAV 괴리만 별도로 반영한다.
+     */
+    val basketGrossLogReturn: Double? = null,
+    /**
+     * 상품 운용 엔진이 보수·금융비용까지 반영해 계산한 좌당 공정가치 로그수익률이다.
+     * 일일 reset, ETN 계약가치, CEF NAV처럼 상품 상태 자체가 수익률을 소유할 때 사용한다.
+     */
+    val productFairValueLogReturn: Double? = null,
+    /** 구성종목의 현재 지시배당률을 비중으로 합성한 연율. */
+    val basketAnnualIncomeYield: Double? = null,
     /** 상장시장 폐장 중 누적된 기초자산·환율 fair-value 로그수익률. 개장 시 한 번 적용한다. */
     val carriedReferenceLogReturn: Double = 0.0,
     /** 상장시장 폐장 중 누적된 상품 자체 사건의 가격 전용 로그수익률. */
@@ -53,9 +68,19 @@ data class PriceGenerationInput(
             "Daily base price must be positive and finite"
         }
         require(averageDailyVolume >= 0L) { "Average daily volume cannot be negative" }
-        require(dayOpen > 0.0 && dayHigh > 0.0 && dayLow > 0.0)
-        require(dayHigh >= max(previousPrice, dayOpen))
-        require(dayLow <= min(previousPrice, dayOpen))
+        val priceBoundaryContext =
+            "stock=${stock.id}, startTime=$startTime, previousPrice=$previousPrice, " +
+                "dailyBasePrice=$dailyBasePrice, dayOpen=$dayOpen, dayHigh=$dayHigh, " +
+                "dayLow=$dayLow, session=$session"
+        require(dayOpen > 0.0 && dayHigh > 0.0 && dayLow > 0.0) {
+            "Daily OHLC values must be positive: $priceBoundaryContext"
+        }
+        require(dayHigh >= max(previousPrice, dayOpen)) {
+            "Daily high must include previous price and open: $priceBoundaryContext"
+        }
+        require(dayLow <= min(previousPrice, dayOpen)) {
+            "Daily low must include previous price and open: $priceBoundaryContext"
+        }
         require(fxSensitivity.isFinite())
         require(regularTradingFraction in 0.0..1.0) {
             "Regular trading fraction must be in [0, 1]"
@@ -66,6 +91,21 @@ data class PriceGenerationInput(
         require(referenceTradingFraction == null || referenceTradingFraction in 0.0..1.0) {
             "Reference trading fraction must be in [0, 1]"
         }
+        require(basketGrossLogReturn == null || stock.isFundLike && basketGrossLogReturn.isFinite()) {
+            "Basket gross return requires a fund-like instrument and a finite value"
+        }
+        require(
+            productFairValueLogReturn == null ||
+                stock.isFundLike && productFairValueLogReturn.isFinite(),
+        ) { "Product fair-value return requires a fund-like instrument and a finite value" }
+        require(basketGrossLogReturn == null || productFairValueLogReturn == null) {
+            "A price interval cannot use both a gross benchmark basket and a net product fair value."
+        }
+        require(
+            basketAnnualIncomeYield == null ||
+                stock.isFundLike && basketAnnualIncomeYield.isFinite() &&
+                basketAnnualIncomeYield in 0.0..1.0,
+        ) { "Basket income yield requires a fund-like instrument and a value in [0, 1]" }
         require(carriedReferenceLogReturn.isFinite())
         require(carriedPriceDislocationLogReturn.isFinite())
         require(priceToReferenceLogGap.isFinite())

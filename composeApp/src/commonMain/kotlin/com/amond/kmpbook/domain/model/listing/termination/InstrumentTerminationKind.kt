@@ -9,7 +9,8 @@ enum class InstrumentTerminationKind(
     val noticePriority: Int,
 ) {
     CONTRACTUAL_MATURITY(0),
-    ISSUER_ACCELERATION(1),
-    OPTIONAL_CALL(2),
-    FUND_LIQUIDATION(3),
+    CREDIT_DEFAULT(1),
+    ISSUER_ACCELERATION(2),
+    OPTIONAL_CALL(3),
+    FUND_LIQUIDATION(4),
 }

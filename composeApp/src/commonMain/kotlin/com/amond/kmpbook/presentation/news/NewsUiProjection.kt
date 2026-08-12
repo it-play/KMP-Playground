@@ -436,27 +436,27 @@ private fun GameEvent.instrumentTerminationUi(
 
 private fun InstrumentTerminationKind.displayName(): String = when (this) {
     InstrumentTerminationKind.CONTRACTUAL_MATURITY -> "계약상 만기"
+    InstrumentTerminationKind.CREDIT_DEFAULT -> "발행사 신용사건"
     InstrumentTerminationKind.ISSUER_ACCELERATION -> "발행사 가속상환"
     InstrumentTerminationKind.OPTIONAL_CALL -> "선택적 조기상환"
     InstrumentTerminationKind.FUND_LIQUIDATION -> "펀드 청산"
 }
 
 private fun InstrumentTerminationValuationMethod.displayName(): String = when (this) {
-    InstrumentTerminationValuationMethod.FINAL_INDICATIVE_VALUE_PROXY -> "최종 지표가치 기준"
-    InstrumentTerminationValuationMethod.FINAL_NET_ASSET_VALUE_PROXY -> "최종 순자산가치 기준"
-    InstrumentTerminationValuationMethod.TRAILING_FIVE_SESSION_AVERAGE_WITH_RECOVERY ->
-        "최근 5거래일 평균 기준"
+    InstrumentTerminationValuationMethod.ETN_CONTRACT_SETTLEMENT -> "ETN 계약 상환액 기준"
+    InstrumentTerminationValuationMethod.ETN_CREDIT_DEFAULT_RECOVERY -> "ETN 신용사건 회수액 기준"
+    InstrumentTerminationValuationMethod.FINAL_NET_ASSET_VALUE -> "최종 순자산가치 기준"
 }
 
 private fun InstrumentTerminationValuationMethod.description(recoveryRate: Double?): String = when (this) {
-    InstrumentTerminationValuationMethod.FINAL_INDICATIVE_VALUE_PROXY ->
-        "종료 효력일 정규장 종가를 최종 지표가치의 캠페인 대용값으로 사용해요."
-    InstrumentTerminationValuationMethod.FINAL_NET_ASSET_VALUE_PROXY ->
-        "종료 효력일 정규장 종가를 최종 순자산가치의 캠페인 대용값으로 사용해요."
-    InstrumentTerminationValuationMethod.TRAILING_FIVE_SESSION_AVERAGE_WITH_RECOVERY -> {
-        val recovery = recoveryRate?.let { " 공시에 고정된 회수율 ${(it * 100).toInt()}%를 적용해요." }.orEmpty()
-        "최근 5개 거래일 종가 평균으로 지표가치를 근사해요.$recovery"
+    InstrumentTerminationValuationMethod.ETN_CONTRACT_SETTLEMENT ->
+        "상품 조건의 지표가치 관측창·상환 배수·미지급 쿠폰을 ETN 계약 원장에서 계산해요."
+    InstrumentTerminationValuationMethod.ETN_CREDIT_DEFAULT_RECOVERY -> {
+        val recovery = requireNotNull(recoveryRate)
+        "최종 지표가치에 공시에 확정된 회수율 ${(recovery * 100).toInt()}%를 적용해요."
     }
+    InstrumentTerminationValuationMethod.FINAL_NET_ASSET_VALUE ->
+        "펀드 회계 상태에 저장된 종료 효력일 최종 순자산가치로 계산해요."
 }
 
 private fun LocalDate.displayDate(): String =

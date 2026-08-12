@@ -1,10 +1,13 @@
 package com.amond.kmpbook.persistence.storage
 
+import com.amond.kmpbook.domain.data.InstrumentCatalogReference
+import com.amond.kmpbook.domain.data.InstrumentCatalogSourceReference
 import com.amond.kmpbook.domain.model.causal.CausalEconomicFactor
 import com.amond.kmpbook.domain.model.causal.CausalSignalDirection
 import com.amond.kmpbook.domain.model.causal.CausalTransmissionProfile
 import com.amond.kmpbook.domain.model.causal.MIN_CAUSAL_SIGNAL_STRENGTH
 import com.amond.kmpbook.domain.model.corporateaction.CorporateActionKind
+import com.amond.kmpbook.domain.model.corporateaction.CorporateActionCancellationReason
 import com.amond.kmpbook.domain.model.corporateaction.CorporateActionNewsTransition
 import com.amond.kmpbook.domain.model.corporateaction.CorporateActionSource
 import com.amond.kmpbook.domain.model.event.EventImpactCoveragePolicy
@@ -16,7 +19,52 @@ import com.amond.kmpbook.domain.model.event.EventSeverity
 import com.amond.kmpbook.domain.model.event.EventTradingHaltKind
 import com.amond.kmpbook.domain.model.event.EventType
 import com.amond.kmpbook.domain.model.event.ImpactDirection
+import com.amond.kmpbook.domain.model.fund.BenchmarkRef
+import com.amond.kmpbook.domain.model.fund.AlternativeRiskPremiaStrategyFamily
+import com.amond.kmpbook.domain.model.fund.CompositeSleeveDirection
+import com.amond.kmpbook.domain.model.fund.EquityMethodologyProfile
+import com.amond.kmpbook.domain.model.fund.EquityReferenceRegion
+import com.amond.kmpbook.domain.model.fund.FundLegalStructure
+import com.amond.kmpbook.domain.model.fund.FundOfFundsCategory
+import com.amond.kmpbook.domain.model.fund.FundOfFundsUniverse
+import com.amond.kmpbook.domain.model.fund.FundReferenceExposure
+import com.amond.kmpbook.domain.model.fund.FundReplicationMode
+import com.amond.kmpbook.domain.model.fund.FundReturnTransform
+import com.amond.kmpbook.domain.model.fund.FundReturnVariant
+import com.amond.kmpbook.domain.model.fund.MethodologyEquitySector
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioActionKind
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioState
+import com.amond.kmpbook.domain.model.fundproduct.DailyResetCalendar
+import com.amond.kmpbook.domain.model.fundproduct.DailyResetLifecycle
+import com.amond.kmpbook.domain.model.fundproduct.DailyResetModelParameterOrigin
+import com.amond.kmpbook.domain.model.fundproduct.DailyResetReferenceKind
+import com.amond.kmpbook.domain.model.fundproduct.DailyResetState
+import com.amond.kmpbook.domain.model.fundproduct.DailyResetTermsProvenance
+import com.amond.kmpbook.domain.model.fundproduct.DirectReferenceTerminationPolicy
+import com.amond.kmpbook.domain.model.fundproduct.DirectReferenceTerminationRuleProvenance
+import com.amond.kmpbook.domain.model.fundproduct.CashCollateralizedPutSpreadLifecycle
+import com.amond.kmpbook.domain.model.fundproduct.CashCollateralizedPutSpreadState
+import com.amond.kmpbook.domain.model.fundproduct.OptionPremiumModelParameterOrigin
+import com.amond.kmpbook.domain.model.fundproduct.OptionRollCalendar
+import com.amond.kmpbook.domain.model.fundproduct.OptionStrategyLifecycle
+import com.amond.kmpbook.domain.model.fundproduct.OptionStrategyKind
+import com.amond.kmpbook.domain.model.fundproduct.OptionStrategyState
+import com.amond.kmpbook.domain.model.fundproduct.OptionStrategyTermsProvenance
+import com.amond.kmpbook.domain.model.fundstructure.ClosedEndFundDistributionPolicy
+import com.amond.kmpbook.domain.model.fundstructure.ClosedEndFundCapitalActionKind
+import com.amond.kmpbook.domain.model.fundstructure.ClosedEndFundFinancingActionKind
+import com.amond.kmpbook.domain.model.fundstructure.ClosedEndFundLedgerKind
+import com.amond.kmpbook.domain.model.fundstructure.ClosedEndFundState
+import com.amond.kmpbook.domain.model.fundstructure.EtnCouponKind
+import com.amond.kmpbook.domain.model.fundstructure.EtnCreditEvent
+import com.amond.kmpbook.domain.model.fundstructure.EtnLedgerKind
+import com.amond.kmpbook.domain.model.fundstructure.EtnLifecycle
+import com.amond.kmpbook.domain.model.fundstructure.EtnState
+import com.amond.kmpbook.domain.model.fundstructure.EtnSettlementValuationMethod
+import com.amond.kmpbook.domain.model.fundstructure.FundStructureModelParameterOrigin
+import com.amond.kmpbook.domain.model.fundstructure.FundStructureTermsProvenance
 import com.amond.kmpbook.domain.model.instrument.EtfExposureRegion
+import com.amond.kmpbook.domain.model.instrument.InstrumentType
 import com.amond.kmpbook.domain.model.instrument.MAX_FUND_REFERENCE_VALUE
 import com.amond.kmpbook.domain.model.instrument.MIN_FUND_REFERENCE_VALUE
 import com.amond.kmpbook.domain.model.listing.alert.InvestmentAlertLevel
@@ -25,19 +73,43 @@ import com.amond.kmpbook.domain.model.listing.termination.InstrumentTerminationK
 import com.amond.kmpbook.domain.model.listing.termination.InstrumentTerminationValuationMethod
 import com.amond.kmpbook.domain.model.market.IndustrySegment
 import com.amond.kmpbook.domain.model.market.Market
+import com.amond.kmpbook.domain.model.market.Currency
 import com.amond.kmpbook.domain.model.market.ReferenceCurrency
 import com.amond.kmpbook.domain.model.market.Sector
+import com.amond.kmpbook.domain.model.reference.CreditQuality
+import com.amond.kmpbook.domain.model.reference.AlternativeRiskPremiaState
+import com.amond.kmpbook.domain.model.reference.AlternativeRiskPremiaActionKind
+import com.amond.kmpbook.domain.model.reference.CommodityAssetClass
+import com.amond.kmpbook.domain.model.reference.CommoditySpotReferenceState
+import com.amond.kmpbook.domain.model.reference.CompositeReferenceActionKind
+import com.amond.kmpbook.domain.model.reference.CompositeReferenceState
+import com.amond.kmpbook.domain.model.reference.FixedIncomeInstrumentKind
+import com.amond.kmpbook.domain.model.reference.FixedIncomeReferenceState
+import com.amond.kmpbook.domain.model.reference.EquityReferenceActionKind
+import com.amond.kmpbook.domain.model.reference.EquityReferenceState
+import com.amond.kmpbook.domain.model.reference.EquityReferenceStyleFactor
+import com.amond.kmpbook.domain.model.reference.FuturesAllocationMode
+import com.amond.kmpbook.domain.model.reference.FuturesPortfolioStyle
+import com.amond.kmpbook.domain.model.reference.FuturesPriceReturnConvention
+import com.amond.kmpbook.domain.model.reference.FuturesReferenceState
+import com.amond.kmpbook.domain.model.reference.FuturesRollCalendar
+import com.amond.kmpbook.domain.model.reference.FundOfFundsActionKind
+import com.amond.kmpbook.domain.model.reference.FundOfFundsState
+import com.amond.kmpbook.domain.model.reference.YieldCurveTenor
 import com.amond.kmpbook.domain.model.marketaction.MarketActionKind
 import com.amond.kmpbook.domain.model.marketaction.MarketActionTransition
 import com.amond.kmpbook.domain.model.protection.core.TradingHaltReason
 import com.amond.kmpbook.domain.model.protection.core.TradingHaltStatus
 import com.amond.kmpbook.domain.model.schedule.ScheduledEventKind
+import com.amond.kmpbook.domain.tax.core.TaxCategory
+import com.amond.kmpbook.domain.tax.core.TaxJurisdiction
 import com.amond.kmpbook.modding.model.ActiveModConfiguration
 import com.amond.kmpbook.persistence.model.GameSaveEnvelope
 import com.amond.kmpbook.persistence.model.GameSaveError
 import com.amond.kmpbook.persistence.model.GameSaveErrorCode
 import com.amond.kmpbook.persistence.model.GameSaveCatalog
 import com.amond.kmpbook.persistence.model.GameSaveEntry
+import com.amond.kmpbook.persistence.model.GameSaveMetadata
 import com.amond.kmpbook.persistence.result.GameLoadFailure
 import com.amond.kmpbook.persistence.result.GameLoadNotFound
 import com.amond.kmpbook.persistence.result.GameLoadResult
@@ -49,7 +121,7 @@ import com.amond.kmpbook.persistence.result.GameSaveDeleted
 import com.amond.kmpbook.persistence.result.GameSaveFailure
 import com.amond.kmpbook.persistence.result.GameSaveResult
 import com.amond.kmpbook.persistence.result.GameSaveSuccess
-import com.amond.kmpbook.persistence.validation.validateSimulatorUiState
+import com.amond.kmpbook.persistence.validation.validateSimulatorUiStateIntrinsic
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
 import com.google.gson.Gson
@@ -62,27 +134,40 @@ import com.google.gson.Strictness
 import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonToken
 import java.awt.Desktop
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.IOException
-import java.io.StringReader
-import java.nio.ByteBuffer
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
 import java.nio.channels.FileChannel
-import java.nio.charset.CharacterCodingException
+import java.nio.channels.Channels
 import java.nio.charset.CodingErrorAction
+import java.nio.charset.CharacterCodingException
 import java.nio.charset.StandardCharsets
 import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.attribute.PosixFilePermissions
+import java.security.MessageDigest
+import java.util.Arrays
+import java.util.EnumSet
 import kotlin.time.Instant
+import kotlin.time.Duration.Companion.hours
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.LocalDate
 
 private const val MAX_GAME_SAVE_FILE_BYTES: Long = 128L * 1024L * 1024L
+private const val MAX_UNCOMPRESSED_GAME_SAVE_BYTES: Long = 256L * 1024L * 1024L
 private const val MAX_SAVED_FUND_FLOW_RATE: Double = 0.20
+private const val MIN_SAVED_FUND_REFERENCE_FLOAT_MARKET_VALUE: Double = 1.0
+private const val MAX_SAVED_FUND_REFERENCE_FLOAT_MARKET_VALUE: Double = 1e20
 
 private const val GAME_SAVE_EXTENSION: String = ".ml2"
 private const val MAX_GAME_SAVE_NAME_LENGTH: Int = 80
@@ -140,7 +225,7 @@ actual class GameSaveStorage actual constructor() {
                 ),
             )
         }
-        val validationError = validateSimulatorUiState(state)
+        val validationError = validateSimulatorUiStateIntrinsic(state)
         if (validationError != null) {
             return@withContext GameSaveFailure(
                 path = targetPath.toString(),
@@ -155,46 +240,75 @@ actual class GameSaveStorage actual constructor() {
             savedAt = savedAt,
             state = state,
         )
-        val bytes = try {
-            gson.toJson(envelope).toByteArray(StandardCharsets.UTF_8)
-        } catch (error: RuntimeException) {
-            return@withContext GameSaveFailure(
+        var temporaryPath: Path? = null
+        try {
+            Files.createDirectories(targetDirectory)
+            temporaryPath = createPrivateTemporaryFile(
+                targetDirectory,
+                ".market-ledger-",
+                ".tmp",
+            )
+            val frameHeader: GameSaveFrameHeader
+            val physicalBytes: Long
+            FileChannel.open(
+                temporaryPath,
+                StandardOpenOption.READ,
+                StandardOpenOption.WRITE,
+                StandardOpenOption.TRUNCATE_EXISTING,
+            ).use { channel ->
+                writeFully(channel, java.nio.ByteBuffer.wrap(ByteArray(GameSaveFrameHeader.BYTE_SIZE)))
+                val physicalPayload = LimitedCountingOutputStream(
+                    BufferedOutputStream(Channels.newOutputStream(channel), SAVE_STREAM_BUFFER_BYTES),
+                    MAX_GAME_SAVE_FILE_BYTES - GameSaveFrameHeader.BYTE_SIZE,
+                )
+                val gzip = LevelSixGzipOutputStream(physicalPayload)
+                val raw = DigestingLimitedOutputStream(gzip, MAX_UNCOMPRESSED_GAME_SAVE_BYTES)
+                val writer = OutputStreamWriter(raw, StandardCharsets.UTF_8)
+                val jsonWriter = gson.newJsonWriter(writer).apply { strictness = Strictness.STRICT }
+                gson.toJson(envelope, GameSaveEnvelope::class.java, jsonWriter)
+                jsonWriter.flush()
+                gzip.finish()
+                gzip.flush()
+                physicalPayload.flush()
+                frameHeader = GameSaveFrameHeader(
+                    schemaVersion = envelope.schemaVersion,
+                    savedAt = envelope.savedAt,
+                    gameTime = envelope.state.currentTime,
+                    turn = envelope.state.turn,
+                    compressedLength = physicalPayload.count,
+                    rawLength = raw.count,
+                    rawSha256 = raw.digest(),
+                )
+                validateFrameMetadata(frameHeader)
+                physicalBytes = GameSaveFrameHeader.BYTE_SIZE + physicalPayload.count
+                channel.position(0L)
+                writeFully(channel, java.nio.ByteBuffer.wrap(frameHeader.encode()))
+                channel.truncate(physicalBytes)
+                channel.force(true)
+            }
+
+            val usedAtomicMove = moveIntoPlace(temporaryPath, targetPath)
+            temporaryPath = null
+            forceDirectoryBestEffort(targetDirectory)
+            GameSaveSuccess(
                 path = targetPath.toString(),
-                error = GameSaveError(
+                metadata = envelope.metadata(),
+                bytesWritten = physicalBytes,
+                usedAtomicMove = usedAtomicMove,
+            )
+        } catch (error: UncompressedSaveTooLargeException) {
+            GameSaveFailure(
+                path = targetPath.toString(),
+                error = uncompressedTooLargeError(error.actualSize),
+            )
+        } catch (error: JsonParseException) {
+            GameSaveFailure(
+                path = targetPath.toString(),
+                error = sizeLimitError(error) ?: GameSaveError(
                     code = GameSaveErrorCode.SERIALIZATION_FAILED,
                     message = "게임 상태를 JSON으로 변환하지 못했습니다: ${safeMessage(error)}",
                     causeType = error::class.qualifiedName,
                 ),
-            )
-        }
-        if (bytes.size.toLong() > MAX_GAME_SAVE_FILE_BYTES) {
-            return@withContext GameSaveFailure(
-                path = targetPath.toString(),
-                error = tooLargeError(bytes.size.toLong()),
-            )
-        }
-
-        var temporaryPath: Path? = null
-        try {
-            Files.createDirectories(targetDirectory)
-            temporaryPath = Files.createTempFile(targetDirectory, ".market-ledger-", ".tmp")
-            Files.newOutputStream(
-                temporaryPath,
-                StandardOpenOption.WRITE,
-                StandardOpenOption.TRUNCATE_EXISTING,
-            ).use { stream ->
-                stream.write(bytes)
-                stream.flush()
-            }
-            FileChannel.open(temporaryPath, StandardOpenOption.WRITE).use { channel -> channel.force(true) }
-
-            val usedAtomicMove = moveIntoPlace(temporaryPath, targetPath)
-            temporaryPath = null
-            GameSaveSuccess(
-                path = targetPath.toString(),
-                metadata = envelope.metadata(),
-                bytesWritten = bytes.size.toLong(),
-                usedAtomicMove = usedAtomicMove,
             )
         } catch (error: SecurityException) {
             GameSaveFailure(
@@ -204,12 +318,14 @@ actual class GameSaveStorage actual constructor() {
         } catch (error: IOException) {
             GameSaveFailure(
                 path = targetPath.toString(),
-                error = ioError("저장 파일을 안전하게 쓰지 못했습니다", error),
+                error = sizeLimitError(error)
+                    ?: ioError("저장 파일을 안전하게 쓰지 못했습니다", error),
             )
         } catch (error: RuntimeException) {
             GameSaveFailure(
                 path = targetPath.toString(),
-                error = ioError("저장 파일 처리 중 오류가 발생했습니다", error),
+                error = sizeLimitError(error)
+                    ?: ioError("저장 파일 처리 중 오류가 발생했습니다", error),
             )
         } finally {
             temporaryPath?.let { path -> runCatching { Files.deleteIfExists(path) } }
@@ -228,6 +344,7 @@ actual class GameSaveStorage actual constructor() {
                 ),
             )
         }
+        var rawTemporaryPath: Path? = null
         try {
             if (!Files.exists(targetPath, LinkOption.NOFOLLOW_LINKS)) {
                 return@withContext GameLoadNotFound(targetPath.toString())
@@ -245,13 +362,79 @@ actual class GameSaveStorage actual constructor() {
             if (declaredSize > MAX_GAME_SAVE_FILE_BYTES) {
                 return@withContext GameLoadFailure(targetPath.toString(), tooLargeError(declaredSize))
             }
-            val bytes = readBounded(targetPath)
-            if (bytes.isEmpty()) {
-                return@withContext corrupted(targetPath, "저장 파일이 비어 있습니다.")
+            if (declaredSize <= GameSaveFrameHeader.BYTE_SIZE) {
+                return@withContext corrupted(targetPath, "저장 프레임 또는 payload가 비어 있습니다.")
             }
-            val json = decodeUtf8Strict(bytes)
-            val envelope = parseEnvelope(json)
-            val validationError = validateSimulatorUiState(envelope.state)
+            val rawPath = createPrivateTemporaryFile(
+                targetDirectory,
+                ".market-ledger-raw-",
+                ".tmp",
+            )
+            rawTemporaryPath = rawPath
+            val header = Files.newInputStream(targetPath, StandardOpenOption.READ).use { fileInput ->
+                val buffered = BufferedInputStream(fileInput, SAVE_STREAM_BUFFER_BYTES)
+                val header = readFrameHeader(buffered)
+                validateFrameLengths(header, declaredSize)
+                if (header.schemaVersion != CURRENT_GAME_SAVE_SCHEMA_VERSION) {
+                    throw UnsupportedSchemaException(header.schemaVersion)
+                }
+                validateFrameMetadata(header)
+                val payload = ExactLengthInputStream(buffered, header.compressedLength)
+                val gzip = SingleMemberGzipInputStream(payload)
+                val raw = BoundedDigestInputStream(gzip, MAX_UNCOMPRESSED_GAME_SAVE_BYTES)
+                BufferedOutputStream(
+                    Files.newOutputStream(
+                        rawPath,
+                        StandardOpenOption.WRITE,
+                        StandardOpenOption.TRUNCATE_EXISTING,
+                    ),
+                    SAVE_STREAM_BUFFER_BYTES,
+                ).use { output ->
+                    val buffer = ByteArray(SAVE_STREAM_BUFFER_BYTES)
+                    while (true) {
+                        val read = raw.read(buffer)
+                        if (read < 0) break
+                        output.write(buffer, 0, read)
+                    }
+                }
+                if (payload.remaining != 0L || buffered.read() != -1 ||
+                    raw.count != header.rawLength ||
+                    !MessageDigest.isEqual(raw.digest(), header.rawSha256)
+                ) {
+                    throw JsonParseException("저장 payload의 선언 길이 또는 SHA-256이 일치하지 않습니다.")
+                }
+                if (Files.size(rawPath) != header.rawLength) {
+                    throw JsonParseException("임시 raw payload 길이가 저장 프레임과 다릅니다.")
+                }
+                FileChannel.open(rawPath, StandardOpenOption.WRITE).use { channel ->
+                    channel.force(true)
+                }
+                header
+            }
+            val validatedMetadata = readStrictRawJson(rawPath, ::validateEnvelopeJson)
+            if (!header.matches(validatedMetadata)) {
+                throw JsonParseException("저장 프레임 metadata와 JSON envelope가 일치하지 않습니다.")
+            }
+            val secondPassRaw = BoundedDigestInputStream(
+                BufferedInputStream(
+                    Files.newInputStream(rawPath, StandardOpenOption.READ),
+                    SAVE_STREAM_BUFFER_BYTES,
+                ),
+                MAX_UNCOMPRESSED_GAME_SAVE_BYTES,
+            )
+            val envelope = secondPassRaw.use { input ->
+                val decoder = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                JsonReader(InputStreamReader(input, decoder)).use(::parseTypedEnvelope)
+            }
+            if (secondPassRaw.count != header.rawLength ||
+                !MessageDigest.isEqual(secondPassRaw.digest(), header.rawSha256) ||
+                envelope.metadata() != validatedMetadata || !header.matches(envelope.metadata())
+            ) {
+                throw JsonParseException("검증·복원 pass 사이에 raw payload 또는 metadata가 달라졌습니다.")
+            }
+            val validationError = validateSimulatorUiStateIntrinsic(envelope.state)
             if (validationError != null) {
                 return@withContext GameLoadFailure(
                     path = targetPath.toString(),
@@ -262,7 +445,7 @@ actual class GameSaveStorage actual constructor() {
                 path = targetPath.toString(),
                 state = envelope.state,
                 metadata = envelope.metadata(),
-                bytesRead = bytes.size.toLong(),
+                bytesRead = declaredSize,
             )
         } catch (error: UnsupportedSchemaException) {
             GameLoadFailure(
@@ -273,18 +456,34 @@ actual class GameSaveStorage actual constructor() {
                     causeType = error::class.qualifiedName,
                 ),
             )
+        } catch (error: UncompressedSaveTooLargeException) {
+            GameLoadFailure(
+                path = targetPath.toString(),
+                error = uncompressedTooLargeError(error.actualSize),
+            )
+        } catch (error: CorruptSaveFrameException) {
+            corrupted(targetPath, "저장 압축 프레임이 손상되었습니다: ${safeMessage(error)}", error)
         } catch (error: CharacterCodingException) {
             corrupted(targetPath, "저장 파일이 올바른 UTF-8이 아닙니다.", error)
         } catch (error: JsonParseException) {
-            corrupted(targetPath, "저장 데이터가 손상되었습니다: ${safeMessage(error)}", error)
+            sizeLimitError(error)?.let { limitError ->
+                GameLoadFailure(targetPath.toString(), limitError)
+            } ?: corrupted(targetPath, "저장 데이터가 손상되었습니다: ${safeMessage(error)}", error)
         } catch (error: IllegalStateException) {
             corrupted(targetPath, "저장 파일 구조가 올바르지 않습니다: ${safeMessage(error)}", error)
         } catch (error: SecurityException) {
             GameLoadFailure(targetPath.toString(), accessError(error))
         } catch (error: IOException) {
-            GameLoadFailure(targetPath.toString(), ioError("저장 파일을 읽지 못했습니다", error))
+            GameLoadFailure(
+                targetPath.toString(),
+                sizeLimitError(error) ?: ioError("저장 파일을 읽지 못했습니다", error),
+            )
         } catch (error: RuntimeException) {
-            corrupted(targetPath, "저장 상태를 복원하지 못했습니다: ${safeMessage(error)}", error)
+            sizeLimitError(error)?.let { limitError ->
+                GameLoadFailure(targetPath.toString(), limitError)
+            } ?: corrupted(targetPath, "저장 상태를 복원하지 못했습니다: ${safeMessage(error)}", error)
+        } finally {
+            rawTemporaryPath?.let { path -> runCatching { Files.deleteIfExists(path) } }
         }
     }
 
@@ -384,15 +583,26 @@ actual class GameSaveStorage actual constructor() {
     private fun readCatalogEntry(path: Path): GameSaveEntry? = try {
         val size = Files.size(path)
         if (size > MAX_GAME_SAVE_FILE_BYTES || size == 0L) return null
-        val envelope = parseEnvelope(decodeUtf8Strict(readBounded(path)))
-        if (validateSimulatorUiState(envelope.state) != null) return null
+        if (size <= GameSaveFrameHeader.BYTE_SIZE) return null
+        val header = Files.newInputStream(path, StandardOpenOption.READ).use { input ->
+            readFrameHeader(BufferedInputStream(input, GameSaveFrameHeader.BYTE_SIZE))
+        }
+        validateFrameLengths(header, size)
+        if (header.schemaVersion != CURRENT_GAME_SAVE_SCHEMA_VERSION) return null
+        validateFrameMetadata(header)
         val fileName = path.fileName.toString()
         GameSaveEntry(
             name = fileName.dropLast(GAME_SAVE_EXTENSION.length),
             fileName = fileName,
             path = path.toString(),
             sizeBytes = size,
-            metadata = envelope.metadata(),
+            metadata = GameSaveMetadata(
+                format = GAME_SAVE_FORMAT_ID,
+                schemaVersion = header.schemaVersion,
+                savedAt = header.savedAt,
+                gameTime = header.gameTime,
+                turn = header.turn,
+            ),
         )
     } catch (_: RuntimeException) {
         null
@@ -400,30 +610,12 @@ actual class GameSaveStorage actual constructor() {
         null
     }
 
-    private fun readBounded(path: Path): ByteArray {
-        val maximumRead = (MAX_GAME_SAVE_FILE_BYTES + 1L).toInt()
-        val bytes = Files.newInputStream(path, StandardOpenOption.READ).use { input ->
-            input.readNBytes(maximumRead)
-        }
-        if (bytes.size.toLong() > MAX_GAME_SAVE_FILE_BYTES) throw SaveFileTooLargeException(bytes.size.toLong())
-        return bytes
-    }
-
-    private fun decodeUtf8Strict(bytes: ByteArray): String = StandardCharsets.UTF_8
-        .newDecoder()
-        .onMalformedInput(CodingErrorAction.REPORT)
-        .onUnmappableCharacter(CodingErrorAction.REPORT)
-        .decode(ByteBuffer.wrap(bytes))
-        .toString()
-
-    private fun parseEnvelope(json: String): GameSaveEnvelope {
-        val reader = JsonReader(StringReader(json)).apply { strictness = Strictness.STRICT }
-        val root = reader.use { strictReader ->
-            val parsed = JsonParser.parseReader(strictReader)
-            if (strictReader.peek() != JsonToken.END_DOCUMENT) {
+    private fun validateEnvelopeJson(reader: JsonReader): GameSaveMetadata {
+        reader.strictness = Strictness.STRICT
+        val root = JsonParser.parseReader(reader).also {
+            if (reader.peek() != JsonToken.END_DOCUMENT) {
                 throw JsonParseException("JSON 뒤에 추가 데이터가 있습니다.")
             }
-            parsed
         }
         if (!root.isJsonObject) throw JsonParseException("저장 파일 루트가 JSON 객체가 아닙니다.")
         val objectValue = root.asJsonObject
@@ -451,17 +643,42 @@ actual class GameSaveStorage actual constructor() {
             .filterNot(CURRENT_NULLABLE_STATE_FIELDS::contains)
             .forEach(stateJson::required)
         validateCurrentStateJson(stateJson)
-        val state = gson.fromJson(stateJson, SimulatorUiState::class.java)
-            ?: throw JsonParseException("state를 복원할 수 없습니다.")
-        return GameSaveEnvelope(
+        return GameSaveMetadata(
             format = format,
             schemaVersion = schemaVersion,
             savedAt = savedAt,
-            state = state,
+            gameTime = stateJson.requiredInstant("currentTime", "state.currentTime"),
+            turn = stateJson.requiredLong("turn", "state.turn"),
         )
     }
 
+    private fun parseTypedEnvelope(reader: JsonReader): GameSaveEnvelope {
+        reader.strictness = Strictness.STRICT
+        val envelope: GameSaveEnvelope = gson.fromJson(reader, GameSaveEnvelope::class.java)
+            ?: throw JsonParseException("저장 envelope를 복원할 수 없습니다.")
+        if (reader.peek() != JsonToken.END_DOCUMENT) {
+            throw JsonParseException("JSON 뒤에 추가 데이터가 있습니다.")
+        }
+        return envelope
+    }
+
+    private fun <T> readStrictRawJson(path: Path, block: (JsonReader) -> T): T =
+        Files.newInputStream(path, StandardOpenOption.READ).use { input ->
+            val decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+            JsonReader(InputStreamReader(BufferedInputStream(input), decoder)).use(block)
+        }
+
     private fun validateCurrentStateJson(state: JsonObject) {
+        val currentBenchmarkValue = state.requiredFiniteDouble(
+            "currentBenchmarkValue",
+            "state.currentBenchmarkValue",
+        )
+        if (currentBenchmarkValue <= 0.0) {
+            throw JsonParseException("필드 'state.currentBenchmarkValue'는 양수여야 합니다.")
+        }
+
         fun JsonObject.requireExternalMarketForces(path: String) {
             requireExactFields(EXTERNAL_MARKET_FORCES_FIELDS, path)
             EXTERNAL_MARKET_FORCES_FIELDS.forEach { field ->
@@ -469,6 +686,268 @@ actual class GameSaveStorage actual constructor() {
                 if (value !in 0.0..1.0) {
                     throw JsonParseException("필드 '$path.$field'는 0과 1 사이여야 합니다.")
                 }
+            }
+        }
+
+        fun JsonObject.requireReferencePortfolioPosition(path: String) {
+            requireExactFields(REFERENCE_PORTFOLIO_POSITION_FIELDS, path)
+            requiredBoundedNonBlankString("assetId", "$path.assetId", MAX_REFERENCE_ASSET_ID_LENGTH)
+            listOf("currentWeight", "targetWeight").forEach { field ->
+                val weight = requiredFiniteDouble(field, "$path.$field")
+                if (weight !in MIN_FUND_CONSTITUENT_WEIGHT..1.0) {
+                    throw JsonParseException("필드 '$path.$field'가 허용 비중 범위를 벗어났습니다.")
+                }
+            }
+            val referenceValue = requiredFiniteDouble(
+                "referenceFloatMarketValue",
+                "$path.referenceFloatMarketValue",
+            )
+            if (referenceValue !in
+                MIN_SAVED_FUND_REFERENCE_FLOAT_MARKET_VALUE..MAX_SAVED_FUND_REFERENCE_FLOAT_MARKET_VALUE
+            ) {
+                throw JsonParseException(
+                    "필드 '$path.referenceFloatMarketValue'가 허용 기준 시가가치 범위를 벗어났습니다.",
+                )
+            }
+            requiredLocalDate("enteredOn", "$path.enteredOn")
+            val rank = requiredInt("selectionRank")
+            if (rank !in 1..MAX_FUND_SELECTION_RANK) {
+                throw JsonParseException("필드 '$path.selectionRank'가 허용 범위를 벗어났습니다.")
+            }
+        }
+
+        fun JsonObject.requireReferencePortfolioPositions(field: String, path: String) {
+            val positions = requiredArray(field)
+            if (positions.size() == 0 || positions.size() > EquityMethodologyProfile.MAX_CONSTITUENTS) {
+                throw JsonParseException(
+                    "필드 '$path'는 1~${EquityMethodologyProfile.MAX_CONSTITUENTS}개 항목이어야 합니다.",
+                )
+            }
+            positions.forEachIndexed { index, positionElement ->
+                val positionPath = "$path[$index]"
+                positionElement.requireObject(positionPath)
+                    .requireReferencePortfolioPosition(positionPath)
+            }
+        }
+
+        fun JsonObject.requireReferenceAssetIdArray(field: String, path: String) {
+            val ids = requiredArray(field)
+            if (ids.size() > EquityMethodologyProfile.MAX_CONSTITUENTS) {
+                throw JsonParseException("필드 '$path'의 항목이 너무 많습니다.")
+            }
+            ids.forEachIndexed { index, idElement ->
+                val idPath = "$path[$index]"
+                val id = idElement.requireStrictString(idPath)
+                if (id.isBlank() || id.length > MAX_REFERENCE_ASSET_ID_LENGTH) {
+                    throw JsonParseException("필드 '$idPath'의 길이가 올바르지 않습니다.")
+                }
+            }
+        }
+
+        fun JsonObject.requireEquityReferenceAssetIds(field: String, path: String): List<String> {
+            val ids = requiredArray(field)
+            if (ids.size() > EquityReferenceState.MAX_REPRESENTATIVE_BASKET_SIZE) {
+                throw JsonParseException("필드 '$path'의 항목이 너무 많습니다.")
+            }
+            return ids.mapIndexed { index, element ->
+                val idPath = "$path[$index]"
+                element.requireStrictString(idPath).also { id ->
+                    if (!EQUITY_REFERENCE_ASSET_ID_PATTERN.matches(id)) {
+                        throw JsonParseException("필드 '$idPath' 형식이 유효하지 않습니다.")
+                    }
+                }
+            }.also { values ->
+                if (values != values.sorted() || values.distinct() != values) {
+                    throw JsonParseException("필드 '$path'는 정렬된 고유 ID 목록이어야 합니다.")
+                }
+            }
+        }
+
+        fun JsonObject.requireFundOfFundsCandidateIds(field: String, path: String): List<String> {
+            val ids = requiredArray(field)
+            if (ids.size() > FundOfFundsState.MAX_POSITIONS) {
+                throw JsonParseException("필드 '$path'의 항목이 너무 많습니다.")
+            }
+            return ids.mapIndexed { index, element ->
+                val idPath = "$path[$index]"
+                element.requireStrictString(idPath).also { id ->
+                    if (!FUND_OF_FUNDS_CANDIDATE_ID_PATTERN.matches(id)) {
+                        throw JsonParseException("필드 '$idPath' 형식이 유효하지 않습니다.")
+                    }
+                }
+            }.also { values ->
+                if (values != values.sorted() || values.distinct() != values) {
+                    throw JsonParseException("필드 '$path'는 정렬된 고유 ID 목록이어야 합니다.")
+                }
+            }
+        }
+
+        fun JsonObject.requireCompositeMemberIds(field: String, path: String): List<String> {
+            val ids = requiredArray(field)
+            if (ids.size() > CompositeReferenceState.MAX_POSITIONS) {
+                throw JsonParseException("필드 '$path'의 항목이 너무 많습니다.")
+            }
+            return ids.mapIndexed { index, element ->
+                val idPath = "$path[$index]"
+                element.requireStrictString(idPath).also { id ->
+                    if (!COMPOSITE_MEMBER_ID_PATTERN.matches(id)) {
+                        throw JsonParseException("필드 '$idPath' 형식이 유효하지 않습니다.")
+                    }
+                }
+            }.also { values ->
+                if (values != values.sorted() || values.distinct() != values) {
+                    throw JsonParseException("필드 '$path'는 정렬된 고유 ID 목록이어야 합니다.")
+                }
+            }
+        }
+
+        fun JsonObject.requireStructuredReferenceMeasures(path: String) {
+            if (requiredFiniteDouble(
+                    "estimatedAnnualIncomeYield",
+                    "$path.estimatedAnnualIncomeYield",
+                ) !in 0.0..1.0 ||
+                requiredFiniteDouble("grossExposure", "$path.grossExposure") !in 0.0..10.0 ||
+                requiredFiniteDouble("netExposure", "$path.netExposure") !in -10.0..10.0 ||
+                requiredFiniteDouble(
+                    "effectiveDurationYears",
+                    "$path.effectiveDurationYears",
+                ) !in -50.0..50.0
+            ) {
+                throw JsonParseException("필드 '$path'의 소득·총/순노출·듀레이션 범위가 유효하지 않습니다.")
+            }
+            listOf("bootstrapCompositionHash", "profileFingerprint", "compositionHash").forEach { field ->
+                if (!REFERENCE_COMPOSITION_HASH.matches(requiredStrictString(field, "$path.$field"))) {
+                    throw JsonParseException("필드 '$path.$field'는 소문자 16자리 16진 해시여야 합니다.")
+                }
+            }
+        }
+
+        fun JsonObject.requireStructuredReferenceRecordMeasures(path: String) {
+            listOf("compositionHashBefore", "compositionHashAfter").forEach { field ->
+                if (!REFERENCE_COMPOSITION_HASH.matches(requiredStrictString(field, "$path.$field"))) {
+                    throw JsonParseException("필드 '$path.$field'는 소문자 16자리 16진 해시여야 합니다.")
+                }
+            }
+            if (requiredFiniteDouble("turnoverRate", "$path.turnoverRate") !in 0.0..10.0 ||
+                requiredFiniteDouble(
+                    "resultingGrossExposure",
+                    "$path.resultingGrossExposure",
+                ) !in 0.0..10.0 ||
+                requiredFiniteDouble(
+                    "resultingNetExposure",
+                    "$path.resultingNetExposure",
+                ) !in -10.0..10.0 ||
+                requiredFiniteDouble(
+                    "resultingDurationYears",
+                    "$path.resultingDurationYears",
+                ) !in -50.0..50.0 ||
+                requiredLong("revision", "$path.revision") <= 0L
+            ) {
+                throw JsonParseException("필드 '$path'의 회전율·노출·듀레이션·revision 범위가 유효하지 않습니다.")
+            }
+        }
+
+        fun JsonObject.requireFixedIncomePosition(path: String) {
+            requireExactFields(FIXED_INCOME_POSITION_FIELDS, path)
+            requiredBoundedNonBlankString("assetId", "$path.assetId", MAX_REFERENCE_ASSET_ID_LENGTH)
+            requiredEnum<FixedIncomeInstrumentKind>("kind", "$path.kind")
+            requiredEnum<ReferenceCurrency>("currency", "$path.currency")
+            requiredEnum<CreditQuality>("creditQuality", "$path.creditQuality")
+            listOf("currentWeight", "targetWeight").forEach { field ->
+                val weight = requiredFiniteDouble(field, "$path.$field")
+                if (weight !in 0.0..1.0) {
+                    throw JsonParseException("필드 '$path.$field'가 허용 비중 범위를 벗어났습니다.")
+                }
+            }
+            val boundedFields = mapOf(
+                "dirtyMarketValue" to (MIN_FIXED_INCOME_MARKET_VALUE..MAX_FIXED_INCOME_MARKET_VALUE),
+                "remainingMaturityYears" to (0.0..MAX_FIXED_INCOME_YEARS),
+                "modifiedDurationYears" to (0.0..MAX_FIXED_INCOME_YEARS),
+                "convexityYearsSquared" to (0.0..MAX_FIXED_INCOME_CONVEXITY),
+                "spreadDurationYears" to (0.0..MAX_FIXED_INCOME_YEARS),
+                "couponRateAnnual" to (MIN_FIXED_INCOME_RATE..MAX_FIXED_INCOME_POSITION_RATE),
+                "floatingSpreadAnnual" to (MIN_FIXED_INCOME_RATE..MAX_FIXED_INCOME_POSITION_RATE),
+                "floatingRateFloorAnnual" to (MIN_FIXED_INCOME_RATE..MAX_FIXED_INCOME_POSITION_RATE),
+                "inflationIndexRatio" to
+                    (MIN_FIXED_INCOME_INDEX_RATIO..MAX_FIXED_INCOME_INDEX_RATIO),
+            )
+            boundedFields.forEach { (field, range) ->
+                if (requiredFiniteDouble(field, "$path.$field") !in range) {
+                    throw JsonParseException("필드 '$path.$field'가 허용 범위를 벗어났습니다.")
+                }
+            }
+        }
+
+        fun JsonObject.requireYieldCurve(path: String): ReferenceCurrency {
+            requireExactFields(YIELD_CURVE_SNAPSHOT_FIELDS, path)
+            val currency = requiredEnum<ReferenceCurrency>("currency", "$path.currency")
+            val rates = requiredEnumFiniteDoubleMap<YieldCurveTenor>(
+                "annualZeroRates",
+                "$path.annualZeroRates",
+            )
+            if (rates.keys != YieldCurveTenor.entries.toSet() ||
+                rates.values.any { rate -> rate !in MIN_FIXED_INCOME_RATE..MAX_YIELD_CURVE_RATE }
+            ) {
+                throw JsonParseException("필드 '$path.annualZeroRates'의 만기점·금리 범위가 유효하지 않습니다.")
+            }
+            requiredInstant("asOf", "$path.asOf")
+            return currency
+        }
+
+        fun JsonObject.requireCreditSpreads(path: String): ReferenceCurrency {
+            requireExactFields(CREDIT_SPREAD_SNAPSHOT_FIELDS, path)
+            val currency = requiredEnum<ReferenceCurrency>("currency", "$path.currency")
+            val spreads = requiredEnumFiniteDoubleMap<CreditQuality>(
+                "annualSpreads",
+                "$path.annualSpreads",
+            )
+            if (spreads.keys != CreditQuality.entries.toSet() ||
+                spreads.values.any { spread -> spread !in 0.0..MAX_FIXED_INCOME_CREDIT_SPREAD } ||
+                spreads[CreditQuality.SOVEREIGN] != 0.0
+            ) {
+                throw JsonParseException("필드 '$path.annualSpreads'의 등급·스프레드 범위가 유효하지 않습니다.")
+            }
+            requiredInstant("asOf", "$path.asOf")
+            return currency
+        }
+
+        fun JsonObject.requireFixedIncomeAssetIds(field: String, path: String): List<String> {
+            val ids = requiredArray(field)
+            if (ids.size() == 0 || ids.size() > FixedIncomeReferenceState.MAX_POSITIONS) {
+                throw JsonParseException("필드 '$path'의 항목 수가 유효하지 않습니다.")
+            }
+            return ids.mapIndexed { index, element ->
+                val idPath = "$path[$index]"
+                element.requireStrictString(idPath).also { id ->
+                    if (id.isBlank() || id.length > MAX_REFERENCE_ASSET_ID_LENGTH) {
+                        throw JsonParseException("필드 '$idPath'의 길이가 올바르지 않습니다.")
+                    }
+                }
+            }
+        }
+
+        state.requiredObject("catalogReference").apply {
+            val path = "state.catalogReference"
+            requireExactFields(CATALOG_REFERENCE_FIELDS, path)
+            val schemaVersion = requiredInt("schemaVersion")
+            val orderedSources = requiredArray("orderedSources")
+            if (orderedSources.size() > InstrumentCatalogReference.MAX_SOURCES) {
+                throw JsonParseException("필드 '$path.orderedSources'의 항목이 너무 많습니다.")
+            }
+            try {
+                val decodedSources = orderedSources.mapIndexed { index, element ->
+                    val sourcePath = "$path.orderedSources[$index]"
+                    element.requireObject(sourcePath).run {
+                        requireExactFields(CATALOG_SOURCE_REFERENCE_FIELDS, sourcePath)
+                        InstrumentCatalogSourceReference(
+                            sourceId = requiredStrictString("sourceId", "$sourcePath.sourceId"),
+                            contentSha256 = requiredStrictString("contentSha256", "$sourcePath.contentSha256"),
+                        )
+                    }
+                }
+                InstrumentCatalogReference(schemaVersion, decodedSources)
+            } catch (error: IllegalArgumentException) {
+                throw JsonParseException("필드 '$path'이 유효하지 않습니다: ${error.message}", error)
             }
         }
 
@@ -503,6 +982,10 @@ actual class GameSaveStorage actual constructor() {
                         settings = settings.entrySet().associate { (key, value) ->
                             key to value.requireStrictString("$path.settings.$key")
                         },
+                        contentFingerprint = activeMod.nullableStrictString(
+                            "contentFingerprint",
+                            "$path.contentFingerprint",
+                        ),
                     )
                     decoded.validate()?.let { message ->
                         throw JsonParseException("필드 '$path'이 유효하지 않습니다: $message")
@@ -547,8 +1030,36 @@ actual class GameSaveStorage actual constructor() {
             requiredLong("randomState", "state.marketDynamicsSnapshot.randomState")
         }
         state.requiredArray("stocks").forEachIndexed { index, element ->
-            element.requireObject("state.stocks[$index]")
-                .requiredEnumArray<IndustrySegment>("industrySegments", "state.stocks[$index].industrySegments")
+            val path = "state.stocks[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(STOCK_DEFINITION_FIELDS, path)
+                requiredStrictString("symbol", "$path.symbol")
+                requiredStrictString("name", "$path.name")
+                requiredStrictString("englishName", "$path.englishName")
+                requiredEnum<Market>("market", "$path.market")
+                requiredEnum<Sector>("sector", "$path.sector")
+                listOf(
+                    "initialPrice",
+                    "volatility",
+                    "dividendYield",
+                    "marketCap",
+                    "beta",
+                    "quantityStep",
+                    "lotSize",
+                ).forEach { field -> requiredFiniteDouble(field, "$path.$field") }
+                requiredLong("sharesOutstanding", "$path.sharesOutstanding")
+                requiredStrictString("description", "$path.description")
+                requireMember("etfProfile")
+                requireMember("fundProductProfile")
+                get("fundProductProfile").takeUnless(JsonElement::isJsonNull)?.let { product ->
+                    product.requireObject("$path.fundProductProfile")
+                        .requireFundProductProfile("$path.fundProductProfile")
+                }
+                nullableEnum<InstrumentType>("instrumentTypeOverride", "$path.instrumentTypeOverride")
+                requireMember("behaviorProfile")
+                requireMember("identityProfile")
+                requiredEnumArray<IndustrySegment>("industrySegments", "$path.industrySegments")
+            }
         }
         state.requiredObject("corporateFundamentals").entrySet().forEach { (stockId, element) ->
             val path = "state.corporateFundamentals[$stockId]"
@@ -611,7 +1122,1425 @@ actual class GameSaveStorage actual constructor() {
                     throw JsonParseException("필드 '$path.unitsOrNotesOutstanding'는 0보다 커야 합니다.")
                 }
                 requiredFiniteDouble("lastNetFlow", "$path.lastNetFlow")
+                requireUnitAdjustmentMarker(path)
                 requiredStrictString("asOf", "$path.asOf")
+            }
+        }
+        state.requiredObject("referencePortfolioStates").entrySet().forEach { (portfolioId, element) ->
+            val path = "state.referencePortfolioStates[$portfolioId]"
+            element.requireObject(path).apply {
+                requireExactFields(REFERENCE_PORTFOLIO_STATE_FIELDS, path)
+                requiredBoundedNonBlankString(
+                    "portfolioId",
+                    "$path.portfolioId",
+                    MAX_REFERENCE_PORTFOLIO_ID_LENGTH,
+                )
+                requiredObject("benchmarkRef").requireBenchmarkRef("$path.benchmarkRef")
+                requireReferencePortfolioPositions("positions", "$path.positions")
+                if (requiredLong("revision", "$path.revision") < 0L) {
+                    throw JsonParseException("필드 '$path.revision'은 0 이상이어야 합니다.")
+                }
+                listOf(
+                    "lastReconstitutionDate",
+                    "lastRebalanceDate",
+                    "nextReconstitutionDate",
+                    "nextRebalanceDate",
+                ).forEach { field -> requiredLocalDate(field, "$path.$field") }
+                val pendingPlans = requiredArray("pendingPlans")
+                if (pendingPlans.size() > ReferencePortfolioState.MAX_PENDING_PLANS) {
+                    throw JsonParseException(
+                        "필드 '$path.pendingPlans'의 항목이 너무 많습니다.",
+                    )
+                }
+                pendingPlans.forEachIndexed { index, planElement ->
+                    val planPath = "$path.pendingPlans[$index]"
+                    planElement.requireObject(planPath).apply {
+                        requireExactFields(REFERENCE_PORTFOLIO_PLAN_FIELDS, planPath)
+                        requiredBoundedNonBlankString(
+                            "id",
+                            "$planPath.id",
+                            MAX_REFERENCE_LEDGER_ID_LENGTH,
+                        )
+                        requiredBoundedNonBlankString(
+                            "portfolioId",
+                            "$planPath.portfolioId",
+                            MAX_REFERENCE_PORTFOLIO_ID_LENGTH,
+                        )
+                        requiredObject("benchmarkRef")
+                            .requireBenchmarkRef("$planPath.benchmarkRef")
+                        requiredEnum<ReferencePortfolioActionKind>("kind", "$planPath.kind")
+                        listOf("selectionDate", "weightReferenceDate", "effectiveDate").forEach { field ->
+                            requiredLocalDate(field, "$planPath.$field")
+                        }
+                        requireReferencePortfolioPositions("positions", "$planPath.positions")
+                        requireReferenceAssetIdArray("addedAssetIds", "$planPath.addedAssetIds")
+                        requireReferenceAssetIdArray("removedAssetIds", "$planPath.removedAssetIds")
+                    }
+                }
+                listOf("lastTurnoverRate", "estimatedAnnualIncomeYield").forEach { field ->
+                    val rate = requiredFiniteDouble(field, "$path.$field")
+                    if (rate !in 0.0..1.0) {
+                        throw JsonParseException("필드 '$path.$field'는 0과 1 사이여야 합니다.")
+                    }
+                }
+                requiredInstant("asOf", "$path.asOf")
+                requiredEnum<ReferencePortfolioActionKind>(
+                    "lastAppliedActionKind",
+                    "$path.lastAppliedActionKind",
+                )
+            }
+        }
+        state.requiredArray("referencePortfolioLedger").forEachIndexed { index, element ->
+            val path = "state.referencePortfolioLedger[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(REFERENCE_PORTFOLIO_RECORD_FIELDS, path)
+                requiredBoundedNonBlankString("id", "$path.id", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                requiredBoundedNonBlankString(
+                    "portfolioId",
+                    "$path.portfolioId",
+                    MAX_REFERENCE_PORTFOLIO_ID_LENGTH,
+                )
+                requiredObject("benchmarkRef").requireBenchmarkRef("$path.benchmarkRef")
+                requiredEnum<ReferencePortfolioActionKind>("kind", "$path.kind")
+                listOf("selectionDate", "weightReferenceDate", "effectiveDate").forEach { field ->
+                    requiredLocalDate(field, "$path.$field")
+                }
+                listOf("addedAssetIds", "removedAssetIds").forEach { field ->
+                    requireReferenceAssetIdArray(field, "$path.$field")
+                }
+                listOf("beforeCompositionHash", "afterCompositionHash").forEach { field ->
+                    val hash = requiredStrictString(field, "$path.$field")
+                    if (!REFERENCE_COMPOSITION_HASH.matches(hash)) {
+                        throw JsonParseException("필드 '$path.$field'는 소문자 16자리 16진 해시여야 합니다.")
+                    }
+                }
+                val turnoverRate = requiredFiniteDouble("turnoverRate", "$path.turnoverRate")
+                if (turnoverRate !in 0.0..1.0) {
+                    throw JsonParseException("필드 '$path.turnoverRate'는 0과 1 사이여야 합니다.")
+                }
+                val count = requiredInt("resultingConstituentCount")
+                if (count !in 1..EquityMethodologyProfile.MAX_CONSTITUENTS) {
+                    throw JsonParseException(
+                        "필드 '$path.resultingConstituentCount'가 허용 범위를 벗어났습니다.",
+                    )
+                }
+                if (requiredLong("revision", "$path.revision") <= 0L) {
+                    throw JsonParseException("필드 '$path.revision'은 0보다 커야 합니다.")
+                }
+            }
+        }
+        state.requiredObject("dailyResetStates").entrySet().forEach { (productId, element) ->
+            val path = "state.dailyResetStates[$productId]"
+            element.requireObject(path).apply {
+                requireExactFields(DAILY_RESET_STATE_FIELDS, path)
+                requiredBoundedNonBlankString(
+                    "productId",
+                    "$path.productId",
+                    MAX_DAILY_RESET_PRODUCT_ID_LENGTH,
+                )
+                requiredLocalDate("resetTradingDate", "$path.resetTradingDate")
+                listOf(
+                    "referenceLevelAtReset",
+                    "navAtReset",
+                    "currentReferenceLevel",
+                    "currentNav",
+                ).forEach { field ->
+                    if (requiredFiniteDouble(field, "$path.$field") <= 0.0) {
+                        throw JsonParseException("필드 '$path.$field'는 0보다 커야 합니다.")
+                    }
+                }
+                requiredFiniteDouble(
+                    "cumulativeCarryLogReturn",
+                    "$path.cumulativeCarryLogReturn",
+                )
+                val exposure = requiredFiniteDouble("exposureNotional", "$path.exposureNotional")
+                val collateral = requiredFiniteDouble("collateralBalance", "$path.collateralBalance")
+                if (collateral < 0.0) {
+                    throw JsonParseException("필드 '$path.collateralBalance'는 0 이상이어야 합니다.")
+                }
+                val lifecycle = requiredEnum<DailyResetLifecycle>("lifecycle", "$path.lifecycle")
+                requireUnitAdjustmentMarker(path)
+                requiredInstant("asOf", "$path.asOf")
+                if (requiredLong("revision", "$path.revision") < 0L) {
+                    throw JsonParseException("필드 '$path.revision'은 0 이상이어야 합니다.")
+                }
+                if (lifecycle == DailyResetLifecycle.VALUE_EXHAUSTED &&
+                    (requiredFiniteDouble("currentNav", "$path.currentNav") != DailyResetState.MIN_NAV ||
+                        exposure != 0.0)
+                ) {
+                    throw JsonParseException("필드 '$path'의 가치소진 종단 상태가 유효하지 않습니다.")
+                }
+            }
+        }
+        state.requiredObject("optionStrategyStates").entrySet().forEach { (productId, element) ->
+            val path = "state.optionStrategyStates[$productId]"
+            element.requireObject(path).apply {
+                requireExactFields(OPTION_STRATEGY_STATE_FIELDS, path)
+                requiredBoundedNonBlankString(
+                    "productId",
+                    "$path.productId",
+                    MAX_DAILY_RESET_PRODUCT_ID_LENGTH,
+                )
+                requiredEnum<OptionStrategyKind>("strategyKind", "$path.strategyKind")
+                requiredEnum<OptionRollCalendar>("rollCalendar", "$path.rollCalendar")
+                requireUnitAdjustmentMarker(path)
+                listOf("currentReferenceLevel", "currentNav", "cycleReferenceLevel").forEach { field ->
+                    val value = requiredFiniteDouble(field, "$path.$field")
+                    if (value !in OptionStrategyState.MIN_NAV..OptionStrategyState.MAX_NAV) {
+                        throw JsonParseException("필드 '$path.$field'가 허용 양수 범위를 벗어났습니다.")
+                    }
+                }
+                listOf(
+                    "underlyingUnits",
+                    "optionNotionalAtRoll",
+                    "longCallUnits",
+                    "shortCallUnits",
+                    "longPutUnits",
+                    "shortPutUnits",
+                    "cycleGrossPremiumReceived",
+                    "cycleGrossPremiumPaid",
+                    "cycleImplementationCost",
+                    "cumulativePremiumReceived",
+                    "cumulativePremiumPaid",
+                    "cumulativeImplementationCost",
+                ).forEach { field ->
+                    val value = requiredFiniteDouble(field, "$path.$field")
+                    if (value !in 0.0..OptionStrategyState.MAX_NAV) {
+                        throw JsonParseException("필드 '$path.$field'가 허용 비음수 범위를 벗어났습니다.")
+                    }
+                }
+                listOf("cashBalance", "netOptionMark", "cumulativeSettlementCashFlow").forEach { field ->
+                    val value = requiredFiniteDouble(field, "$path.$field")
+                    if (kotlin.math.abs(value) > OptionStrategyState.MAX_NAV) {
+                        throw JsonParseException("필드 '$path.$field'의 절댓값이 너무 큽니다.")
+                    }
+                }
+                requiredLocalDate("cycleStartedOn", "$path.cycleStartedOn")
+                val remainingDays = requiredInt("remainingTradingDays")
+                if (remainingDays !in 0..MAX_OPTION_TENOR_TRADING_DAYS) {
+                    throw JsonParseException("필드 '$path.remainingTradingDays'가 허용 범위를 벗어났습니다.")
+                }
+                val remainingYears = requiredFiniteDouble("remainingTimeYears", "$path.remainingTimeYears")
+                if (remainingYears !in 0.0..MAX_OPTION_TIME_YEARS) {
+                    throw JsonParseException("필드 '$path.remainingTimeYears'가 허용 범위를 벗어났습니다.")
+                }
+                nullableLocalDate("lastProcessedTradingDate", "$path.lastProcessedTradingDate")
+                listOf(
+                    "longCallUnits" to "longCallStrike",
+                    "shortCallUnits" to "shortCallStrike",
+                    "longPutUnits" to "longPutStrike",
+                    "shortPutUnits" to "shortPutStrike",
+                ).forEach { (unitsField, strikeField) ->
+                    val units = requiredFiniteDouble(unitsField, "$path.$unitsField")
+                    val strike = nullableFiniteDouble(strikeField, "$path.$strikeField")
+                    if (units == 0.0 && strike != null ||
+                        units > 0.0 && (strike == null || strike <= 0.0)
+                    ) {
+                        throw JsonParseException("필드 '$path.$unitsField/$strikeField'의 leg가 유효하지 않습니다.")
+                    }
+                }
+                val lifecycle = requiredEnum<OptionStrategyLifecycle>("lifecycle", "$path.lifecycle")
+                requiredInstant("asOf", "$path.asOf")
+                if (requiredLong("revision", "$path.revision") < 0L) {
+                    throw JsonParseException("필드 '$path.revision'은 0 이상이어야 합니다.")
+                }
+                val hasInvalidLifecycleAccounts = when (lifecycle) {
+                    OptionStrategyLifecycle.ACTIVE -> false
+                    OptionStrategyLifecycle.AWAITING_PRODUCT_LIQUIDATION ->
+                        requiredFiniteDouble("optionNotionalAtRoll", "$path.optionNotionalAtRoll") != 0.0 ||
+                            requiredFiniteDouble("netOptionMark", "$path.netOptionMark") != 0.0 ||
+                            listOf("longCallUnits", "shortCallUnits", "longPutUnits", "shortPutUnits")
+                                .any { field -> requiredFiniteDouble(field, "$path.$field") != 0.0 } ||
+                            listOf(
+                                "cycleGrossPremiumReceived",
+                                "cycleGrossPremiumPaid",
+                                "cycleImplementationCost",
+                            ).any { field -> requiredFiniteDouble(field, "$path.$field") != 0.0 } ||
+                            remainingDays != 0 || remainingYears != 0.0
+                    OptionStrategyLifecycle.VALUE_EXHAUSTED ->
+                        requiredFiniteDouble("currentNav", "$path.currentNav") != OptionStrategyState.MIN_NAV ||
+                            requiredFiniteDouble("underlyingUnits", "$path.underlyingUnits") != 0.0 ||
+                            requiredFiniteDouble("cashBalance", "$path.cashBalance") != OptionStrategyState.MIN_NAV ||
+                            requiredFiniteDouble("optionNotionalAtRoll", "$path.optionNotionalAtRoll") != 0.0 ||
+                            requiredFiniteDouble("netOptionMark", "$path.netOptionMark") != 0.0 ||
+                            remainingDays != 0 || remainingYears != 0.0
+                }
+                if (hasInvalidLifecycleAccounts) {
+                    throw JsonParseException("필드 '$path'의 옵션 가치소진 종단 상태가 유효하지 않습니다.")
+                }
+            }
+        }
+        state.requiredObject("cashCollateralizedPutSpreadStates").entrySet()
+            .forEach { (productId, element) ->
+                val path = "state.cashCollateralizedPutSpreadStates[$productId]"
+                element.requireObject(path).apply {
+                    requireExactFields(CASH_COLLATERALIZED_PUT_SPREAD_STATE_FIELDS, path)
+                    val storedProductId = requiredBoundedNonBlankString(
+                        "productId",
+                        "$path.productId",
+                        MAX_DAILY_RESET_PRODUCT_ID_LENGTH,
+                    )
+                    if (storedProductId != productId) {
+                        throw JsonParseException("필드 '$path.productId'가 map 키와 다릅니다.")
+                    }
+                    requiredObject("cashBenchmarkRef").requireBenchmarkRef("$path.cashBenchmarkRef")
+                    requireUnitAdjustmentMarker(path)
+                    requiredObject("optionReference").apply {
+                        val referencePath = "$path.optionReference"
+                        requireExactFields(DAILY_RESET_REFERENCE_FIELDS, referencePath)
+                        val kind = requiredEnum<DailyResetReferenceKind>("kind", "$referencePath.kind")
+                        requireMember("benchmarkRef")
+                        requireMember("instrumentId")
+                        when (kind) {
+                            DailyResetReferenceKind.BENCHMARK -> {
+                                get("benchmarkRef").requireObject("$referencePath.benchmarkRef")
+                                    .requireBenchmarkRef("$referencePath.benchmarkRef")
+                                if (!get("instrumentId").isJsonNull) {
+                                    throw JsonParseException(
+                                        "필드 '$referencePath.instrumentId'는 null이어야 합니다.",
+                                    )
+                                }
+                            }
+                            DailyResetReferenceKind.INSTRUMENT -> {
+                                if (!get("benchmarkRef").isJsonNull) {
+                                    throw JsonParseException(
+                                        "필드 '$referencePath.benchmarkRef'는 null이어야 합니다.",
+                                    )
+                                }
+                                val instrumentId = requiredStrictString(
+                                    "instrumentId",
+                                    "$referencePath.instrumentId",
+                                )
+                                if (!DAILY_RESET_INSTRUMENT_ID.matches(instrumentId)) {
+                                    throw JsonParseException(
+                                        "필드 '$referencePath.instrumentId' 형식이 유효하지 않습니다.",
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    requiredEnum<OptionRollCalendar>("rollCalendar", "$path.rollCalendar")
+                    listOf(
+                        "currentCashReferenceLevel",
+                        "currentOptionReferenceLevel",
+                        "cycleOptionReferenceLevel",
+                    ).forEach { field ->
+                        if (requiredFiniteDouble(field, "$path.$field") !in
+                            CashCollateralizedPutSpreadState.MIN_REFERENCE_LEVEL..
+                            CashCollateralizedPutSpreadState.MAX_REFERENCE_LEVEL
+                        ) {
+                            throw JsonParseException("필드 '$path.$field'가 기준값 범위를 벗어났습니다.")
+                        }
+                    }
+                    if (requiredFiniteDouble("currentNav", "$path.currentNav") !in
+                        CashCollateralizedPutSpreadState.MIN_NAV..
+                        CashCollateralizedPutSpreadState.MAX_NAV
+                    ) {
+                        throw JsonParseException("필드 '$path.currentNav'가 NAV 범위를 벗어났습니다.")
+                    }
+                    listOf(
+                        "cashBalance",
+                        "navAtRoll",
+                        "optionNotionalAtRoll",
+                        "maximumSettlementLossAtRoll",
+                        "longPutUnits",
+                        "shortPutUnits",
+                        "cycleGrossPremiumReceived",
+                        "cycleGrossPremiumPaid",
+                        "cycleImplementationCost",
+                        "cumulativePremiumReceived",
+                        "cumulativePremiumPaid",
+                        "cumulativeImplementationCost",
+                    ).forEach { field ->
+                        if (requiredFiniteDouble(field, "$path.$field") !in
+                            0.0..MAX_CASH_PUT_SPREAD_AMOUNT
+                        ) {
+                            throw JsonParseException("필드 '$path.$field'가 비음수 금액 범위를 벗어났습니다.")
+                        }
+                    }
+                    listOf("netOptionMark", "cumulativeSettlementCashFlow").forEach { field ->
+                        if (kotlin.math.abs(requiredFiniteDouble(field, "$path.$field")) >
+                            MAX_CASH_PUT_SPREAD_AMOUNT
+                        ) {
+                            throw JsonParseException("필드 '$path.$field'의 절댓값이 너무 큽니다.")
+                        }
+                    }
+                    requiredLocalDate("cycleStartedOn", "$path.cycleStartedOn")
+                    val remainingDays = requiredInt("remainingTradingDays")
+                    val remainingYears = requiredFiniteDouble(
+                        "remainingTimeYears",
+                        "$path.remainingTimeYears",
+                    )
+                    if (remainingDays !in 0..MAX_OPTION_TENOR_TRADING_DAYS ||
+                        remainingYears !in 0.0..MAX_OPTION_TIME_YEARS
+                    ) {
+                        throw JsonParseException("필드 '$path'의 잔존 tenor가 유효하지 않습니다.")
+                    }
+                    nullableLocalDate("lastProcessedTradingDate", "$path.lastProcessedTradingDate")
+                    val longUnits = requiredFiniteDouble("longPutUnits", "$path.longPutUnits")
+                    val shortUnits = requiredFiniteDouble("shortPutUnits", "$path.shortPutUnits")
+                    val longStrike = nullableFiniteDouble("longPutStrike", "$path.longPutStrike")
+                    val shortStrike = nullableFiniteDouble("shortPutStrike", "$path.shortPutStrike")
+                    val lifecycle = requiredEnum<CashCollateralizedPutSpreadLifecycle>(
+                        "lifecycle",
+                        "$path.lifecycle",
+                    )
+                    requiredInstant("asOf", "$path.asOf")
+                    val hasInvalidLifecycleAccounts = when (lifecycle) {
+                        CashCollateralizedPutSpreadLifecycle.ACTIVE ->
+                            longUnits <= 0.0 || shortUnits <= 0.0 || longStrike == null ||
+                                shortStrike == null || longStrike <= 0.0 || shortStrike <= longStrike ||
+                                remainingDays == 0
+                        CashCollateralizedPutSpreadLifecycle.AWAITING_PRODUCT_LIQUIDATION ->
+                            requiredFiniteDouble("navAtRoll", "$path.navAtRoll") != 0.0 ||
+                                requiredFiniteDouble("optionNotionalAtRoll", "$path.optionNotionalAtRoll") != 0.0 ||
+                                requiredFiniteDouble(
+                                    "maximumSettlementLossAtRoll",
+                                    "$path.maximumSettlementLossAtRoll",
+                                ) != 0.0 ||
+                                longUnits != 0.0 || shortUnits != 0.0 ||
+                                longStrike != null || shortStrike != null || remainingDays != 0 ||
+                                remainingYears != 0.0 ||
+                                requiredFiniteDouble("netOptionMark", "$path.netOptionMark") != 0.0 ||
+                                listOf(
+                                    "cycleGrossPremiumReceived",
+                                    "cycleGrossPremiumPaid",
+                                    "cycleImplementationCost",
+                                ).any { field -> requiredFiniteDouble(field, "$path.$field") != 0.0 }
+                        CashCollateralizedPutSpreadLifecycle.VALUE_EXHAUSTED ->
+                            requiredFiniteDouble("currentNav", "$path.currentNav") !=
+                                CashCollateralizedPutSpreadState.MIN_NAV ||
+                                requiredFiniteDouble("cashBalance", "$path.cashBalance") !=
+                                CashCollateralizedPutSpreadState.MIN_NAV ||
+                                longUnits != 0.0 || shortUnits != 0.0 ||
+                                longStrike != null || shortStrike != null || remainingDays != 0 ||
+                                remainingYears != 0.0 ||
+                                requiredFiniteDouble("netOptionMark", "$path.netOptionMark") != 0.0
+                    }
+                    if (requiredLong("revision", "$path.revision") < 0L || hasInvalidLifecycleAccounts) {
+                        throw JsonParseException("필드 '$path'의 lifecycle·leg·revision이 유효하지 않습니다.")
+                    }
+                }
+            }
+        state.requiredObject("etnStates").entrySet().forEach { (productId, element) ->
+            val path = "state.etnStates[$productId]"
+            element.requireObject(path).apply {
+                requireExactFields(ETN_STATE_FIELDS, path)
+                requiredBoundedNonBlankString("productId", "$path.productId", MAX_FUND_STRUCTURE_ID_LENGTH)
+                if (requiredFiniteDouble("referenceLevel", "$path.referenceLevel") <= 0.0) {
+                    throw JsonParseException("필드 '$path.referenceLevel'은 0보다 커야 합니다.")
+                }
+                listOf("feeAdjustedIndicativeValuePerNote", "accruedCouponPerNote").forEach { field ->
+                    val value = requiredFiniteDouble(field, "$path.$field")
+                    if (value !in 0.0..MAX_FUND_STRUCTURE_VALUE) {
+                        throw JsonParseException("필드 '$path.$field'가 허용 범위를 벗어났습니다.")
+                    }
+                }
+                val notes = requiredLong("notesOutstanding", "$path.notesOutstanding")
+                if (notes !in 0L..MAX_FUND_STRUCTURE_EXACT_QUANTITY) {
+                    throw JsonParseException("필드 '$path.notesOutstanding'가 허용 범위를 벗어났습니다.")
+                }
+                val creditSpread = requiredFiniteDouble("issuerCreditSpread", "$path.issuerCreditSpread")
+                val hazard = requiredFiniteDouble("issuerHazardRate", "$path.issuerHazardRate")
+                val recovery = requiredFiniteDouble("issuerRecoveryRate", "$path.issuerRecoveryRate")
+                if (creditSpread !in 0.0..MAX_FUND_STRUCTURE_RATE ||
+                    hazard !in 0.0..1.0 || recovery !in 0.0..1.0
+                ) {
+                    throw JsonParseException("필드 '$path'의 발행자 신용 상태가 유효하지 않습니다.")
+                }
+                val observations = requiredArray("indicativeValueObservationWindow")
+                if (observations.size() > EtnState.MAX_OBSERVATIONS) {
+                    throw JsonParseException("필드 '$path.indicativeValueObservationWindow'가 너무 깁니다.")
+                }
+                var previousDate: LocalDate? = null
+                observations.forEachIndexed { index, observationElement ->
+                    val observationPath = "$path.indicativeValueObservationWindow[$index]"
+                    observationElement.requireObject(observationPath).apply {
+                        requireExactFields(ETN_INDICATIVE_VALUE_OBSERVATION_FIELDS, observationPath)
+                        val date = requiredLocalDate("observationDate", "$observationPath.observationDate")
+                        val value = requiredFiniteDouble(
+                            "indicativeValuePerNote",
+                            "$observationPath.indicativeValuePerNote",
+                        )
+                        if (previousDate?.let { date <= it } == true ||
+                            value !in 0.0..MAX_FUND_STRUCTURE_VALUE
+                        ) {
+                            throw JsonParseException("필드 '$observationPath'의 날짜·지표가치가 유효하지 않습니다.")
+                        }
+                        previousDate = date
+                    }
+                }
+                val lifecycle = requiredEnum<EtnLifecycle>("lifecycle", "$path.lifecycle")
+                val terminalEvent = nullableEnum<EtnCreditEvent>(
+                    "terminalCreditEvent",
+                    "$path.terminalCreditEvent",
+                )
+                requiredInstant("asOf", "$path.asOf")
+                if (requiredLong("revision", "$path.revision") < 0L ||
+                    lifecycle == EtnLifecycle.ACTIVE && terminalEvent != null ||
+                    lifecycle == EtnLifecycle.SETTLED &&
+                    (notes != 0L || terminalEvent == null ||
+                        terminalEvent in setOf(EtnCreditEvent.NONE, EtnCreditEvent.HOLDER_REDEMPTION))
+                ) {
+                    throw JsonParseException("필드 '$path'의 ETN 생명주기·revision이 유효하지 않습니다.")
+                }
+            }
+        }
+        state.requiredArray("etnLedger").forEachIndexed { index, element ->
+            val path = "state.etnLedger[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(ETN_LEDGER_ENTRY_FIELDS, path)
+                listOf("id", "productId").forEach { field ->
+                    requiredBoundedNonBlankString(field, "$path.$field", MAX_FUND_STRUCTURE_ID_LENGTH)
+                }
+                requiredEnum<EtnLedgerKind>("kind", "$path.kind")
+                requiredInstant("effectiveAt", "$path.effectiveAt")
+                if (requiredLong("revision", "$path.revision") <= 0L ||
+                    requiredInt("sequenceInBatch") !in 0..MAX_FUND_STRUCTURE_BATCH_ENTRIES
+                ) {
+                    throw JsonParseException("필드 '$path'의 revision·batch sequence가 유효하지 않습니다.")
+                }
+                requiredEnum<ReferenceCurrency>("settlementCurrency", "$path.settlementCurrency")
+                listOf("referenceLevelBefore", "referenceLevelAfter").forEach { field ->
+                    if (requiredFiniteDouble(field, "$path.$field") <= 0.0) {
+                        throw JsonParseException("필드 '$path.$field'은 0보다 커야 합니다.")
+                    }
+                }
+                listOf("indicativeValueBefore", "indicativeValueAfter").forEach { field ->
+                    val value = requiredFiniteDouble(field, "$path.$field")
+                    if (value !in 0.0..MAX_FUND_STRUCTURE_VALUE) {
+                        throw JsonParseException("필드 '$path.$field'가 허용 범위를 벗어났습니다.")
+                    }
+                }
+                listOf(
+                    "notesOutstandingBefore",
+                    "notesOutstandingAfter",
+                    "notesIssued",
+                    "notesCancelled",
+                    "notesSettled",
+                ).forEach { field ->
+                    if (requiredLong(field, "$path.$field") !in
+                        0L..MAX_FUND_STRUCTURE_EXACT_QUANTITY
+                    ) {
+                        throw JsonParseException("필드 '$path.$field'가 허용 범위를 벗어났습니다.")
+                    }
+                }
+                if (requiredLong("notesDelta", "$path.notesDelta") !in
+                    -MAX_FUND_STRUCTURE_EXACT_QUANTITY..MAX_FUND_STRUCTURE_EXACT_QUANTITY
+                ) {
+                    throw JsonParseException("필드 '$path.notesDelta'가 허용 범위를 벗어났습니다.")
+                }
+                listOf("cashPaidToNoteholders", "cashReceivedFromNoteholders").forEach { field ->
+                    val value = requiredFiniteDouble(field, "$path.$field")
+                    if (value !in 0.0..MAX_FUND_STRUCTURE_VALUE) {
+                        throw JsonParseException("필드 '$path.$field'가 허용 범위를 벗어났습니다.")
+                    }
+                }
+                requiredEnum<EtnCreditEvent>("contractEvent", "$path.contractEvent")
+                val observations = requiredArray("settlementIndicativeValueObservations")
+                if (observations.size() > EtnState.MAX_OBSERVATIONS) {
+                    throw JsonParseException("필드 '$path.settlementIndicativeValueObservations'가 너무 깁니다.")
+                }
+                observations.forEachIndexed { observationIndex, observationElement ->
+                    val observationPath =
+                        "$path.settlementIndicativeValueObservations[$observationIndex]"
+                    observationElement.requireObject(observationPath).apply {
+                        requireExactFields(ETN_INDICATIVE_VALUE_OBSERVATION_FIELDS, observationPath)
+                        requiredLocalDate("observationDate", "$observationPath.observationDate")
+                        val value = requiredFiniteDouble(
+                            "indicativeValuePerNote",
+                            "$observationPath.indicativeValuePerNote",
+                        )
+                        if (value !in 0.0..MAX_FUND_STRUCTURE_VALUE) {
+                            throw JsonParseException("필드 '$observationPath'의 지표가치가 유효하지 않습니다.")
+                        }
+                    }
+                }
+            }
+        }
+        state.requiredObject("closedEndFundStates").entrySet().forEach { (fundId, element) ->
+            val path = "state.closedEndFundStates[$fundId]"
+            element.requireObject(path).apply {
+                requireExactFields(CLOSED_END_FUND_STATE_FIELDS, path)
+                requiredBoundedNonBlankString("fundId", "$path.fundId", MAX_FUND_STRUCTURE_ID_LENGTH)
+                listOf("grossAssets", "commonSharesOutstanding", "navPerCommonShare").forEach { field ->
+                    val value = requiredFiniteDouble(field, "$path.$field")
+                    if (value !in MIN_FUND_STRUCTURE_VALUE..MAX_FUND_STRUCTURE_VALUE) {
+                        throw JsonParseException("필드 '$path.$field'가 허용 범위를 벗어났습니다.")
+                    }
+                }
+                listOf("debtLiability", "preferredShareLiability", "distributionReserve").forEach { field ->
+                    val value = requiredFiniteDouble(field, "$path.$field")
+                    if (value !in 0.0..MAX_FUND_STRUCTURE_VALUE) {
+                        throw JsonParseException("필드 '$path.$field'가 허용 범위를 벗어났습니다.")
+                    }
+                }
+                if (kotlin.math.abs(
+                        requiredFiniteDouble(
+                            "undistributedNetInvestmentIncome",
+                            "$path.undistributedNetInvestmentIncome",
+                        ),
+                    ) > MAX_FUND_STRUCTURE_VALUE ||
+                    requiredFiniteDouble("marketDiscountRate", "$path.marketDiscountRate") !in
+                    -0.99..MAX_FUND_STRUCTURE_RATE
+                ) {
+                    throw JsonParseException("필드 '$path'의 UNII·시장 할인율이 유효하지 않습니다.")
+                }
+                requireUnitAdjustmentMarker(path)
+                requiredInstant("asOf", "$path.asOf")
+                if (requiredLong("revision", "$path.revision") < 0L) {
+                    throw JsonParseException("필드 '$path.revision'은 0 이상이어야 합니다.")
+                }
+            }
+        }
+        state.requiredArray("closedEndFundLedger").forEachIndexed { index, element ->
+            val path = "state.closedEndFundLedger[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(CLOSED_END_FUND_LEDGER_ENTRY_FIELDS, path)
+                listOf("id", "fundId").forEach { field ->
+                    requiredBoundedNonBlankString(field, "$path.$field", MAX_FUND_STRUCTURE_ID_LENGTH)
+                }
+                requiredEnum<ClosedEndFundLedgerKind>("kind", "$path.kind")
+                requiredInstant("effectiveAt", "$path.effectiveAt")
+                if (requiredLong("revision", "$path.revision") <= 0L ||
+                    requiredInt("sequenceInBatch") !in 0..MAX_FUND_STRUCTURE_BATCH_ENTRIES
+                ) {
+                    throw JsonParseException("필드 '$path'의 revision·batch sequence가 유효하지 않습니다.")
+                }
+                requiredEnum<ReferenceCurrency>("settlementCurrency", "$path.settlementCurrency")
+                requiredEnum<ClosedEndFundCapitalActionKind>(
+                    "capitalActionKind",
+                    "$path.capitalActionKind",
+                )
+                requiredEnum<ClosedEndFundFinancingActionKind>(
+                    "financingActionKind",
+                    "$path.financingActionKind",
+                )
+                listOf(
+                    "grossAssetsDelta",
+                    "commonSharesDelta",
+                    "debtLiabilityDelta",
+                    "preferredShareLiabilityDelta",
+                    "externalCashFlow",
+                ).forEach { field ->
+                    if (kotlin.math.abs(requiredFiniteDouble(field, "$path.$field")) >
+                        MAX_FUND_STRUCTURE_VALUE
+                    ) {
+                        throw JsonParseException("필드 '$path.$field'의 절댓값이 너무 큽니다.")
+                    }
+                }
+                listOf(
+                    "cashToCommonShareholders",
+                    "netInvestmentIncomeDistribution",
+                    "realizedGainDistribution",
+                    "returnOfCapitalDistribution",
+                ).forEach { field ->
+                    val value = requiredFiniteDouble(field, "$path.$field")
+                    if (value !in 0.0..MAX_FUND_STRUCTURE_VALUE) {
+                        throw JsonParseException("필드 '$path.$field'가 허용 범위를 벗어났습니다.")
+                    }
+                }
+                listOf("navPerShareBefore", "navPerShareAfter").forEach { field ->
+                    val value = requiredFiniteDouble(field, "$path.$field")
+                    if (value !in MIN_FUND_STRUCTURE_VALUE..MAX_FUND_STRUCTURE_VALUE) {
+                        throw JsonParseException("필드 '$path.$field'가 허용 범위를 벗어났습니다.")
+                    }
+                }
+            }
+        }
+        state.requiredObject("fixedIncomeReferenceStates").entrySet().forEach { (referenceId, element) ->
+            val path = "state.fixedIncomeReferenceStates[$referenceId]"
+            element.requireObject(path).apply {
+                requireExactFields(FIXED_INCOME_REFERENCE_STATE_FIELDS, path)
+                requiredObject("benchmarkRef").requireBenchmarkRef("$path.benchmarkRef")
+                val positions = requiredArray("positions")
+                if (positions.size() == 0 || positions.size() > FixedIncomeReferenceState.MAX_POSITIONS) {
+                    throw JsonParseException("필드 '$path.positions'의 항목 수가 유효하지 않습니다.")
+                }
+                positions.forEachIndexed { index, position ->
+                    val positionPath = "$path.positions[$index]"
+                    position.requireObject(positionPath).requireFixedIncomePosition(positionPath)
+                }
+                listOf("nominalCurves", "realCurves").forEach { field ->
+                    val curvesPath = "$path.$field"
+                    val curves = requiredObject(field)
+                    if (curves.size() > ReferenceCurrency.entries.size) {
+                        throw JsonParseException("필드 '$curvesPath'의 통화 수가 너무 많습니다.")
+                    }
+                    curves.entrySet().forEach { (currencyName, curveElement) ->
+                        val currency = ReferenceCurrency.entries.firstOrNull { it.name == currencyName }
+                            ?: throw JsonParseException(
+                                "필드 '$curvesPath'에 유효하지 않은 통화 '$currencyName'가 있습니다.",
+                            )
+                        val curvePath = "$curvesPath.$currencyName"
+                        if (curveElement.requireObject(curvePath).requireYieldCurve(curvePath) != currency) {
+                            throw JsonParseException("필드 '$curvePath.currency'가 map 키와 다릅니다.")
+                        }
+                    }
+                }
+                val spreadsPath = "$path.creditSpreads"
+                val spreads = requiredObject("creditSpreads")
+                if (spreads.size() > ReferenceCurrency.entries.size) {
+                    throw JsonParseException("필드 '$spreadsPath'의 통화 수가 너무 많습니다.")
+                }
+                spreads.entrySet().forEach { (currencyName, spreadElement) ->
+                    val currency = ReferenceCurrency.entries.firstOrNull { it.name == currencyName }
+                        ?: throw JsonParseException(
+                            "필드 '$spreadsPath'에 유효하지 않은 통화 '$currencyName'가 있습니다.",
+                        )
+                    val spreadPath = "$spreadsPath.$currencyName"
+                    if (spreadElement.requireObject(spreadPath).requireCreditSpreads(spreadPath) != currency) {
+                        throw JsonParseException("필드 '$spreadPath.currency'가 map 키와 다릅니다.")
+                    }
+                }
+                if (requiredLong("revision", "$path.revision") < 0L) {
+                    throw JsonParseException("필드 '$path.revision'은 0 이상이어야 합니다.")
+                }
+                requiredInstant("asOf", "$path.asOf")
+            }
+        }
+        state.requiredArray("fixedIncomeRollLedger").forEachIndexed { index, element ->
+            val path = "state.fixedIncomeRollLedger[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(FIXED_INCOME_ROLL_RECORD_FIELDS, path)
+                requiredBoundedNonBlankString("id", "$path.id", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                requiredObject("benchmarkRef").requireBenchmarkRef("$path.benchmarkRef")
+                val removed = requireFixedIncomeAssetIds("removedAssetIds", "$path.removedAssetIds")
+                val added = requireFixedIncomeAssetIds("addedAssetIds", "$path.addedAssetIds")
+                if (removed.size != added.size) {
+                    throw JsonParseException("필드 '$path'의 편출·편입 항목 수가 다릅니다.")
+                }
+                requiredInstant("effectiveAt", "$path.effectiveAt")
+                if (requiredLong("revision", "$path.revision") <= 0L) {
+                    throw JsonParseException("필드 '$path.revision'은 0보다 커야 합니다.")
+                }
+            }
+        }
+        val spotReferenceKeys = linkedSetOf<BenchmarkRef>()
+        val spotStateEntries = state.requiredArray("commoditySpotReferenceStates")
+        if (spotStateEntries.size() > MAX_COMMODITY_REFERENCE_COUNT) {
+            throw JsonParseException("필드 'state.commoditySpotReferenceStates'의 항목 수가 너무 많습니다.")
+        }
+        spotStateEntries.forEachIndexed { index, entryElement ->
+            val entryPath = "state.commoditySpotReferenceStates[$index]"
+            val entry = entryElement.takeIf(JsonElement::isJsonArray)?.asJsonArray
+                ?: throw JsonParseException("필드 '$entryPath'은 [benchmarkRef, state] 쌍이어야 합니다.")
+            if (entry.size() != 2) {
+                throw JsonParseException("필드 '$entryPath'은 정확히 두 항목이어야 합니다.")
+            }
+            val key = entry[0].requireObject("$entryPath[0]").requireBenchmarkRef("$entryPath[0]")
+            if (!spotReferenceKeys.add(key)) {
+                throw JsonParseException("필드 '$entryPath'의 benchmarkRef 키가 중복되었습니다.")
+            }
+            val valuePath = "$entryPath[1]"
+            entry[1].requireObject(valuePath).apply {
+                requireExactFields(COMMODITY_SPOT_REFERENCE_STATE_FIELDS, valuePath)
+                if (requiredObject("benchmarkRef").requireBenchmarkRef("$valuePath.benchmarkRef") != key) {
+                    throw JsonParseException("필드 '$valuePath.benchmarkRef'가 map 키와 다릅니다.")
+                }
+                requiredEnum<CommodityAssetClass>("assetClass", "$valuePath.assetClass")
+                requiredEnum<ReferenceCurrency>("baseCurrency", "$valuePath.baseCurrency")
+                listOf("currentSpotLevel", "currentReferenceLevel").forEach { field ->
+                    val value = requiredFiniteDouble(field, "$valuePath.$field")
+                    if (value !in MIN_COMMODITY_REFERENCE_LEVEL..MAX_COMMODITY_REFERENCE_LEVEL) {
+                        throw JsonParseException("필드 '$valuePath.$field'가 허용 양수 범위를 벗어났습니다.")
+                    }
+                }
+                val spotWeight = requiredFiniteDouble("currentSpotWeight", "$valuePath.currentSpotWeight")
+                val collateralWeight = requiredFiniteDouble(
+                    "currentCollateralWeight",
+                    "$valuePath.currentCollateralWeight",
+                )
+                if (spotWeight !in 0.0..1.0 || collateralWeight !in 0.0..1.0 ||
+                    kotlin.math.abs(spotWeight + collateralWeight - 1.0) > COMMODITY_WEIGHT_EPSILON
+                ) {
+                    throw JsonParseException("필드 '$valuePath'의 현물·담보 비중이 유효하지 않습니다.")
+                }
+                val carry = requiredFiniteDouble("annualizedNetCarryRate", "$valuePath.annualizedNetCarryRate")
+                if (carry !in MIN_COMMODITY_CARRY_RATE..MAX_COMMODITY_CARRY_RATE) {
+                    throw JsonParseException("필드 '$valuePath.annualizedNetCarryRate'가 허용 범위를 벗어났습니다.")
+                }
+                requiredInstant("asOf", "$valuePath.asOf")
+            }
+        }
+
+        val futuresReferenceKeys = linkedSetOf<BenchmarkRef>()
+        val futuresStateEntries = state.requiredArray("futuresReferenceStates")
+        if (futuresStateEntries.size() > MAX_COMMODITY_REFERENCE_COUNT) {
+            throw JsonParseException("필드 'state.futuresReferenceStates'의 항목 수가 너무 많습니다.")
+        }
+        futuresStateEntries.forEachIndexed { index, entryElement ->
+            val entryPath = "state.futuresReferenceStates[$index]"
+            val entry = entryElement.takeIf(JsonElement::isJsonArray)?.asJsonArray
+                ?: throw JsonParseException("필드 '$entryPath'은 [benchmarkRef, state] 쌍이어야 합니다.")
+            if (entry.size() != 2) {
+                throw JsonParseException("필드 '$entryPath'은 정확히 두 항목이어야 합니다.")
+            }
+            val key = entry[0].requireObject("$entryPath[0]").requireBenchmarkRef("$entryPath[0]")
+            if (!futuresReferenceKeys.add(key) || key in spotReferenceKeys) {
+                throw JsonParseException("필드 '$entryPath'의 benchmarkRef 키가 중복되거나 현물 상태와 겹칩니다.")
+            }
+            val valuePath = "$entryPath[1]"
+            entry[1].requireObject(valuePath).apply {
+                requireExactFields(FUTURES_REFERENCE_STATE_FIELDS, valuePath)
+                if (requiredObject("benchmarkRef").requireBenchmarkRef("$valuePath.benchmarkRef") != key) {
+                    throw JsonParseException("필드 '$valuePath.benchmarkRef'가 map 키와 다릅니다.")
+                }
+                requiredEnum<ReferenceCurrency>("baseCurrency", "$valuePath.baseCurrency")
+                requiredEnum<FuturesPortfolioStyle>("portfolioStyle", "$valuePath.portfolioStyle")
+                requiredEnum<FuturesAllocationMode>("allocationMode", "$valuePath.allocationMode")
+                val level = requiredFiniteDouble("currentReferenceLevel", "$valuePath.currentReferenceLevel")
+                if (level !in MIN_COMMODITY_REFERENCE_LEVEL..MAX_COMMODITY_REFERENCE_LEVEL) {
+                    throw JsonParseException("필드 '$valuePath.currentReferenceLevel'가 허용 양수 범위를 벗어났습니다.")
+                }
+                val sleeves = requiredArray("sleeves")
+                if (sleeves.size() !in 1..MAX_FUTURES_SLEEVES) {
+                    throw JsonParseException("필드 '$valuePath.sleeves'의 항목 수가 유효하지 않습니다.")
+                }
+                sleeves.forEachIndexed { sleeveIndex, sleeveElement ->
+                    val sleevePath = "$valuePath.sleeves[$sleeveIndex]"
+                    sleeveElement.requireObject(sleevePath).apply {
+                        requireExactFields(FUTURES_SLEEVE_STATE_FIELDS, sleevePath)
+                        listOf("sleeveId", "curveId", "frontContractId", "nextContractId").forEach { field ->
+                            requiredBoundedNonBlankString(field, "$sleevePath.$field", MAX_REFERENCE_ASSET_ID_LENGTH)
+                        }
+                        requiredEnum<CommodityAssetClass>("assetClass", "$sleevePath.assetClass")
+                        requiredEnum<FuturesRollCalendar>("rollCalendar", "$sleevePath.rollCalendar")
+                        requiredEnum<FuturesPriceReturnConvention>(
+                            "priceReturnConvention",
+                            "$sleevePath.priceReturnConvention",
+                        )
+                        nullableFiniteDouble("fixedPriceReturnNotional", "$sleevePath.fixedPriceReturnNotional")
+                            ?.let { value ->
+                                if (value <= 0.0 || value > MAX_COMMODITY_REFERENCE_LEVEL) {
+                                    throw JsonParseException(
+                                        "필드 '$sleevePath.fixedPriceReturnNotional'가 허용 범위를 벗어났습니다.",
+                                    )
+                                }
+                            }
+                        listOf("currentWeight", "targetWeight", "frontContractWeight", "nextContractWeight")
+                            .forEach { field ->
+                                val value = requiredFiniteDouble(field, "$sleevePath.$field")
+                                if (value !in 0.0..1.0) {
+                                    throw JsonParseException("필드 '$sleevePath.$field'가 비중 범위를 벗어났습니다.")
+                                }
+                            }
+                        val spotLevel = requiredFiniteDouble("currentSpotLevel", "$sleevePath.currentSpotLevel")
+                        if (spotLevel !in MIN_COMMODITY_REFERENCE_LEVEL..MAX_COMMODITY_REFERENCE_LEVEL) {
+                            throw JsonParseException("필드 '$sleevePath.currentSpotLevel'가 허용 범위를 벗어났습니다.")
+                        }
+                        requiredLocalDate("frontExpiryDate", "$sleevePath.frontExpiryDate")
+                        requiredLocalDate("nextExpiryDate", "$sleevePath.nextExpiryDate")
+                        listOf("frontPrice", "nextPrice").forEach { field ->
+                            val value = requiredFiniteDouble(field, "$sleevePath.$field")
+                            if (value !in MIN_FUTURES_PRICE..MAX_FUTURES_PRICE) {
+                                throw JsonParseException("필드 '$sleevePath.$field'가 가격 범위를 벗어났습니다.")
+                            }
+                        }
+                        nullableLocalDate("lastRollTradingDate", "$sleevePath.lastRollTradingDate")
+                    }
+                }
+                if (requiredLong("revision", "$valuePath.revision") < 0L) {
+                    throw JsonParseException("필드 '$valuePath.revision'은 0 이상이어야 합니다.")
+                }
+                requiredInstant("asOf", "$valuePath.asOf")
+            }
+        }
+
+        state.requiredArray("futuresRollLedger").forEachIndexed { index, element ->
+            val path = "state.futuresRollLedger[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(FUTURES_ROLL_RECORD_FIELDS, path)
+                listOf("id", "sleeveId", "fromContractId", "toContractId").forEach { field ->
+                    requiredBoundedNonBlankString(field, "$path.$field", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                }
+                requiredObject("benchmarkRef").requireBenchmarkRef("$path.benchmarkRef")
+                requiredLocalDate("rollTradingDate", "$path.rollTradingDate")
+                listOf("transferredContractWeight", "frontWeightBefore", "frontWeightAfter")
+                    .forEach { field ->
+                        val value = requiredFiniteDouble(field, "$path.$field")
+                        if (value !in 0.0..1.0) {
+                            throw JsonParseException("필드 '$path.$field'가 비중 범위를 벗어났습니다.")
+                        }
+                    }
+                requiredFiniteDouble("normalizedCurveBasis", "$path.normalizedCurveBasis")
+                requiredBoolean("promotedDeferredToFront", "$path.promotedDeferredToFront")
+                nullableStrictString("successorContractId", "$path.successorContractId")?.let { value ->
+                    if (value.isBlank() || value.length > MAX_REFERENCE_ASSET_ID_LENGTH) {
+                        throw JsonParseException("필드 '$path.successorContractId'의 길이가 유효하지 않습니다.")
+                    }
+                }
+                requiredInstant("effectiveAt", "$path.effectiveAt")
+                if (requiredLong("revision", "$path.revision") <= 0L) {
+                    throw JsonParseException("필드 '$path.revision'은 0보다 커야 합니다.")
+                }
+            }
+        }
+        state.requiredArray("futuresAllocationLedger").forEachIndexed { index, element ->
+            val path = "state.futuresAllocationLedger[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(FUTURES_ALLOCATION_RECORD_FIELDS, path)
+                requiredBoundedNonBlankString("id", "$path.id", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                requiredObject("benchmarkRef").requireBenchmarkRef("$path.benchmarkRef")
+                listOf("weightsBefore", "weightsAfter").forEach { field ->
+                    val weightsPath = "$path.$field"
+                    val weights = requiredObject(field)
+                    if (weights.size() !in 1..MAX_FUTURES_SLEEVES) {
+                        throw JsonParseException("필드 '$weightsPath'의 항목 수가 유효하지 않습니다.")
+                    }
+                    weights.entrySet().forEach { (sleeveId, _) ->
+                        if (sleeveId.isBlank() || sleeveId.length > MAX_REFERENCE_ASSET_ID_LENGTH) {
+                            throw JsonParseException("필드 '$weightsPath'의 sleeve ID가 유효하지 않습니다.")
+                        }
+                        val weight = weights.requiredFiniteDouble(sleeveId, "$weightsPath.$sleeveId")
+                        if (weight !in 0.0..1.0) {
+                            throw JsonParseException("필드 '$weightsPath.$sleeveId'가 비중 범위를 벗어났습니다.")
+                        }
+                    }
+                }
+                requiredInstant("effectiveAt", "$path.effectiveAt")
+                if (requiredLong("revision", "$path.revision") <= 0L) {
+                    throw JsonParseException("필드 '$path.revision'은 0보다 커야 합니다.")
+                }
+            }
+        }
+        val equityReferenceKeys = linkedSetOf<BenchmarkRef>()
+        val equityReferenceEntries = state.requiredArray("equityReferenceStates")
+        if (equityReferenceEntries.size() > MAX_EQUITY_REFERENCE_COUNT) {
+            throw JsonParseException("필드 'state.equityReferenceStates'의 항목 수가 너무 많습니다.")
+        }
+        equityReferenceEntries.forEachIndexed { index, entryElement ->
+            val entryPath = "state.equityReferenceStates[$index]"
+            val entry = entryElement.takeIf(JsonElement::isJsonArray)?.asJsonArray
+                ?: throw JsonParseException("필드 '$entryPath'은 [benchmarkRef, state] 쌍이어야 합니다.")
+            if (entry.size() != 2) {
+                throw JsonParseException("필드 '$entryPath'은 정확히 두 항목이어야 합니다.")
+            }
+            val key = entry[0].requireObject("$entryPath[0]").requireBenchmarkRef("$entryPath[0]")
+            if (!equityReferenceKeys.add(key)) {
+                throw JsonParseException("필드 '$entryPath'의 benchmarkRef 키가 중복되었습니다.")
+            }
+            val valuePath = "$entryPath[1]"
+            entry[1].requireObject(valuePath).apply {
+                requireExactFields(EQUITY_REFERENCE_STATE_FIELDS, valuePath)
+                if (requiredObject("benchmarkRef").requireBenchmarkRef("$valuePath.benchmarkRef") != key) {
+                    throw JsonParseException("필드 '$valuePath.benchmarkRef'가 map 키와 다릅니다.")
+                }
+                requiredEnum<EquityReferenceRegion>("region", "$valuePath.region")
+                val countries = requiredArray("resolvedCountryCodes").mapIndexed { countryIndex, element ->
+                    val countryPath = "$valuePath.resolvedCountryCodes[$countryIndex]"
+                    element.requireStrictString(countryPath).also { country ->
+                        if (!EQUITY_COUNTRY_CODE_PATTERN.matches(country)) {
+                            throw JsonParseException("필드 '$countryPath'가 ISO alpha-2 형식이 아닙니다.")
+                        }
+                    }
+                }
+                if (countries.isEmpty() || countries.size > MAX_EQUITY_COUNTRY_CODES ||
+                    countries != countries.sorted() || countries.distinct() != countries
+                ) {
+                    throw JsonParseException("필드 '$valuePath.resolvedCountryCodes'가 정렬 고유 집합이 아닙니다.")
+                }
+                nullableStrictString("themeId", "$valuePath.themeId")?.let { themeId ->
+                    if (!EQUITY_THEME_ID_PATTERN.matches(themeId)) {
+                        throw JsonParseException("필드 '$valuePath.themeId' 형식이 유효하지 않습니다.")
+                    }
+                }
+                val positions = requiredArray("positions")
+                if (positions.size() !in 1..EquityReferenceState.MAX_REPRESENTATIVE_BASKET_SIZE) {
+                    throw JsonParseException("필드 '$valuePath.positions'의 항목 수가 유효하지 않습니다.")
+                }
+                positions.forEachIndexed { positionIndex, positionElement ->
+                    val positionPath = "$valuePath.positions[$positionIndex]"
+                    positionElement.requireObject(positionPath).apply {
+                        requireExactFields(EQUITY_REFERENCE_POSITION_FIELDS, positionPath)
+                        val assetId = requiredStrictString("assetId", "$positionPath.assetId")
+                        if (!EQUITY_REFERENCE_ASSET_ID_PATTERN.matches(assetId)) {
+                            throw JsonParseException("필드 '$positionPath.assetId' 형식이 유효하지 않습니다.")
+                        }
+                        requiredEnum<EquityReferenceRegion>("region", "$positionPath.region")
+                        val countryCode = requiredStrictString("countryCode", "$positionPath.countryCode")
+                        if (!EQUITY_COUNTRY_CODE_PATTERN.matches(countryCode)) {
+                            throw JsonParseException("필드 '$positionPath.countryCode' 형식이 유효하지 않습니다.")
+                        }
+                        requiredEnum<MethodologyEquitySector>("sector", "$positionPath.sector")
+                        listOf("weight", "targetWeight").forEach { field ->
+                            val weight = requiredFiniteDouble(field, "$positionPath.$field")
+                            if (weight !in MIN_EQUITY_REFERENCE_WEIGHT..1.0) {
+                                throw JsonParseException("필드 '$positionPath.$field'가 비중 범위를 벗어났습니다.")
+                            }
+                        }
+                        if (requiredInt("representedConstituentCount") !in 1..MAX_EQUITY_REPRESENTED_COUNT) {
+                            throw JsonParseException(
+                                "필드 '$positionPath.representedConstituentCount'가 범위를 벗어났습니다.",
+                            )
+                        }
+                        val score = requiredFiniteDouble("selectionScore", "$positionPath.selectionScore")
+                        val income = requiredFiniteDouble(
+                            "indicatedAnnualDividendYield",
+                            "$positionPath.indicatedAnnualDividendYield",
+                        )
+                        if (score !in -100.0..100.0 || income !in 0.0..1.0) {
+                            throw JsonParseException("필드 '$positionPath'의 점수·배당수익률이 유효하지 않습니다.")
+                        }
+                        requiredLocalDate("enteredOn", "$positionPath.enteredOn")
+                    }
+                }
+                requiredObject("factorExposure").apply {
+                    requireExactFields(EQUITY_REFERENCE_FACTOR_EXPOSURE_FIELDS, "$valuePath.factorExposure")
+                    val countryWeights = requiredObject("countryWeights")
+                    if (countryWeights.size() !in 1..MAX_EQUITY_COUNTRY_CODES) {
+                        throw JsonParseException("필드 '$valuePath.factorExposure.countryWeights'가 유효하지 않습니다.")
+                    }
+                    countryWeights.entrySet().forEach { (countryCode, _) ->
+                        val path = "$valuePath.factorExposure.countryWeights.$countryCode"
+                        val weight = countryWeights.requiredFiniteDouble(countryCode, path)
+                        if (!EQUITY_COUNTRY_CODE_PATTERN.matches(countryCode) || weight !in 0.0..1.0) {
+                            throw JsonParseException("필드 '$path'가 유효하지 않습니다.")
+                        }
+                    }
+                    val sectorWeights = requiredObject("sectorWeights")
+                    if (sectorWeights.size() !in 1..MethodologyEquitySector.entries.size) {
+                        throw JsonParseException("필드 '$valuePath.factorExposure.sectorWeights'가 유효하지 않습니다.")
+                    }
+                    sectorWeights.entrySet().forEach { (sectorName, _) ->
+                        if (MethodologyEquitySector.entries.none { it.name == sectorName } ||
+                            sectorWeights.requiredFiniteDouble(
+                                sectorName,
+                                "$valuePath.factorExposure.sectorWeights.$sectorName",
+                            ) !in 0.0..1.0
+                        ) {
+                            throw JsonParseException("필드 '$valuePath.factorExposure.sectorWeights.$sectorName'가 유효하지 않습니다.")
+                        }
+                    }
+                    val styles = requiredEnumFiniteDoubleMap<EquityReferenceStyleFactor>(
+                        "styleExposures",
+                        "$valuePath.factorExposure.styleExposures",
+                    )
+                    if (styles.keys != EquityReferenceStyleFactor.entries.toSet() ||
+                        styles.values.any { it !in -MAX_EQUITY_FACTOR_EXPOSURE..MAX_EQUITY_FACTOR_EXPOSURE }
+                    ) {
+                        throw JsonParseException("필드 '$valuePath.factorExposure.styleExposures'가 유효하지 않습니다.")
+                    }
+                    val idiosyncratic = requiredArray("idiosyncraticVolatilityWeights")
+                    if (idiosyncratic.size() != EQUITY_IDIOSYNCRATIC_BUCKET_COUNT) {
+                        throw JsonParseException(
+                            "필드 '$valuePath.factorExposure.idiosyncraticVolatilityWeights'의 길이가 유효하지 않습니다.",
+                        )
+                    }
+                    idiosyncratic.forEachIndexed { bucket, element ->
+                        val path = "$valuePath.factorExposure.idiosyncraticVolatilityWeights[$bucket]"
+                        val value = element.requireFiniteDouble(path)
+                        if (value !in -MAX_EQUITY_IDIOSYNCRATIC_WEIGHT..MAX_EQUITY_IDIOSYNCRATIC_WEIGHT) {
+                            throw JsonParseException("필드 '$path'가 허용 범위를 벗어났습니다.")
+                        }
+                    }
+                    listOf("thematicExposure", "activeManagementExposure").forEach { field ->
+                        if (requiredFiniteDouble(field, "$valuePath.factorExposure.$field") !in -1.0..1.0) {
+                            throw JsonParseException("필드 '$valuePath.factorExposure.$field'가 범위를 벗어났습니다.")
+                        }
+                    }
+                }
+                if (requiredLong("revision", "$valuePath.revision") < 0L) {
+                    throw JsonParseException("필드 '$valuePath.revision'은 0 이상이어야 합니다.")
+                }
+                listOf(
+                    "lastSelectionDate",
+                    "nextSelectionDate",
+                    "lastReweightDate",
+                    "nextReweightDate",
+                ).forEach { field -> requiredLocalDate(field, "$valuePath.$field") }
+                if (requiredFiniteDouble(
+                        "estimatedAnnualIncomeYield",
+                        "$valuePath.estimatedAnnualIncomeYield",
+                    ) !in 0.0..1.0
+                ) {
+                    throw JsonParseException("필드 '$valuePath.estimatedAnnualIncomeYield'가 범위를 벗어났습니다.")
+                }
+                nullableLong("declaredTargetConstituentCount", "$valuePath.declaredTargetConstituentCount")
+                    ?.let { count ->
+                        if (count !in 1L..Int.MAX_VALUE.toLong()) {
+                            throw JsonParseException(
+                                "필드 '$valuePath.declaredTargetConstituentCount'가 범위를 벗어났습니다.",
+                            )
+                        }
+                    }
+                if (requiredInt("eligibleCandidateCount") < positions.size() ||
+                    requiredInt("representativeBasketLimit") !in
+                    1..EquityReferenceState.MAX_REPRESENTATIVE_BASKET_SIZE
+                ) {
+                    throw JsonParseException("필드 '$valuePath'의 후보·대표 basket 수가 유효하지 않습니다.")
+                }
+                listOf("profileFingerprint", "universeFingerprint", "compositionHash").forEach { field ->
+                    if (!REFERENCE_COMPOSITION_HASH.matches(requiredStrictString(field, "$valuePath.$field"))) {
+                        throw JsonParseException("필드 '$valuePath.$field'는 소문자 16자리 16진 해시여야 합니다.")
+                    }
+                }
+                val modelVersion = requiredStrictString("universeModelVersion", "$valuePath.universeModelVersion")
+                if (!EQUITY_UNIVERSE_VERSION_PATTERN.matches(modelVersion)) {
+                    throw JsonParseException("필드 '$valuePath.universeModelVersion' 형식이 유효하지 않습니다.")
+                }
+                requiredInstant("asOf", "$valuePath.asOf")
+            }
+        }
+        state.requiredArray("equityReferenceLedger").forEachIndexed { index, element ->
+            val path = "state.equityReferenceLedger[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(EQUITY_REFERENCE_REBALANCE_RECORD_FIELDS, path)
+                requiredBoundedNonBlankString("id", "$path.id", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                requiredObject("benchmarkRef").requireBenchmarkRef("$path.benchmarkRef")
+                val kind = requiredEnum<EquityReferenceActionKind>("kind", "$path.kind")
+                requiredLocalDate("selectionDate", "$path.selectionDate")
+                requiredInstant("effectiveAt", "$path.effectiveAt")
+                val added = requireEquityReferenceAssetIds("addedAssetIds", "$path.addedAssetIds")
+                val removed = requireEquityReferenceAssetIds("removedAssetIds", "$path.removedAssetIds")
+                if (added.intersect(removed.toSet()).isNotEmpty() ||
+                    kind == EquityReferenceActionKind.REWEIGHT && (added.isNotEmpty() || removed.isNotEmpty())
+                ) {
+                    throw JsonParseException("필드 '$path'의 편입·편출 집합이 action kind와 다릅니다.")
+                }
+                listOf("compositionHashBefore", "compositionHashAfter").forEach { field ->
+                    if (!REFERENCE_COMPOSITION_HASH.matches(requiredStrictString(field, "$path.$field"))) {
+                        throw JsonParseException("필드 '$path.$field'는 소문자 16자리 16진 해시여야 합니다.")
+                    }
+                }
+                if (requiredFiniteDouble("turnoverRate", "$path.turnoverRate") !in 0.0..1.0 ||
+                    requiredInt("resultingPositionCount") !in
+                    1..EquityReferenceState.MAX_REPRESENTATIVE_BASKET_SIZE ||
+                    requiredInt("representedConstituentCount") < requiredInt("resultingPositionCount") ||
+                    requiredLong("revision", "$path.revision") <= 0L
+                ) {
+                    throw JsonParseException("필드 '$path'의 회전율·구성원 수·revision이 유효하지 않습니다.")
+                }
+            }
+        }
+        val fundOfFundsKeys = linkedSetOf<BenchmarkRef>()
+        val fundOfFundsEntries = state.requiredArray("fundOfFundsStates")
+        if (fundOfFundsEntries.size() > MAX_FUND_OF_FUNDS_REFERENCE_COUNT) {
+            throw JsonParseException("필드 'state.fundOfFundsStates'의 항목 수가 너무 많습니다.")
+        }
+        fundOfFundsEntries.forEachIndexed { index, entryElement ->
+            val entryPath = "state.fundOfFundsStates[$index]"
+            val entry = entryElement.takeIf(JsonElement::isJsonArray)?.asJsonArray
+                ?: throw JsonParseException("필드 '$entryPath'은 [benchmarkRef, state] 쌍이어야 합니다.")
+            if (entry.size() != 2) {
+                throw JsonParseException("필드 '$entryPath'은 정확히 두 항목이어야 합니다.")
+            }
+            val key = entry[0].requireObject("$entryPath[0]").requireBenchmarkRef("$entryPath[0]")
+            if (!fundOfFundsKeys.add(key)) {
+                throw JsonParseException("필드 '$entryPath'의 benchmarkRef 키가 중복되었습니다.")
+            }
+            val valuePath = "$entryPath[1]"
+            entry[1].requireObject(valuePath).apply {
+                requireExactFields(FUND_OF_FUNDS_STATE_FIELDS, valuePath)
+                if (requiredObject("benchmarkRef").requireBenchmarkRef("$valuePath.benchmarkRef") != key) {
+                    throw JsonParseException("필드 '$valuePath.benchmarkRef'가 map 키와 다릅니다.")
+                }
+                requiredEnum<FundOfFundsUniverse>("universe", "$valuePath.universe")
+                val positions = requiredArray("positions")
+                if (positions.size() !in 1..FundOfFundsState.MAX_POSITIONS) {
+                    throw JsonParseException("필드 '$valuePath.positions'의 항목 수가 유효하지 않습니다.")
+                }
+                positions.forEachIndexed { positionIndex, positionElement ->
+                    val positionPath = "$valuePath.positions[$positionIndex]"
+                    positionElement.requireObject(positionPath).apply {
+                        requireExactFields(FUND_OF_FUNDS_POSITION_FIELDS, positionPath)
+                        val candidateId = requiredStrictString("candidateFundId", "$positionPath.candidateFundId")
+                        if (!FUND_OF_FUNDS_CANDIDATE_ID_PATTERN.matches(candidateId)) {
+                            throw JsonParseException("필드 '$positionPath.candidateFundId' 형식이 유효하지 않습니다.")
+                        }
+                        requiredEnum<FundOfFundsCategory>("category", "$positionPath.category")
+                        requiredObject("underlyingBenchmarkRef")
+                            .requireBenchmarkRef("$positionPath.underlyingBenchmarkRef")
+                        listOf("currentWeight", "targetWeight").forEach { field ->
+                            if (requiredFiniteDouble(field, "$positionPath.$field") !in
+                                MIN_FUND_OF_FUNDS_WEIGHT..1.0
+                            ) {
+                                throw JsonParseException("필드 '$positionPath.$field'가 비중 범위를 벗어났습니다.")
+                            }
+                        }
+                        val ranges = mapOf(
+                            "marketDiscountRate" to
+                                (MIN_FUND_OF_FUNDS_DISCOUNT..MAX_FUND_OF_FUNDS_PREMIUM),
+                            "indicatedAnnualDistributionYield" to (0.0..1.0),
+                            "leverageRatio" to (0.0..MAX_FUND_OF_FUNDS_LEVERAGE),
+                            "annualExpenseRate" to (0.0..MAX_FUND_OF_FUNDS_EXPENSE_RATE),
+                            "annualResidualVolatility" to (0.0..MAX_FUND_OF_FUNDS_RESIDUAL_VOLATILITY),
+                            "liquidityScore" to (0.0..1.0),
+                            "selectionScore" to (-100.0..100.0),
+                        )
+                        ranges.forEach { (field, range) ->
+                            if (requiredFiniteDouble(field, "$positionPath.$field") !in range) {
+                                throw JsonParseException("필드 '$positionPath.$field'가 범위를 벗어났습니다.")
+                            }
+                        }
+                        requiredLocalDate("enteredOn", "$positionPath.enteredOn")
+                        requiredInstant("asOf", "$positionPath.asOf")
+                    }
+                }
+                if (requiredLong("revision", "$valuePath.revision") < 0L) {
+                    throw JsonParseException("필드 '$valuePath.revision'은 0 이상이어야 합니다.")
+                }
+                requiredLocalDate("bootstrapDate", "$valuePath.bootstrapDate")
+                nullableLocalDate("lastSelectionDate", "$valuePath.lastSelectionDate")
+                requiredLocalDate("nextSelectionDate", "$valuePath.nextSelectionDate")
+                nullableLocalDate("lastReweightDate", "$valuePath.lastReweightDate")
+                requiredLocalDate("nextReweightDate", "$valuePath.nextReweightDate")
+                if (requiredFiniteDouble(
+                        "estimatedAnnualIncomeYield",
+                        "$valuePath.estimatedAnnualIncomeYield",
+                    ) !in 0.0..1.0 ||
+                    requiredInt("eligibleCandidateCount") < positions.size()
+                ) {
+                    throw JsonParseException("필드 '$valuePath'의 소득수익률·후보 수가 유효하지 않습니다.")
+                }
+                listOf("profileFingerprint", "universeFingerprint", "compositionHash").forEach { field ->
+                    if (!REFERENCE_COMPOSITION_HASH.matches(requiredStrictString(field, "$valuePath.$field"))) {
+                        throw JsonParseException("필드 '$valuePath.$field'는 소문자 16자리 16진 해시여야 합니다.")
+                    }
+                }
+                requiredInstant("asOf", "$valuePath.asOf")
+            }
+        }
+        state.requiredArray("fundOfFundsRebalanceLedger").forEachIndexed { index, element ->
+            val path = "state.fundOfFundsRebalanceLedger[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(FUND_OF_FUNDS_REBALANCE_RECORD_FIELDS, path)
+                requiredBoundedNonBlankString("id", "$path.id", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                requiredObject("benchmarkRef").requireBenchmarkRef("$path.benchmarkRef")
+                val kind = requiredEnum<FundOfFundsActionKind>("kind", "$path.kind")
+                requiredLocalDate("effectiveDate", "$path.effectiveDate")
+                requiredInstant("effectiveAt", "$path.effectiveAt")
+                val added = requireFundOfFundsCandidateIds(
+                    "addedCandidateFundIds",
+                    "$path.addedCandidateFundIds",
+                )
+                val removed = requireFundOfFundsCandidateIds(
+                    "removedCandidateFundIds",
+                    "$path.removedCandidateFundIds",
+                )
+                if (added.intersect(removed.toSet()).isNotEmpty() ||
+                    kind == FundOfFundsActionKind.REWEIGHT && (added.isNotEmpty() || removed.isNotEmpty())
+                ) {
+                    throw JsonParseException("필드 '$path'의 편입·편출 집합이 action kind와 다릅니다.")
+                }
+                listOf("compositionHashBefore", "compositionHashAfter").forEach { field ->
+                    if (!REFERENCE_COMPOSITION_HASH.matches(requiredStrictString(field, "$path.$field"))) {
+                        throw JsonParseException("필드 '$path.$field'는 소문자 16자리 16진 해시여야 합니다.")
+                    }
+                }
+                if (requiredFiniteDouble("oneWayTurnoverRate", "$path.oneWayTurnoverRate") !in 0.0..1.0 ||
+                    requiredInt("resultingFundCount") !in 1..FundOfFundsState.MAX_POSITIONS ||
+                    requiredLong("revision", "$path.revision") <= 0L
+                ) {
+                    throw JsonParseException("필드 '$path'의 회전율·펀드 수·revision이 유효하지 않습니다.")
+                }
+            }
+        }
+        val alternativeRiskPremiaKeys = linkedSetOf<BenchmarkRef>()
+        val alternativeRiskPremiaEntries = state.requiredArray("alternativeRiskPremiaStates")
+        if (alternativeRiskPremiaEntries.size() > MAX_STRUCTURED_REFERENCE_COUNT) {
+            throw JsonParseException("필드 'state.alternativeRiskPremiaStates'의 항목 수가 너무 많습니다.")
+        }
+        alternativeRiskPremiaEntries.forEachIndexed { index, entryElement ->
+            val entryPath = "state.alternativeRiskPremiaStates[$index]"
+            val entry = entryElement.takeIf(JsonElement::isJsonArray)?.asJsonArray
+                ?: throw JsonParseException("필드 '$entryPath'은 [benchmarkRef, state] 쌍이어야 합니다.")
+            if (entry.size() != 2) {
+                throw JsonParseException("필드 '$entryPath'은 정확히 두 항목이어야 합니다.")
+            }
+            val key = entry[0].requireObject("$entryPath[0]").requireBenchmarkRef("$entryPath[0]")
+            if (!alternativeRiskPremiaKeys.add(key)) {
+                throw JsonParseException("필드 '$entryPath'의 benchmarkRef 키가 중복되었습니다.")
+            }
+            val valuePath = "$entryPath[1]"
+            entry[1].requireObject(valuePath).apply {
+                requireExactFields(ALTERNATIVE_RISK_PREMIA_STATE_FIELDS, valuePath)
+                if (requiredObject("benchmarkRef").requireBenchmarkRef("$valuePath.benchmarkRef") != key) {
+                    throw JsonParseException("필드 '$valuePath.benchmarkRef'가 map 키와 다릅니다.")
+                }
+                val positions = requiredArray("positions")
+                if (positions.size() !in 1..AlternativeRiskPremiaState.MAX_POSITIONS) {
+                    throw JsonParseException("필드 '$valuePath.positions'의 항목 수가 유효하지 않습니다.")
+                }
+                positions.forEachIndexed { positionIndex, positionElement ->
+                    val positionPath = "$valuePath.positions[$positionIndex]"
+                    positionElement.requireObject(positionPath).apply {
+                        requireExactFields(ALTERNATIVE_RISK_PREMIA_POSITION_FIELDS, positionPath)
+                        val driverId = requiredStrictString("driverId", "$positionPath.driverId")
+                        if (!COMPOSITE_MEMBER_ID_PATTERN.matches(driverId)) {
+                            throw JsonParseException("필드 '$positionPath.driverId' 형식이 유효하지 않습니다.")
+                        }
+                        requiredEnum<AlternativeRiskPremiaStrategyFamily>(
+                            "strategyFamily",
+                            "$positionPath.strategyFamily",
+                        )
+                        listOf("currentSignedWeight", "targetSignedWeight").forEach { field ->
+                            if (requiredFiniteDouble(field, "$positionPath.$field") !in -10.0..10.0) {
+                                throw JsonParseException("필드 '$positionPath.$field'의 노출 범위가 유효하지 않습니다.")
+                            }
+                        }
+                        if (requiredFiniteDouble("annualizedVariance", "$positionPath.annualizedVariance") !in
+                            1e-8..25.0 ||
+                            requiredFiniteDouble("trendSignal", "$positionPath.trendSignal") !in -100.0..100.0 ||
+                            requiredFiniteDouble(
+                                "sourceAnnualIncomeYield",
+                                "$positionPath.sourceAnnualIncomeYield",
+                            ) !in 0.0..1.0 ||
+                            requiredFiniteDouble(
+                                "sourceDurationYears",
+                                "$positionPath.sourceDurationYears",
+                            ) !in -50.0..50.0
+                        ) {
+                            throw JsonParseException("필드 '$positionPath'의 위험·소득·듀레이션 범위가 유효하지 않습니다.")
+                        }
+                        requiredFiniteDouble("lastSourceLogReturn", "$positionPath.lastSourceLogReturn")
+                        requiredBoolean("sourceAvailable", "$positionPath.sourceAvailable")
+                    }
+                }
+                if (requiredLong("revision", "$valuePath.revision") < 0L) {
+                    throw JsonParseException("필드 '$valuePath.revision'은 0 이상이어야 합니다.")
+                }
+                nullableLocalDate("lastReweightDate", "$valuePath.lastReweightDate")
+                nullableLocalDate("nextReweightDate", "$valuePath.nextReweightDate")
+                requireStructuredReferenceMeasures(valuePath)
+                requiredInstant("asOf", "$valuePath.asOf")
+            }
+        }
+        state.requiredArray("alternativeRiskPremiaRebalanceLedger")
+            .forEachIndexed { index, element ->
+                val path = "state.alternativeRiskPremiaRebalanceLedger[$index]"
+                element.requireObject(path).apply {
+                    requireExactFields(ALTERNATIVE_RISK_PREMIA_REBALANCE_RECORD_FIELDS, path)
+                    requiredBoundedNonBlankString("id", "$path.id", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                    requiredObject("benchmarkRef").requireBenchmarkRef("$path.benchmarkRef")
+                    val kind = requiredEnum<AlternativeRiskPremiaActionKind>("kind", "$path.kind")
+                    requiredLocalDate("effectiveDate", "$path.effectiveDate")
+                    requiredInstant("effectiveAt", "$path.effectiveAt")
+                    val cashSubstituted = requireCompositeMemberIds(
+                        "cashSubstitutedDriverIds",
+                        "$path.cashSubstitutedDriverIds",
+                    )
+                    requireStructuredReferenceRecordMeasures(path)
+                    if (kind == AlternativeRiskPremiaActionKind.REWEIGHT && cashSubstituted.isNotEmpty() ||
+                        kind == AlternativeRiskPremiaActionKind.EXTRAORDINARY_SOURCE_TO_CASH &&
+                        (cashSubstituted.isEmpty() ||
+                            requiredFiniteDouble("turnoverRate", "$path.turnoverRate") != 0.0)
+                    ) {
+                        throw JsonParseException("필드 '$path'의 현금 대체 집합이 action kind와 다릅니다.")
+                    }
+                }
+            }
+        val compositeReferenceKeys = linkedSetOf<BenchmarkRef>()
+        val compositeReferenceEntries = state.requiredArray("compositeReferenceStates")
+        if (compositeReferenceEntries.size() > MAX_STRUCTURED_REFERENCE_COUNT) {
+            throw JsonParseException("필드 'state.compositeReferenceStates'의 항목 수가 너무 많습니다.")
+        }
+        compositeReferenceEntries.forEachIndexed { index, entryElement ->
+            val entryPath = "state.compositeReferenceStates[$index]"
+            val entry = entryElement.takeIf(JsonElement::isJsonArray)?.asJsonArray
+                ?: throw JsonParseException("필드 '$entryPath'은 [benchmarkRef, state] 쌍이어야 합니다.")
+            if (entry.size() != 2) {
+                throw JsonParseException("필드 '$entryPath'은 정확히 두 항목이어야 합니다.")
+            }
+            val key = entry[0].requireObject("$entryPath[0]").requireBenchmarkRef("$entryPath[0]")
+            if (!compositeReferenceKeys.add(key)) {
+                throw JsonParseException("필드 '$entryPath'의 benchmarkRef 키가 중복되었습니다.")
+            }
+            val valuePath = "$entryPath[1]"
+            entry[1].requireObject(valuePath).apply {
+                requireExactFields(COMPOSITE_REFERENCE_STATE_FIELDS, valuePath)
+                if (requiredObject("benchmarkRef").requireBenchmarkRef("$valuePath.benchmarkRef") != key) {
+                    throw JsonParseException("필드 '$valuePath.benchmarkRef'가 map 키와 다릅니다.")
+                }
+                val positions = requiredArray("positions")
+                if (positions.size() !in 1..CompositeReferenceState.MAX_POSITIONS) {
+                    throw JsonParseException("필드 '$valuePath.positions'의 항목 수가 유효하지 않습니다.")
+                }
+                positions.forEachIndexed { positionIndex, positionElement ->
+                    val positionPath = "$valuePath.positions[$positionIndex]"
+                    positionElement.requireObject(positionPath).apply {
+                        requireExactFields(COMPOSITE_REFERENCE_POSITION_FIELDS, positionPath)
+                        val sleeveId = requiredStrictString("sleeveId", "$positionPath.sleeveId")
+                        if (!COMPOSITE_MEMBER_ID_PATTERN.matches(sleeveId)) {
+                            throw JsonParseException("필드 '$positionPath.sleeveId' 형식이 유효하지 않습니다.")
+                        }
+                        requiredEnum<CompositeSleeveDirection>("direction", "$positionPath.direction")
+                        listOf("currentWeightMagnitude", "targetWeightMagnitude").forEach { field ->
+                            if (requiredFiniteDouble(field, "$positionPath.$field") !in 0.0..10.0) {
+                                throw JsonParseException("필드 '$positionPath.$field'의 노출 범위가 유효하지 않습니다.")
+                            }
+                        }
+                        if (requiredFiniteDouble("annualizedVariance", "$positionPath.annualizedVariance") !in
+                            1e-8..25.0 ||
+                            requiredFiniteDouble("trendSignal", "$positionPath.trendSignal") !in -100.0..100.0 ||
+                            requiredFiniteDouble(
+                                "sourceAnnualIncomeYield",
+                                "$positionPath.sourceAnnualIncomeYield",
+                            ) !in 0.0..1.0 ||
+                            requiredFiniteDouble(
+                                "sourceDurationYears",
+                                "$positionPath.sourceDurationYears",
+                            ) !in -50.0..50.0
+                        ) {
+                            throw JsonParseException("필드 '$positionPath'의 위험·소득·듀레이션 범위가 유효하지 않습니다.")
+                        }
+                        requiredFiniteDouble("lastSourceLogReturn", "$positionPath.lastSourceLogReturn")
+                        requiredBoolean("sourceAvailable", "$positionPath.sourceAvailable")
+                        nullableFiniteDouble(
+                            "conditionalPrepaymentRateAnnual",
+                            "$positionPath.conditionalPrepaymentRateAnnual",
+                        )?.let { value ->
+                            if (value !in 0.0..1.0) {
+                                throw JsonParseException(
+                                    "필드 '$positionPath.conditionalPrepaymentRateAnnual' 범위가 유효하지 않습니다.",
+                                )
+                            }
+                        }
+                    }
+                }
+                if (requiredLong("revision", "$valuePath.revision") < 0L) {
+                    throw JsonParseException("필드 '$valuePath.revision'은 0 이상이어야 합니다.")
+                }
+                nullableLocalDate("lastSelectionDate", "$valuePath.lastSelectionDate")
+                nullableLocalDate("nextSelectionDate", "$valuePath.nextSelectionDate")
+                nullableLocalDate("lastReweightDate", "$valuePath.lastReweightDate")
+                nullableLocalDate("nextReweightDate", "$valuePath.nextReweightDate")
+                requireStructuredReferenceMeasures(valuePath)
+                if (requiredFiniteDouble("lastMortgageRateAnnual", "$valuePath.lastMortgageRateAnnual") !in
+                    0.0..1.0
+                ) {
+                    throw JsonParseException("필드 '$valuePath.lastMortgageRateAnnual' 범위가 유효하지 않습니다.")
+                }
+                requiredInstant("asOf", "$valuePath.asOf")
+            }
+        }
+        state.requiredArray("compositeReferenceRebalanceLedger").forEachIndexed { index, element ->
+            val path = "state.compositeReferenceRebalanceLedger[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(COMPOSITE_REFERENCE_REBALANCE_RECORD_FIELDS, path)
+                requiredBoundedNonBlankString("id", "$path.id", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                requiredObject("benchmarkRef").requireBenchmarkRef("$path.benchmarkRef")
+                val kind = requiredEnum<CompositeReferenceActionKind>("kind", "$path.kind")
+                requiredLocalDate("effectiveDate", "$path.effectiveDate")
+                requiredInstant("effectiveAt", "$path.effectiveAt")
+                val added = requireCompositeMemberIds("addedSleeveIds", "$path.addedSleeveIds")
+                val removed = requireCompositeMemberIds("removedSleeveIds", "$path.removedSleeveIds")
+                val cashSubstituted = requireCompositeMemberIds(
+                    "cashSubstitutedSleeveIds",
+                    "$path.cashSubstitutedSleeveIds",
+                )
+                if (added.intersect(removed.toSet()).isNotEmpty() || when (kind) {
+                        CompositeReferenceActionKind.SELECTION -> cashSubstituted.isNotEmpty()
+                        CompositeReferenceActionKind.REWEIGHT ->
+                            added.isNotEmpty() || removed.isNotEmpty() || cashSubstituted.isNotEmpty()
+                        CompositeReferenceActionKind.EXTRAORDINARY_SOURCE_TO_CASH ->
+                            added.isNotEmpty() || removed.isNotEmpty() || cashSubstituted.isEmpty() ||
+                                requiredFiniteDouble("turnoverRate", "$path.turnoverRate") != 0.0
+                    }
+                ) {
+                    throw JsonParseException("필드 '$path'의 편입·편출 집합이 action kind와 다릅니다.")
+                }
+                requireStructuredReferenceRecordMeasures(path)
             }
         }
         state.requiredObject("pendingFundFlowRates").apply {
@@ -676,12 +2605,32 @@ actual class GameSaveStorage actual constructor() {
                 required("accountingSequence")
             }
         }
+        state.requiredObject("lastEvaluatedDistributionDateByStock").entrySet().forEach { (stockId, element) ->
+            if (stockId.isBlank() || element.isJsonNull) {
+                throw JsonParseException("분배 평가 날짜 맵의 종목 ID·날짜가 유효하지 않습니다.")
+            }
+            gson.fromJson(element, LocalDate::class.java)
+                ?: throw JsonParseException("분배 평가 날짜 맵의 날짜를 복원할 수 없습니다.")
+        }
         state.requiredArray("dividendLedger").forEachIndexed { index, element ->
-            element.requireObject("state.dividendLedger[$index]").apply {
-                required("taxableIncomeAmount")
-                required("returnOfCapitalAmount")
-                required("excessReturnOfCapitalGainKrw")
-                required("accountingSequence")
+            val path = "state.dividendLedger[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(DIVIDEND_LEDGER_FIELDS, path)
+                requiredBoundedNonBlankString("id", "$path.id", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                requiredBoundedNonBlankString("stockId", "$path.stockId", MAX_REFERENCE_ASSET_ID_LENGTH)
+                requiredInstant("paidAt", "$path.paidAt")
+                requiredEnum<Currency>("currency", "$path.currency")
+                listOf(
+                    "grossAmount",
+                    "withholdingTax",
+                    "netAmount",
+                    "exchangeRateToKrw",
+                    "taxableIncomeAmount",
+                    "returnOfCapitalAmount",
+                ).forEach { field -> requiredFiniteDouble(field, "$path.$field") }
+                requiredLong("excessReturnOfCapitalGainKrw", "$path.excessReturnOfCapitalGainKrw")
+                requiredLong("accountingSequence", "$path.accountingSequence")
+                requiredObject("taxBreakdown").requireTaxBreakdown("$path.taxBreakdown")
             }
         }
         state.requiredArray("pendingCorporateActions").forEachIndexed { index, element ->
@@ -748,6 +2697,10 @@ actual class GameSaveStorage actual constructor() {
                     requireMember("corporateActionReference")
                     get("corporateActionReference").takeUnless(JsonElement::isJsonNull)?.let { referenceElement ->
                         referenceElement.requireObject("$path[$index].corporateActionReference").apply {
+                            requireExactFields(
+                                CORPORATE_ACTION_NEWS_REFERENCE_FIELDS,
+                                "$path[$index].corporateActionReference",
+                            )
                             required("occurrenceId")
                             requiredEnum<CorporateActionNewsTransition>(
                                 "transition",
@@ -769,6 +2722,10 @@ actual class GameSaveStorage actual constructor() {
                             requireMember("appliedAt")
                             requireMember("accountingSequence")
                             requireMember("cancelledAt")
+                            nullableEnum<CorporateActionCancellationReason>(
+                                "cancellationReason",
+                                "$path[$index].corporateActionReference.cancellationReason",
+                            )
                             requireMember("cancellingListingEventId")
                             requireMember("cancellingListingLedgerSequence")
                             nullableEnum<ListingLifecycleStatus>(
@@ -1019,6 +2976,994 @@ actual class GameSaveStorage actual constructor() {
         }
     }
 
+    private fun JsonObject.requireBenchmarkRef(path: String): BenchmarkRef {
+        requireExactFields(BENCHMARK_REF_FIELDS, path)
+        val benchmarkId = requiredStrictString("benchmarkId", "$path.benchmarkId")
+        val version = requiredInt("version")
+        return try {
+            BenchmarkRef(benchmarkId = benchmarkId, version = version)
+        } catch (error: IllegalArgumentException) {
+            throw JsonParseException("필드 '$path'의 벤치마크 참조가 유효하지 않습니다.", error)
+        }
+    }
+
+    /** 종목팩 파서와 같은 exact field·enum·수치 경계를 저장 JSON에도 적용한다. */
+    private fun JsonObject.requireFundProductProfile(path: String) {
+        requireExactFields(FUND_PRODUCT_PROFILE_FIELDS, path)
+        requiredObject("benchmarkRef").requireBenchmarkRef("$path.benchmarkRef")
+        val replicationMode = requiredEnum<FundReplicationMode>(
+            "replicationMode",
+            "$path.replicationMode",
+        )
+        requiredEnum<FundReturnVariant>("returnVariant", "$path.returnVariant")
+        val legalStructure = requiredEnum<FundLegalStructure>(
+            "legalStructure",
+            "$path.legalStructure",
+        )
+        requiredEnum<FundReferenceExposure>("referenceExposure", "$path.referenceExposure")
+        val transforms = requiredEnumArray<FundReturnTransform>(
+            "returnTransforms",
+            "$path.returnTransforms",
+        )
+        if (transforms.isEmpty() || transforms.distinct().size != transforms.size ||
+            transforms != transforms.sortedBy(FundReturnTransform::ordinal) ||
+            FundReturnTransform.PLAIN in transforms && transforms.size != 1
+        ) {
+            throw JsonParseException("필드 '$path.returnTransforms'의 정렬·중복·조합이 유효하지 않습니다.")
+        }
+        nullableFiniteDouble(
+            "trackingErrorAnnualVolatility",
+            "$path.trackingErrorAnnualVolatility",
+        )?.let { value ->
+            if (value !in 0.0..1.0) {
+                throw JsonParseException(
+                    "필드 '$path.trackingErrorAnnualVolatility'는 0과 1 사이여야 합니다.",
+                )
+            }
+        }
+        requireMember("dailyResetTerms")
+        val hasDailyResetTerms = !get("dailyResetTerms").isJsonNull
+        if (hasDailyResetTerms) {
+            get("dailyResetTerms").requireObject("$path.dailyResetTerms")
+                .requireDailyResetTerms("$path.dailyResetTerms")
+        }
+        val hasDailyResetTransform =
+            FundReturnTransform.DAILY_LEVERAGED in transforms ||
+                FundReturnTransform.DAILY_INVERSE in transforms
+        if (hasDailyResetTransform != hasDailyResetTerms) {
+            throw JsonParseException("필드 '$path'의 일일 reset 변환과 약관이 일치하지 않습니다.")
+        }
+        requireMember("etnProductTerms")
+        requireMember("etnIssuerCreditModelParameters")
+        requireMember("closedEndFundTerms")
+        requireMember("closedEndFundMarketModelParameters")
+        requireMember("optionStrategyTerms")
+        requireMember("cashCollateralizedPutSpreadTerms")
+        val hasEtnTerms = !get("etnProductTerms").isJsonNull
+        val hasEtnCreditModel = !get("etnIssuerCreditModelParameters").isJsonNull
+        val hasClosedEndFundTerms = !get("closedEndFundTerms").isJsonNull
+        val hasClosedEndFundMarketModel = !get("closedEndFundMarketModelParameters").isJsonNull
+        val hasCashCollateralizedPutSpreadTerms =
+            !get("cashCollateralizedPutSpreadTerms").isJsonNull
+        val optionStrategyKind = if (get("optionStrategyTerms").isJsonNull) {
+            null
+        } else {
+            get("optionStrategyTerms").requireObject("$path.optionStrategyTerms")
+                .requireOptionStrategyTerms("$path.optionStrategyTerms")
+        }
+        if (hasCashCollateralizedPutSpreadTerms) {
+            get("cashCollateralizedPutSpreadTerms")
+                .requireObject("$path.cashCollateralizedPutSpreadTerms")
+                .requireCashCollateralizedPutSpreadTerms(
+                    "$path.cashCollateralizedPutSpreadTerms",
+                )
+        }
+        if (hasEtnTerms) {
+            get("etnProductTerms").requireObject("$path.etnProductTerms")
+                .requireEtnProductTerms("$path.etnProductTerms")
+        }
+        if (hasEtnCreditModel) {
+            get("etnIssuerCreditModelParameters")
+                .requireObject("$path.etnIssuerCreditModelParameters")
+                .requireEtnIssuerCreditModel("$path.etnIssuerCreditModelParameters")
+        }
+        if (hasClosedEndFundTerms) {
+            get("closedEndFundTerms").requireObject("$path.closedEndFundTerms")
+                .requireClosedEndFundTerms("$path.closedEndFundTerms")
+        }
+        if (hasClosedEndFundMarketModel) {
+            get("closedEndFundMarketModelParameters")
+                .requireObject("$path.closedEndFundMarketModelParameters")
+                .requireClosedEndFundMarketModel("$path.closedEndFundMarketModelParameters")
+        }
+        if (hasClosedEndFundTerms && hasClosedEndFundMarketModel) {
+            val termsObject = getAsJsonObject("closedEndFundTerms")
+            val modelObject = getAsJsonObject("closedEndFundMarketModelParameters")
+            val termsFundId = termsObject.requiredStrictString(
+                "fundId",
+                "$path.closedEndFundTerms.fundId",
+            )
+            val modelFundId = modelObject.requiredStrictString(
+                "fundId",
+                "$path.closedEndFundMarketModelParameters.fundId",
+            )
+            val allowsDebt = termsObject.requiredBoolean(
+                "allowsDebtLeverage",
+                "$path.closedEndFundTerms.allowsDebtLeverage",
+            )
+            val allowsPreferred = termsObject.requiredBoolean(
+                "allowsPreferredLeverage",
+                "$path.closedEndFundTerms.allowsPreferredLeverage",
+            )
+            val debtCoverage = termsObject.nullableFiniteDouble(
+                "minimumDebtAssetCoverageRatio",
+                "$path.closedEndFundTerms.minimumDebtAssetCoverageRatio",
+            )
+            val preferredCoverage = termsObject.nullableFiniteDouble(
+                "minimumPreferredAssetCoverageRatio",
+                "$path.closedEndFundTerms.minimumPreferredAssetCoverageRatio",
+            )
+            val initialDebt = modelObject.requiredFiniteDouble(
+                "initialDebtToGrossAssets",
+                "$path.closedEndFundMarketModelParameters.initialDebtToGrossAssets",
+            )
+            val initialPreferred = modelObject.requiredFiniteDouble(
+                "initialPreferredToGrossAssets",
+                "$path.closedEndFundMarketModelParameters.initialPreferredToGrossAssets",
+            )
+            val borrowingSpread = modelObject.requiredFiniteDouble(
+                "annualBorrowingSpread",
+                "$path.closedEndFundMarketModelParameters.annualBorrowingSpread",
+            )
+            val preferredSpread = modelObject.requiredFiniteDouble(
+                "annualPreferredDistributionSpread",
+                "$path.closedEndFundMarketModelParameters.annualPreferredDistributionSpread",
+            )
+            val debtValid = if (allowsDebt) {
+                initialDebt > 0.0 && debtCoverage != null && initialDebt <= 1.0 / debtCoverage &&
+                    borrowingSpread > 0.0
+            } else {
+                initialDebt == 0.0 && borrowingSpread == 0.0
+            }
+            val preferredValid = if (allowsPreferred) {
+                initialPreferred > 0.0 && preferredCoverage != null &&
+                    initialDebt + initialPreferred <= 1.0 / preferredCoverage &&
+                    preferredSpread > 0.0
+            } else {
+                initialPreferred == 0.0 && preferredSpread == 0.0
+            }
+            if (termsFundId != modelFundId || !debtValid || !preferredValid) {
+                throw JsonParseException(
+                    "필드 '$path'의 CEF 법적 커버리지와 초기 레버리지·조달 스프레드가 다릅니다.",
+                )
+            }
+        }
+        val optionTransformValid = when (optionStrategyKind) {
+            null -> true
+            OptionStrategyKind.COVERED_CALL ->
+                FundReturnTransform.COVERED_CALL in transforms &&
+                    FundReturnTransform.OPTION_INCOME !in transforms &&
+                    FundReturnTransform.BUFFERED !in transforms
+            OptionStrategyKind.OPTION_INCOME ->
+                FundReturnTransform.OPTION_INCOME in transforms &&
+                    FundReturnTransform.COVERED_CALL !in transforms &&
+                    FundReturnTransform.BUFFERED !in transforms
+            OptionStrategyKind.BUFFERED_PUT_SPREAD ->
+                FundReturnTransform.BUFFERED in transforms &&
+                    FundReturnTransform.OPTION_SPREAD in transforms &&
+                    FundReturnTransform.COVERED_CALL !in transforms &&
+                    FundReturnTransform.OPTION_INCOME !in transforms
+        }
+        if (!optionTransformValid) {
+            throw JsonParseException("필드 '$path'의 옵션 전략 종류와 수익률 변환이 일치하지 않습니다.")
+        }
+        if (hasDailyResetTerms && optionStrategyKind != null) {
+            throw JsonParseException("필드 '$path'에는 일일 reset과 옵션 전략 약관을 동시에 둘 수 없습니다.")
+        }
+        val hasCashCollateralizedPutSpreadTransform =
+            FundReturnTransform.CASH_COLLATERALIZED_PUT_SPREAD in transforms
+        if (hasCashCollateralizedPutSpreadTransform != hasCashCollateralizedPutSpreadTerms ||
+            hasCashCollateralizedPutSpreadTerms &&
+            (hasDailyResetTerms || optionStrategyKind != null)
+        ) {
+            throw JsonParseException("필드 '$path'의 현금담보 풋스프레드 변환·전용 약관 조합이 유효하지 않습니다.")
+        }
+        val validLegalCombination = when (legalStructure) {
+            FundLegalStructure.OPEN_END_ETF ->
+                replicationMode != FundReplicationMode.SYNTHETIC_NOTE &&
+                    FundReturnTransform.ISSUER_CREDIT !in transforms &&
+                    FundReturnTransform.PREMIUM_DISCOUNT !in transforms &&
+                    !hasEtnTerms && !hasEtnCreditModel &&
+                    !hasClosedEndFundTerms && !hasClosedEndFundMarketModel
+            FundLegalStructure.EXCHANGE_TRADED_NOTE ->
+                    replicationMode == FundReplicationMode.SYNTHETIC_NOTE &&
+                    FundReturnTransform.ISSUER_CREDIT in transforms &&
+                    hasEtnTerms && hasEtnCreditModel &&
+                    !hasClosedEndFundTerms && !hasClosedEndFundMarketModel &&
+                    !hasCashCollateralizedPutSpreadTerms
+            FundLegalStructure.CLOSED_END_FUND ->
+                replicationMode == FundReplicationMode.ACTIVE_MANAGEMENT &&
+                    FundReturnTransform.PREMIUM_DISCOUNT in transforms &&
+                    !hasEtnTerms && !hasEtnCreditModel &&
+                    hasClosedEndFundTerms && hasClosedEndFundMarketModel &&
+                    optionStrategyKind == null && !hasCashCollateralizedPutSpreadTerms
+        }
+        if (hasEtnTerms && hasEtnCreditModel) {
+            val termsIssuerId = getAsJsonObject("etnProductTerms")
+                .requiredStrictString("issuerId", "$path.etnProductTerms.issuerId")
+            val modelIssuerId = getAsJsonObject("etnIssuerCreditModelParameters")
+                .requiredStrictString("issuerId", "$path.etnIssuerCreditModelParameters.issuerId")
+            if (termsIssuerId != modelIssuerId) {
+                throw JsonParseException("필드 '$path'의 ETN 계약과 신용 모델 issuerId가 다릅니다.")
+            }
+        }
+        if (!validLegalCombination) {
+            throw JsonParseException("필드 '$path'의 법적 구조·복제 방식·수익률 변환이 일치하지 않습니다.")
+        }
+    }
+
+    private fun JsonObject.requireDirectReferenceTerminationRule(path: String) {
+        requireExactFields(DIRECT_REFERENCE_TERMINATION_RULE_FIELDS, path)
+        requiredEnum<DirectReferenceTerminationPolicy>("policy", "$path.policy")
+        val provenance = requiredEnum<DirectReferenceTerminationRuleProvenance>(
+            "provenance",
+            "$path.provenance",
+        )
+        val sourceElements = requiredArray("officialSourceUrls")
+        if (sourceElements.size() > MAX_OPTION_OFFICIAL_SOURCE_URLS) {
+            throw JsonParseException("필드 '$path.officialSourceUrls'의 항목이 너무 많습니다.")
+        }
+        val sourceUrls = sourceElements.mapIndexed { index, element ->
+            element.requireStrictString("$path.officialSourceUrls[$index]").also { url ->
+                requireSaveHttpsUrl(url, "$path.officialSourceUrls[$index]")
+            }
+        }
+        val assumptionId = nullableStrictString("assumptionId", "$path.assumptionId")
+        if (sourceUrls != sourceUrls.distinct().sorted() || when (provenance) {
+                DirectReferenceTerminationRuleProvenance.VERIFIED_PRODUCT_DISCLOSURE ->
+                    sourceUrls.isEmpty() || assumptionId != null
+                DirectReferenceTerminationRuleProvenance.MODEL_ASSUMPTION ->
+                    assumptionId == null || !OPTION_ASSUMPTION_ID.matches(assumptionId)
+            }
+        ) {
+            throw JsonParseException("필드 '$path'의 직접 reference 종료 정책 출처가 유효하지 않습니다.")
+        }
+    }
+
+    private fun JsonObject.requireDailyResetTerms(path: String) {
+        requireExactFields(DAILY_RESET_TERMS_FIELDS, path)
+        val productId = requiredStrictString("productId", "$path.productId")
+        if (!DAILY_RESET_PRODUCT_ID.matches(productId)) {
+            throw JsonParseException("필드 '$path.productId'의 형식이 유효하지 않습니다.")
+        }
+        val referenceKind = requiredObject("reference").run {
+            val referencePath = "$path.reference"
+            requireExactFields(DAILY_RESET_REFERENCE_FIELDS, referencePath)
+            val kind = requiredEnum<DailyResetReferenceKind>("kind", "$referencePath.kind")
+            requireMember("benchmarkRef")
+            requireMember("instrumentId")
+            when (kind) {
+                DailyResetReferenceKind.BENCHMARK -> {
+                    get("benchmarkRef").requireObject("$referencePath.benchmarkRef")
+                        .requireBenchmarkRef("$referencePath.benchmarkRef")
+                    if (!get("instrumentId").isJsonNull) {
+                        throw JsonParseException("필드 '$referencePath.instrumentId'는 null이어야 합니다.")
+                    }
+                }
+                DailyResetReferenceKind.INSTRUMENT -> {
+                    if (!get("benchmarkRef").isJsonNull) {
+                        throw JsonParseException("필드 '$referencePath.benchmarkRef'는 null이어야 합니다.")
+                    }
+                    val instrumentId = requiredStrictString("instrumentId", "$referencePath.instrumentId")
+                    if (!DAILY_RESET_INSTRUMENT_ID.matches(instrumentId)) {
+                        throw JsonParseException("필드 '$referencePath.instrumentId'의 형식이 유효하지 않습니다.")
+                    }
+                }
+            }
+            kind
+        }
+        requireMember("directReferenceTerminationRule")
+        val hasDirectTerminationRule = !get("directReferenceTerminationRule").isJsonNull
+        if (hasDirectTerminationRule) {
+            get("directReferenceTerminationRule").requireObject("$path.directReferenceTerminationRule")
+                .requireDirectReferenceTerminationRule("$path.directReferenceTerminationRule")
+        }
+        if ((referenceKind == DailyResetReferenceKind.INSTRUMENT) != hasDirectTerminationRule) {
+            throw JsonParseException("필드 '$path'의 직접 reference와 종료 정책 조합이 유효하지 않습니다.")
+        }
+        val leverage = requiredFiniteDouble("targetLeverage", "$path.targetLeverage")
+        if (leverage !in -MAX_DAILY_RESET_ABS_LEVERAGE..MAX_DAILY_RESET_ABS_LEVERAGE ||
+            kotlin.math.abs(leverage) < 1.0
+        ) {
+            throw JsonParseException("필드 '$path.targetLeverage'의 목표 배율이 유효하지 않습니다.")
+        }
+        requiredEnum<DailyResetCalendar>("resetCalendar", "$path.resetCalendar")
+        val provenance = requiredEnum<DailyResetTermsProvenance>("provenance", "$path.provenance")
+        val officialSourceUrl = nullableStrictString("officialSourceUrl", "$path.officialSourceUrl")
+        when (provenance) {
+            DailyResetTermsProvenance.VERIFIED_PRODUCT_TERMS ->
+                requireSaveHttpsUrl(officialSourceUrl, "$path.officialSourceUrl")
+            DailyResetTermsProvenance.MODEL_ASSUMPTION -> if (officialSourceUrl != null) {
+                throw JsonParseException("필드 '$path.officialSourceUrl'는 null이어야 합니다.")
+            }
+        }
+        requiredObject("modelParameters").apply {
+            val modelPath = "$path.modelParameters"
+            requireExactFields(DAILY_RESET_MODEL_PARAMETER_FIELDS, modelPath)
+            val financingSpread = requiredFiniteDouble(
+                "annualFinancingSpread",
+                "$modelPath.annualFinancingSpread",
+            )
+            val collateralParticipation = requiredFiniteDouble(
+                "collateralYieldParticipation",
+                "$modelPath.collateralYieldParticipation",
+            )
+            if (financingSpread !in 0.0..1.0 || collateralParticipation !in 0.0..1.5) {
+                throw JsonParseException("필드 '$modelPath'의 자금조달·담보 가정이 유효하지 않습니다.")
+            }
+            val origin = requiredEnum<DailyResetModelParameterOrigin>("origin", "$modelPath.origin")
+            val sourceUrl = nullableStrictString("sourceUrl", "$modelPath.sourceUrl")
+            when (origin) {
+                DailyResetModelParameterOrigin.VERIFIED_DISCLOSURE ->
+                    requireSaveHttpsUrl(sourceUrl, "$modelPath.sourceUrl")
+                DailyResetModelParameterOrigin.CALIBRATED_ASSUMPTION -> if (sourceUrl != null) {
+                    throw JsonParseException("필드 '$modelPath.sourceUrl'은 null이어야 합니다.")
+                }
+            }
+        }
+    }
+
+    private fun JsonObject.requireEtnSettlementRule(path: String) {
+        requireExactFields(ETN_SETTLEMENT_RULE_FIELDS, path)
+        val method = requiredEnum<EtnSettlementValuationMethod>("method", "$path.method")
+        val observations = requiredInt("observationCount")
+        if (observations !in 1..31 ||
+            method == EtnSettlementValuationMethod.LAST_INDICATIVE_VALUE && observations != 1
+        ) {
+            throw JsonParseException("필드 '$path'의 ETN 평가 관측 규칙이 유효하지 않습니다.")
+        }
+    }
+
+    private fun JsonObject.requireOptionStrategyTerms(path: String): OptionStrategyKind {
+        requireExactFields(OPTION_STRATEGY_TERMS_FIELDS, path)
+        requiredBoundedNonBlankString("productId", "$path.productId", MAX_DAILY_RESET_PRODUCT_ID_LENGTH)
+        val referenceKind = requiredObject("reference").run {
+            val referencePath = "$path.reference"
+            requireExactFields(DAILY_RESET_REFERENCE_FIELDS, referencePath)
+            val kind = requiredEnum<DailyResetReferenceKind>("kind", "$referencePath.kind")
+            requireMember("benchmarkRef")
+            requireMember("instrumentId")
+            when (kind) {
+                DailyResetReferenceKind.BENCHMARK -> {
+                    get("benchmarkRef").requireObject("$referencePath.benchmarkRef")
+                        .requireBenchmarkRef("$referencePath.benchmarkRef")
+                    if (!get("instrumentId").isJsonNull) {
+                        throw JsonParseException("필드 '$referencePath.instrumentId'는 null이어야 합니다.")
+                    }
+                }
+                DailyResetReferenceKind.INSTRUMENT -> {
+                    if (!get("benchmarkRef").isJsonNull) {
+                        throw JsonParseException("필드 '$referencePath.benchmarkRef'는 null이어야 합니다.")
+                    }
+                    val instrumentId = requiredStrictString("instrumentId", "$referencePath.instrumentId")
+                    if (!DAILY_RESET_INSTRUMENT_ID.matches(instrumentId)) {
+                        throw JsonParseException("필드 '$referencePath.instrumentId'의 형식이 유효하지 않습니다.")
+                    }
+                }
+            }
+            kind
+        }
+        requireMember("directReferenceTerminationRule")
+        val hasDirectTerminationRule = !get("directReferenceTerminationRule").isJsonNull
+        if (hasDirectTerminationRule) {
+            get("directReferenceTerminationRule").requireObject("$path.directReferenceTerminationRule")
+                .requireDirectReferenceTerminationRule("$path.directReferenceTerminationRule")
+        }
+        if ((referenceKind == DailyResetReferenceKind.INSTRUMENT) != hasDirectTerminationRule) {
+            throw JsonParseException("필드 '$path'의 직접 reference와 종료 정책 조합이 유효하지 않습니다.")
+        }
+        val strategyKind = requiredEnum<OptionStrategyKind>("kind", "$path.kind")
+        val tenor = requiredInt("tenorTradingDays")
+        requiredEnum<OptionRollCalendar>("rollCalendar", "$path.rollCalendar")
+        val lead = requiredInt("rollLeadTradingDays")
+        val provenance = requiredEnum<OptionStrategyTermsProvenance>("provenance", "$path.provenance")
+        val sourceElements = requiredArray("officialSourceUrls")
+        if (sourceElements.size() > MAX_OPTION_OFFICIAL_SOURCE_URLS) {
+            throw JsonParseException("필드 '$path.officialSourceUrls'의 항목이 너무 많습니다.")
+        }
+        val sourceUrls = sourceElements.mapIndexed { index, element ->
+            element.requireStrictString("$path.officialSourceUrls[$index]").also { url ->
+                requireSaveHttpsUrl(url, "$path.officialSourceUrls[$index]")
+            }
+        }
+        val assumptionId = nullableStrictString("assumptionId", "$path.assumptionId")
+        if (tenor !in 1..MAX_OPTION_TENOR_TRADING_DAYS || lead !in 0 until tenor ||
+            sourceUrls != sourceUrls.distinct().sorted() ||
+            provenance == OptionStrategyTermsProvenance.MODEL_ASSUMPTION &&
+            (sourceUrls.isNotEmpty() || assumptionId == null || !OPTION_ASSUMPTION_ID.matches(assumptionId)) ||
+            provenance != OptionStrategyTermsProvenance.MODEL_ASSUMPTION &&
+            (sourceUrls.isEmpty() || assumptionId != null)
+        ) {
+            throw JsonParseException("필드 '$path'의 옵션 전략 출처·만기·롤 조건이 유효하지 않습니다.")
+        }
+        requiredObject("premiumModel").apply {
+            val modelPath = "$path.premiumModel"
+            requireExactFields(OPTION_PREMIUM_MODEL_FIELDS, modelPath)
+            val volatility = requiredFiniteDouble(
+                "impliedVolatilityMultiplier",
+                "$modelPath.impliedVolatilityMultiplier",
+            )
+            val capture = requiredFiniteDouble("soldPremiumCaptureRatio", "$modelPath.soldPremiumCaptureRatio")
+            val purchase = requiredFiniteDouble(
+                "purchasedPremiumCostRatio",
+                "$modelPath.purchasedPremiumCostRatio",
+            )
+            val cost = requiredFiniteDouble(
+                "implementationCostRatePerRoll",
+                "$modelPath.implementationCostRatePerRoll",
+            )
+            val origin = requiredEnum<OptionPremiumModelParameterOrigin>("origin", "$modelPath.origin")
+            val sourceUrl = nullableStrictString("sourceUrl", "$modelPath.sourceUrl")
+            sourceUrl?.let { requireSaveHttpsUrl(it, "$modelPath.sourceUrl") }
+            val calibrationId = nullableStrictString("calibrationId", "$modelPath.calibrationId")
+            if (volatility !in 0.25..4.0 || capture !in 0.0..1.5 || purchase !in 0.5..2.0 ||
+                cost !in 0.0..0.10 ||
+                origin == OptionPremiumModelParameterOrigin.VERIFIED_DISCLOSURE &&
+                (sourceUrl == null || calibrationId != null) ||
+                origin == OptionPremiumModelParameterOrigin.CALIBRATED_ASSUMPTION &&
+                (sourceUrl != null || calibrationId == null || !OPTION_ASSUMPTION_ID.matches(calibrationId))
+            ) {
+                throw JsonParseException("필드 '$modelPath'의 옵션 프리미엄 모수가 유효하지 않습니다.")
+            }
+        }
+        listOf("coveredCall", "optionIncome", "bufferedPutSpread").forEach { field ->
+            requireMember(field)
+        }
+        val covered = !get("coveredCall").isJsonNull
+        val income = !get("optionIncome").isJsonNull
+        val buffered = !get("bufferedPutSpread").isJsonNull
+        if (listOf(covered, income, buffered).count { it } != 1 ||
+            covered != (strategyKind == OptionStrategyKind.COVERED_CALL) ||
+            income != (strategyKind == OptionStrategyKind.OPTION_INCOME) ||
+            buffered != (strategyKind == OptionStrategyKind.BUFFERED_PUT_SPREAD)
+        ) {
+            throw JsonParseException("필드 '$path'의 옵션 전략별 조건 객체가 일치하지 않습니다.")
+        }
+        if (covered) {
+            val detailPath = "$path.coveredCall"
+            get("coveredCall").requireObject(detailPath).apply {
+                requireExactFields(COVERED_CALL_TERMS_FIELDS, detailPath)
+                val ratio = requiredFiniteDouble("overwriteRatio", "$detailPath.overwriteRatio")
+                val strike = requiredFiniteDouble("callStrikeMoneyness", "$detailPath.callStrikeMoneyness")
+                if (ratio !in MIN_OPTION_POSITIVE_RATIO..1.0 || strike !in 0.50..2.0) {
+                    throw JsonParseException("필드 '$detailPath'의 covered-call 조건이 유효하지 않습니다.")
+                }
+            }
+        }
+        if (income) {
+            val detailPath = "$path.optionIncome"
+            get("optionIncome").requireObject(detailPath).apply {
+                requireExactFields(OPTION_INCOME_TERMS_FIELDS, detailPath)
+                val core = requiredFiniteDouble("coreEquityAllocation", "$detailPath.coreEquityAllocation")
+                val allocation = requiredFiniteDouble(
+                    "optionIncomeAllocation",
+                    "$detailPath.optionIncomeAllocation",
+                )
+                val upside = requiredFiniteDouble("upsideParticipation", "$detailPath.upsideParticipation")
+                val downside = requiredFiniteDouble(
+                    "downsideParticipation",
+                    "$detailPath.downsideParticipation",
+                )
+                val strike = requiredFiniteDouble("callStrikeMoneyness", "$detailPath.callStrikeMoneyness")
+                if (core !in 0.0..1.0 || allocation !in MIN_OPTION_POSITIVE_RATIO..1.0 ||
+                    core + allocation > 1.0 + OPTION_WEIGHT_EPSILON ||
+                    upside !in 0.0..1.0 || downside !in 0.0..1.0 ||
+                    upside == 0.0 && downside == 0.0 || strike !in 1.0..3.0
+                ) {
+                    throw JsonParseException("필드 '$detailPath'의 option-income 조건이 유효하지 않습니다.")
+                }
+            }
+        }
+        if (buffered) {
+            val detailPath = "$path.bufferedPutSpread"
+            get("bufferedPutSpread").requireObject(detailPath).apply {
+                requireExactFields(BUFFERED_PUT_SPREAD_TERMS_FIELDS, detailPath)
+                val notional = requiredFiniteDouble("outcomeNotionalRatio", "$detailPath.outcomeNotionalRatio")
+                val longStrike = requiredFiniteDouble(
+                    "longPutStrikeMoneyness",
+                    "$detailPath.longPutStrikeMoneyness",
+                )
+                val buffer = requiredFiniteDouble("downsideBufferFraction", "$detailPath.downsideBufferFraction")
+                val downside = requiredFiniteDouble(
+                    "downsideParticipationBeyondBuffer",
+                    "$detailPath.downsideParticipationBeyondBuffer",
+                )
+                val cap = requiredFiniteDouble("upsideCapFraction", "$detailPath.upsideCapFraction")
+                if (notional !in MIN_OPTION_POSITIVE_RATIO..1.0 || longStrike !in 0.50..1.50 ||
+                    buffer !in 0.001..0.95 || longStrike - buffer <= MIN_OPTION_STRIKE_MONEYNESS ||
+                    downside !in 0.0..1.0 || cap !in 0.001..2.0
+                ) {
+                    throw JsonParseException("필드 '$detailPath'의 buffered-put-spread 조건이 유효하지 않습니다.")
+                }
+            }
+        }
+        return strategyKind
+    }
+
+    private fun JsonObject.requireCashCollateralizedPutSpreadTerms(path: String) {
+        requireExactFields(CASH_COLLATERALIZED_PUT_SPREAD_TERMS_FIELDS, path)
+        requiredBoundedNonBlankString(
+            "productId",
+            "$path.productId",
+            MAX_DAILY_RESET_PRODUCT_ID_LENGTH,
+        )
+        requiredObject("cashBenchmarkRef").requireBenchmarkRef("$path.cashBenchmarkRef")
+        val referenceKind = requiredObject("optionReference").run {
+            val referencePath = "$path.optionReference"
+            requireExactFields(DAILY_RESET_REFERENCE_FIELDS, referencePath)
+            val kind = requiredEnum<DailyResetReferenceKind>("kind", "$referencePath.kind")
+            requireMember("benchmarkRef")
+            requireMember("instrumentId")
+            when (kind) {
+                DailyResetReferenceKind.BENCHMARK -> {
+                    get("benchmarkRef").requireObject("$referencePath.benchmarkRef")
+                        .requireBenchmarkRef("$referencePath.benchmarkRef")
+                    if (!get("instrumentId").isJsonNull) {
+                        throw JsonParseException("필드 '$referencePath.instrumentId'는 null이어야 합니다.")
+                    }
+                }
+                DailyResetReferenceKind.INSTRUMENT -> {
+                    if (!get("benchmarkRef").isJsonNull) {
+                        throw JsonParseException("필드 '$referencePath.benchmarkRef'는 null이어야 합니다.")
+                    }
+                    val instrumentId = requiredStrictString(
+                        "instrumentId",
+                        "$referencePath.instrumentId",
+                    )
+                    if (!DAILY_RESET_INSTRUMENT_ID.matches(instrumentId)) {
+                        throw JsonParseException("필드 '$referencePath.instrumentId'의 형식이 유효하지 않습니다.")
+                    }
+                }
+            }
+            kind
+        }
+        requireMember("directReferenceTerminationRule")
+        val hasDirectTerminationRule = !get("directReferenceTerminationRule").isJsonNull
+        if (hasDirectTerminationRule) {
+            get("directReferenceTerminationRule").requireObject("$path.directReferenceTerminationRule")
+                .requireDirectReferenceTerminationRule("$path.directReferenceTerminationRule")
+        }
+        if ((referenceKind == DailyResetReferenceKind.INSTRUMENT) != hasDirectTerminationRule) {
+            throw JsonParseException("필드 '$path'의 직접 option reference와 종료 정책 조합이 유효하지 않습니다.")
+        }
+        val tenor = requiredInt("tenorTradingDays")
+        requiredEnum<OptionRollCalendar>("rollCalendar", "$path.rollCalendar")
+        val lead = requiredInt("rollLeadTradingDays")
+        val maximumLoss = requiredFiniteDouble(
+            "maximumSettlementLossRatio",
+            "$path.maximumSettlementLossRatio",
+        )
+        val shortStrike = requiredFiniteDouble(
+            "shortPutStrikeMoneyness",
+            "$path.shortPutStrikeMoneyness",
+        )
+        val longStrike = requiredFiniteDouble(
+            "longPutStrikeMoneyness",
+            "$path.longPutStrikeMoneyness",
+        )
+        val provenance = requiredEnum<OptionStrategyTermsProvenance>(
+            "provenance",
+            "$path.provenance",
+        )
+        val sourceElements = requiredArray("officialSourceUrls")
+        if (sourceElements.size() > MAX_OPTION_OFFICIAL_SOURCE_URLS) {
+            throw JsonParseException("필드 '$path.officialSourceUrls'의 항목이 너무 많습니다.")
+        }
+        val sourceUrls = sourceElements.mapIndexed { index, element ->
+            element.requireStrictString("$path.officialSourceUrls[$index]").also { url ->
+                requireSaveHttpsUrl(url, "$path.officialSourceUrls[$index]")
+            }
+        }
+        val assumptionId = nullableStrictString("assumptionId", "$path.assumptionId")
+        if (tenor !in 1..MAX_OPTION_TENOR_TRADING_DAYS || lead !in 0 until tenor ||
+            maximumLoss !in MIN_OPTION_POSITIVE_RATIO..1.0 ||
+            shortStrike !in 0.051..1.50 || longStrike !in 0.05..1.50 ||
+            shortStrike - longStrike < MIN_CASH_PUT_SPREAD_WIDTH ||
+            sourceUrls != sourceUrls.distinct().sorted() ||
+            provenance == OptionStrategyTermsProvenance.MODEL_ASSUMPTION &&
+            (assumptionId == null || !OPTION_ASSUMPTION_ID.matches(assumptionId)) ||
+            provenance != OptionStrategyTermsProvenance.MODEL_ASSUMPTION &&
+            (sourceUrls.isEmpty() || assumptionId != null)
+        ) {
+            throw JsonParseException("필드 '$path'의 현금담보 풋스프레드 약관·출처가 유효하지 않습니다.")
+        }
+        requiredObject("premiumModel").apply {
+            val modelPath = "$path.premiumModel"
+            requireExactFields(OPTION_PREMIUM_MODEL_FIELDS, modelPath)
+            val volatility = requiredFiniteDouble(
+                "impliedVolatilityMultiplier",
+                "$modelPath.impliedVolatilityMultiplier",
+            )
+            val capture = requiredFiniteDouble(
+                "soldPremiumCaptureRatio",
+                "$modelPath.soldPremiumCaptureRatio",
+            )
+            val purchase = requiredFiniteDouble(
+                "purchasedPremiumCostRatio",
+                "$modelPath.purchasedPremiumCostRatio",
+            )
+            val cost = requiredFiniteDouble(
+                "implementationCostRatePerRoll",
+                "$modelPath.implementationCostRatePerRoll",
+            )
+            val origin = requiredEnum<OptionPremiumModelParameterOrigin>(
+                "origin",
+                "$modelPath.origin",
+            )
+            val sourceUrl = nullableStrictString("sourceUrl", "$modelPath.sourceUrl")
+            sourceUrl?.let { requireSaveHttpsUrl(it, "$modelPath.sourceUrl") }
+            val calibrationId = nullableStrictString("calibrationId", "$modelPath.calibrationId")
+            if (volatility !in 0.25..4.0 || capture !in 0.0..1.5 || purchase !in 0.5..2.0 ||
+                cost !in 0.0..0.10 ||
+                origin == OptionPremiumModelParameterOrigin.VERIFIED_DISCLOSURE &&
+                (sourceUrl == null || calibrationId != null) ||
+                origin == OptionPremiumModelParameterOrigin.CALIBRATED_ASSUMPTION &&
+                (sourceUrl != null || calibrationId == null ||
+                    !OPTION_ASSUMPTION_ID.matches(calibrationId))
+            ) {
+                throw JsonParseException("필드 '$modelPath'의 옵션 프리미엄 모수가 유효하지 않습니다.")
+            }
+        }
+    }
+
+    private fun JsonObject.requireNullableEtnSettlementRule(field: String, path: String): Boolean {
+        requireMember(field)
+        if (get(field).isJsonNull) return false
+        get(field).requireObject(path).requireEtnSettlementRule(path)
+        return true
+    }
+
+    private fun JsonObject.requireEtnCouponRule(path: String) {
+        requireExactFields(ETN_COUPON_RULE_FIELDS, path)
+        val kind = requiredEnum<EtnCouponKind>("kind", "$path.kind")
+        val frequency = requiredInt("paymentFrequencyMonths")
+        val fixedRate = requiredFiniteDouble("annualFixedRate", "$path.annualFixedRate")
+        val participation = requiredFiniteDouble("participationRate", "$path.participationRate")
+        val reducesValue = requiredBoolean(
+            "accrualReducesIndicativeValue",
+            "$path.accrualReducesIndicativeValue",
+        )
+        val paidAtTermination = requiredBoolean(
+            "accruedCouponPaidAtTermination",
+            "$path.accruedCouponPaidAtTermination",
+        )
+        if (frequency !in 0..120 || fixedRate !in 0.0..MAX_FUND_STRUCTURE_RATE ||
+            participation !in 0.0..MAX_FUND_STRUCTURE_RATE
+        ) {
+            throw JsonParseException("필드 '$path'의 ETN 쿠폰 수치가 유효하지 않습니다.")
+        }
+        val valid = when (kind) {
+            EtnCouponKind.NONE -> frequency == 0 && fixedRate == 0.0 && participation == 0.0 &&
+                !reducesValue && !paidAtTermination
+            EtnCouponKind.FIXED_RATE -> frequency > 0 && fixedRate > 0.0 && participation == 0.0
+            EtnCouponKind.REFERENCE_CASH_FLOW,
+            EtnCouponKind.OPTION_PREMIUM_LINKED,
+            -> frequency > 0 && fixedRate == 0.0 && participation > 0.0
+        }
+        if (!valid) throw JsonParseException("필드 '$path'의 ETN 쿠폰 종류·조건이 일치하지 않습니다.")
+    }
+
+    private fun JsonObject.requireEtnCallTerms(path: String) {
+        requireExactFields(ETN_CALL_TERMS_FIELDS, path)
+        val issuerCallable = requiredBoolean("issuerCallable", "$path.issuerCallable")
+        val partialCall = requiredBoolean("issuerCallMayBePartial", "$path.issuerCallMayBePartial")
+        val holderRedeemable = requiredBoolean("holderRedeemable", "$path.holderRedeemable")
+        val minimumNotes = nullableLong(
+            "minimumHolderRedemptionNotes",
+            "$path.minimumHolderRedemptionNotes",
+        )
+        val increment = nullableLong(
+            "holderRedemptionNoteIncrement",
+            "$path.holderRedemptionNoteIncrement",
+        )
+        val noticeDays = requiredInt("minimumNoticeBusinessDays")
+        val hasIssuerRule = requireNullableEtnSettlementRule(
+            "issuerCallValuationRule",
+            "$path.issuerCallValuationRule",
+        )
+        val hasHolderRule = requireNullableEtnSettlementRule(
+            "holderRedemptionValuationRule",
+            "$path.holderRedemptionValuationRule",
+        )
+        val issuerMultiplier = requiredFiniteDouble(
+            "issuerCallSettlementMultiplier",
+            "$path.issuerCallSettlementMultiplier",
+        )
+        val holderMultiplier = requiredFiniteDouble(
+            "holderRedemptionSettlementMultiplier",
+            "$path.holderRedemptionSettlementMultiplier",
+        )
+        val charge = requiredFiniteDouble("holderRedemptionChargeRate", "$path.holderRedemptionChargeRate")
+        val includesCoupon = requiredBoolean("includesAccruedCoupon", "$path.includesAccruedCoupon")
+        val holderValid = if (holderRedeemable) {
+            minimumNotes != null && minimumNotes in 1L..MAX_FUND_STRUCTURE_EXACT_QUANTITY &&
+                increment != null && increment in 1L..MAX_FUND_STRUCTURE_EXACT_QUANTITY && hasHolderRule &&
+                holderMultiplier > 0.0
+        } else {
+            minimumNotes == null && increment == null && !hasHolderRule &&
+                holderMultiplier == 0.0 && charge == 0.0
+        }
+        val issuerValid = if (issuerCallable) {
+            hasIssuerRule && issuerMultiplier > 0.0
+        } else {
+            !partialCall && !hasIssuerRule && issuerMultiplier == 0.0
+        }
+        if (noticeDays !in 0..365 || issuerMultiplier !in 0.0..MAX_FUND_STRUCTURE_RATE ||
+            holderMultiplier !in 0.0..MAX_FUND_STRUCTURE_RATE || charge !in 0.0..1.0 ||
+            charge > holderMultiplier || !holderValid || !issuerValid ||
+            !issuerCallable && !holderRedeemable && (noticeDays != 0 || includesCoupon)
+        ) {
+            throw JsonParseException("필드 '$path'의 ETN 콜·상환 조건이 유효하지 않습니다.")
+        }
+    }
+
+    private fun JsonObject.requireEtnAccelerationTerms(path: String) {
+        requireExactFields(ETN_ACCELERATION_TERMS_FIELDS, path)
+        val mayAccelerate = requiredBoolean("issuerMayAccelerate", "$path.issuerMayAccelerate")
+        val partialAllowed = requiredBoolean(
+            "partialAccelerationAllowed",
+            "$path.partialAccelerationAllowed",
+        )
+        val minimumNotes = nullableLong(
+            "minimumPartialAccelerationNotes",
+            "$path.minimumPartialAccelerationNotes",
+        )
+        val increment = nullableLong(
+            "partialAccelerationNoteIncrement",
+            "$path.partialAccelerationNoteIncrement",
+        )
+        val defaultAccelerates = requiredBoolean(
+            "creditDefaultCausesAcceleration",
+            "$path.creditDefaultCausesAcceleration",
+        )
+        val hasFullRule = requireNullableEtnSettlementRule(
+            "fullAccelerationValuationRule",
+            "$path.fullAccelerationValuationRule",
+        )
+        val hasPartialRule = requireNullableEtnSettlementRule(
+            "partialAccelerationValuationRule",
+            "$path.partialAccelerationValuationRule",
+        )
+        val multiplier = requiredFiniteDouble(
+            "accelerationSettlementMultiplier",
+            "$path.accelerationSettlementMultiplier",
+        )
+        val includesNonCreditCoupon = requiredBoolean(
+            "nonCreditAccelerationIncludesAccruedCoupon",
+            "$path.nonCreditAccelerationIncludesAccruedCoupon",
+        )
+        val includesDefaultCoupon = requiredBoolean(
+            "creditDefaultIncludesAccruedCouponBeforeRecovery",
+            "$path.creditDefaultIncludesAccruedCouponBeforeRecovery",
+        )
+        val partialValid = if (partialAllowed) {
+            mayAccelerate && minimumNotes != null &&
+                minimumNotes in 1L..MAX_FUND_STRUCTURE_EXACT_QUANTITY && increment != null &&
+                increment in 1L..MAX_FUND_STRUCTURE_EXACT_QUANTITY && hasPartialRule
+        } else {
+            minimumNotes == null && increment == null && !hasPartialRule
+        }
+        if (multiplier !in 0.0..MAX_FUND_STRUCTURE_RATE || !partialValid ||
+            mayAccelerate != hasFullRule ||
+            (mayAccelerate || defaultAccelerates) != (multiplier > 0.0) ||
+            !mayAccelerate && includesNonCreditCoupon ||
+            !defaultAccelerates && includesDefaultCoupon
+        ) {
+            throw JsonParseException("필드 '$path'의 ETN 가속상환 조건이 유효하지 않습니다.")
+        }
+    }
+
+    private fun JsonObject.requireEtnProductTerms(path: String) {
+        requireExactFields(ETN_PRODUCT_TERMS_FIELDS, path)
+        listOf("productId", "referenceId", "issuerId").forEach { field ->
+            requiredBoundedNonBlankString(field, "$path.$field", MAX_FUND_STRUCTURE_ID_LENGTH)
+        }
+        requiredEnum<ReferenceCurrency>("settlementCurrency", "$path.settlementCurrency")
+        val principal = requiredFiniteDouble("statedPrincipalPerNote", "$path.statedPrincipalPerNote")
+        val fee = requiredFiniteDouble("annualInvestorFeeRate", "$path.annualInvestorFeeRate")
+        val basis = requiredInt("investorFeeDayCountBasis")
+        val issueDate = requiredLocalDate("issueDate", "$path.issueDate")
+        val maturityDate = requiredLocalDate("maturityDate", "$path.maturityDate")
+        requiredObject("maturityValuationRule").requireEtnSettlementRule(
+            "$path.maturityValuationRule",
+        )
+        val multiplier = requiredFiniteDouble(
+            "maturitySettlementMultiplier",
+            "$path.maturitySettlementMultiplier",
+        )
+        requiredBoolean("maturityIncludesAccruedCoupon", "$path.maturityIncludesAccruedCoupon")
+        requiredObject("couponRule").requireEtnCouponRule("$path.couponRule")
+        requiredObject("callTerms").requireEtnCallTerms("$path.callTerms")
+        requiredObject("accelerationTerms").requireEtnAccelerationTerms("$path.accelerationTerms")
+        val provenance = requiredEnum<FundStructureTermsProvenance>(
+            "termsProvenance",
+            "$path.termsProvenance",
+        )
+        val sourceUrl = nullableStrictString("officialSourceUrl", "$path.officialSourceUrl")
+        sourceUrl?.let { requireSaveHttpsUrl(it, "$path.officialSourceUrl") }
+        if (principal !in MIN_FUND_STRUCTURE_VALUE..MAX_FUND_STRUCTURE_VALUE ||
+            fee !in 0.0..MAX_FUND_STRUCTURE_RATE || basis !in 1..366 || fee >= basis.toDouble() ||
+            issueDate >= maturityDate ||
+            multiplier !in MIN_FUND_STRUCTURE_VALUE..MAX_FUND_STRUCTURE_RATE ||
+            provenance != FundStructureTermsProvenance.MODEL_ASSUMPTION && sourceUrl == null
+        ) {
+            throw JsonParseException("필드 '$path'의 ETN 계약 조건이 유효하지 않습니다.")
+        }
+    }
+
+    private fun JsonObject.requireEtnIssuerCreditModel(path: String) {
+        requireExactFields(ETN_ISSUER_CREDIT_MODEL_FIELDS, path)
+        requiredBoundedNonBlankString("issuerId", "$path.issuerId", MAX_FUND_STRUCTURE_ID_LENGTH)
+        val creditSpread = requiredFiniteDouble("initialCreditSpread", "$path.initialCreditSpread")
+        val hazardRate = requiredFiniteDouble("initialHazardRate", "$path.initialHazardRate")
+        val recoveryRate = requiredFiniteDouble("recoveryRate", "$path.recoveryRate")
+        val meanReversion = requiredFiniteDouble(
+            "annualSpreadMeanReversionRate",
+            "$path.annualSpreadMeanReversionRate",
+        )
+        val shockVolatility = requiredFiniteDouble(
+            "spreadShockAnnualVolatility",
+            "$path.spreadShockAnnualVolatility",
+        )
+        val origin = requiredEnum<FundStructureModelParameterOrigin>("origin", "$path.origin")
+        val sourceUrl = nullableStrictString("sourceUrl", "$path.sourceUrl")
+        sourceUrl?.let { requireSaveHttpsUrl(it, "$path.sourceUrl") }
+        if (creditSpread !in 0.0..1.0 || hazardRate !in 0.0..1.0 ||
+            recoveryRate !in 0.0..1.0 || meanReversion !in 0.0..100.0 ||
+            shockVolatility !in 0.0..5.0 ||
+            origin == FundStructureModelParameterOrigin.OFFICIAL_DISCLOSURE && sourceUrl == null
+        ) {
+            throw JsonParseException("필드 '$path'의 ETN 발행자 신용 모수가 유효하지 않습니다.")
+        }
+    }
+
+    private fun JsonObject.requireClosedEndFundTerms(path: String) {
+        requireExactFields(CLOSED_END_FUND_TERMS_FIELDS, path)
+        requiredBoundedNonBlankString("fundId", "$path.fundId", MAX_FUND_STRUCTURE_ID_LENGTH)
+        requiredEnum<ReferenceCurrency>("settlementCurrency", "$path.settlementCurrency")
+        requiredEnum<ClosedEndFundDistributionPolicy>("distributionPolicy", "$path.distributionPolicy")
+        listOf(
+            "allowsTenderOffers",
+            "allowsShareRepurchases",
+            "allowsRightsOfferings",
+            "allowsAtTheMarketOfferings",
+        ).forEach { field -> requiredBoolean(field, "$path.$field") }
+        val allowsDebt = requiredBoolean("allowsDebtLeverage", "$path.allowsDebtLeverage")
+        val allowsPreferred = requiredBoolean(
+            "allowsPreferredLeverage",
+            "$path.allowsPreferredLeverage",
+        )
+        val debtCoverage = nullableFiniteDouble(
+            "minimumDebtAssetCoverageRatio",
+            "$path.minimumDebtAssetCoverageRatio",
+        )
+        val preferredCoverage = nullableFiniteDouble(
+            "minimumPreferredAssetCoverageRatio",
+            "$path.minimumPreferredAssetCoverageRatio",
+        )
+        val provenance = requiredEnum<FundStructureTermsProvenance>(
+            "termsProvenance",
+            "$path.termsProvenance",
+        )
+        val sourceUrl = nullableStrictString("officialSourceUrl", "$path.officialSourceUrl")
+        sourceUrl?.let { requireSaveHttpsUrl(it, "$path.officialSourceUrl") }
+        if (allowsDebt != (debtCoverage != null) || allowsPreferred != (preferredCoverage != null) ||
+            debtCoverage?.let { it !in 1.0..MAX_CEF_ASSET_COVERAGE_RATIO } == true ||
+            preferredCoverage?.let { it !in 1.0..MAX_CEF_ASSET_COVERAGE_RATIO } == true ||
+            provenance != FundStructureTermsProvenance.MODEL_ASSUMPTION && sourceUrl == null
+        ) {
+            throw JsonParseException("필드 '$path'의 CEF 법적·레버리지 조건이 유효하지 않습니다.")
+        }
+    }
+
+    private fun JsonObject.requireTaxBreakdown(path: String) {
+        requireExactFields(TAX_BREAKDOWN_FIELDS, path)
+        requiredBoundedNonBlankString("policyId", "$path.policyId", MAX_TAX_TEXT_LENGTH)
+        requiredLocalDate("calculatedOn", "$path.calculatedOn")
+        requiredObject("taxableBase").requireMoneyAmount("$path.taxableBase")
+        requiredArray("items").forEachIndexed { index, element ->
+            val itemPath = "$path.items[$index]"
+            element.requireObject(itemPath).apply {
+                requireExactFields(TAX_LINE_ITEM_FIELDS, itemPath)
+                requiredBoundedNonBlankString("id", "$itemPath.id", MAX_TAX_TEXT_LENGTH)
+                requiredBoundedNonBlankString("label", "$itemPath.label", MAX_TAX_TEXT_LENGTH)
+                requiredObject("amount").requireMoneyAmount("$itemPath.amount")
+                requiredEnum<TaxJurisdiction>("jurisdiction", "$itemPath.jurisdiction")
+                requiredEnum<TaxCategory>("category", "$itemPath.category")
+                requiredObject("source").requireRuleSource("$itemPath.source")
+                requiredObject("effectiveRange").requireEffectiveDateRange(
+                    "$itemPath.effectiveRange",
+                )
+            }
+        }
+        requiredArray("warnings").forEachIndexed { index, element ->
+            val warning = element.requireStrictString("$path.warnings[$index]")
+            if (warning.length > MAX_TAX_WARNING_LENGTH || warning.any(Char::isISOControl)) {
+                throw JsonParseException("필드 '$path.warnings[$index]'의 길이·문자가 유효하지 않습니다.")
+            }
+        }
+    }
+
+    private fun JsonObject.requireMoneyAmount(path: String) {
+        requireExactFields(MONEY_AMOUNT_FIELDS, path)
+        requiredLong("minorUnits", "$path.minorUnits")
+        requiredEnum<Currency>("currency", "$path.currency")
+    }
+
+    private fun JsonObject.requireRuleSource(path: String) {
+        requireExactFields(RULE_SOURCE_FIELDS, path)
+        requiredBoundedNonBlankString("title", "$path.title", MAX_TAX_TEXT_LENGTH)
+        nullableStrictString("url", "$path.url")?.let { requireSaveHttpsUrl(it, "$path.url") }
+        requiredLocalDate("accessedOn", "$path.accessedOn")
+    }
+
+    private fun JsonObject.requireEffectiveDateRange(path: String) {
+        requireExactFields(EFFECTIVE_DATE_RANGE_FIELDS, path)
+        requiredLocalDate("validFrom", "$path.validFrom")
+        nullableLocalDate("validThrough", "$path.validThrough")
+    }
+
+    private fun JsonObject.requireClosedEndFundMarketModel(path: String) {
+        requireExactFields(CLOSED_END_FUND_MARKET_MODEL_FIELDS, path)
+        requiredBoundedNonBlankString("fundId", "$path.fundId", MAX_FUND_STRUCTURE_ID_LENGTH)
+        val discount = requiredFiniteDouble("targetMarketDiscountRate", "$path.targetMarketDiscountRate")
+        val reversion = requiredFiniteDouble(
+            "annualDiscountMeanReversionRate",
+            "$path.annualDiscountMeanReversionRate",
+        )
+        val initialDebt = requiredFiniteDouble(
+            "initialDebtToGrossAssets",
+            "$path.initialDebtToGrossAssets",
+        )
+        val initialPreferred = requiredFiniteDouble(
+            "initialPreferredToGrossAssets",
+            "$path.initialPreferredToGrossAssets",
+        )
+        val borrowingSpread = requiredFiniteDouble(
+            "annualBorrowingSpread",
+            "$path.annualBorrowingSpread",
+        )
+        val preferredSpread = requiredFiniteDouble(
+            "annualPreferredDistributionSpread",
+            "$path.annualPreferredDistributionSpread",
+        )
+        val discountVolatility = requiredFiniteDouble(
+            "discountShockAnnualVolatility",
+            "$path.discountShockAnnualVolatility",
+        )
+        val origin = requiredEnum<FundStructureModelParameterOrigin>("origin", "$path.origin")
+        val sourceUrl = nullableStrictString("sourceUrl", "$path.sourceUrl")
+        sourceUrl?.let { requireSaveHttpsUrl(it, "$path.sourceUrl") }
+        if (discount !in -0.99..MAX_FUND_STRUCTURE_RATE ||
+            reversion !in 0.0..MAX_FUND_STRUCTURE_RATE ||
+            initialDebt !in 0.0..0.95 || initialPreferred !in 0.0..0.95 ||
+            initialDebt + initialPreferred > 0.95 ||
+            borrowingSpread !in 0.0..1.0 || preferredSpread !in 0.0..1.0 ||
+            discountVolatility !in 0.0..5.0 ||
+            origin == FundStructureModelParameterOrigin.OFFICIAL_DISCLOSURE && sourceUrl == null
+        ) {
+            throw JsonParseException("필드 '$path'의 CEF 시장가격 모수가 유효하지 않습니다.")
+        }
+    }
+
+    private fun requireSaveHttpsUrl(value: String?, path: String) {
+        if (value == null || !value.startsWith("https://") || value.length > MAX_SAVE_URL_LENGTH ||
+            value.any(Char::isISOControl)
+        ) {
+            throw JsonParseException("필드 '$path'는 유효한 HTTPS URL이어야 합니다.")
+        }
+    }
+
     private fun corrupted(path: Path, message: String, cause: Throwable? = null): GameLoadFailure =
         GameLoadFailure(
             path = path.toString(),
@@ -1033,6 +3978,53 @@ actual class GameSaveStorage actual constructor() {
         code = GameSaveErrorCode.FILE_TOO_LARGE,
         message = "저장 파일이 허용 크기 ${MAX_GAME_SAVE_FILE_BYTES}바이트를 초과했습니다: ${actualSize}바이트.",
     )
+
+    private fun uncompressedTooLargeError(actualSize: Long): GameSaveError = GameSaveError(
+        code = GameSaveErrorCode.FILE_TOO_LARGE,
+        message = "저장 JSON이 안전 한도 ${MAX_UNCOMPRESSED_GAME_SAVE_BYTES}바이트를 " +
+            "초과했습니다: ${actualSize}바이트.",
+    )
+
+    private fun readFrameHeader(input: java.io.InputStream): GameSaveFrameHeader {
+        val bytes = ByteArray(GameSaveFrameHeader.BYTE_SIZE)
+        var offset = 0
+        while (offset < bytes.size) {
+            val read = input.read(bytes, offset, bytes.size - offset)
+            if (read < 0) throw CorruptSaveFrameException("저장 프레임 헤더가 잘렸습니다.")
+            offset += read
+        }
+        return try {
+            GameSaveFrameHeader.decode(bytes)
+        } catch (error: IllegalArgumentException) {
+            throw JsonParseException("저장 프레임 헤더가 유효하지 않습니다: ${safeMessage(error)}", error)
+        }
+    }
+
+    private fun validateFrameLengths(header: GameSaveFrameHeader, physicalSize: Long) {
+        if (header.rawLength > MAX_UNCOMPRESSED_GAME_SAVE_BYTES) {
+            throw UncompressedSaveTooLargeException(header.rawLength)
+        }
+        val expected = GameSaveFrameHeader.BYTE_SIZE.toLong() + header.compressedLength
+        if (expected != physicalSize || expected > MAX_GAME_SAVE_FILE_BYTES) {
+            throw JsonParseException("저장 프레임 선언 길이와 실제 파일 길이가 일치하지 않습니다.")
+        }
+    }
+
+    private fun validateFrameMetadata(header: GameSaveFrameHeader) {
+        val calendar = com.amond.kmpbook.domain.time.GameCalendar
+        if (!calendar.isWithinGameRange(header.gameTime) ||
+            header.turn != calendar.turnAt(header.gameTime) ||
+            header.gameTime != calendar.startInstant + header.turn.hours
+        ) {
+            throw JsonParseException("저장 프레임 게임 시각·턴이 캠페인 시간 격자와 다릅니다.")
+        }
+        val savedAtIsDisplayable = runCatching {
+            calendar.toGameLocalDateTime(header.savedAt)
+        }.isSuccess
+        if (!savedAtIsDisplayable || header.savedAt !in MIN_SANE_SAVED_AT..MAX_SANE_SAVED_AT) {
+            throw JsonParseException("저장 프레임 savedAt이 표시 가능한 보존 범위를 벗어났습니다.")
+        }
+    }
 
     private fun accessError(error: SecurityException): GameSaveError = GameSaveError(
         code = GameSaveErrorCode.SECURITY_ERROR,
@@ -1054,6 +4046,46 @@ actual class GameSaveStorage actual constructor() {
         causeType = error::class.qualifiedName,
     )
 
+    private fun sizeLimitError(error: Throwable): GameSaveError? {
+        var current: Throwable? = error
+        repeat(MAX_CAUSE_CHAIN_DEPTH) {
+            when (val cause = current ?: return null) {
+                is UncompressedSaveTooLargeException ->
+                    return uncompressedTooLargeError(cause.actualSize)
+                is SaveFileTooLargeException -> return tooLargeError(cause.actualSize)
+            }
+            val next = current.cause
+            if (next === current) return null
+            current = next
+        }
+        return null
+    }
+
+    private fun createPrivateTemporaryFile(
+        directory: Path,
+        prefix: String,
+        suffix: String,
+    ): Path = if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+        Files.createTempFile(
+            directory,
+            prefix,
+            suffix,
+            PosixFilePermissions.asFileAttribute(
+                EnumSet.of(
+                    PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_WRITE,
+                ),
+            ),
+        )
+    } else {
+        Files.createTempFile(directory, prefix, suffix)
+    }
+
+    private fun GameSaveFrameHeader.matches(metadata: GameSaveMetadata): Boolean =
+        metadata.format == GAME_SAVE_FORMAT_ID &&
+            metadata.schemaVersion == schemaVersion && metadata.savedAt == savedAt &&
+            metadata.gameTime == gameTime && metadata.turn == turn
+
     private fun moveIntoPlace(temporaryPath: Path, destination: Path): Boolean = try {
         Files.move(
             temporaryPath,
@@ -1066,8 +4098,22 @@ actual class GameSaveStorage actual constructor() {
         Files.move(temporaryPath, destination, StandardCopyOption.REPLACE_EXISTING)
         false
     }
+
+    private fun writeFully(channel: FileChannel, buffer: java.nio.ByteBuffer) {
+        while (buffer.hasRemaining()) channel.write(buffer)
+    }
+
+    private fun forceDirectoryBestEffort(directory: Path) {
+        runCatching {
+            FileChannel.open(directory, StandardOpenOption.READ).use { channel -> channel.force(true) }
+        }
+    }
     private companion object {
         val INVALID_FILE_NAME_CHARACTERS: Set<Char> = setOf('\\', '/', ':', '*', '?', '"', '<', '>', '|')
+        const val SAVE_STREAM_BUFFER_BYTES: Int = 64 * 1024
+        const val MAX_CAUSE_CHAIN_DEPTH: Int = 32
+        val MIN_SANE_SAVED_AT: Instant = Instant.parse("2000-01-01T00:00:00Z")
+        val MAX_SANE_SAVED_AT: Instant = Instant.parse("2100-12-31T23:59:59.999999999Z")
         val WINDOWS_RESERVED_NAMES: Regex = Regex(
             "^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\\..*)?$",
             RegexOption.IGNORE_CASE,
@@ -1082,6 +4128,7 @@ actual class GameSaveStorage actual constructor() {
 
         val CURRENT_STATE_FIELDS: Set<String> = setOf(
             "options",
+            "catalogReference",
             "phase",
             "screen",
             "currentTime",
@@ -1090,6 +4137,29 @@ actual class GameSaveStorage actual constructor() {
             "stocks",
             "corporateFundamentals",
             "fundFinancialStates",
+            "referencePortfolioStates",
+            "referencePortfolioLedger",
+            "dailyResetStates",
+            "optionStrategyStates",
+            "cashCollateralizedPutSpreadStates",
+            "etnStates",
+            "etnLedger",
+            "closedEndFundStates",
+            "closedEndFundLedger",
+            "fixedIncomeReferenceStates",
+            "fixedIncomeRollLedger",
+            "commoditySpotReferenceStates",
+            "futuresReferenceStates",
+            "futuresRollLedger",
+            "futuresAllocationLedger",
+            "equityReferenceStates",
+            "equityReferenceLedger",
+            "fundOfFundsStates",
+            "fundOfFundsRebalanceLedger",
+            "alternativeRiskPremiaStates",
+            "alternativeRiskPremiaRebalanceLedger",
+            "compositeReferenceStates",
+            "compositeReferenceRebalanceLedger",
             "pendingFundFlowRates",
             "selectedStockId",
             "quotes",
@@ -1110,10 +4180,12 @@ actual class GameSaveStorage actual constructor() {
             "readStockNewsEventIds",
             "portfolioSnapshots",
             "dailyStatistics",
+            "currentBenchmarkValue",
             "benchmarkHistory",
             "transactionCosts",
             "realizedGains",
             "fifoCostBasisBook",
+            "lastEvaluatedDistributionDateByStock",
             "dividendLedger",
             "foreignExchangeLedger",
             "annualTaxLedgers",
@@ -1146,6 +4218,46 @@ actual class GameSaveStorage actual constructor() {
             "lastMessage",
         )
 
+        val DIVIDEND_LEDGER_FIELDS: Set<String> = setOf(
+            "id",
+            "stockId",
+            "paidAt",
+            "currency",
+            "grossAmount",
+            "withholdingTax",
+            "netAmount",
+            "exchangeRateToKrw",
+            "taxBreakdown",
+            "taxableIncomeAmount",
+            "returnOfCapitalAmount",
+            "excessReturnOfCapitalGainKrw",
+            "accountingSequence",
+        )
+
+        val TAX_BREAKDOWN_FIELDS: Set<String> = setOf(
+            "policyId",
+            "calculatedOn",
+            "taxableBase",
+            "items",
+            "warnings",
+        )
+
+        val MONEY_AMOUNT_FIELDS: Set<String> = setOf("minorUnits", "currency")
+
+        val TAX_LINE_ITEM_FIELDS: Set<String> = setOf(
+            "id",
+            "label",
+            "amount",
+            "jurisdiction",
+            "category",
+            "source",
+            "effectiveRange",
+        )
+
+        val RULE_SOURCE_FIELDS: Set<String> = setOf("title", "url", "accessedOn")
+
+        val EFFECTIVE_DATE_RANGE_FIELDS: Set<String> = setOf("validFrom", "validThrough")
+
         val NEW_GAME_OPTIONS_FIELDS: Set<String> = setOf(
             "scenarioName",
             "difficultyName",
@@ -1163,6 +4275,260 @@ actual class GameSaveStorage actual constructor() {
             "id",
             "version",
             "settings",
+            "contentFingerprint",
+        )
+
+        val CATALOG_REFERENCE_FIELDS: Set<String> = setOf(
+            "schemaVersion",
+            "orderedSources",
+        )
+
+        val CATALOG_SOURCE_REFERENCE_FIELDS: Set<String> = setOf(
+            "sourceId",
+            "contentSha256",
+        )
+
+        val STOCK_DEFINITION_FIELDS: Set<String> = setOf(
+            "symbol",
+            "name",
+            "englishName",
+            "market",
+            "sector",
+            "initialPrice",
+            "volatility",
+            "dividendYield",
+            "marketCap",
+            "sharesOutstanding",
+            "description",
+            "beta",
+            "quantityStep",
+            "lotSize",
+            "etfProfile",
+            "fundProductProfile",
+            "instrumentTypeOverride",
+            "behaviorProfile",
+            "identityProfile",
+            "industrySegments",
+        )
+
+        val BENCHMARK_REF_FIELDS: Set<String> = setOf(
+            "benchmarkId",
+            "version",
+        )
+
+        val FUND_PRODUCT_PROFILE_FIELDS: Set<String> = setOf(
+            "benchmarkRef",
+            "replicationMode",
+            "returnVariant",
+            "legalStructure",
+            "referenceExposure",
+            "returnTransforms",
+            "trackingErrorAnnualVolatility",
+            "dailyResetTerms",
+            "etnProductTerms",
+            "etnIssuerCreditModelParameters",
+            "closedEndFundTerms",
+            "closedEndFundMarketModelParameters",
+            "optionStrategyTerms",
+            "cashCollateralizedPutSpreadTerms",
+        )
+
+        val DAILY_RESET_TERMS_FIELDS: Set<String> = setOf(
+            "productId",
+            "reference",
+            "directReferenceTerminationRule",
+            "targetLeverage",
+            "resetCalendar",
+            "provenance",
+            "officialSourceUrl",
+            "modelParameters",
+        )
+
+        val DAILY_RESET_REFERENCE_FIELDS: Set<String> = setOf(
+            "kind",
+            "benchmarkRef",
+            "instrumentId",
+        )
+
+        val DIRECT_REFERENCE_TERMINATION_RULE_FIELDS: Set<String> = setOf(
+            "policy",
+            "provenance",
+            "officialSourceUrls",
+            "assumptionId",
+        )
+
+        val DAILY_RESET_MODEL_PARAMETER_FIELDS: Set<String> = setOf(
+            "annualFinancingSpread",
+            "collateralYieldParticipation",
+            "origin",
+            "sourceUrl",
+        )
+
+        val ETN_PRODUCT_TERMS_FIELDS: Set<String> = setOf(
+            "productId",
+            "referenceId",
+            "issuerId",
+            "settlementCurrency",
+            "statedPrincipalPerNote",
+            "annualInvestorFeeRate",
+            "investorFeeDayCountBasis",
+            "issueDate",
+            "maturityDate",
+            "maturityValuationRule",
+            "maturitySettlementMultiplier",
+            "maturityIncludesAccruedCoupon",
+            "couponRule",
+            "callTerms",
+            "accelerationTerms",
+            "termsProvenance",
+            "officialSourceUrl",
+        )
+
+        val ETN_ISSUER_CREDIT_MODEL_FIELDS: Set<String> = setOf(
+            "issuerId",
+            "initialCreditSpread",
+            "initialHazardRate",
+            "recoveryRate",
+            "annualSpreadMeanReversionRate",
+            "spreadShockAnnualVolatility",
+            "origin",
+            "sourceUrl",
+        )
+
+        val OPTION_STRATEGY_TERMS_FIELDS: Set<String> = setOf(
+            "productId",
+            "reference",
+            "directReferenceTerminationRule",
+            "kind",
+            "tenorTradingDays",
+            "rollCalendar",
+            "rollLeadTradingDays",
+            "provenance",
+            "officialSourceUrls",
+            "assumptionId",
+            "premiumModel",
+            "coveredCall",
+            "optionIncome",
+            "bufferedPutSpread",
+        )
+
+        val OPTION_PREMIUM_MODEL_FIELDS: Set<String> = setOf(
+            "impliedVolatilityMultiplier",
+            "soldPremiumCaptureRatio",
+            "purchasedPremiumCostRatio",
+            "implementationCostRatePerRoll",
+            "origin",
+            "sourceUrl",
+            "calibrationId",
+        )
+
+        val CASH_COLLATERALIZED_PUT_SPREAD_TERMS_FIELDS: Set<String> = setOf(
+            "productId",
+            "cashBenchmarkRef",
+            "optionReference",
+            "directReferenceTerminationRule",
+            "tenorTradingDays",
+            "rollCalendar",
+            "rollLeadTradingDays",
+            "maximumSettlementLossRatio",
+            "shortPutStrikeMoneyness",
+            "longPutStrikeMoneyness",
+            "provenance",
+            "officialSourceUrls",
+            "assumptionId",
+            "premiumModel",
+        )
+
+        val COVERED_CALL_TERMS_FIELDS: Set<String> = setOf(
+            "overwriteRatio",
+            "callStrikeMoneyness",
+        )
+
+        val OPTION_INCOME_TERMS_FIELDS: Set<String> = setOf(
+            "coreEquityAllocation",
+            "optionIncomeAllocation",
+            "upsideParticipation",
+            "downsideParticipation",
+            "callStrikeMoneyness",
+        )
+
+        val BUFFERED_PUT_SPREAD_TERMS_FIELDS: Set<String> = setOf(
+            "outcomeNotionalRatio",
+            "longPutStrikeMoneyness",
+            "downsideBufferFraction",
+            "downsideParticipationBeyondBuffer",
+            "upsideCapFraction",
+        )
+
+        val ETN_SETTLEMENT_RULE_FIELDS: Set<String> = setOf(
+            "method",
+            "observationCount",
+        )
+
+        val ETN_COUPON_RULE_FIELDS: Set<String> = setOf(
+            "kind",
+            "paymentFrequencyMonths",
+            "annualFixedRate",
+            "participationRate",
+            "accrualReducesIndicativeValue",
+            "accruedCouponPaidAtTermination",
+        )
+
+        val ETN_CALL_TERMS_FIELDS: Set<String> = setOf(
+            "issuerCallable",
+            "issuerCallMayBePartial",
+            "holderRedeemable",
+            "minimumHolderRedemptionNotes",
+            "holderRedemptionNoteIncrement",
+            "minimumNoticeBusinessDays",
+            "issuerCallValuationRule",
+            "holderRedemptionValuationRule",
+            "issuerCallSettlementMultiplier",
+            "holderRedemptionSettlementMultiplier",
+            "holderRedemptionChargeRate",
+            "includesAccruedCoupon",
+        )
+
+        val ETN_ACCELERATION_TERMS_FIELDS: Set<String> = setOf(
+            "issuerMayAccelerate",
+            "partialAccelerationAllowed",
+            "minimumPartialAccelerationNotes",
+            "partialAccelerationNoteIncrement",
+            "creditDefaultCausesAcceleration",
+            "fullAccelerationValuationRule",
+            "partialAccelerationValuationRule",
+            "accelerationSettlementMultiplier",
+            "nonCreditAccelerationIncludesAccruedCoupon",
+            "creditDefaultIncludesAccruedCouponBeforeRecovery",
+        )
+
+        val CLOSED_END_FUND_TERMS_FIELDS: Set<String> = setOf(
+            "fundId",
+            "settlementCurrency",
+            "distributionPolicy",
+            "allowsTenderOffers",
+            "allowsShareRepurchases",
+            "allowsRightsOfferings",
+            "allowsAtTheMarketOfferings",
+            "allowsDebtLeverage",
+            "allowsPreferredLeverage",
+            "minimumDebtAssetCoverageRatio",
+            "minimumPreferredAssetCoverageRatio",
+            "termsProvenance",
+            "officialSourceUrl",
+        )
+
+        val CLOSED_END_FUND_MARKET_MODEL_FIELDS: Set<String> = setOf(
+            "fundId",
+            "targetMarketDiscountRate",
+            "annualDiscountMeanReversionRate",
+            "initialDebtToGrossAssets",
+            "initialPreferredToGrossAssets",
+            "annualBorrowingSpread",
+            "annualPreferredDistributionSpread",
+            "discountShockAnnualVolatility",
+            "origin",
+            "sourceUrl",
         )
 
         val EXTERNAL_MARKET_FORCES_FIELDS: Set<String> = setOf(
@@ -1254,14 +4620,660 @@ actual class GameSaveStorage actual constructor() {
             "sourceOccurrenceId",
         )
 
+        val CORPORATE_ACTION_NEWS_REFERENCE_FIELDS: Set<String> = setOf(
+            "occurrenceId",
+            "transition",
+            "stockId",
+            "kind",
+            "announcedAt",
+            "effectiveNotBefore",
+            "quantityMultiplier",
+            "source",
+            "rationale",
+            "appliedAt",
+            "accountingSequence",
+            "cancelledAt",
+            "cancellationReason",
+            "cancellingListingEventId",
+            "cancellingListingLedgerSequence",
+            "cancellingListingStatus",
+        )
+
         val FUND_FINANCIAL_STATE_FIELDS: Set<String> = setOf(
             "stockId",
             "navPerUnit",
             "indicativeValuePerUnit",
             "unitsOrNotesOutstanding",
             "lastNetFlow",
+            "cumulativeUnitAdjustmentFactor",
+            "lastCorporateActionAccountingSequence",
             "asOf",
         )
+
+        val REFERENCE_PORTFOLIO_STATE_FIELDS: Set<String> = setOf(
+            "portfolioId",
+            "benchmarkRef",
+            "positions",
+            "revision",
+            "lastReconstitutionDate",
+            "lastRebalanceDate",
+            "nextReconstitutionDate",
+            "nextRebalanceDate",
+            "pendingPlans",
+            "lastTurnoverRate",
+            "estimatedAnnualIncomeYield",
+            "asOf",
+            "lastAppliedActionKind",
+        )
+
+        val REFERENCE_PORTFOLIO_POSITION_FIELDS: Set<String> = setOf(
+            "assetId",
+            "currentWeight",
+            "targetWeight",
+            "referenceFloatMarketValue",
+            "enteredOn",
+            "selectionRank",
+        )
+
+        val REFERENCE_PORTFOLIO_PLAN_FIELDS: Set<String> = setOf(
+            "id",
+            "portfolioId",
+            "benchmarkRef",
+            "kind",
+            "selectionDate",
+            "weightReferenceDate",
+            "effectiveDate",
+            "positions",
+            "addedAssetIds",
+            "removedAssetIds",
+        )
+
+        val REFERENCE_PORTFOLIO_RECORD_FIELDS: Set<String> = setOf(
+            "id",
+            "portfolioId",
+            "benchmarkRef",
+            "kind",
+            "selectionDate",
+            "weightReferenceDate",
+            "effectiveDate",
+            "addedAssetIds",
+            "removedAssetIds",
+            "beforeCompositionHash",
+            "afterCompositionHash",
+            "turnoverRate",
+            "resultingConstituentCount",
+            "revision",
+        )
+
+        val DAILY_RESET_STATE_FIELDS: Set<String> = setOf(
+            "productId",
+            "resetTradingDate",
+            "referenceLevelAtReset",
+            "navAtReset",
+            "currentReferenceLevel",
+            "currentNav",
+            "cumulativeCarryLogReturn",
+            "exposureNotional",
+            "collateralBalance",
+            "lifecycle",
+            "cumulativeUnitAdjustmentFactor",
+            "lastCorporateActionAccountingSequence",
+            "asOf",
+            "revision",
+        )
+
+        val OPTION_STRATEGY_STATE_FIELDS: Set<String> = setOf(
+            "productId",
+            "strategyKind",
+            "rollCalendar",
+            "currentReferenceLevel",
+            "currentNav",
+            "underlyingUnits",
+            "cashBalance",
+            "cycleReferenceLevel",
+            "optionNotionalAtRoll",
+            "cycleStartedOn",
+            "remainingTradingDays",
+            "remainingTimeYears",
+            "lastProcessedTradingDate",
+            "longCallUnits",
+            "longCallStrike",
+            "shortCallUnits",
+            "shortCallStrike",
+            "longPutUnits",
+            "longPutStrike",
+            "shortPutUnits",
+            "shortPutStrike",
+            "netOptionMark",
+            "cycleGrossPremiumReceived",
+            "cycleGrossPremiumPaid",
+            "cycleImplementationCost",
+            "cumulativePremiumReceived",
+            "cumulativePremiumPaid",
+            "cumulativeSettlementCashFlow",
+            "cumulativeImplementationCost",
+            "lifecycle",
+            "cumulativeUnitAdjustmentFactor",
+            "lastCorporateActionAccountingSequence",
+            "asOf",
+            "revision",
+        )
+
+        val CASH_COLLATERALIZED_PUT_SPREAD_STATE_FIELDS: Set<String> = setOf(
+            "productId",
+            "cashBenchmarkRef",
+            "optionReference",
+            "rollCalendar",
+            "currentCashReferenceLevel",
+            "currentOptionReferenceLevel",
+            "currentNav",
+            "cashBalance",
+            "cycleOptionReferenceLevel",
+            "navAtRoll",
+            "optionNotionalAtRoll",
+            "maximumSettlementLossAtRoll",
+            "cycleStartedOn",
+            "remainingTradingDays",
+            "remainingTimeYears",
+            "lastProcessedTradingDate",
+            "longPutUnits",
+            "longPutStrike",
+            "shortPutUnits",
+            "shortPutStrike",
+            "netOptionMark",
+            "cycleGrossPremiumReceived",
+            "cycleGrossPremiumPaid",
+            "cycleImplementationCost",
+            "cumulativePremiumReceived",
+            "cumulativePremiumPaid",
+            "cumulativeSettlementCashFlow",
+            "cumulativeImplementationCost",
+            "lifecycle",
+            "cumulativeUnitAdjustmentFactor",
+            "lastCorporateActionAccountingSequence",
+            "asOf",
+            "revision",
+        )
+
+        val ETN_STATE_FIELDS: Set<String> = setOf(
+            "productId",
+            "referenceLevel",
+            "feeAdjustedIndicativeValuePerNote",
+            "notesOutstanding",
+            "accruedCouponPerNote",
+            "issuerCreditSpread",
+            "issuerHazardRate",
+            "issuerRecoveryRate",
+            "indicativeValueObservationWindow",
+            "lifecycle",
+            "terminalCreditEvent",
+            "asOf",
+            "revision",
+        )
+
+        val ETN_INDICATIVE_VALUE_OBSERVATION_FIELDS: Set<String> = setOf(
+            "observationDate",
+            "indicativeValuePerNote",
+        )
+
+        val ETN_LEDGER_ENTRY_FIELDS: Set<String> = setOf(
+            "id",
+            "productId",
+            "kind",
+            "effectiveAt",
+            "revision",
+            "sequenceInBatch",
+            "settlementCurrency",
+            "referenceLevelBefore",
+            "referenceLevelAfter",
+            "indicativeValueBefore",
+            "indicativeValueAfter",
+            "notesOutstandingBefore",
+            "notesOutstandingAfter",
+            "notesIssued",
+            "notesCancelled",
+            "notesSettled",
+            "notesDelta",
+            "cashPaidToNoteholders",
+            "cashReceivedFromNoteholders",
+            "contractEvent",
+            "settlementIndicativeValueObservations",
+        )
+
+        val CLOSED_END_FUND_STATE_FIELDS: Set<String> = setOf(
+            "fundId",
+            "grossAssets",
+            "commonSharesOutstanding",
+            "debtLiability",
+            "preferredShareLiability",
+            "navPerCommonShare",
+            "undistributedNetInvestmentIncome",
+            "distributionReserve",
+            "marketDiscountRate",
+            "cumulativeUnitAdjustmentFactor",
+            "lastCorporateActionAccountingSequence",
+            "asOf",
+            "revision",
+        )
+
+        val CLOSED_END_FUND_LEDGER_ENTRY_FIELDS: Set<String> = setOf(
+            "id",
+            "fundId",
+            "kind",
+            "effectiveAt",
+            "revision",
+            "sequenceInBatch",
+            "settlementCurrency",
+            "capitalActionKind",
+            "financingActionKind",
+            "grossAssetsDelta",
+            "commonSharesDelta",
+            "debtLiabilityDelta",
+            "preferredShareLiabilityDelta",
+            "externalCashFlow",
+            "cashToCommonShareholders",
+            "netInvestmentIncomeDistribution",
+            "realizedGainDistribution",
+            "returnOfCapitalDistribution",
+            "navPerShareBefore",
+            "navPerShareAfter",
+        )
+
+        val FIXED_INCOME_REFERENCE_STATE_FIELDS: Set<String> = setOf(
+            "benchmarkRef",
+            "positions",
+            "nominalCurves",
+            "realCurves",
+            "creditSpreads",
+            "revision",
+            "asOf",
+        )
+
+        val FIXED_INCOME_POSITION_FIELDS: Set<String> = setOf(
+            "assetId",
+            "kind",
+            "currency",
+            "creditQuality",
+            "currentWeight",
+            "targetWeight",
+            "dirtyMarketValue",
+            "remainingMaturityYears",
+            "modifiedDurationYears",
+            "convexityYearsSquared",
+            "spreadDurationYears",
+            "couponRateAnnual",
+            "floatingSpreadAnnual",
+            "floatingRateFloorAnnual",
+            "inflationIndexRatio",
+        )
+
+        val YIELD_CURVE_SNAPSHOT_FIELDS: Set<String> = setOf(
+            "currency",
+            "annualZeroRates",
+            "asOf",
+        )
+
+        val CREDIT_SPREAD_SNAPSHOT_FIELDS: Set<String> = setOf(
+            "currency",
+            "annualSpreads",
+            "asOf",
+        )
+
+        val FIXED_INCOME_ROLL_RECORD_FIELDS: Set<String> = setOf(
+            "id",
+            "benchmarkRef",
+            "removedAssetIds",
+            "addedAssetIds",
+            "effectiveAt",
+            "revision",
+        )
+
+        val COMMODITY_SPOT_REFERENCE_STATE_FIELDS: Set<String> = setOf(
+            "benchmarkRef",
+            "assetClass",
+            "baseCurrency",
+            "currentSpotLevel",
+            "currentReferenceLevel",
+            "currentSpotWeight",
+            "currentCollateralWeight",
+            "annualizedNetCarryRate",
+            "asOf",
+        )
+
+        val FUTURES_REFERENCE_STATE_FIELDS: Set<String> = setOf(
+            "benchmarkRef",
+            "baseCurrency",
+            "portfolioStyle",
+            "allocationMode",
+            "currentReferenceLevel",
+            "sleeves",
+            "revision",
+            "asOf",
+        )
+
+        val FUTURES_SLEEVE_STATE_FIELDS: Set<String> = setOf(
+            "sleeveId",
+            "curveId",
+            "assetClass",
+            "rollCalendar",
+            "priceReturnConvention",
+            "fixedPriceReturnNotional",
+            "currentWeight",
+            "targetWeight",
+            "currentSpotLevel",
+            "frontContractId",
+            "frontExpiryDate",
+            "frontPrice",
+            "frontContractWeight",
+            "nextContractId",
+            "nextExpiryDate",
+            "nextPrice",
+            "nextContractWeight",
+            "lastRollTradingDate",
+        )
+
+        val FUTURES_ROLL_RECORD_FIELDS: Set<String> = setOf(
+            "id",
+            "benchmarkRef",
+            "sleeveId",
+            "rollTradingDate",
+            "fromContractId",
+            "toContractId",
+            "transferredContractWeight",
+            "frontWeightBefore",
+            "frontWeightAfter",
+            "normalizedCurveBasis",
+            "promotedDeferredToFront",
+            "successorContractId",
+            "effectiveAt",
+            "revision",
+        )
+
+        val FUTURES_ALLOCATION_RECORD_FIELDS: Set<String> = setOf(
+            "id",
+            "benchmarkRef",
+            "weightsBefore",
+            "weightsAfter",
+            "effectiveAt",
+            "revision",
+        )
+
+        val EQUITY_REFERENCE_STATE_FIELDS: Set<String> = setOf(
+            "benchmarkRef",
+            "region",
+            "resolvedCountryCodes",
+            "themeId",
+            "positions",
+            "factorExposure",
+            "revision",
+            "lastSelectionDate",
+            "nextSelectionDate",
+            "lastReweightDate",
+            "nextReweightDate",
+            "estimatedAnnualIncomeYield",
+            "declaredTargetConstituentCount",
+            "eligibleCandidateCount",
+            "representativeBasketLimit",
+            "profileFingerprint",
+            "universeModelVersion",
+            "universeFingerprint",
+            "compositionHash",
+            "asOf",
+        )
+
+        val EQUITY_REFERENCE_POSITION_FIELDS: Set<String> = setOf(
+            "assetId",
+            "region",
+            "countryCode",
+            "sector",
+            "weight",
+            "targetWeight",
+            "representedConstituentCount",
+            "selectionScore",
+            "indicatedAnnualDividendYield",
+            "enteredOn",
+        )
+
+        val EQUITY_REFERENCE_FACTOR_EXPOSURE_FIELDS: Set<String> = setOf(
+            "countryWeights",
+            "sectorWeights",
+            "styleExposures",
+            "idiosyncraticVolatilityWeights",
+            "thematicExposure",
+            "activeManagementExposure",
+        )
+
+        val EQUITY_REFERENCE_REBALANCE_RECORD_FIELDS: Set<String> = setOf(
+            "id",
+            "benchmarkRef",
+            "kind",
+            "selectionDate",
+            "effectiveAt",
+            "addedAssetIds",
+            "removedAssetIds",
+            "compositionHashBefore",
+            "compositionHashAfter",
+            "turnoverRate",
+            "resultingPositionCount",
+            "representedConstituentCount",
+            "revision",
+        )
+
+        val FUND_OF_FUNDS_STATE_FIELDS: Set<String> = setOf(
+            "benchmarkRef",
+            "universe",
+            "positions",
+            "revision",
+            "bootstrapDate",
+            "lastSelectionDate",
+            "nextSelectionDate",
+            "lastReweightDate",
+            "nextReweightDate",
+            "estimatedAnnualIncomeYield",
+            "eligibleCandidateCount",
+            "profileFingerprint",
+            "universeFingerprint",
+            "compositionHash",
+            "asOf",
+        )
+
+        val FUND_OF_FUNDS_POSITION_FIELDS: Set<String> = setOf(
+            "candidateFundId",
+            "category",
+            "underlyingBenchmarkRef",
+            "currentWeight",
+            "targetWeight",
+            "marketDiscountRate",
+            "indicatedAnnualDistributionYield",
+            "leverageRatio",
+            "annualExpenseRate",
+            "annualResidualVolatility",
+            "liquidityScore",
+            "selectionScore",
+            "enteredOn",
+            "asOf",
+        )
+
+        val FUND_OF_FUNDS_REBALANCE_RECORD_FIELDS: Set<String> = setOf(
+            "id",
+            "benchmarkRef",
+            "kind",
+            "effectiveDate",
+            "effectiveAt",
+            "addedCandidateFundIds",
+            "removedCandidateFundIds",
+            "compositionHashBefore",
+            "compositionHashAfter",
+            "oneWayTurnoverRate",
+            "resultingFundCount",
+            "revision",
+        )
+
+        val ALTERNATIVE_RISK_PREMIA_STATE_FIELDS: Set<String> = setOf(
+            "benchmarkRef",
+            "positions",
+            "revision",
+            "lastReweightDate",
+            "nextReweightDate",
+            "estimatedAnnualIncomeYield",
+            "grossExposure",
+            "netExposure",
+            "effectiveDurationYears",
+            "bootstrapCompositionHash",
+            "profileFingerprint",
+            "compositionHash",
+            "asOf",
+        )
+
+        val ALTERNATIVE_RISK_PREMIA_POSITION_FIELDS: Set<String> = setOf(
+            "driverId",
+            "strategyFamily",
+            "currentSignedWeight",
+            "targetSignedWeight",
+            "annualizedVariance",
+            "trendSignal",
+            "lastSourceLogReturn",
+            "sourceAvailable",
+            "sourceAnnualIncomeYield",
+            "sourceDurationYears",
+        )
+
+        val ALTERNATIVE_RISK_PREMIA_REBALANCE_RECORD_FIELDS: Set<String> = setOf(
+            "id",
+            "benchmarkRef",
+            "kind",
+            "effectiveDate",
+            "effectiveAt",
+            "cashSubstitutedDriverIds",
+            "compositionHashBefore",
+            "compositionHashAfter",
+            "turnoverRate",
+            "resultingGrossExposure",
+            "resultingNetExposure",
+            "resultingDurationYears",
+            "revision",
+        )
+
+        val COMPOSITE_REFERENCE_STATE_FIELDS: Set<String> = setOf(
+            "benchmarkRef",
+            "positions",
+            "revision",
+            "lastSelectionDate",
+            "nextSelectionDate",
+            "lastReweightDate",
+            "nextReweightDate",
+            "estimatedAnnualIncomeYield",
+            "grossExposure",
+            "netExposure",
+            "effectiveDurationYears",
+            "lastMortgageRateAnnual",
+            "bootstrapCompositionHash",
+            "profileFingerprint",
+            "compositionHash",
+            "asOf",
+        )
+
+        val COMPOSITE_REFERENCE_POSITION_FIELDS: Set<String> = setOf(
+            "sleeveId",
+            "direction",
+            "currentWeightMagnitude",
+            "targetWeightMagnitude",
+            "annualizedVariance",
+            "trendSignal",
+            "lastSourceLogReturn",
+            "sourceAvailable",
+            "sourceAnnualIncomeYield",
+            "sourceDurationYears",
+            "conditionalPrepaymentRateAnnual",
+        )
+
+        val COMPOSITE_REFERENCE_REBALANCE_RECORD_FIELDS: Set<String> = setOf(
+            "id",
+            "benchmarkRef",
+            "kind",
+            "effectiveDate",
+            "effectiveAt",
+            "addedSleeveIds",
+            "removedSleeveIds",
+            "cashSubstitutedSleeveIds",
+            "compositionHashBefore",
+            "compositionHashAfter",
+            "turnoverRate",
+            "resultingGrossExposure",
+            "resultingNetExposure",
+            "resultingDurationYears",
+            "revision",
+        )
+
+        const val MIN_FUND_CONSTITUENT_WEIGHT: Double = 0.0
+        const val MAX_FUND_SELECTION_RANK: Int = 1_000_000
+        const val MAX_REFERENCE_ASSET_ID_LENGTH: Int = 200
+        const val MAX_REFERENCE_PORTFOLIO_ID_LENGTH: Int = 200
+        const val MAX_REFERENCE_LEDGER_ID_LENGTH: Int = 512
+        const val MAX_DAILY_RESET_PRODUCT_ID_LENGTH: Int = 200
+        const val MIN_FIXED_INCOME_MARKET_VALUE: Double = 1e-9
+        const val MAX_FIXED_INCOME_MARKET_VALUE: Double = 1e24
+        const val MAX_FIXED_INCOME_YEARS: Double = 100.0
+        const val MAX_FIXED_INCOME_CONVEXITY: Double = 10_000.0
+        const val MIN_FIXED_INCOME_RATE: Double = -0.10
+        const val MAX_FIXED_INCOME_POSITION_RATE: Double = 2.0
+        const val MAX_YIELD_CURVE_RATE: Double = 1.0
+        const val MAX_FIXED_INCOME_CREDIT_SPREAD: Double = 2.0
+        const val MIN_FIXED_INCOME_INDEX_RATIO: Double = 0.01
+        const val MAX_FIXED_INCOME_INDEX_RATIO: Double = 100.0
+        const val MAX_COMMODITY_REFERENCE_COUNT: Int = 4_096
+        const val MAX_EQUITY_REFERENCE_COUNT: Int = 1_024
+        const val MAX_FUND_OF_FUNDS_REFERENCE_COUNT: Int = 1_024
+        const val MAX_STRUCTURED_REFERENCE_COUNT: Int = 1_024
+        const val MAX_EQUITY_COUNTRY_CODES: Int = 64
+        const val MAX_EQUITY_REPRESENTED_COUNT: Int = 10_000
+        const val EQUITY_IDIOSYNCRATIC_BUCKET_COUNT: Int = 32
+        const val MIN_EQUITY_REFERENCE_WEIGHT: Double = 1e-12
+        const val MAX_EQUITY_FACTOR_EXPOSURE: Double = 3.0
+        const val MAX_EQUITY_IDIOSYNCRATIC_WEIGHT: Double = 5.0
+        const val MIN_FUND_OF_FUNDS_WEIGHT: Double = 1e-12
+        const val MIN_FUND_OF_FUNDS_DISCOUNT: Double = -0.95
+        const val MAX_FUND_OF_FUNDS_PREMIUM: Double = 2.0
+        const val MAX_FUND_OF_FUNDS_LEVERAGE: Double = 5.0
+        const val MAX_FUND_OF_FUNDS_EXPENSE_RATE: Double = 0.25
+        const val MAX_FUND_OF_FUNDS_RESIDUAL_VOLATILITY: Double = 3.0
+        const val MAX_FUTURES_SLEEVES: Int = 128
+        const val MIN_COMMODITY_REFERENCE_LEVEL: Double = 1e-12
+        const val MAX_COMMODITY_REFERENCE_LEVEL: Double = 1e24
+        const val MIN_COMMODITY_CARRY_RATE: Double = -2.0
+        const val MAX_COMMODITY_CARRY_RATE: Double = 2.0
+        const val MIN_FUTURES_PRICE: Double = -1e12
+        const val MAX_FUTURES_PRICE: Double = 1e12
+        const val COMMODITY_WEIGHT_EPSILON: Double = 1e-8
+        const val MAX_FUND_STRUCTURE_ID_LENGTH: Int = 256
+        const val MIN_FUND_STRUCTURE_VALUE: Double = 1e-9
+        const val MAX_FUND_STRUCTURE_VALUE: Double = 1e18
+        const val MAX_FUND_STRUCTURE_RATE: Double = 100.0
+        const val MAX_FUND_STRUCTURE_EXACT_QUANTITY: Long = 9_000_000_000_000_000L
+        const val MAX_FUND_STRUCTURE_BATCH_ENTRIES: Int = 100
+        const val MAX_CEF_ASSET_COVERAGE_RATIO: Double = 1_000.0
+        const val MAX_OPTION_TENOR_TRADING_DAYS: Int = 504
+        const val MAX_OPTION_TIME_YEARS: Double = 2.0
+        const val MAX_CASH_PUT_SPREAD_AMOUNT: Double = 1e24
+        const val MAX_OPTION_OFFICIAL_SOURCE_URLS: Int = 16
+        const val MIN_OPTION_POSITIVE_RATIO: Double = 1e-9
+        const val MIN_OPTION_STRIKE_MONEYNESS: Double = 0.05
+        const val OPTION_WEIGHT_EPSILON: Double = 1e-10
+        const val MIN_CASH_PUT_SPREAD_WIDTH: Double = 0.001
+        val OPTION_ASSUMPTION_ID: Regex = Regex("[a-z0-9][a-z0-9._-]{2,159}")
+        const val MAX_DAILY_RESET_ABS_LEVERAGE: Double = 5.0
+        const val MAX_SAVE_URL_LENGTH: Int = 2_048
+        const val MAX_TAX_TEXT_LENGTH: Int = 512
+        const val MAX_TAX_WARNING_LENGTH: Int = 2_048
+        val REFERENCE_COMPOSITION_HASH: Regex = Regex("[0-9a-f]{16}")
+        val EQUITY_COUNTRY_CODE_PATTERN: Regex = Regex("[A-Z]{2}")
+        val EQUITY_THEME_ID_PATTERN: Regex = Regex("[a-z0-9]+(?:[.-][a-z0-9]+)*")
+        val EQUITY_REFERENCE_ASSET_ID_PATTERN: Regex = Regex("[a-z0-9][a-z0-9:._-]{2,199}")
+        val EQUITY_UNIVERSE_VERSION_PATTERN: Regex = Regex("[a-z0-9][a-z0-9._-]{2,159}")
+        val FUND_OF_FUNDS_CANDIDATE_ID_PATTERN: Regex = Regex("sim-fof:[a-z0-9._-]+:[0-9]{3}")
+        val COMPOSITE_MEMBER_ID_PATTERN: Regex = Regex("[a-z0-9][a-z0-9._-]{2,119}")
+        val DAILY_RESET_PRODUCT_ID: Regex = Regex("[A-Za-z0-9][A-Za-z0-9:._-]{2,199}")
+        val DAILY_RESET_INSTRUMENT_ID: Regex = Regex("[A-Z_]+:[A-Za-z0-9.]+")
 
         fun createSaveGson(): Gson = GsonBuilder()
             .registerTypeAdapter(Instant::class.java, InstantTypeAdapter().nullSafe())
@@ -1319,6 +5331,45 @@ private fun JsonObject.requiredString(name: String): String = try {
 private fun JsonObject.requiredStrictString(name: String, path: String): String =
     required(name).requireStrictString(path)
 
+private fun JsonObject.requiredBoundedNonBlankString(
+    name: String,
+    path: String,
+    maxLength: Int,
+): String = requiredStrictString(name, path).also { value ->
+    if (value.isBlank() || value.length > maxLength) {
+        throw JsonParseException("필드 '$path'의 길이가 올바르지 않습니다.")
+    }
+}
+
+private fun JsonObject.requiredLocalDate(name: String, path: String): LocalDate {
+    val raw = requiredStrictString(name, path)
+    return try {
+        LocalDate.parse(raw).also { parsed ->
+            if (parsed.toString() != raw) throw JsonParseException("필드 '$path'의 날짜 형식이 정규화되지 않았습니다.")
+        }
+    } catch (error: RuntimeException) {
+        if (error is JsonParseException) throw error
+        throw JsonParseException("필드 '$path'는 YYYY-MM-DD 날짜여야 합니다.", error)
+    }
+}
+
+private fun JsonObject.nullableLocalDate(name: String, path: String): LocalDate? {
+    requireMember(name)
+    return if (get(name).isJsonNull) null else requiredLocalDate(name, path)
+}
+
+private fun JsonObject.requiredInstant(name: String, path: String): Instant {
+    val raw = requiredStrictString(name, path)
+    return try {
+        Instant.parse(raw).also { parsed ->
+            if (parsed.toString() != raw) throw JsonParseException("필드 '$path'의 시각 형식이 정규화되지 않았습니다.")
+        }
+    } catch (error: RuntimeException) {
+        if (error is JsonParseException) throw error
+        throw JsonParseException("필드 '$path'는 ISO-8601 시각이어야 합니다.", error)
+    }
+}
+
 private fun JsonObject.nullableStrictString(name: String, path: String): String? {
     requireMember(name)
     val element = get(name)
@@ -1331,6 +5382,28 @@ private fun JsonElement.requireStrictString(path: String): String {
         throw JsonParseException("필드 '$path'은 문자열이어야 합니다.")
     }
     return primitive.asString
+}
+
+private fun JsonElement.requireFiniteDouble(path: String): Double = try {
+    val primitive = takeIf(JsonElement::isJsonPrimitive)?.asJsonPrimitive
+        ?: throw JsonParseException("필드 '$path'은 숫자여야 합니다.")
+    if (!primitive.isNumber) throw JsonParseException("필드 '$path'은 숫자여야 합니다.")
+    primitive.asDouble.takeIf(Double::isFinite)
+        ?: throw JsonParseException("필드 '$path'은 유한한 숫자여야 합니다.")
+} catch (error: RuntimeException) {
+    if (error is JsonParseException) throw error
+    throw JsonParseException("필드 '$path'은 유한한 숫자여야 합니다.", error)
+}
+
+private fun JsonElement.requireExactInt(path: String): Int = try {
+    val primitive = takeIf(JsonElement::isJsonPrimitive)?.asJsonPrimitive
+        ?: throw JsonParseException("필드 '$path'은 정수여야 합니다.")
+    if (!primitive.isNumber) throw JsonParseException("필드 '$path'은 정수여야 합니다.")
+    primitive.asString.toIntOrNull()
+        ?: throw JsonParseException("필드 '$path'은 Int 범위의 10진 정수여야 합니다.")
+} catch (error: RuntimeException) {
+    if (error is JsonParseException) throw error
+    throw JsonParseException("필드 '$path'은 정수여야 합니다.", error)
 }
 
 private inline fun <reified E : Enum<E>> JsonObject.requiredEnum(name: String, path: String): E {
@@ -1403,6 +5476,36 @@ private fun JsonObject.requiredLong(name: String, path: String): Long = try {
 } catch (error: RuntimeException) {
     if (error is JsonParseException) throw error
     throw JsonParseException("필드 '$path'은 정수여야 합니다.", error)
+}
+
+private fun JsonObject.nullableLong(name: String, path: String): Long? {
+    requireMember(name)
+    return if (get(name).isJsonNull) null else requiredLong(name, path)
+}
+
+/** Strict wire boundary for the cumulative listed-unit denomination lineage. */
+private fun JsonObject.requireUnitAdjustmentMarker(path: String) {
+    val factor = requiredFiniteDouble(
+        "cumulativeUnitAdjustmentFactor",
+        "$path.cumulativeUnitAdjustmentFactor",
+    )
+    val sequence = nullableLong(
+        "lastCorporateActionAccountingSequence",
+        "$path.lastCorporateActionAccountingSequence",
+    )
+    if (factor <= 0.0 || sequence?.let { it <= 0L } == true || sequence == null && factor != 1.0) {
+        throw JsonParseException("필드 '$path'의 누적 좌수조정 배수·기업행동 시퀀스가 유효하지 않습니다.")
+    }
+}
+
+private fun JsonObject.requiredBoolean(name: String, path: String): Boolean = try {
+    val primitive = required(name).takeIf(JsonElement::isJsonPrimitive)?.asJsonPrimitive
+        ?: throw JsonParseException("필드 '$path'은 boolean이어야 합니다.")
+    if (!primitive.isBoolean) throw JsonParseException("필드 '$path'은 boolean이어야 합니다.")
+    primitive.asBoolean
+} catch (error: RuntimeException) {
+    if (error is JsonParseException) throw error
+    throw JsonParseException("필드 '$path'은 boolean이어야 합니다.", error)
 }
 
 private fun JsonObject.requiredFiniteDouble(name: String, path: String): Double = try {

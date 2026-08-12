@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.simulation.schedule
 
-import com.amond.kmpbook.domain.data.StockCatalog
 import com.amond.kmpbook.domain.model.instrument.StockDefinition
 import com.amond.kmpbook.domain.model.schedule.ScheduleBasis
 import com.amond.kmpbook.domain.model.schedule.ScheduledEventKind
@@ -27,7 +26,7 @@ object EarningsCalendarCatalog {
 
     fun occurrencesForYear(
         year: Int,
-        stocks: List<StockDefinition> = StockCatalog.definitions,
+        stocks: List<StockDefinition>,
     ): List<ScheduledEventOccurrence> {
         if (year !in EconomicReleaseCatalog.FIRST_YEAR..EconomicReleaseCatalog.LAST_YEAR) return emptyList()
         require(stocks.map(StockDefinition::id).distinct().size == stocks.size) {
@@ -81,7 +80,7 @@ object EarningsCalendarCatalog {
     fun occurrencesBetween(
         from: Instant,
         to: Instant,
-        stocks: List<StockDefinition> = StockCatalog.definitions,
+        stocks: List<StockDefinition>,
     ): List<ScheduledEventOccurrence> {
         require(to >= from) { "Scheduled event interval cannot run backwards" }
         if (from == to) return emptyList()
@@ -98,7 +97,7 @@ object EarningsCalendarCatalog {
 
     fun upcoming(
         from: Instant,
-        stocks: List<StockDefinition> = StockCatalog.definitions,
+        stocks: List<StockDefinition>,
         limit: Int = 12,
     ): List<ScheduledEventOccurrence> {
         require(limit >= 0)
@@ -121,7 +120,7 @@ object EarningsCalendarCatalog {
     fun eventsBetween(
         from: Instant,
         to: Instant,
-        stocks: List<StockDefinition> = StockCatalog.definitions,
+        stocks: List<StockDefinition>,
     ): List<ScheduledEventOccurrence> = occurrencesBetween(from, to, stocks)
 
     private fun fiscalPeriod(releaseYear: Int, releaseIndex: Int): Pair<Int, Int> = when (releaseIndex) {

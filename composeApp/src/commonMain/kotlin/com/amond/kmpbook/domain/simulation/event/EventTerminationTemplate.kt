@@ -22,9 +22,9 @@ data class EventTerminationTemplate(
             "계약상 만기일은 상품 조건에서 정확한 날짜를 읽어 런타임 공시로 생성해야 합니다."
         }
         require(
-            (kind == InstrumentTerminationKind.ISSUER_ACCELERATION) ==
+            (kind == InstrumentTerminationKind.CREDIT_DEFAULT) ==
                 (accelerationRecoveryRate != null),
-        ) { "발행사 가속상환 템플릿에만 회수율 범위가 필요합니다." }
+        ) { "ETN 신용사건 템플릿에만 회수율 범위가 필요합니다." }
         accelerationRecoveryRate?.let { range ->
             require(
                 range.start.isFinite() && range.endInclusive.isFinite() &&
@@ -44,9 +44,17 @@ data class EventTerminationTemplate(
     /** ID가 아니라 종료 사유와 상품 계약 속성으로 확률 이벤트 후보를 제한한다. */
     fun isEligibleFor(stock: StockDefinition): Boolean = when (kind) {
         InstrumentTerminationKind.CONTRACTUAL_MATURITY -> false
-        InstrumentTerminationKind.ISSUER_ACCELERATION -> stock.instrumentType == InstrumentType.ETN
+        InstrumentTerminationKind.CREDIT_DEFAULT ->
+            stock.instrumentType == InstrumentType.ETN &&
+                stock.fundProductProfile?.etnProductTerms
+                    ?.accelerationTerms?.creditDefaultCausesAcceleration == true
+        InstrumentTerminationKind.ISSUER_ACCELERATION ->
+            stock.instrumentType == InstrumentType.ETN &&
+                stock.fundProductProfile?.etnProductTerms
+                    ?.accelerationTerms?.issuerMayAccelerate == true
         InstrumentTerminationKind.OPTIONAL_CALL ->
-            stock.instrumentType == InstrumentType.ETN && stock.identityProfile?.callable == true
+            stock.instrumentType == InstrumentType.ETN &&
+                stock.fundProductProfile?.etnProductTerms?.callTerms?.issuerCallable == true
         InstrumentTerminationKind.FUND_LIQUIDATION ->
             stock.instrumentType in setOf(InstrumentType.ETF, InstrumentType.CLOSED_END_FUND)
     }

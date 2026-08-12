@@ -719,12 +719,47 @@ class ListingLifecycleEngine(
         } else {
             ListingLifecycleStatus.UNDER_REVIEW
         }
-        if (observed.status == targetStatus && observed.activeReason == reason) return null
+        if (
+            observed.activeReason == reason &&
+            observed.status.hasReachedOrPassedPreemptingStatus(targetStatus)
+        ) {
+            // An enduring risk observation must not restart its own procedure. In particular,
+            // DELISTING_SCHEDULED is later than review/suspension; moving it backwards would reset
+            // reviewDeadline on every review cycle and keep a bankrupt listing suspended forever.
+            return null
+        }
         return if (suspendImmediately) {
             suspend(previous, observed, input, profile, reason)
         } else {
             startReview(previous, observed, input, profile, reason)
         }
+    }
+
+    private fun ListingLifecycleStatus.hasReachedOrPassedPreemptingStatus(
+        targetStatus: ListingLifecycleStatus,
+    ): Boolean = when (targetStatus) {
+        ListingLifecycleStatus.UNDER_REVIEW -> this in setOf(
+            ListingLifecycleStatus.UNDER_REVIEW,
+            ListingLifecycleStatus.TRADING_SUSPENDED,
+            ListingLifecycleStatus.DELISTING_SCHEDULED,
+            ListingLifecycleStatus.LIQUIDATION_PENDING,
+            ListingLifecycleStatus.DELISTED,
+            ListingLifecycleStatus.TERMINATED,
+        )
+        ListingLifecycleStatus.TRADING_SUSPENDED -> this in setOf(
+            ListingLifecycleStatus.TRADING_SUSPENDED,
+            ListingLifecycleStatus.DELISTING_SCHEDULED,
+            ListingLifecycleStatus.LIQUIDATION_PENDING,
+            ListingLifecycleStatus.DELISTED,
+            ListingLifecycleStatus.TERMINATED,
+        )
+        ListingLifecycleStatus.LISTED,
+        ListingLifecycleStatus.DEFICIENCY_NOTICE,
+        ListingLifecycleStatus.DELISTING_SCHEDULED,
+        ListingLifecycleStatus.LIQUIDATION_PENDING,
+        ListingLifecycleStatus.DELISTED,
+        ListingLifecycleStatus.TERMINATED,
+        -> error("선점 절차의 목표 상태는 심사 또는 거래정지여야 합니다.")
     }
 
     private fun DailyListingSurveillanceInput.severityFor(

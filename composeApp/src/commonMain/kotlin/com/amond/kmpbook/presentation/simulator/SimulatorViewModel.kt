@@ -2,6 +2,7 @@ package com.amond.kmpbook.presentation.simulator
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.model.game.GamePhase
 import com.amond.kmpbook.domain.model.game.Screen
 import com.amond.kmpbook.domain.model.game.TurnStep
@@ -31,10 +32,12 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
 class SimulatorViewModel(
+    initialCatalog: InstrumentCatalogSnapshot,
     initialOptions: NewGameOptions = NewGameOptions(),
 ) : ViewModel() {
     private var lastOptions: NewGameOptions = initialOptions.withDetachedActiveMods()
-    private var runtime: SimulatorRuntime = SimulatorRuntime(lastOptions, startInSetup = true)
+    private var lastCatalog: InstrumentCatalogSnapshot = initialCatalog
+    private var runtime: SimulatorRuntime = SimulatorRuntime(lastOptions, lastCatalog, startInSetup = true)
     private val _uiState = MutableStateFlow(runtime.snapshot())
     private val _stateChanges = MutableSharedFlow<SimulatorStateChange>(
         replay = MOD_EVENT_REPLAY_CAPACITY,
@@ -49,19 +52,34 @@ class SimulatorViewModel(
     internal val currentStateChangeSequence: Long get() = stateChangeSequence
     val currentState: SimulatorUiState get() = _uiState.value
 
-    fun newGame(options: NewGameOptions = NewGameOptions()) {
-        lastOptions = options.withDetachedActiveMods()
-        runtime = SimulatorRuntime(lastOptions)
+    fun newGame(
+        options: NewGameOptions = NewGameOptions(),
+        catalog: InstrumentCatalogSnapshot = lastCatalog,
+    ): String? {
+        val detachedOptions = options.withDetachedActiveMods()
+        val candidateRuntime = runCatching {
+            SimulatorRuntime(detachedOptions, catalog)
+        }.getOrElse { error ->
+            val detail = error.message?.take(240)?.takeIf(String::isNotBlank) ?: "알 수 없는 오류"
+            return "새 게임의 종목 방법론을 초기화하지 못했습니다: $detail"
+        }
+        lastOptions = detachedOptions
+        lastCatalog = catalog
+        runtime = candidateRuntime
         publish(SimulatorStateChangeKind.GAME_STARTED)
+        return null
     }
 
     fun resetGame() {
-        runtime = SimulatorRuntime(lastOptions, startInSetup = true)
+        runtime = SimulatorRuntime(lastOptions, lastCatalog, startInSetup = true)
         publish()
     }
 
     /** 파일 I/O 없이 저장 계층이 전달한 불변 상태를 검증·복원한다. */
-    fun restoreGame(state: SimulatorUiState): Boolean {
+    fun restoreGame(
+        state: SimulatorUiState,
+        catalog: InstrumentCatalogSnapshot,
+    ): Boolean {
         val previousState = _uiState.value
         if (
             _uiState.value.options.ironmanMode &&
@@ -71,14 +89,14 @@ class SimulatorViewModel(
             return false
         }
         val candidate = state.withDetachedActiveMods()
-        val validationError = validateSimulatorUiState(candidate)
+        val validationError = validateSimulatorUiState(candidate, catalog)
         if (validationError != null) {
             _uiState.value = _uiState.value.copy(
                 lastMessage = "저장 데이터가 유효하지 않습니다: $validationError",
             )
             return false
         }
-        val restored = SimulatorRuntime.restore(candidate) ?: run {
+        val restored = SimulatorRuntime.restore(candidate, catalog) ?: run {
             _uiState.value = _uiState.value.copy(lastMessage = "저장 데이터를 복원할 수 없습니다.")
             return false
         }
@@ -91,6 +109,7 @@ class SimulatorViewModel(
             },
         )
         lastOptions = _uiState.value.options
+        lastCatalog = catalog
         return true
     }
 
@@ -114,36 +133,57 @@ class SimulatorViewModel(
     fun advance(step: TurnStep = _uiState.value.selectedTurnStep) {
         if (_uiState.value.isAdvancing) return
         val advancingRuntime = runtime
+        val commandCatalog = lastCatalog
+        val preCommandState = advancingRuntime.snapshot().withDetachedActiveMods()
         val previousTurn = _uiState.value.turn
         publishSnapshot(
             _uiState.value.copy(isAdvancing = true, lastMessage = null),
             SimulatorStateChangeKind.STATE_CHANGED,
         )
         viewModelScope.launch {
-            val advancedState = withContext(Dispatchers.Default) {
-                advancingRuntime.advance(step)
-                advancingRuntime.snapshot()
-            }
-            if (runtime === advancingRuntime) {
-                if (advancedState.turn > previousTurn) {
-                    publishSnapshot(
-                        advancedState,
-                        SimulatorStateChangeKind.TURN_COMPLETED,
-                        previousTurn = previousTurn,
-                    )
-                } else {
-                    publishSnapshot(advancedState, SimulatorStateChangeKind.STATE_CHANGED)
+            try {
+                val advancedState = withContext(Dispatchers.Default) {
+                    advancingRuntime.advance(step)
+                    advancingRuntime.snapshot()
                 }
-                when (advancedState.phase) {
-                    GamePhase.SETTLEMENT -> publishSnapshot(
-                        advancedState,
-                        SimulatorStateChangeKind.SETTLEMENT_STARTED,
+                if (runtime === advancingRuntime) {
+                    if (advancedState.turn > previousTurn) {
+                        publishSnapshot(
+                            advancedState,
+                            SimulatorStateChangeKind.TURN_COMPLETED,
+                            previousTurn = previousTurn,
+                        )
+                    } else {
+                        publishSnapshot(advancedState, SimulatorStateChangeKind.STATE_CHANGED)
+                    }
+                    when (advancedState.phase) {
+                        GamePhase.SETTLEMENT -> publishSnapshot(
+                            advancedState,
+                            SimulatorStateChangeKind.SETTLEMENT_STARTED,
+                        )
+                        GamePhase.FINISHED -> publishSnapshot(
+                            advancedState,
+                            SimulatorStateChangeKind.GAME_ENDED,
+                        )
+                        else -> Unit
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                if (runtime === advancingRuntime) {
+                    rollbackCommand(
+                        preCommandState,
+                        commandCatalog,
+                        "게임 진행이 취소되어 시작 전 상태로 복원했습니다.",
                     )
-                    GamePhase.FINISHED -> publishSnapshot(
-                        advancedState,
-                        SimulatorStateChangeKind.GAME_ENDED,
+                }
+                throw cancelled
+            } catch (error: Throwable) {
+                if (runtime === advancingRuntime) {
+                    rollbackCommand(
+                        preCommandState,
+                        commandCatalog,
+                        "게임 진행에 실패해 시작 전 상태로 복원했습니다: ${error.conciseDetail()}",
                     )
-                    else -> Unit
                 }
             }
         }
@@ -321,7 +361,7 @@ class SimulatorViewModel(
     }
 
     internal fun debugValidationStatus(): DebugRuntimeResult {
-        val problem = validateSimulatorUiState(currentState)
+        val problem = validateSimulatorUiState(currentState, lastCatalog)
         return if (problem == null) {
             DebugRuntimeResult.success("현재 게임 상태가 저장 불변식 검사를 통과했습니다.")
         } else {
@@ -344,6 +384,7 @@ class SimulatorViewModel(
         }
         val originalRuntime = runtime
         val originalState = currentState
+        val commandCatalog = lastCatalog
         val isBackward = targetTurn < originalState.turn
         if (isBackward && !resetForBackwardJump) {
             return DebugRuntimeResult.failure("과거 턴으로 이동하면 현재 진행을 잃습니다. '--reset'을 명시해 주세요.")
@@ -353,7 +394,7 @@ class SimulatorViewModel(
         }
 
         val workingRuntime = if (isBackward) {
-            SimulatorRuntime(originalState.options.withDetachedActiveMods())
+            SimulatorRuntime(originalState.options.withDetachedActiveMods(), lastCatalog)
         } else {
             originalRuntime
         }
@@ -369,6 +410,8 @@ class SimulatorViewModel(
 
         debugJumpJob = viewModelScope.launch {
             var completed = false
+            var cancelled = false
+            var failure: Throwable? = null
             var settlementSnapshot: SimulatorUiState? = null
             try {
                 withContext(Dispatchers.Default) {
@@ -391,49 +434,64 @@ class SimulatorViewModel(
                 }
                 completed = true
             } catch (_: CancellationException) {
-                // A forward jump keeps its last fully completed canonical hour. A reset-based
-                // backward jump is computed in isolation and is discarded when cancelled.
+                cancelled = true
+            } catch (error: Throwable) {
+                failure = error
             } finally {
-                if (!isBackward || completed) runtime = workingRuntime
-                if (restorePause && runtime.phase == GamePhase.PLAYING) runtime.pause()
-                val snapshot = runtime.snapshot().copy(
-                    lastMessage = if (completed) {
-                        "디버그 턴 이동을 완료했습니다: ${runtime.turn}턴."
-                    } else {
-                        "디버그 턴 이동을 ${runtime.turn}턴에서 취소했습니다."
-                    },
-                )
-                val settlement = when {
-                    runtime !== workingRuntime -> null
-                    settlementSnapshot != null -> settlementSnapshot.copy(lastMessage = snapshot.lastMessage)
-                    snapshot.phase == GamePhase.SETTLEMENT -> snapshot
-                    else -> null
-                }
-                if (settlement != null) {
-                    if (settlement.turn > originalState.turn) {
+                // A command that throws or is cancelled may have mutated several hourly states.
+                // Rebuild from the one immutable command-boundary snapshot instead of exposing a
+                // partially advanced Runtime. A concurrently replaced game remains untouched.
+                if (runtime === originalRuntime && completed) {
+                    runtime = workingRuntime
+                    if (restorePause && runtime.phase == GamePhase.PLAYING) runtime.pause()
+                    val snapshot = runtime.snapshot().copy(
+                        lastMessage = "디버그 턴 이동을 완료했습니다: ${runtime.turn}턴.",
+                    )
+                    val settlement = when {
+                        settlementSnapshot != null ->
+                            settlementSnapshot.copy(lastMessage = snapshot.lastMessage)
+                        snapshot.phase == GamePhase.SETTLEMENT -> snapshot
+                        else -> null
+                    }
+                    if (settlement != null) {
+                        if (settlement.turn > originalState.turn) {
+                            publishSnapshot(
+                                settlement,
+                                SimulatorStateChangeKind.TURN_COMPLETED,
+                                previousTurn = originalState.turn,
+                            )
+                        }
                         publishSnapshot(
                             settlement,
-                            SimulatorStateChangeKind.TURN_COMPLETED,
-                            previousTurn = originalState.turn,
+                            SimulatorStateChangeKind.SETTLEMENT_STARTED,
+                        )
+                        if (snapshot.phase == GamePhase.FINISHED) {
+                            publishSnapshot(snapshot, SimulatorStateChangeKind.GAME_ENDED)
+                        }
+                    } else {
+                        val kind = when {
+                            isBackward -> SimulatorStateChangeKind.GAME_STARTED
+                            snapshot.turn > originalState.turn -> SimulatorStateChangeKind.TURN_COMPLETED
+                            else -> SimulatorStateChangeKind.STATE_CHANGED
+                        }
+                        publishSnapshot(
+                            snapshot,
+                            kind,
+                            previousTurn = originalState.turn.takeIf {
+                                kind == SimulatorStateChangeKind.TURN_COMPLETED
+                            },
                         )
                     }
-                    publishSnapshot(settlement, SimulatorStateChangeKind.SETTLEMENT_STARTED)
-                    if (snapshot.phase == GamePhase.FINISHED) {
-                        publishSnapshot(snapshot, SimulatorStateChangeKind.GAME_ENDED)
+                    lastOptions = snapshot.options.withDetachedActiveMods()
+                } else if (runtime === originalRuntime) {
+                    val message = if (cancelled) {
+                        "디버그 턴 이동을 취소해 시작 전 상태로 복원했습니다."
+                    } else {
+                        "디버그 턴 이동에 실패해 시작 전 상태로 복원했습니다: " +
+                            requireNotNull(failure).conciseDetail()
                     }
-                } else {
-                    val kind = when {
-                        isBackward && completed -> SimulatorStateChangeKind.GAME_STARTED
-                        snapshot.turn > originalState.turn -> SimulatorStateChangeKind.TURN_COMPLETED
-                        else -> SimulatorStateChangeKind.STATE_CHANGED
-                    }
-                    publishSnapshot(
-                        snapshot,
-                        kind,
-                        previousTurn = originalState.turn.takeIf { kind == SimulatorStateChangeKind.TURN_COMPLETED },
-                    )
+                    rollbackCommand(originalState, commandCatalog, message)
                 }
-                lastOptions = snapshot.options.withDetachedActiveMods()
                 debugJumpJob = null
             }
         }
@@ -466,9 +524,9 @@ class SimulatorViewModel(
             return result
         }
         val candidate = runtime.snapshot().withDetachedActiveMods()
-        val problem = validateSimulatorUiState(candidate)
+        val problem = validateSimulatorUiState(candidate, lastCatalog)
         if (problem != null) {
-            runtime = requireNotNull(SimulatorRuntime.restore(before))
+            runtime = requireNotNull(SimulatorRuntime.restore(before, lastCatalog))
             publish()
             return DebugRuntimeResult.failure("변경이 게임 불변식을 위반해 되돌렸습니다: $problem")
         }
@@ -476,6 +534,35 @@ class SimulatorViewModel(
         publishSnapshot(candidate, SimulatorStateChangeKind.STATE_CHANGED)
         return result
     }
+
+    /** Restores the canonical command boundary after any partially mutating background failure. */
+    private fun rollbackCommand(
+        preCommandState: SimulatorUiState,
+        commandCatalog: InstrumentCatalogSnapshot,
+        message: String,
+    ) {
+        val canonicalState = preCommandState
+            .withDetachedActiveMods()
+            .copy(isAdvancing = false)
+        runtime = checkNotNull(SimulatorRuntime.restore(canonicalState, commandCatalog)) {
+            "A Runtime-generated command boundary could not be restored"
+        }
+        lastCatalog = commandCatalog
+        lastOptions = canonicalState.options.withDetachedActiveMods()
+        publishSnapshot(
+            runtime.snapshot().copy(isAdvancing = false, lastMessage = message.take(300)),
+            SimulatorStateChangeKind.STATE_CHANGED,
+        )
+    }
+
+    private fun Throwable.conciseDetail(): String =
+        message
+            ?.lineSequence()
+            ?.firstOrNull()
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?.take(220)
+            ?: "원인을 확인할 수 없는 내부 오류"
 
     private fun debugAccessFailure(): DebugRuntimeResult? = when {
         !isDebugConsoleEnabled() -> DebugRuntimeResult.failure("현재 캠페인에 호환되는 디버그 모드가 활성화되지 않았습니다.")
@@ -526,6 +613,7 @@ class SimulatorViewModel(
             previous.phase == GamePhase.SETUP ||
                 currentTime < previous.currentTime ||
                 turn < previous.turn ||
+                catalogReference != previous.catalogReference ||
                 options.copy(autoExchange = previous.options.autoExchange) != previous.options
             )
 

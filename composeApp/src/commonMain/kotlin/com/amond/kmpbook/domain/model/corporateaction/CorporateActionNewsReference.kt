@@ -25,6 +25,7 @@ data class CorporateActionNewsReference(
     val appliedAt: Instant? = null,
     val accountingSequence: Long? = null,
     val cancelledAt: Instant? = null,
+    val cancellationReason: CorporateActionCancellationReason? = null,
     /** 취소 원인이 된 상장 생명주기 원장 이벤트를 ID와 시퀀스로 동시에 고정한다. */
     val cancellingListingEventId: String? = null,
     val cancellingListingLedgerSequence: Long? = null,
@@ -82,25 +83,38 @@ data class CorporateActionNewsReference(
             safeTransition == CorporateActionNewsTransition.CANCELLED &&
                 cancelledAt?.let { it < announcedAt } == true ->
                 "기업행동 취소는 공시보다 먼저 발생할 수 없습니다."
+            safeTransition == CorporateActionNewsTransition.CANCELLED && cancellationReason == null ->
+                "기업행동 취소 전이에는 취소 사유가 필요합니다."
             safeTransition == CorporateActionNewsTransition.CANCELLED &&
+                cancellationReason == CorporateActionCancellationReason.LISTING_LIFECYCLE &&
                 cancellingListingEventId?.isBlank() != false ->
                 "기업행동 취소 전이에는 상장 원장 이벤트 ID가 필요합니다."
             safeTransition == CorporateActionNewsTransition.CANCELLED &&
+                cancellationReason == CorporateActionCancellationReason.LISTING_LIFECYCLE &&
                 (cancellingListingLedgerSequence == null || cancellingListingLedgerSequence <= 0L) ->
                 "기업행동 취소 전이에는 양수인 상장 원장 시퀀스가 필요합니다."
             safeTransition == CorporateActionNewsTransition.CANCELLED &&
+                cancellationReason == CorporateActionCancellationReason.LISTING_LIFECYCLE &&
                 cancellingListingStatus !in setOf(
                     ListingLifecycleStatus.LIQUIDATION_PENDING,
                     ListingLifecycleStatus.DELISTED,
                     ListingLifecycleStatus.TERMINATED,
                 ) -> "기업행동은 청산 대기 또는 최종 상장 종료 원장으로만 취소할 수 있습니다."
+            safeTransition == CorporateActionNewsTransition.CANCELLED &&
+                cancellationReason == CorporateActionCancellationReason.PRODUCT_STATE_INELIGIBLE &&
+                hasListingCancellationFields() ->
+                "상품 운용 상태로 취소된 기업행동에는 상장 원장 정보를 저장할 수 없습니다."
             else -> null
         }
     }
 
     private fun hasCancellationFields(): Boolean =
-        cancelledAt != null || cancellingListingEventId != null ||
+        cancelledAt != null || cancellationReason != null || cancellingListingEventId != null ||
             cancellingListingLedgerSequence != null || cancellingListingStatus != null
+
+    private fun hasListingCancellationFields(): Boolean =
+        cancellingListingEventId != null || cancellingListingLedgerSequence != null ||
+            cancellingListingStatus != null
 
     fun pendingLineageViolation(action: PendingCorporateAction): String? = when {
         transition != CorporateActionNewsTransition.ANNOUNCED ->
@@ -167,8 +181,27 @@ data class CorporateActionNewsReference(
         cancellingListingEventId != listingEvent.id ||
             cancellingListingLedgerSequence != listingEvent.sequence ||
             stockId != listingEvent.stockId ||
-            cancellingListingStatus != listingEvent.toStatus ->
+            cancellingListingStatus != listingEvent.toStatus ||
+            cancellationReason != CorporateActionCancellationReason.LISTING_LIFECYCLE ->
             "기업행동 취소 전이가 상장 생명주기 원장과 다릅니다."
+        else -> semanticInvariantViolation()
+    }
+
+    fun productStateCancellationLineageViolation(
+        announcement: CorporateActionNewsReference,
+    ): String? = when {
+        transition != CorporateActionNewsTransition.CANCELLED ->
+            "취소된 기업행동은 취소 전이로 참조해야 합니다."
+        announcement.transition != CorporateActionNewsTransition.ANNOUNCED ->
+            "기업행동 취소에는 같은 발생 ID의 선행 공시가 필요합니다."
+        occurrenceId != announcement.occurrenceId || stockId != announcement.stockId ||
+            kind != announcement.kind || announcedAt != announcement.announcedAt ||
+            effectiveNotBefore != announcement.effectiveNotBefore ||
+            quantityMultiplier != announcement.quantityMultiplier || source != announcement.source ||
+            rationale != announcement.rationale ->
+            "기업행동 취소 전이와 선행 공시의 원장 계보가 다릅니다."
+        cancellationReason != CorporateActionCancellationReason.PRODUCT_STATE_INELIGIBLE ->
+            "상품 상태 취소 전이의 취소 사유가 다릅니다."
         else -> semanticInvariantViolation()
     }
 }

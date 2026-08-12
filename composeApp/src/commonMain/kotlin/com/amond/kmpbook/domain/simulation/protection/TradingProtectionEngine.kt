@@ -54,9 +54,10 @@ import com.amond.kmpbook.domain.model.protection.us.UsMwcbTransition
 import com.amond.kmpbook.domain.model.protection.us.UsMwcbVenuePhase
 import com.amond.kmpbook.domain.model.protection.us.UsMwcbVenueStatus
 import com.amond.kmpbook.domain.model.trading.TradingExecutionMode
+import com.amond.kmpbook.domain.simulation.market.MarketMicrostructure
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.round
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
@@ -642,16 +643,25 @@ object TradingProtectionEngine {
         referencePrice: Double,
         referencePriceEffectiveAt: Instant,
         easternTime: LocalTime,
-    ): UsLuldState = UsLuldState(
-        stockId = stockId,
-        primaryMarket = primaryMarket,
-        tradingDate = tradingDate,
-        tier = tier,
-        previousClose = previousClose,
-        referencePrice = referencePrice,
-        referencePriceEffectiveAt = referencePriceEffectiveAt,
-        bands = calculateUsLuldBands(tier, previousClose, referencePrice, easternTime),
-    )
+    ): UsLuldState {
+        val canonicalPreviousClose = canonicalUsLuldPreviousClose(previousClose)
+        val bands = calculateUsLuldBands(
+            tier,
+            canonicalPreviousClose,
+            referencePrice,
+            easternTime,
+        )
+        return UsLuldState(
+            stockId = stockId,
+            primaryMarket = primaryMarket,
+            tradingDate = tradingDate,
+            tier = tier,
+            previousClose = canonicalPreviousClose,
+            referencePrice = bands.referencePrice,
+            referencePriceEffectiveAt = referencePriceEffectiveAt,
+            bands = bands,
+        )
+    }
 
     /** Official LULD tier/price buckets, including the 15:35 ET band-doubling window. */
     fun calculateUsLuldBands(
@@ -660,22 +670,39 @@ object TradingProtectionEngine {
         referencePrice: Double,
         easternTime: LocalTime,
     ): UsLuldBands {
-        require(previousClose >= 0.01 && previousClose.isFinite())
-        require(referencePrice >= 0.01 && referencePrice.isFinite())
+        val minimumPrice = MarketMicrostructure.minimumPrice(Market.NYSE)
+        require(previousClose >= minimumPrice && previousClose.isFinite())
+        require(referencePrice >= minimumPrice && referencePrice.isFinite())
+        val canonicalPreviousClose = canonicalUsLuldPreviousClose(previousClose)
+        val canonicalReferencePrice = canonicalUsLuldReferencePrice(referencePrice)
         val closingWindow = easternTime >= TradingProtectionRules.US_LULD_DOUBLED_BANDS_FROM
         val baseAmount = when {
-            previousClose < 0.75 -> min(0.15, referencePrice * 0.75)
-            previousClose <= 3.0 -> referencePrice * 0.20
-            tier == UsLuldTier.TIER_1 -> referencePrice * 0.05
-            else -> referencePrice * 0.10
+            canonicalPreviousClose < 0.75 -> min(0.15, canonicalReferencePrice * 0.75)
+            canonicalPreviousClose <= 3.0 -> canonicalReferencePrice * 0.20
+            tier == UsLuldTier.TIER_1 -> canonicalReferencePrice * 0.05
+            else -> canonicalReferencePrice * 0.10
         }
         // The current Plan doubles Tier 1 and sub-$3 Tier 2 bands in the final 25 minutes.
-        val doubled = closingWindow && (tier == UsLuldTier.TIER_1 || previousClose <= 3.0)
+        val doubled = closingWindow && (tier == UsLuldTier.TIER_1 || canonicalPreviousClose <= 3.0)
         val amount = if (doubled) baseAmount * 2.0 else baseAmount
-        val lower = roundToCent((referencePrice - amount).coerceAtLeast(0.0))
-        val upper = roundToCent(referencePrice + amount)
+        val referenceTick = MarketMicrostructure.tickSize(Market.NYSE, canonicalReferencePrice)
+        val lower = MarketMicrostructure.roundDown(
+            market = Market.NYSE,
+            price = min(
+                canonicalReferencePrice - amount,
+                canonicalReferencePrice - referenceTick,
+            )
+                .coerceAtLeast(minimumPrice),
+        )
+        val upper = MarketMicrostructure.roundUp(
+            market = Market.NYSE,
+            price = max(
+                canonicalReferencePrice + amount,
+                canonicalReferencePrice + referenceTick,
+            ),
+        )
         return UsLuldBands(
-            referencePrice = referencePrice,
+            referencePrice = canonicalReferencePrice,
             lower = lower,
             upper = upper,
             bandAmount = amount,
@@ -696,22 +723,32 @@ object TradingProtectionEngine {
         at: Instant,
         easternTime: LocalTime,
     ): UsLuldTransition {
-        require(candidateFiveMinuteMean >= 0.01 && candidateFiveMinuteMean.isFinite())
+        require(
+            candidateFiveMinuteMean >= MarketMicrostructure.minimumPrice(Market.NYSE) &&
+                candidateFiveMinuteMean.isFinite(),
+        )
         require(candidateWindowStartsAt <= at)
         if (state.phase != UsLuldPhase.NORMAL) return UsLuldTransition(state)
         if (candidateWindowStartsAt < state.referencePriceEffectiveAt) return UsLuldTransition(state)
         if (at - state.referencePriceEffectiveAt < TradingProtectionRules.US_LULD_REFERENCE_MINIMUM_AGE) {
             return UsLuldTransition(state)
         }
-        val change = abs(candidateFiveMinuteMean / state.referencePrice - 1.0)
+        val nextBands = calculateUsLuldBands(
+            state.tier,
+            state.previousClose,
+            candidateFiveMinuteMean,
+            easternTime,
+        )
+        val canonicalCandidate = nextBands.referencePrice
+        val change = abs(canonicalCandidate / state.referencePrice - 1.0)
         if (change + RATE_EPSILON < TradingProtectionRules.US_LULD_REFERENCE_MINIMUM_CHANGE) {
             return UsLuldTransition(state)
         }
         return UsLuldTransition(
             state.copy(
-                referencePrice = candidateFiveMinuteMean,
+                referencePrice = canonicalCandidate,
                 referencePriceEffectiveAt = at,
-                bands = calculateUsLuldBands(state.tier, state.previousClose, candidateFiveMinuteMean, easternTime),
+                bands = nextBands,
             ),
             UsLuldEvent.REFERENCE_PRICE_UPDATED,
         )
@@ -799,12 +836,21 @@ object TradingProtectionEngine {
         easternTime: LocalTime,
     ): UsLuldTransition {
         require(state.phase == UsLuldPhase.REOPENING_AUCTION)
-        require(reopeningPrice >= 0.01 && reopeningPrice.isFinite())
+        require(
+            reopeningPrice >= MarketMicrostructure.minimumPrice(Market.NYSE) &&
+                reopeningPrice.isFinite(),
+        )
+        val nextBands = calculateUsLuldBands(
+            state.tier,
+            state.previousClose,
+            reopeningPrice,
+            easternTime,
+        )
         return UsLuldTransition(
             clearLuldTransientState(state).copy(
-                referencePrice = reopeningPrice,
+                referencePrice = nextBands.referencePrice,
                 referencePriceEffectiveAt = at,
-                bands = calculateUsLuldBands(state.tier, state.previousClose, reopeningPrice, easternTime),
+                bands = nextBands,
             ),
             UsLuldEvent.REOPENED,
         )
@@ -825,6 +871,24 @@ object TradingProtectionEngine {
         pauseExtensionCount = 0,
         reopeningStartedAt = null,
     )
+
+    private fun canonicalUsLuldPreviousClose(price: Double): Double {
+        val minimumPrice = MarketMicrostructure.minimumPrice(Market.NYSE)
+        require(price >= minimumPrice && price.isFinite())
+        return MarketMicrostructure.roundNearest(Market.NYSE, price)
+    }
+
+    /**
+     * The strict band invariant needs one executable tick below the reference. At the absolute
+     * $0.0001 quotation floor, $0.0002 is therefore the smallest representable LULD reference;
+     * this replaces the former, economically distorting one-cent floor.
+     */
+    private fun canonicalUsLuldReferencePrice(price: Double): Double {
+        val minimumPrice = MarketMicrostructure.minimumPrice(Market.NYSE)
+        require(price >= minimumPrice && price.isFinite())
+        val minimumReference = minimumPrice + MarketMicrostructure.tickSize(Market.NYSE, minimumPrice)
+        return MarketMicrostructure.roundUp(Market.NYSE, price.coerceAtLeast(minimumReference))
+    }
 
     /**
      * One query for every order/matching path. Restrictions are ordered by precedence.
@@ -1068,8 +1132,6 @@ object TradingProtectionEngine {
         TradingExecutionMode.PAUSED -> 3
         TradingExecutionMode.CLOSED -> 4
     }
-
-    private fun roundToCent(value: Double): Double = round(value * 100.0) / 100.0
 
     private val US_MARKETS: List<Market> = Market.entries.filter(Market::isUnitedStates)
 }

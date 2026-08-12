@@ -186,6 +186,8 @@ class InstrumentMetricsEngine(private val seed: Long) {
             indicativeValuePerUnit = if (isEtn) nextReference else nextReference,
             unitsOrNotesOutstanding = nextUnits,
             lastNetFlow = netFlow,
+            cumulativeUnitAdjustmentFactor = state.cumulativeUnitAdjustmentFactor,
+            lastCorporateActionAccountingSequence = state.lastCorporateActionAccountingSequence,
             asOf = at,
         )
     }
@@ -194,15 +196,24 @@ class InstrumentMetricsEngine(private val seed: Long) {
     fun applyFundUnitAdjustment(
         state: FundFinancialState,
         quantityMultiplier: Double,
+        corporateActionAccountingSequence: Long,
         at: Instant,
     ): FundFinancialState {
         require(quantityMultiplier.isFinite() && quantityMultiplier > 0.0)
+        require(corporateActionAccountingSequence > 0L)
+        require(
+            state.lastCorporateActionAccountingSequence == null ||
+                corporateActionAccountingSequence > state.lastCorporateActionAccountingSequence,
+        )
         require(at >= state.asOf)
         return state.copy(
             navPerUnit = state.navPerUnit / quantityMultiplier,
             indicativeValuePerUnit = state.indicativeValuePerUnit / quantityMultiplier,
             unitsOrNotesOutstanding = state.unitsOrNotesOutstanding * quantityMultiplier,
             lastNetFlow = 0.0,
+            cumulativeUnitAdjustmentFactor =
+                state.cumulativeUnitAdjustmentFactor * quantityMultiplier,
+            lastCorporateActionAccountingSequence = corporateActionAccountingSequence,
             asOf = at,
         )
     }

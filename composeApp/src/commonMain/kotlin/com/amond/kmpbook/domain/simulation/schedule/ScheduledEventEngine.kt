@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.simulation.schedule
 
-import com.amond.kmpbook.domain.data.StockCatalog
 import com.amond.kmpbook.domain.model.event.EventImpactHorizon
 import com.amond.kmpbook.domain.model.event.EventImpactInsight
 import com.amond.kmpbook.domain.model.event.EventImpactTargetKind
@@ -58,14 +57,14 @@ class ScheduledEventEngine(private val seed: Long) {
 
     fun occurrencesForYear(
         year: Int,
-        stocks: List<StockDefinition> = StockCatalog.definitions,
+        stocks: List<StockDefinition>,
     ): List<ScheduledEventOccurrence> = annualCalendar(year, stocks)
 
     /** Returns every occurrence in the half-open interval [from, to), without an emission cap. */
     fun occurrencesBetween(
         from: Instant,
         to: Instant,
-        stocks: List<StockDefinition> = StockCatalog.definitions,
+        stocks: List<StockDefinition>,
     ): List<ScheduledEventOccurrence> {
         require(to >= from) { "Scheduled event interval cannot run backwards" }
         if (from == to) return emptyList()
@@ -83,7 +82,7 @@ class ScheduledEventEngine(private val seed: Long) {
     fun generate(
         from: Instant,
         to: Instant,
-        stocks: List<StockDefinition> = StockCatalog.definitions,
+        stocks: List<StockDefinition>,
     ): ScheduledEventGenerationResult = ScheduledEventGenerationResult(
         emissions = occurrencesBetween(from, to, stocks).map { emissionFor(it, stocks) },
     )
@@ -94,7 +93,7 @@ class ScheduledEventEngine(private val seed: Long) {
      */
     fun upcoming(
         from: Instant,
-        stocks: List<StockDefinition> = StockCatalog.definitions,
+        stocks: List<StockDefinition>,
         limit: Int = 12,
     ): List<ScheduledEventOccurrence> {
         require(limit >= 0)
@@ -116,7 +115,7 @@ class ScheduledEventEngine(private val seed: Long) {
 
     fun outcomeFor(
         occurrence: ScheduledEventOccurrence,
-        stocks: List<StockDefinition> = StockCatalog.definitions,
+        stocks: List<StockDefinition>,
     ): ScheduledEventOutcome {
         val random = DeterministicRandom.keyed(seed, occurrence.id)
         return if (occurrence.kind == ScheduledEventKind.EARNINGS) {
@@ -128,7 +127,7 @@ class ScheduledEventEngine(private val seed: Long) {
 
     fun emissionFor(
         occurrence: ScheduledEventOccurrence,
-        stocks: List<StockDefinition> = StockCatalog.definitions,
+        stocks: List<StockDefinition>,
     ): ScheduledEventEmission {
         val outcome = outcomeFor(occurrence, stocks)
         val impactStartsAt = nextImpactStart(occurrence)
@@ -180,7 +179,7 @@ class ScheduledEventEngine(private val seed: Long) {
      */
     internal fun canonicalNewsEventFor(
         reference: ScheduledEventReference,
-        stocks: List<StockDefinition> = StockCatalog.definitions,
+        stocks: List<StockDefinition>,
     ): GameEvent? {
         val occurrence = occurrenceIndex(stocks)[reference.occurrenceId]
             ?.takeIf { it.kind == reference.kind }
@@ -195,7 +194,7 @@ class ScheduledEventEngine(private val seed: Long) {
      */
     internal fun isCanonicalNewsEvent(
         event: GameEvent,
-        stocks: List<StockDefinition> = StockCatalog.definitions,
+        stocks: List<StockDefinition>,
     ): Boolean {
         if (event.recordKind != EventRecordKind.SCHEDULED_RELEASE) return false
         val reference = event.scheduledEventReference ?: return false
@@ -206,7 +205,7 @@ class ScheduledEventEngine(private val seed: Long) {
     fun impactEventsBetween(
         from: Instant,
         to: Instant,
-        stocks: List<StockDefinition> = StockCatalog.definitions,
+        stocks: List<StockDefinition>,
     ): List<GameEvent> {
         require(to >= from) { "Scheduled impact interval cannot run backwards" }
         if (from == to) return emptyList()
@@ -221,7 +220,7 @@ class ScheduledEventEngine(private val seed: Long) {
 
     fun activeImpactEventsAt(
         time: Instant,
-        stocks: List<StockDefinition> = StockCatalog.definitions,
+        stocks: List<StockDefinition>,
     ): List<GameEvent> = impactEventsBetween(time - 1.hours, time + 1.hours, stocks)
         .filter { it.isActiveAt(time) }
 

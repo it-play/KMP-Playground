@@ -10,8 +10,10 @@ data class UsLuldBands(
     val doubledForClosingWindow: Boolean,
 ) {
     init {
-        require(referencePrice > 0.0 && lower >= 0.0 && upper > referencePrice)
-        require(lower < referencePrice && bandAmount > 0.0)
+        require(referencePrice > 0.0 && referencePrice.isFinite())
+        require(lower > 0.0 && lower.isFinite() && lower < referencePrice)
+        require(upper.isFinite() && upper > referencePrice)
+        require(bandAmount > 0.0 && bandAmount.isFinite())
     }
 
     operator fun contains(price: Double): Boolean = price in lower..upper

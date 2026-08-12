@@ -45,7 +45,24 @@ fun PendingCorporateAction.toCancellationNewsReference(
     source = source,
     rationale = rationale,
     cancelledAt = cancelledAt,
+    cancellationReason = CorporateActionCancellationReason.LISTING_LIFECYCLE,
     cancellingListingEventId = listingEvent.id,
     cancellingListingLedgerSequence = listingEvent.sequence,
     cancellingListingStatus = listingEvent.toStatus,
+)
+
+fun PendingCorporateAction.toProductStateCancellationNewsReference(
+    cancelledAt: Instant,
+): CorporateActionNewsReference = CorporateActionNewsReference(
+    occurrenceId = id,
+    transition = CorporateActionNewsTransition.CANCELLED,
+    stockId = stockId,
+    kind = kind,
+    announcedAt = announcedAt,
+    effectiveNotBefore = effectiveNotBefore,
+    quantityMultiplier = quantityMultiplier,
+    source = source,
+    rationale = rationale,
+    cancelledAt = cancelledAt,
+    cancellationReason = CorporateActionCancellationReason.PRODUCT_STATE_INELIGIBLE,
 )

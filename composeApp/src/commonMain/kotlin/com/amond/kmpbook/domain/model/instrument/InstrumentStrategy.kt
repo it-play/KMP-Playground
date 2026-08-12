@@ -23,6 +23,7 @@ enum class InstrumentStrategy(val displayName: String) {
     HIGH_YIELD_BOND("하이일드 채권"),
     CLO("대출채권담보부증권"),
     MULTI_ASSET("혼합자산"),
+    COMMODITY_SPOT("원자재 현물"),
     COMMODITY_FUTURES("원자재 선물"),
     CRYPTO_FUTURES("가상자산 선물"),
     CLOSED_END_INCOME("폐쇄형 인컴펀드"),

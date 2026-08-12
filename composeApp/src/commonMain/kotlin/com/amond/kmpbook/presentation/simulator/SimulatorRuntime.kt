@@ -1,6 +1,6 @@
 package com.amond.kmpbook.presentation.simulator
 
-import com.amond.kmpbook.domain.data.StockCatalog
+import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.model.corporateaction.CorporateActionKind
 import com.amond.kmpbook.domain.model.corporateaction.CorporateActionMath
 import com.amond.kmpbook.domain.model.corporateaction.CorporateActionRecord
@@ -10,6 +10,7 @@ import com.amond.kmpbook.domain.model.corporateaction.PendingCorporateAction
 import com.amond.kmpbook.domain.model.corporateaction.toAnnouncementNewsReference
 import com.amond.kmpbook.domain.model.corporateaction.toAppliedNewsReference
 import com.amond.kmpbook.domain.model.corporateaction.toCancellationNewsReference
+import com.amond.kmpbook.domain.model.corporateaction.toProductStateCancellationNewsReference
 import com.amond.kmpbook.domain.model.event.EventRecordKind
 import com.amond.kmpbook.domain.model.event.EventScope
 import com.amond.kmpbook.domain.model.event.EventSeverity
@@ -17,6 +18,67 @@ import com.amond.kmpbook.domain.model.event.EventType
 import com.amond.kmpbook.domain.model.event.GameEvent
 import com.amond.kmpbook.domain.model.event.GameEventImpact
 import com.amond.kmpbook.domain.model.event.ImpactDirection
+import com.amond.kmpbook.domain.model.fund.BenchmarkEngineKind
+import com.amond.kmpbook.domain.model.fund.BenchmarkRef
+import com.amond.kmpbook.domain.model.fund.FixedIncomeGeography
+import com.amond.kmpbook.domain.model.fund.FundLegalStructure
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioBook
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioBookAdvance
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioRecord
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioState
+import com.amond.kmpbook.domain.model.fundproduct.DailyResetCalendar
+import com.amond.kmpbook.domain.model.fundproduct.DailyResetLifecycle
+import com.amond.kmpbook.domain.model.fundproduct.DailyResetReferenceKind
+import com.amond.kmpbook.domain.model.fundproduct.DailyResetState
+import com.amond.kmpbook.domain.model.fundproduct.DirectReferenceTerminationPolicy
+import com.amond.kmpbook.domain.model.fundproduct.CashCollateralizedPutSpreadLifecycle
+import com.amond.kmpbook.domain.model.fundproduct.CashCollateralizedPutSpreadState
+import com.amond.kmpbook.domain.model.fundproduct.OptionRollCalendar
+import com.amond.kmpbook.domain.model.fundproduct.OptionStrategyLifecycle
+import com.amond.kmpbook.domain.model.fundproduct.OptionStrategyState
+import com.amond.kmpbook.domain.model.fundstructure.ClosedEndFundDistribution
+import com.amond.kmpbook.domain.model.fundstructure.ClosedEndFundLedgerEntry
+import com.amond.kmpbook.domain.model.fundstructure.ClosedEndFundState
+import com.amond.kmpbook.domain.model.fundstructure.EtnCreditEvent
+import com.amond.kmpbook.domain.model.fundstructure.EtnLedgerEntry
+import com.amond.kmpbook.domain.model.fundstructure.EtnLedgerKind
+import com.amond.kmpbook.domain.model.fundstructure.EtnIssuerCreditModelParameters
+import com.amond.kmpbook.domain.model.fundstructure.EtnLifecycle
+import com.amond.kmpbook.domain.model.fundstructure.EtnState
+import com.amond.kmpbook.domain.model.reference.FixedIncomeReferenceBook
+import com.amond.kmpbook.domain.model.reference.FixedIncomeReferenceBookAdvance
+import com.amond.kmpbook.domain.model.reference.FixedIncomeReferenceState
+import com.amond.kmpbook.domain.model.reference.FixedIncomeRollRecord
+import com.amond.kmpbook.domain.model.reference.AlternativeRiskPremiaBook
+import com.amond.kmpbook.domain.model.reference.AlternativeRiskPremiaAdvanceInput
+import com.amond.kmpbook.domain.model.reference.AlternativeRiskPremiaActionKind
+import com.amond.kmpbook.domain.model.reference.AlternativeRiskPremiaBookAdvance
+import com.amond.kmpbook.domain.model.reference.AlternativeRiskPremiaRebalanceRecord
+import com.amond.kmpbook.domain.model.reference.AlternativeRiskPremiaState
+import com.amond.kmpbook.domain.model.reference.CommodityReferenceBook
+import com.amond.kmpbook.domain.model.reference.CommodityReferenceBookAdvance
+import com.amond.kmpbook.domain.model.reference.CommoditySpotReferenceState
+import com.amond.kmpbook.domain.model.reference.CompositeReferenceAdvanceInput
+import com.amond.kmpbook.domain.model.reference.CompositeReferenceActionKind
+import com.amond.kmpbook.domain.model.reference.CompositeReferenceBook
+import com.amond.kmpbook.domain.model.reference.CompositeReferenceBookAdvance
+import com.amond.kmpbook.domain.model.reference.CompositeReferenceRebalanceRecord
+import com.amond.kmpbook.domain.model.reference.CompositeReferenceState
+import com.amond.kmpbook.domain.model.reference.EquityReferenceBook
+import com.amond.kmpbook.domain.model.reference.EquityReferenceBookAdvance
+import com.amond.kmpbook.domain.model.reference.EquityReferenceRebalanceRecord
+import com.amond.kmpbook.domain.model.reference.EquityReferenceState
+import com.amond.kmpbook.domain.model.reference.FuturesAllocationRecord
+import com.amond.kmpbook.domain.model.reference.FuturesReferenceState
+import com.amond.kmpbook.domain.model.reference.FuturesRollRecord
+import com.amond.kmpbook.domain.model.reference.FundOfFundsBook
+import com.amond.kmpbook.domain.model.reference.FundOfFundsBookAdvance
+import com.amond.kmpbook.domain.model.reference.FundOfFundsRebalanceRecord
+import com.amond.kmpbook.domain.model.reference.FundOfFundsState
+import com.amond.kmpbook.domain.model.reference.ReferenceCurrencyPair
+import com.amond.kmpbook.domain.model.reference.ReferenceSourceCatalog
+import com.amond.kmpbook.domain.model.reference.ReferenceSourceReturnFrame
+import com.amond.kmpbook.domain.model.reference.ReferenceSourceSnapshot
 import com.amond.kmpbook.domain.model.game.GameEndReason
 import com.amond.kmpbook.domain.model.game.GamePhase
 import com.amond.kmpbook.domain.model.game.Screen
@@ -121,6 +183,25 @@ import com.amond.kmpbook.domain.simulation.event.EventEngine
 import com.amond.kmpbook.domain.simulation.event.EventGenerationContext
 import com.amond.kmpbook.domain.simulation.event.EventGenerationResult
 import com.amond.kmpbook.domain.simulation.event.EventShockCalculator
+import com.amond.kmpbook.domain.simulation.fund.ReferencePortfolioEngine
+import com.amond.kmpbook.domain.simulation.fundproduct.FundProductOverlayEngine
+import com.amond.kmpbook.domain.simulation.fundproduct.DailyResetAdvanceInput
+import com.amond.kmpbook.domain.simulation.fundproduct.DailyResetEngine
+import com.amond.kmpbook.domain.simulation.fundproduct.CashCollateralizedPutSpreadAdvanceInput
+import com.amond.kmpbook.domain.simulation.fundproduct.CashCollateralizedPutSpreadEngine
+import com.amond.kmpbook.domain.simulation.fundproduct.OptionStrategyAdvanceInput
+import com.amond.kmpbook.domain.simulation.fundproduct.OptionStrategyEngine
+import com.amond.kmpbook.domain.simulation.fundstructure.ClosedEndFundAdvanceInput
+import com.amond.kmpbook.domain.simulation.fundstructure.ClosedEndFundEngine
+import com.amond.kmpbook.domain.simulation.fundstructure.EtnAdvanceInput
+import com.amond.kmpbook.domain.simulation.fundstructure.EtnEngine
+import com.amond.kmpbook.domain.simulation.reference.FixedIncomeReferenceBookEngine
+import com.amond.kmpbook.domain.simulation.reference.AlternativeRiskPremiaBookEngine
+import com.amond.kmpbook.domain.simulation.reference.CommodityMarketModel
+import com.amond.kmpbook.domain.simulation.reference.CommodityReferenceBookEngine
+import com.amond.kmpbook.domain.simulation.reference.CompositeReferenceBookEngine
+import com.amond.kmpbook.domain.simulation.reference.EquityReferenceBookEngine
+import com.amond.kmpbook.domain.simulation.reference.FundOfFundsBookEngine
 import com.amond.kmpbook.domain.simulation.listing.ListingLifecycleEngine
 import com.amond.kmpbook.domain.simulation.listing.ListingRemediationDecisionStatus
 import com.amond.kmpbook.domain.simulation.listing.ListingRemediationPolicy
@@ -141,7 +222,9 @@ import com.amond.kmpbook.domain.simulation.price.PriceGenerationInput
 import com.amond.kmpbook.domain.simulation.protection.TradingProtectionEngine
 import com.amond.kmpbook.domain.simulation.protection.TradingProtectionRules
 import com.amond.kmpbook.domain.simulation.schedule.ScheduledEventEngine
+import com.amond.kmpbook.domain.simulation.schedule.DistributionSchedule
 import com.amond.kmpbook.domain.tax.core.MoneyAmount
+import com.amond.kmpbook.domain.tax.core.CheckedMonetaryArithmetic
 import com.amond.kmpbook.domain.tax.core.MoneyRoundingPolicy
 import com.amond.kmpbook.domain.tax.core.TaxRate
 import com.amond.kmpbook.domain.tax.dividend.DividendTaxCalculator
@@ -193,7 +276,6 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
-import kotlinx.datetime.Month
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
@@ -276,11 +358,27 @@ private fun runtimeTradingFraction(
     return (available / (to - from).inWholeNanoseconds.toDouble()).coerceIn(0.0, 1.0)
 }
 
-/** VI triggering quotations and LULD out-of-band quotations are observations, not executable OHLC prices. */
-private fun runtimeClampBarToBounds(bar: PriceBar, bounds: RuntimePriceBounds): PriceBar {
+/**
+ * VI triggering quotations and LULD out-of-band quotations are observations, not executable OHLC
+ * prices. Protection thresholds can lie between venue ticks, so convert them inward to the nearest
+ * executable prices before clamping an already tick-rounded bar.
+ */
+private fun runtimeClampBarToBounds(
+    stock: StockDefinition,
+    bar: PriceBar,
+    bounds: RuntimePriceBounds,
+): PriceBar {
+    val executableLower = bounds.lower?.let { lower -> MarketMicrostructure.roundUp(stock, lower) }
+    val executableUpper = bounds.upper?.let { upper -> MarketMicrostructure.roundDown(stock, upper) }
+    require(
+        executableLower == null || executableUpper == null || executableLower <= executableUpper,
+    ) {
+        "보호 가격 범위 안에 실행 가능한 호가가 없습니다: " +
+            "${stock.id}, lower=$executableLower, upper=$executableUpper"
+    }
     fun bounded(value: Double): Double = value
-        .let { bounds.lower?.let { lower -> it.coerceAtLeast(lower) } ?: it }
-        .let { bounds.upper?.let { upper -> it.coerceAtMost(upper) } ?: it }
+        .let { executableLower?.let { lower -> it.coerceAtLeast(lower) } ?: it }
+        .let { executableUpper?.let { upper -> it.coerceAtMost(upper) } ?: it }
     val open = bounded(bar.open)
     val close = bounded(bar.close)
     val high = bounded(bar.high).coerceAtLeast(maxOf(open, close))
@@ -520,6 +618,7 @@ private fun krxWarningAdditionalRiseEvaluationDate(
 
 internal class SimulatorRuntime(
     initialOptions: NewGameOptions,
+    private val instrumentCatalog: InstrumentCatalogSnapshot,
     startInSetup: Boolean = false,
 ) {
     var options: NewGameOptions = initialOptions
@@ -542,9 +641,9 @@ internal class SimulatorRuntime(
         private set
 
     private var baseStockDefinitions: List<StockDefinition> = if (options.usFractionalTrading) {
-        StockCatalog.withUsFractionalTrading()
+        instrumentCatalog.withUsFractionalTrading()
     } else {
-        StockCatalog.definitions
+        instrumentCatalog.definitions
     }
     private var baseStockById = baseStockDefinitions.associateBy(StockDefinition::id)
     private val mutableStocks = baseStockDefinitions.toMutableList()
@@ -559,6 +658,32 @@ internal class SimulatorRuntime(
     private val pendingClosedEventLogReturns = mutableMapOf<String, Double>()
     private val corporateFundamentals = linkedMapOf<String, CorporateFundamentalState>()
     private val fundFinancialStates = linkedMapOf<String, FundFinancialState>()
+    private val referencePortfolioStates = linkedMapOf<String, ReferencePortfolioState>()
+    private val referencePortfolioLedger = mutableListOf<ReferencePortfolioRecord>()
+    private val equityReferenceStates = linkedMapOf<BenchmarkRef, EquityReferenceState>()
+    private val equityReferenceLedger = mutableListOf<EquityReferenceRebalanceRecord>()
+    private val fundOfFundsStates = linkedMapOf<BenchmarkRef, FundOfFundsState>()
+    private val fundOfFundsRebalanceLedger = mutableListOf<FundOfFundsRebalanceRecord>()
+    private val alternativeRiskPremiaStates = linkedMapOf<BenchmarkRef, AlternativeRiskPremiaState>()
+    private val alternativeRiskPremiaRebalanceLedger =
+        mutableListOf<AlternativeRiskPremiaRebalanceRecord>()
+    private val compositeReferenceStates = linkedMapOf<BenchmarkRef, CompositeReferenceState>()
+    private val compositeReferenceRebalanceLedger = mutableListOf<CompositeReferenceRebalanceRecord>()
+    private val dailyResetStates = linkedMapOf<String, DailyResetState>()
+    private val optionStrategyStates = linkedMapOf<String, OptionStrategyState>()
+    private val cashCollateralizedPutSpreadStates =
+        linkedMapOf<String, CashCollateralizedPutSpreadState>()
+    private val etnStates = linkedMapOf<String, EtnState>()
+    private val etnLedger = mutableListOf<EtnLedgerEntry>()
+    private val closedEndFundStates = linkedMapOf<String, ClosedEndFundState>()
+    private val closedEndFundLedger = mutableListOf<ClosedEndFundLedgerEntry>()
+    private val fixedIncomeReferenceStates = linkedMapOf<String, FixedIncomeReferenceState>()
+    private val fixedIncomeRollLedger = mutableListOf<FixedIncomeRollRecord>()
+    private val commoditySpotReferenceStates =
+        linkedMapOf<BenchmarkRef, CommoditySpotReferenceState>()
+    private val futuresReferenceStates = linkedMapOf<BenchmarkRef, FuturesReferenceState>()
+    private val futuresRollLedger = mutableListOf<FuturesRollRecord>()
+    private val futuresAllocationLedger = mutableListOf<FuturesAllocationRecord>()
     /** 휴장·거래정지 중에도 유실되지 않고 다음 거래 가능 시간에 한 번 소비되는 설정·환매 신호다. */
     private val pendingFundFlowRates = mutableMapOf<String, Double>()
     private val marketIndices = linkedMapOf<MarketIndexId, MarketIndexSnapshot>()
@@ -574,6 +699,7 @@ internal class SimulatorRuntime(
     private val taxExchangeRatesByTradeId = linkedMapOf<String, Double>()
     private val pendingTaxSettlementTradeIds = linkedSetOf<String>()
     private val dividends = mutableListOf<DividendLedgerEntry>()
+    private val lastEvaluatedDistributionDateByStock = linkedMapOf<String, LocalDate>()
     private val foreignExchanges = mutableListOf<ForeignExchangeRecord>()
     private val activeEvents = mutableListOf<GameEvent>()
     private val newsEvents = mutableListOf<GameEvent>()
@@ -612,6 +738,72 @@ internal class SimulatorRuntime(
         initialForces = options.initialExternalMarketForces,
     )
     private val priceEngine = PriceEngine(DeterministicRandom.mixSeed(options.seed, PRICE_STREAM_ID))
+    private val executableBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
+        .filter { it.engineKind == BenchmarkEngineKind.EQUITY_METHODOLOGY }
+    private val executablePortfolioIdByBenchmarkRef = executableBenchmarkDefinitions.associate { definition ->
+        definition.ref to ReferencePortfolioEngine.portfolioIdFor(definition.ref)
+    }
+    private val equityReferenceBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
+        .filter { it.engineKind == BenchmarkEngineKind.EQUITY_REFERENCE }
+    private val fixedIncomeBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
+        .filter { it.engineKind == BenchmarkEngineKind.FIXED_INCOME_CURVE }
+    private val commoditySpotBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
+        .filter { it.engineKind == BenchmarkEngineKind.COMMODITY_SPOT }
+    private val futuresBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
+        .filter { it.engineKind == BenchmarkEngineKind.FUTURES_CURVE }
+    private val fundOfFundsBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
+        .filter { it.engineKind == BenchmarkEngineKind.FUND_OF_FUNDS_METHODOLOGY }
+    private val fundOfFundsProfiles = fundOfFundsBenchmarkDefinitions.associate { definition ->
+        definition.ref to requireNotNull(definition.fundOfFundsMethodologyProfile)
+    }
+    private val alternativeRiskPremiaBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
+        .filter { it.engineKind == BenchmarkEngineKind.ALTERNATIVE_RISK_PREMIA }
+    private val compositeReferenceBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
+        .filter { it.engineKind == BenchmarkEngineKind.COMPOSITE_REFERENCE }
+    private val referenceSourceCatalog = ReferenceSourceCatalog(
+        benchmarkDefinitions = instrumentCatalog.benchmarks.associateBy { definition -> definition.ref },
+        operatingCompanyCurrencies = stocks
+            .filter { stock -> stock.behavior.strategy == InstrumentStrategy.OPERATING_COMPANY }
+            .associate { stock -> stock.id to ReferenceCurrency.valueOf(stock.currency.name) },
+    )
+    /** Prices captured before a turn; same-turn quote mutation must never erase a source return. */
+    private val directlyReferencedInstrumentIds: Set<String> = buildSet {
+        stocks.forEach { stock ->
+            val product = stock.fundProductProfile
+            listOfNotNull(
+                product?.dailyResetTerms?.reference?.instrumentId,
+                product?.optionStrategyTerms?.reference?.instrumentId,
+                product?.cashCollateralizedPutSpreadTerms?.optionReference?.instrumentId,
+            ).forEach(::add)
+        }
+        alternativeRiskPremiaBenchmarkDefinitions.forEach { definition ->
+            addAll(requireNotNull(definition.alternativeRiskPremiaProfile).componentInstrumentIds)
+        }
+        compositeReferenceBenchmarkDefinitions.forEach { definition ->
+            addAll(requireNotNull(definition.compositeReferenceProfile).componentInstrumentIds)
+        }
+    }
+    private val structuredSourceBenchmarkRefs: Set<BenchmarkRef> = buildSet {
+        alternativeRiskPremiaBenchmarkDefinitions.forEach { definition ->
+            addAll(requireNotNull(definition.alternativeRiskPremiaProfile).componentBenchmarkRefs)
+        }
+        compositeReferenceBenchmarkDefinitions.forEach { definition ->
+            addAll(requireNotNull(definition.compositeReferenceProfile).componentBenchmarkRefs)
+        }
+    }
+    private val referencePortfolioEngine = ReferencePortfolioEngine.forCampaignSeed(options.seed)
+    private val equityReferenceBookEngine = EquityReferenceBookEngine.forCampaignSeed(options.seed)
+    private val fundProductOverlayEngine = FundProductOverlayEngine.forCampaignSeed(options.seed)
+    private val dailyResetEngine = DailyResetEngine()
+    private val optionStrategyEngine = OptionStrategyEngine()
+    private val cashCollateralizedPutSpreadEngine = CashCollateralizedPutSpreadEngine()
+    private val fixedIncomeReferenceBookEngine = FixedIncomeReferenceBookEngine()
+    private val commodityMarketModel = CommodityMarketModel.forCampaignSeed(options.seed)
+    private val commodityReferenceBookEngine = CommodityReferenceBookEngine()
+    private val fundOfFundsBookEngine = FundOfFundsBookEngine.forCampaignSeed(options.seed)
+    private val alternativeRiskPremiaBookEngine =
+        AlternativeRiskPremiaBookEngine.forCampaignSeed(options.seed)
+    private val compositeReferenceBookEngine = CompositeReferenceBookEngine.forCampaignSeed(options.seed)
     private val orderBookEngine = OrderBookEngine(DeterministicRandom.mixSeed(options.seed, BOOK_STREAM_ID))
     private val marketIndexEngine = MarketIndexEngine()
     private val listingLifecycleEngine = ListingLifecycleEngine()
@@ -826,7 +1018,11 @@ internal class SimulatorRuntime(
             return DebugRuntimeResult.success("미국 종목 소수점 거래가 이미 ${if (enabled) "켜져" else "꺼져"} 있습니다.")
         }
         options = options.copy(usFractionalTrading = enabled)
-        baseStockDefinitions = if (enabled) StockCatalog.withUsFractionalTrading() else StockCatalog.definitions
+        baseStockDefinitions = if (enabled) {
+            instrumentCatalog.withUsFractionalTrading()
+        } else {
+            instrumentCatalog.definitions
+        }
         baseStockById = baseStockDefinitions.associateBy(StockDefinition::id)
         rebuildDynamicStockDefinitions(corporateActionLedger)
         var cancelled = 0
@@ -1195,6 +1391,7 @@ internal class SimulatorRuntime(
         }
         return SimulatorUiState(
             options = options,
+            catalogReference = instrumentCatalog.reference,
             phase = phase,
             screen = screen,
             currentTime = currentTime,
@@ -1203,6 +1400,29 @@ internal class SimulatorRuntime(
             stocks = stocks.toList(),
             corporateFundamentals = corporateFundamentals.toMap(),
             fundFinancialStates = fundFinancialStates.toMap(),
+            referencePortfolioStates = referencePortfolioStates.toMap(),
+            referencePortfolioLedger = referencePortfolioLedger.toList(),
+            equityReferenceStates = equityReferenceStates.toMap(),
+            equityReferenceLedger = equityReferenceLedger.toList(),
+            fundOfFundsStates = fundOfFundsStates.toMap(),
+            fundOfFundsRebalanceLedger = fundOfFundsRebalanceLedger.toList(),
+            alternativeRiskPremiaStates = alternativeRiskPremiaStates.toMap(),
+            alternativeRiskPremiaRebalanceLedger = alternativeRiskPremiaRebalanceLedger.toList(),
+            compositeReferenceStates = compositeReferenceStates.toMap(),
+            compositeReferenceRebalanceLedger = compositeReferenceRebalanceLedger.toList(),
+            dailyResetStates = dailyResetStates.toMap(),
+            optionStrategyStates = optionStrategyStates.toMap(),
+            cashCollateralizedPutSpreadStates = cashCollateralizedPutSpreadStates.toMap(),
+            etnStates = etnStates.toMap(),
+            etnLedger = etnLedger.toList(),
+            closedEndFundStates = closedEndFundStates.toMap(),
+            closedEndFundLedger = closedEndFundLedger.toList(),
+            fixedIncomeReferenceStates = fixedIncomeReferenceStates.toMap(),
+            fixedIncomeRollLedger = fixedIncomeRollLedger.toList(),
+            commoditySpotReferenceStates = commoditySpotReferenceStates.toMap(),
+            futuresReferenceStates = futuresReferenceStates.toMap(),
+            futuresRollLedger = futuresRollLedger.toList(),
+            futuresAllocationLedger = futuresAllocationLedger.toList(),
             pendingFundFlowRates = pendingFundFlowRates.toMap(),
             selectedStockId = selectedStockId,
             quotes = stateQuotes.toMap(),
@@ -1226,10 +1446,12 @@ internal class SimulatorRuntime(
             readStockNewsEventIds = readStockNewsEventIds.mapValues { (_, eventIds) -> eventIds.toSet() },
             portfolioSnapshots = portfolioSnapshots.toList(),
             dailyStatistics = dailyStatistics.toList(),
+            currentBenchmarkValue = benchmarkValue,
             benchmarkHistory = benchmarkHistory.toList(),
             transactionCosts = transactionCosts.toList(),
             realizedGains = realizedGains.toList(),
             fifoCostBasisBook = fifoCostBasisBook,
+            lastEvaluatedDistributionDateByStock = lastEvaluatedDistributionDateByStock.toMap(),
             dividendLedger = dividends.toList(),
             foreignExchangeLedger = foreignExchanges.toList(),
             annualTaxLedgers = annualTaxLedgers.toMap(),
@@ -1260,6 +1482,9 @@ internal class SimulatorRuntime(
     private fun restoreFrom(state: SimulatorUiState) {
         require(GameCalendar.isWithinGameRange(state.currentTime)) { "저장 시각이 게임 범위를 벗어났습니다." }
         require(state.turn == GameCalendar.turnAt(state.currentTime)) { "저장 턴과 시각이 일치하지 않습니다." }
+        require(state.catalogReference == instrumentCatalog.reference) {
+            "저장 종목팩과 현재 설치된 종목팩이 일치하지 않습니다."
+        }
         val ids = stockById.keys
         val savedIds = state.stocks.map(StockDefinition::id)
         require(savedIds.distinct().size == savedIds.size && savedIds.toSet() == ids) {
@@ -1267,14 +1492,120 @@ internal class SimulatorRuntime(
         }
         val expectedCorporateIds = stocks.filter(StockDefinition::hasCorporateEarnings)
             .mapTo(linkedSetOf(), StockDefinition::id)
-        val expectedFundIds = stocks.filter(StockDefinition::isFundLike)
+        val expectedFundIds = stocks.filter {
+            it.fundProductProfile?.legalStructure == FundLegalStructure.OPEN_END_ETF
+        }
             .mapTo(linkedSetOf(), StockDefinition::id)
+        val expectedReferencePortfolioIds = executableBenchmarkDefinitions
+            .mapTo(linkedSetOf()) { definition ->
+                ReferencePortfolioEngine.portfolioIdFor(definition.ref)
+            }
+        val expectedEquityReferenceRefs = equityReferenceBenchmarkDefinitions
+            .mapTo(linkedSetOf()) { definition -> definition.ref }
+        val expectedFundOfFundsRefs = fundOfFundsBenchmarkDefinitions
+            .mapTo(linkedSetOf()) { definition -> definition.ref }
+        val expectedAlternativeRiskPremiaRefs = alternativeRiskPremiaBenchmarkDefinitions
+            .mapTo(linkedSetOf()) { definition -> definition.ref }
+        val expectedCompositeReferenceRefs = compositeReferenceBenchmarkDefinitions
+            .mapTo(linkedSetOf()) { definition -> definition.ref }
+        val expectedDailyResetProductIds = stocks
+            .filter { it.fundProductProfile?.dailyResetTerms != null }
+            .mapTo(linkedSetOf(), StockDefinition::id)
+        val expectedOptionStrategyProductIds = stocks
+            .filter { it.fundProductProfile?.optionStrategyTerms != null }
+            .mapTo(linkedSetOf(), StockDefinition::id)
+        val expectedCashCollateralizedPutSpreadProductIds = stocks
+            .filter { it.fundProductProfile?.cashCollateralizedPutSpreadTerms != null }
+            .mapTo(linkedSetOf(), StockDefinition::id)
+        val expectedEtnIds = stocks.filter {
+            it.fundProductProfile?.legalStructure == FundLegalStructure.EXCHANGE_TRADED_NOTE
+        }.mapTo(linkedSetOf(), StockDefinition::id)
+        val expectedClosedEndFundIds = stocks.filter {
+            it.fundProductProfile?.legalStructure == FundLegalStructure.CLOSED_END_FUND
+        }.mapTo(linkedSetOf(), StockDefinition::id)
+        val expectedFixedIncomeReferenceIds = fixedIncomeBenchmarkDefinitions
+            .mapTo(linkedSetOf()) { definition ->
+                FixedIncomeReferenceState.referenceIdFor(definition.ref)
+            }
+        val expectedFixedIncomeRefs = fixedIncomeBenchmarkDefinitions
+            .mapTo(linkedSetOf()) { it.ref }
+        val expectedCommoditySpotRefs = commoditySpotBenchmarkDefinitions
+            .mapTo(linkedSetOf()) { it.ref }
+        val expectedFuturesRefs = futuresBenchmarkDefinitions
+            .mapTo(linkedSetOf()) { it.ref }
         require(state.corporateFundamentals.keys == expectedCorporateIds) {
             "저장된 기업 재무 상태가 현재 기업 종목과 일치하지 않습니다."
         }
         require(state.fundFinancialStates.keys == expectedFundIds) {
             "저장된 상품 재무 상태가 현재 ETF·ETN·펀드 종목과 일치하지 않습니다."
         }
+        require(state.referencePortfolioStates.keys == expectedReferencePortfolioIds &&
+            state.referencePortfolioLedger.all { it.portfolioId in expectedReferencePortfolioIds }
+        ) {
+            "저장된 기준 포트폴리오 상태·재조정 원장이 현재 벤치마크와 일치하지 않습니다."
+        }
+        require(
+            state.equityReferenceStates.keys == expectedEquityReferenceRefs &&
+                state.equityReferenceStates.all { (ref, value) -> value.benchmarkRef == ref } &&
+                state.equityReferenceLedger.all { record ->
+                    record.benchmarkRef in expectedEquityReferenceRefs
+                },
+        ) { "저장된 일반 주식 기준 바스켓·재조정 원장이 현재 벤치마크와 일치하지 않습니다." }
+        require(
+            state.fundOfFundsStates.keys == expectedFundOfFundsRefs &&
+                state.fundOfFundsStates.all { (ref, value) -> value.benchmarkRef == ref } &&
+                state.fundOfFundsRebalanceLedger.all { record ->
+                    record.benchmarkRef in expectedFundOfFundsRefs
+                },
+        ) { "저장된 펀드오브펀드 바스켓·재조정 원장이 현재 벤치마크와 일치하지 않습니다." }
+        require(
+            state.alternativeRiskPremiaStates.keys == expectedAlternativeRiskPremiaRefs &&
+                state.alternativeRiskPremiaStates.all { (ref, value) -> value.benchmarkRef == ref } &&
+                state.alternativeRiskPremiaRebalanceLedger.all { record ->
+                    record.benchmarkRef in expectedAlternativeRiskPremiaRefs
+                },
+        ) { "저장된 대체위험 프리미엄 상태·재조정 원장이 현재 벤치마크와 일치하지 않습니다." }
+        require(
+            state.compositeReferenceStates.keys == expectedCompositeReferenceRefs &&
+                state.compositeReferenceStates.all { (ref, value) -> value.benchmarkRef == ref } &&
+                state.compositeReferenceRebalanceLedger.all { record ->
+                    record.benchmarkRef in expectedCompositeReferenceRefs
+                },
+        ) { "저장된 복합 기준 상태·재조정 원장이 현재 벤치마크와 일치하지 않습니다." }
+        require(state.dailyResetStates.keys == expectedDailyResetProductIds) {
+            "저장된 일일 reset 상태가 현재 레버리지·인버스 상품과 일치하지 않습니다."
+        }
+        require(state.optionStrategyStates.keys == expectedOptionStrategyProductIds) {
+            "저장된 옵션 운용 상태가 현재 옵션 상품과 일치하지 않습니다."
+        }
+        require(
+            state.cashCollateralizedPutSpreadStates.keys ==
+                expectedCashCollateralizedPutSpreadProductIds,
+        ) { "저장된 현금담보 풋스프레드 상태가 현재 옵션 상품과 일치하지 않습니다." }
+        require(
+            state.etnStates.keys == expectedEtnIds &&
+                state.etnLedger.all { it.productId in expectedEtnIds },
+        ) { "저장된 ETN 계약 상태·원장이 현재 ETN 상품과 일치하지 않습니다." }
+        require(
+            state.closedEndFundStates.keys == expectedClosedEndFundIds &&
+                state.closedEndFundLedger.all { it.fundId in expectedClosedEndFundIds },
+        ) { "저장된 CEF 재무 상태·원장이 현재 폐쇄형 펀드와 일치하지 않습니다." }
+        require(
+            state.fixedIncomeReferenceStates.keys == expectedFixedIncomeReferenceIds &&
+                state.fixedIncomeRollLedger.all { it.benchmarkRef in expectedFixedIncomeRefs },
+        ) { "저장된 고정수익 benchmark 상태·만기 교체 원장이 현재 카탈로그와 일치하지 않습니다." }
+        require(
+            state.commoditySpotReferenceStates.keys == expectedCommoditySpotRefs &&
+                state.commoditySpotReferenceStates.all { (ref, value) ->
+                    value.benchmarkRef == ref
+                },
+        ) { "저장된 원자재 현물 benchmark 상태가 현재 카탈로그와 일치하지 않습니다." }
+        require(
+            state.futuresReferenceStates.keys == expectedFuturesRefs &&
+                state.futuresReferenceStates.all { (ref, value) -> value.benchmarkRef == ref } &&
+                state.futuresRollLedger.all { it.benchmarkRef in expectedFuturesRefs } &&
+                state.futuresAllocationLedger.all { it.benchmarkRef in expectedFuturesRefs },
+        ) { "저장된 선물 benchmark 상태·원장이 현재 카탈로그와 일치하지 않습니다." }
         require(
                 state.quotes.keys == savedIds.toSet() &&
                 state.priceHistory.keys == savedIds.toSet() &&
@@ -1308,6 +1639,10 @@ internal class SimulatorRuntime(
             applied = state.corporateActionLedger,
             validStockIds = ids,
         )
+        rebuildDynamicStockDefinitions(state.corporateActionLedger)
+        require(state.stocks == stocks) {
+            "저장 종목 정의가 종목팩과 기업행동 원장에서 재구성한 결과와 일치하지 않습니다."
+        }
         require(state.listingLifecycleStates.keys == ids && state.listingLifecycleStates.all { (stockId, listing) ->
             stockId in ids && listing.stockId == stockId && stockById[stockId]?.market == listing.market
         }) { "상장 생명주기 상태가 현재 종목 카탈로그와 일치하지 않습니다." }
@@ -1382,7 +1717,7 @@ internal class SimulatorRuntime(
         externalMarketForcesTarget = state.externalMarketForcesTarget
         marketDynamicsEngine.restore(restoredDynamics)
         macroDate = gameDate(currentTime)
-        benchmarkValue = state.benchmarkHistory.lastOrNull()?.value ?: BENCHMARK_START
+        benchmarkValue = state.currentBenchmarkValue
         peakAssetsKrw = state.peakAssetsKrw
         maximumDrawdown = state.maximumDrawdown
         nextSequence = state.nextSequence
@@ -1400,7 +1735,7 @@ internal class SimulatorRuntime(
         ) { "분배 원장 ID·종목·회계 순번이 올바르지 않습니다." }
 
         random.restore(state.rngState)
-        eventEngine.restore(state.eventEngineSnapshot, state.stocks)
+        eventEngine.restore(state.eventEngineSnapshot, stocks)
         quotes.clear()
         quotes.putAll(state.quotes)
         history.clear()
@@ -1452,17 +1787,60 @@ internal class SimulatorRuntime(
         realizedGains += state.realizedGains
         dividends.clear()
         dividends += state.dividendLedger
+        lastEvaluatedDistributionDateByStock.clear()
+        lastEvaluatedDistributionDateByStock.putAll(state.lastEvaluatedDistributionDateByStock)
         corporateActionLedger.clear()
         corporateActionLedger += state.corporateActionLedger
-        rebuildDynamicStockDefinitions(corporateActionLedger)
-        val savedStocksById = state.stocks.associateBy(StockDefinition::id)
-        require(state.stocks.all { saved ->
-            stockById[saved.id]?.sharesOutstanding == saved.sharesOutstanding
-        }) { "저장된 유통주식수가 기업행동 원장과 일치하지 않습니다." }
         corporateFundamentals.clear()
         corporateFundamentals.putAll(state.corporateFundamentals)
         fundFinancialStates.clear()
         fundFinancialStates.putAll(state.fundFinancialStates)
+        referencePortfolioStates.clear()
+        referencePortfolioStates.putAll(state.referencePortfolioStates)
+        referencePortfolioLedger.clear()
+        referencePortfolioLedger += state.referencePortfolioLedger
+        equityReferenceStates.clear()
+        equityReferenceStates.putAll(state.equityReferenceStates)
+        equityReferenceLedger.clear()
+        equityReferenceLedger += state.equityReferenceLedger
+        fundOfFundsStates.clear()
+        fundOfFundsStates.putAll(state.fundOfFundsStates)
+        fundOfFundsRebalanceLedger.clear()
+        fundOfFundsRebalanceLedger += state.fundOfFundsRebalanceLedger
+        alternativeRiskPremiaStates.clear()
+        alternativeRiskPremiaStates.putAll(state.alternativeRiskPremiaStates)
+        alternativeRiskPremiaRebalanceLedger.clear()
+        alternativeRiskPremiaRebalanceLedger += state.alternativeRiskPremiaRebalanceLedger
+        compositeReferenceStates.clear()
+        compositeReferenceStates.putAll(state.compositeReferenceStates)
+        compositeReferenceRebalanceLedger.clear()
+        compositeReferenceRebalanceLedger += state.compositeReferenceRebalanceLedger
+        dailyResetStates.clear()
+        dailyResetStates.putAll(state.dailyResetStates)
+        optionStrategyStates.clear()
+        optionStrategyStates.putAll(state.optionStrategyStates)
+        cashCollateralizedPutSpreadStates.clear()
+        cashCollateralizedPutSpreadStates.putAll(state.cashCollateralizedPutSpreadStates)
+        etnStates.clear()
+        etnStates.putAll(state.etnStates)
+        etnLedger.clear()
+        etnLedger += state.etnLedger
+        closedEndFundStates.clear()
+        closedEndFundStates.putAll(state.closedEndFundStates)
+        closedEndFundLedger.clear()
+        closedEndFundLedger += state.closedEndFundLedger
+        fixedIncomeReferenceStates.clear()
+        fixedIncomeReferenceStates.putAll(state.fixedIncomeReferenceStates)
+        fixedIncomeRollLedger.clear()
+        fixedIncomeRollLedger += state.fixedIncomeRollLedger
+        commoditySpotReferenceStates.clear()
+        commoditySpotReferenceStates.putAll(state.commoditySpotReferenceStates)
+        futuresReferenceStates.clear()
+        futuresReferenceStates.putAll(state.futuresReferenceStates)
+        futuresRollLedger.clear()
+        futuresRollLedger += state.futuresRollLedger
+        futuresAllocationLedger.clear()
+        futuresAllocationLedger += state.futuresAllocationLedger
         pendingFundFlowRates.clear()
         pendingFundFlowRates.putAll(state.pendingFundFlowRates)
         listingLifecycleStates.clear()
@@ -1543,14 +1921,383 @@ internal class SimulatorRuntime(
     private fun initializeInstrumentFinancialStates() {
         corporateFundamentals.clear()
         fundFinancialStates.clear()
+        referencePortfolioStates.clear()
+        referencePortfolioLedger.clear()
+        equityReferenceStates.clear()
+        equityReferenceLedger.clear()
+        fundOfFundsStates.clear()
+        fundOfFundsRebalanceLedger.clear()
+        alternativeRiskPremiaStates.clear()
+        alternativeRiskPremiaRebalanceLedger.clear()
+        compositeReferenceStates.clear()
+        compositeReferenceRebalanceLedger.clear()
+        dailyResetStates.clear()
+        optionStrategyStates.clear()
+        cashCollateralizedPutSpreadStates.clear()
+        etnStates.clear()
+        etnLedger.clear()
+        closedEndFundStates.clear()
+        closedEndFundLedger.clear()
+        fixedIncomeReferenceStates.clear()
+        fixedIncomeRollLedger.clear()
+        commoditySpotReferenceStates.clear()
+        futuresReferenceStates.clear()
+        futuresRollLedger.clear()
+        futuresAllocationLedger.clear()
         for (stock in stocks) {
-            when {
-                stock.hasCorporateEarnings -> corporateFundamentals[stock.id] =
+            if (stock.hasCorporateEarnings) {
+                corporateFundamentals[stock.id] =
                     instrumentMetricsEngine.initialCorporateState(stock, currentTime)
-                stock.isFundLike -> fundFinancialStates[stock.id] =
+            }
+            when (stock.fundProductProfile?.legalStructure) {
+                FundLegalStructure.OPEN_END_ETF -> fundFinancialStates[stock.id] =
                     instrumentMetricsEngine.initialFundState(stock, currentTime)
+                FundLegalStructure.EXCHANGE_TRADED_NOTE -> etnStates[stock.id] =
+                    initialEtnState(stock)
+                FundLegalStructure.CLOSED_END_FUND -> closedEndFundStates[stock.id] =
+                    initialClosedEndFundState(stock)
+                null -> Unit
+            }
+            stock.fundProductProfile?.dailyResetTerms?.let { terms ->
+                val referenceMarket = dailyResetReferenceMarket(terms.resetCalendar)
+                dailyResetStates[stock.id] = dailyResetEngine.initialState(
+                    productId = stock.id,
+                    referenceLevel = DAILY_RESET_INITIAL_REFERENCE_LEVEL,
+                    nav = stock.initialPrice,
+                    tradingDate = lastCompletedRegularTradingDate(referenceMarket, currentTime),
+                    at = currentTime,
+                    targetLeverage = terms.targetLeverage,
+                )
+            }
+            stock.fundProductProfile?.optionStrategyTerms?.let { terms ->
+                val referenceMarket = optionReferenceMarket(terms.rollCalendar)
+                optionStrategyStates[stock.id] = optionStrategyEngine.initialState(
+                    terms = terms,
+                    referenceLevel = OPTION_INITIAL_REFERENCE_LEVEL,
+                    nav = stock.initialPrice,
+                    cashRateAnnual = macro.policyRate.coerceIn(-0.10, 1.0),
+                    annualizedImpliedVolatility = optionImpliedVolatility(stock),
+                    tradingDate = lastCompletedRegularTradingDate(referenceMarket, currentTime),
+                    at = currentTime,
+                )
+            }
+            stock.fundProductProfile?.cashCollateralizedPutSpreadTerms?.let { terms ->
+                val referenceMarket = optionReferenceMarket(terms.rollCalendar)
+                cashCollateralizedPutSpreadStates[stock.id] =
+                    cashCollateralizedPutSpreadEngine.initialState(
+                        terms = terms,
+                        cashReferenceLevel = OPTION_INITIAL_REFERENCE_LEVEL,
+                        optionReferenceLevel = OPTION_INITIAL_REFERENCE_LEVEL,
+                        nav = stock.initialPrice,
+                        optionDiscountRateAnnual = macro.policyRate.coerceIn(-0.10, 1.0),
+                        annualizedImpliedVolatility = optionImpliedVolatility(stock),
+                        tradingDate = lastCompletedRegularTradingDate(referenceMarket, currentTime),
+                        at = currentTime,
+                    )
             }
         }
+        if (executableBenchmarkDefinitions.isNotEmpty()) {
+            referencePortfolioStates.putAll(
+                referencePortfolioEngine.initialBook(
+                    definitions = executableBenchmarkDefinitions,
+                    atDate = marketDate(Market.NYSE, currentTime),
+                    at = currentTime,
+                ).states,
+            )
+        }
+        if (equityReferenceBenchmarkDefinitions.isNotEmpty()) {
+            equityReferenceStates.putAll(
+                equityReferenceBookEngine.initialBook(
+                    definitions = equityReferenceBenchmarkDefinitions,
+                    atDate = gameDate(currentTime),
+                    at = currentTime,
+                ).states,
+            )
+        }
+        if (fundOfFundsProfiles.isNotEmpty()) {
+            fundOfFundsStates.putAll(
+                fundOfFundsBookEngine.initialBook(
+                    profiles = fundOfFundsProfiles,
+                    atDate = marketDate(Market.NYSE, currentTime),
+                    at = currentTime,
+                ).states,
+            )
+        }
+        if (fixedIncomeBenchmarkDefinitions.isNotEmpty()) {
+            val fixedIncomeBook = fixedIncomeReferenceBookEngine.initialBook(
+                definitions = fixedIncomeBenchmarkDefinitions,
+                macro = macro,
+                at = currentTime,
+            )
+            fixedIncomeBook.states.values.forEach { state ->
+                fixedIncomeReferenceStates[state.referenceId] = state
+            }
+        }
+        if (commoditySpotBenchmarkDefinitions.isNotEmpty() || futuresBenchmarkDefinitions.isNotEmpty()) {
+            val frame = commodityMarketModel.initialFrame(
+                spotTerms = commoditySpotBenchmarkDefinitions.map { definition ->
+                    requireNotNull(definition.commoditySpotTerms)
+                },
+                futuresTerms = futuresBenchmarkDefinitions.map { definition ->
+                    requireNotNull(definition.futuresReferenceTerms)
+                },
+                macro = macro,
+                at = currentTime,
+            )
+            val book = commodityReferenceBookEngine.initialBook(frame)
+            commoditySpotReferenceStates.putAll(book.spotStates)
+            futuresReferenceStates.putAll(book.futuresStates)
+        }
+        if (alternativeRiskPremiaBenchmarkDefinitions.isNotEmpty()) {
+            alternativeRiskPremiaStates.putAll(
+                alternativeRiskPremiaBookEngine.initialBook(
+                    definitions = alternativeRiskPremiaBenchmarkDefinitions,
+                    sourceCatalog = referenceSourceCatalog,
+                    sourceSnapshot = currentReferenceSourceSnapshot(),
+                    atDate = gameDate(currentTime),
+                    at = currentTime,
+                ).states,
+            )
+        }
+        if (compositeReferenceBenchmarkDefinitions.isNotEmpty()) {
+            compositeReferenceStates.putAll(
+                compositeReferenceBookEngine.initialBook(
+                    definitions = compositeReferenceBenchmarkDefinitions,
+                    sourceCatalog = referenceSourceCatalog,
+                    sourceSnapshot = currentReferenceSourceSnapshot(),
+                    atDate = gameDate(currentTime),
+                    at = currentTime,
+                ).states,
+            )
+        }
+    }
+
+    /** Current typed source income/duration frame, shared by ALT and composite bootstraps. */
+    private fun currentReferenceSourceSnapshot(): ReferenceSourceSnapshot {
+        val benchmarkIncome = linkedMapOf<BenchmarkRef, Double>()
+        executablePortfolioIdByBenchmarkRef.forEach { (ref, portfolioId) ->
+            benchmarkIncome[ref] = referencePortfolioStates.getValue(portfolioId)
+                .estimatedAnnualIncomeYield
+        }
+        equityReferenceStates.forEach { (ref, state) ->
+            benchmarkIncome[ref] = state.estimatedAnnualIncomeYield
+        }
+        fixedIncomeReferenceStates.values.forEach { state ->
+            benchmarkIncome[state.benchmarkRef] = state.estimatedAnnualIncomeYield
+        }
+        commoditySpotReferenceStates.keys.forEach { ref -> benchmarkIncome[ref] = 0.0 }
+        futuresReferenceStates.keys.forEach { ref -> benchmarkIncome[ref] = 0.0 }
+        fundOfFundsStates.forEach { (ref, state) ->
+            benchmarkIncome[ref] = state.estimatedAnnualIncomeYield
+        }
+        alternativeRiskPremiaStates.forEach { (ref, state) ->
+            benchmarkIncome[ref] = state.estimatedAnnualIncomeYield
+        }
+
+        val benchmarkDurations = fixedIncomeReferenceStates.values.associate { state ->
+            state.benchmarkRef to state.positions.sumOf { position ->
+                position.currentWeight * position.modifiedDurationYears
+            }
+        }.toMutableMap()
+        alternativeRiskPremiaStates.forEach { (ref, state) ->
+            benchmarkDurations[ref] = state.effectiveDurationYears
+        }
+        val instrumentIncome = directlyReferencedInstrumentIds.associateWith { stockId ->
+            stockById.getValue(stockId).dividendYield
+        }
+        return ReferenceSourceSnapshot(
+            benchmarkAnnualIncomeYields = benchmarkIncome,
+            benchmarkDurationsYears = benchmarkDurations,
+            instrumentAnnualIncomeYields = instrumentIncome,
+            instrumentDurationsYears = directlyReferencedInstrumentIds.associateWith { 0.0 },
+            instrumentAvailability = directlyReferencedInstrumentIds.associateWith { stockId ->
+                listingLifecycleStates.getValue(stockId).isIndexEligible
+            },
+            mortgageRateAnnual = currentMortgageRateAnnual(),
+        )
+    }
+
+    private fun currentMortgageRateAnnual(
+        fixedIncomeStates: Collection<FixedIncomeReferenceState> = fixedIncomeReferenceStates.values,
+    ): Double {
+        val tenYearTreasuryRate = fixedIncomeStates.asSequence()
+            .mapNotNull { state -> state.nominalCurves[ReferenceCurrency.USD] }
+            .firstOrNull()
+            ?.rateAtYears(10.0)
+            ?: macro.policyRate
+        return (tenYearTreasuryRate + MODEL_MORTGAGE_SPREAD_ANNUAL).coerceIn(0.0, 1.0)
+    }
+
+    private fun initialEtnState(stock: StockDefinition): EtnState {
+        val profile = requireNotNull(stock.fundProductProfile)
+        val terms = requireNotNull(profile.etnProductTerms)
+        val credit = requireNotNull(profile.etnIssuerCreditModelParameters)
+        require(terms.productId == stock.id && credit.issuerId == terms.issuerId)
+        return EtnState(
+            productId = stock.id,
+            referenceLevel = OPTION_INITIAL_REFERENCE_LEVEL,
+            feeAdjustedIndicativeValuePerNote = stock.initialPrice,
+            notesOutstanding = stock.sharesOutstanding,
+            accruedCouponPerNote = 0.0,
+            issuerCreditSpread = credit.initialCreditSpread,
+            issuerHazardRate = credit.initialHazardRate,
+            issuerRecoveryRate = credit.recoveryRate,
+            indicativeValueObservationWindow = emptyList(),
+            lifecycle = EtnLifecycle.ACTIVE,
+            terminalCreditEvent = null,
+            asOf = currentTime,
+            revision = 0L,
+        )
+    }
+
+    private fun initialClosedEndFundState(stock: StockDefinition): ClosedEndFundState {
+        val profile = requireNotNull(stock.fundProductProfile)
+        val terms = requireNotNull(profile.closedEndFundTerms)
+        val parameters = requireNotNull(profile.closedEndFundMarketModelParameters)
+        require(terms.fundId == stock.id && parameters.fundId == stock.id)
+        val initialNav = stock.initialPrice / (1.0 + parameters.targetMarketDiscountRate)
+        val commonNetAssets = initialNav * stock.sharesOutstanding.toDouble()
+        val netAssetFraction = 1.0 - parameters.initialDebtToGrossAssets -
+            parameters.initialPreferredToGrossAssets
+        require(netAssetFraction > 0.0)
+        val grossAssets = commonNetAssets / netAssetFraction
+        return ClosedEndFundState(
+            fundId = stock.id,
+            grossAssets = grossAssets,
+            commonSharesOutstanding = stock.sharesOutstanding.toDouble(),
+            debtLiability = grossAssets * parameters.initialDebtToGrossAssets,
+            preferredShareLiability = grossAssets * parameters.initialPreferredToGrossAssets,
+            navPerCommonShare = initialNav,
+            undistributedNetInvestmentIncome = 0.0,
+            distributionReserve = 0.0,
+            marketDiscountRate = parameters.targetMarketDiscountRate,
+            asOf = currentTime,
+            revision = 0L,
+        )
+    }
+
+    private fun dailyResetReferenceMarket(calendar: DailyResetCalendar): Market = when (calendar) {
+        DailyResetCalendar.KRX_EQUITY -> Market.KOSPI
+        DailyResetCalendar.US_EQUITY -> Market.NYSE
+    }
+
+    private fun optionReferenceMarket(calendar: OptionRollCalendar): Market = when (calendar) {
+        OptionRollCalendar.KRX_EQUITY -> Market.KOSPI
+        OptionRollCalendar.US_EQUITY -> Market.NYSE
+    }
+
+    private fun optionImpliedVolatility(stock: StockDefinition): Double =
+        (stock.volatility * sqrt(macro.volatilityRegime.coerceAtLeast(0.0))).coerceIn(0.0, 5.0)
+
+    private fun lastCompletedRegularTradingDate(market: Market, at: Instant): LocalDate {
+        var candidate = marketDate(market, at)
+        while (true) {
+            val window = GameCalendar.regularSessionWindow(
+                market,
+                candidate,
+                runtimeClosedDates(market, candidate),
+            )
+            if (window != null && at >= window.closesAt) return candidate
+            candidate = candidate.minus(1, DateTimeUnit.DAY)
+        }
+    }
+
+    private fun reachesDailyResetClose(
+        calendar: DailyResetCalendar,
+        from: Instant,
+        to: Instant,
+    ): Boolean = reachesMarketClose(dailyResetReferenceMarket(calendar), from, to)
+
+    private fun reachesMarketClose(
+        market: Market,
+        from: Instant,
+        to: Instant,
+    ): Boolean {
+        val dates = linkedSetOf(marketDate(market, from), marketDate(market, to))
+        return dates.any { date ->
+            GameCalendar.regularSessionWindow(
+                market,
+                date,
+                runtimeClosedDates(market, date),
+            )?.let { window -> from < window.closesAt && to >= window.closesAt } == true
+        }
+    }
+
+    private fun reachesOptionClose(
+        calendar: OptionRollCalendar,
+        from: Instant,
+        to: Instant,
+    ): Boolean = reachesMarketClose(optionReferenceMarket(calendar), from, to)
+
+    private fun etnCreditShocks(
+        stock: StockDefinition,
+        previous: EtnState,
+        parameters: EtnIssuerCreditModelParameters,
+        elapsedYearFraction: Double,
+        from: Instant,
+    ): Pair<Double, Double> {
+        val stressMultiplier = (
+            1.0 + macro.liquidityStress * 3.0 - macro.growthSurprise * 8.0 -
+                macro.riskSentiment * 0.35
+            ).coerceIn(0.25, 8.0)
+        val targetSpread = (parameters.initialCreditSpread * stressMultiplier).coerceIn(0.0, 1.0)
+        val random = DeterministicRandom.keyed(
+            options.seed,
+            "etn-issuer-credit:${parameters.issuerId}:${stock.id}:${from.epochSeconds}",
+        )
+        val spreadInnovation = parameters.spreadShockAnnualVolatility *
+            sqrt(elapsedYearFraction) * random.nextGaussian()
+        val spreadDrift = parameters.annualSpreadMeanReversionRate *
+            (targetSpread - previous.issuerCreditSpread) * elapsedYearFraction
+        val nextSpread = (previous.issuerCreditSpread + spreadDrift + spreadInnovation)
+            .coerceIn(0.0, 1.0)
+        val impliedHazard = (nextSpread / (1.0 - previous.issuerRecoveryRate).coerceAtLeast(0.05))
+            .coerceIn(0.0, 1.0)
+        val hazardAdjustment = parameters.annualSpreadMeanReversionRate *
+            (impliedHazard - previous.issuerHazardRate) * elapsedYearFraction
+        val nextHazard = (previous.issuerHazardRate + hazardAdjustment).coerceIn(0.0, 1.0)
+        return (nextSpread - previous.issuerCreditSpread) to
+            (nextHazard - previous.issuerHazardRate)
+    }
+
+    private fun etnCreditMarkedValue(
+        state: EtnState,
+        maturityDate: LocalDate,
+        valuationDate: LocalDate,
+    ): Double {
+        val remainingYears = (
+            (maturityDate.toEpochDays() - valuationDate.toEpochDays()).coerceAtLeast(0) / 365.25
+            ).coerceAtMost(ETN_MAX_CREDIT_DURATION_YEARS)
+        // The noteholder owns both the fee-adjusted indicative claim and an already accrued,
+        // unpaid coupon claim. Keeping the latter in the market mark makes the later cash payment
+        // an ex-coupon transfer instead of counting the same option premium as an earlier loss.
+        val unsecuredClaim = (
+            state.feeAdjustedIndicativeValuePerNote + state.accruedCouponPerNote
+            ).coerceAtLeast(ETN_MIN_MARKED_VALUE)
+        return unsecuredClaim * exp(-state.issuerCreditSpread * remainingYears)
+    }
+
+    private fun closedEndFundDiscountShock(
+        stock: StockDefinition,
+        state: ClosedEndFundState,
+        elapsedYearFraction: Double,
+        from: Instant,
+        target: Double,
+        meanReversion: Double,
+        annualVolatility: Double,
+    ): Double {
+        val random = DeterministicRandom.keyed(
+            options.seed,
+            "closed-end-fund-discount:${stock.id}:${from.epochSeconds}",
+        )
+        val systematic = (
+            macro.liquidityStress * 0.08 - macro.riskSentiment * 0.04
+            ) * elapsedYearFraction
+        val innovation = annualVolatility * sqrt(elapsedYearFraction) * random.nextGaussian()
+        val shock = systematic + innovation
+        val beforeShock = state.marketDiscountRate +
+            meanReversion * (target - state.marketDiscountRate) * elapsedYearFraction
+        return shock.coerceIn(-0.98 - beforeShock, 1.0 - beforeShock)
     }
 
     private fun initializeMarketIndices(at: Instant) {
@@ -1575,15 +2322,14 @@ internal class SimulatorRuntime(
         val usDate = marketDate(Market.NYSE, at)
         val usLuld = stocks.asSequence().filter { it.market.isUnitedStates }.associate { stock ->
             val quote = quotes.getValue(stock.id)
-            val reference = quote.price.coerceAtLeast(0.01)
             val easternTime = GameCalendar.marketLocalDateTime(stock.market, at).time
             stock.id to TradingProtectionEngine.initialUsLuld(
                 stockId = stock.id,
                 primaryMarket = stock.market,
                 tradingDate = usDate,
                 tier = usLuldTier(stock),
-                previousClose = quote.previousClose.coerceAtLeast(0.01),
-                referencePrice = reference,
+                previousClose = quote.previousClose,
+                referencePrice = quote.price,
                 referencePriceEffectiveAt = at,
                 easternTime = easternTime,
             )
@@ -1652,6 +2398,7 @@ internal class SimulatorRuntime(
         updateMacro(from)
         generateEvents(from, to)
         syncEventDrivenTradingHalts(from, to)
+        announceDueDirectUnderlyingFundLiquidations(from, to)
         val activeStocks = stocks.filterNot { stock ->
             listingLifecycleStates.getValue(stock.id).let { state ->
                 state.isTerminal || state.isSettlementPending
@@ -1733,6 +2480,7 @@ internal class SimulatorRuntime(
             protectionImpact,
         )
         processDailyListingSurveillance(from, to)
+        reconcileStructuredSourceAvailability(to)
         processInstrumentLifecycle(to)
         processScheduledDividends(from, to)
         maybeAnnounceCorporateActions(from, to)
@@ -1807,38 +2555,718 @@ internal class SimulatorRuntime(
         val stockTradingFractions = mutableMapOf<String, Double>()
         val stockFirstExecutionTimes = mutableMapOf<String, Instant>()
         val priceAttributions = mutableMapOf<String, PriceAttribution>()
+        val openingReferencedInstrumentPrices = directlyReferencedInstrumentIds.associateWith { stockId ->
+            quotes.getValue(stockId).price
+        }
+        fun referencedInstrumentPriceLogReturn(stockId: String): Double {
+            if (!listingLifecycleStates.getValue(stockId).isIndexEligible) return 0.0
+            val bar = requireNotNull(generatedBars[stockId]) {
+                "참조 사업회사 기초 봉이 먼저 생성되지 않았습니다: $stockId"
+            }
+            val openingPrice = openingReferencedInstrumentPrices.getValue(stockId)
+            require(openingPrice.isFinite() && openingPrice > 0.0 && bar.close.isFinite() && bar.close > 0.0) {
+                "참조 사업회사 가격이 유효하지 않습니다: " +
+                    "$stockId open=$openingPrice close=${bar.close}"
+            }
+            return ln(bar.close / openingPrice)
+        }
+        val referencePortfolioAdvance = if (referencePortfolioStates.isEmpty()) {
+            null
+        } else {
+            val referenceDate = marketDate(Market.NYSE, from)
+            val referenceFraction = regionalTradingFraction(
+                EtfExposureRegion.UNITED_STATES,
+                from,
+                effectiveMarketFractions,
+            )
+            val references = executableBenchmarkDefinitions.map { it.ref }
+            referencePortfolioEngine.advanceHour(
+                book = ReferencePortfolioBook(referencePortfolioStates.toMap()),
+                definitions = executableBenchmarkDefinitions,
+                referenceDates = references.associateWith { referenceDate },
+                referenceTradingFractions = references.associateWith { referenceFraction },
+                from = from,
+                to = to,
+                macro = macro,
+            )
+        }
+        val equityReferenceAdvance = if (equityReferenceStates.isEmpty()) {
+            null
+        } else {
+            equityReferenceBookEngine.advanceHour(
+                book = EquityReferenceBook(equityReferenceStates.toMap()),
+                definitions = equityReferenceBenchmarkDefinitions,
+                macro = macro,
+                marketTradingFractions = effectiveMarketFractions,
+                from = from,
+                to = to,
+            )
+        }
+        val fixedIncomeReferenceAdvance = if (fixedIncomeReferenceStates.isEmpty()) {
+            null
+        } else {
+            val statesByRef = fixedIncomeReferenceStates.values.associateBy(
+                FixedIncomeReferenceState::benchmarkRef,
+            )
+            val fractions = fixedIncomeBenchmarkDefinitions.associate { definition ->
+                val profile = requireNotNull(definition.fixedIncomeProfile)
+                val region = when (profile.geography) {
+                    FixedIncomeGeography.KOREA -> EtfExposureRegion.KOREA
+                    FixedIncomeGeography.UNITED_STATES -> EtfExposureRegion.UNITED_STATES
+                    FixedIncomeGeography.GLOBAL -> EtfExposureRegion.GLOBAL
+                    FixedIncomeGeography.DEVELOPED_EX_US -> EtfExposureRegion.DEVELOPED_EX_US
+                    FixedIncomeGeography.EMERGING_MARKETS -> EtfExposureRegion.EMERGING_MARKETS
+                }
+                definition.ref to (
+                    regionalTradingFraction(region, from, effectiveMarketFractions) /
+                        REFERENCE_TRADING_HOURS_PER_YEAR
+                    )
+            }
+            fixedIncomeReferenceBookEngine.advance(
+                book = FixedIncomeReferenceBook(statesByRef),
+                definitions = fixedIncomeBenchmarkDefinitions,
+                macro = macro,
+                elapsedYearFractions = fractions,
+                to = to,
+            )
+        }
+        val commodityReferenceAdvance = if (
+            commoditySpotReferenceStates.isEmpty() && futuresReferenceStates.isEmpty()
+        ) {
+            null
+        } else {
+            val book = CommodityReferenceBook(
+                spotStates = commoditySpotReferenceStates.toMap(),
+                futuresStates = futuresReferenceStates.toMap(),
+            )
+            val frame = commodityMarketModel.advanceFrame(
+                book = book,
+                spotTerms = commoditySpotBenchmarkDefinitions.map { definition ->
+                    requireNotNull(definition.commoditySpotTerms)
+                },
+                futuresTerms = futuresBenchmarkDefinitions.map { definition ->
+                    requireNotNull(definition.futuresReferenceTerms)
+                },
+                macro = macro,
+                from = from,
+                to = to,
+            )
+            commodityReferenceBookEngine.advance(book, frame)
+        }
+        fun baseBenchmarkGrossLogReturn(ref: BenchmarkRef): Double? =
+            referencePortfolioAdvance?.grossReferenceLogReturns?.get(ref)
+                ?: equityReferenceAdvance?.grossReferenceLogReturns?.get(ref)
+                ?: fixedIncomeReferenceAdvance?.grossReferenceLogReturns?.get(ref)
+                ?: commodityReferenceAdvance?.grossReferenceLogReturns?.get(ref)
 
-        for (stock in stocks) {
+        fun baseBenchmarkAnnualIncomeYield(ref: BenchmarkRef): Double? {
+            val portfolioId = executablePortfolioIdByBenchmarkRef[ref]
+            return portfolioId?.let { id -> referencePortfolioAdvance?.book?.states?.get(id) }
+                ?.estimatedAnnualIncomeYield
+                ?: equityReferenceAdvance?.estimatedAnnualIncomeYields?.get(ref)
+                ?: fixedIncomeReferenceAdvance?.annualIncomeYields?.get(ref)
+                ?: 0.0.takeIf {
+                    commodityReferenceAdvance?.grossReferenceLogReturns?.containsKey(ref) == true
+                }
+        }
+        val fundOfFundsAdvance = if (fundOfFundsStates.isEmpty()) {
+            null
+        } else {
+            val componentRefs = fundOfFundsProfiles.values.flatMapTo(linkedSetOf()) { profile ->
+                profile.componentBenchmarkRefs
+            }
+            fundOfFundsBookEngine.advanceHour(
+                book = FundOfFundsBook(fundOfFundsStates.toMap()),
+                profiles = fundOfFundsProfiles,
+                componentGrossLogReturns = componentRefs.associateWith { ref ->
+                    requireNotNull(baseBenchmarkGrossLogReturn(ref)) {
+                        "펀드오브펀드 구성 benchmark 수익률이 먼저 계산되지 않았습니다: $ref"
+                    }
+                },
+                componentAnnualIncomeYields = componentRefs.associateWith { ref ->
+                    requireNotNull(baseBenchmarkAnnualIncomeYield(ref)) {
+                        "펀드오브펀드 구성 benchmark 소득률이 먼저 계산되지 않았습니다: $ref"
+                    }
+                },
+                macro = macro,
+                referenceTradingDate = marketDate(Market.NYSE, from),
+                referenceTradingFraction = regionalTradingFraction(
+                    EtfExposureRegion.UNITED_STATES,
+                    from,
+                    effectiveMarketFractions,
+                ),
+                reachesReferenceClose = reachesMarketClose(Market.NYSE, from, to),
+                from = from,
+                to = to,
+            )
+        }
+
+        fun preStructuredBenchmarkGrossLogReturn(ref: BenchmarkRef): Double? =
+            fundOfFundsAdvance?.grossReferenceLogReturns?.get(ref)
+                ?: baseBenchmarkGrossLogReturn(ref)
+
+        fun preStructuredBenchmarkAnnualIncomeYield(ref: BenchmarkRef): Double? =
+            fundOfFundsAdvance?.estimatedAnnualIncomeYields?.get(ref)
+                ?: baseBenchmarkAnnualIncomeYield(ref)
+
+        fun preStructuredBenchmarkDurationYears(ref: BenchmarkRef): Double? =
+            fixedIncomeReferenceAdvance?.book?.states?.get(ref)?.positions?.sumOf { position ->
+                position.currentWeight * position.modifiedDurationYears
+            }
+
+        val instrumentSourceIncomeYields = directlyReferencedInstrumentIds.associateWith { stockId ->
+            stockById.getValue(stockId).dividendYield
+        }
+        val instrumentSourceDurations = directlyReferencedInstrumentIds.associateWith { 0.0 }
+        val instrumentSourceAvailability = directlyReferencedInstrumentIds.associateWith { stockId ->
+            listingLifecycleStates.getValue(stockId).isIndexEligible
+        }
+        val sourceFxLogReturns = buildMap {
+            for (sourceCurrency in ReferenceCurrency.entries) {
+                for (targetCurrency in ReferenceCurrency.entries) {
+                    if (sourceCurrency == targetCurrency) continue
+                    val sourceReturn = ln(
+                        macro.rateToKrw(sourceCurrency) /
+                            macro.rateToKrw(sourceCurrency, previous = true),
+                    )
+                    val targetReturn = ln(
+                        macro.rateToKrw(targetCurrency) /
+                            macro.rateToKrw(targetCurrency, previous = true),
+                    )
+                    put(ReferenceCurrencyPair(sourceCurrency, targetCurrency), sourceReturn - targetReturn)
+                }
+            }
+        }
+        var alternativeRiskPremiaAdvance: AlternativeRiskPremiaBookAdvance? = null
+        var compositeReferenceAdvance: CompositeReferenceBookAdvance? = null
+        var structuredReferenceAdvancesResolved = false
+
+        fun resolveStructuredReferenceAdvances() {
+            if (structuredReferenceAdvancesResolved) return
+            val instrumentReturns = directlyReferencedInstrumentIds.associateWith { stockId ->
+                val result = referencedInstrumentPriceLogReturn(stockId)
+                require(result.isFinite()) {
+                    "복합 기준의 사업회사 기초 수익률이 유한하지 않습니다: $stockId=$result"
+                }
+                result
+            }
+            val benchmarkReturns = structuredSourceBenchmarkRefs.mapNotNull { ref ->
+                preStructuredBenchmarkGrossLogReturn(ref)?.let { value -> ref to value }
+            }.toMap()
+            val benchmarkIncomeYields = structuredSourceBenchmarkRefs.mapNotNull { ref ->
+                preStructuredBenchmarkAnnualIncomeYield(ref)?.let { value -> ref to value }
+            }.toMap()
+            val benchmarkDurations = structuredSourceBenchmarkRefs.mapNotNull { ref ->
+                preStructuredBenchmarkDurationYears(ref)?.let { value -> ref to value }
+            }.toMap()
+            val preAlternativeFrame = ReferenceSourceReturnFrame(
+                benchmarkLogReturns = benchmarkReturns,
+                benchmarkAnnualIncomeYields = benchmarkIncomeYields,
+                benchmarkDurationsYears = benchmarkDurations,
+                instrumentLogReturns = instrumentReturns,
+                instrumentAnnualIncomeYields = instrumentSourceIncomeYields,
+                instrumentDurationsYears = instrumentSourceDurations,
+                instrumentAvailability = instrumentSourceAvailability,
+                fxLogReturns = sourceFxLogReturns,
+            )
+            if (alternativeRiskPremiaStates.isNotEmpty()) {
+                alternativeRiskPremiaAdvance = alternativeRiskPremiaBookEngine.advanceHour(
+                    book = AlternativeRiskPremiaBook(alternativeRiskPremiaStates.toMap()),
+                    definitions = alternativeRiskPremiaBenchmarkDefinitions,
+                    sourceCatalog = referenceSourceCatalog,
+                    input = AlternativeRiskPremiaAdvanceInput(
+                        sourceFrame = preAlternativeFrame,
+                        annualRiskFreeRate = macro.policyRate.coerceIn(-0.25, 1.0),
+                    ),
+                    from = from,
+                    to = to,
+                )
+            }
+            if (compositeReferenceStates.isNotEmpty()) {
+                val alternative = alternativeRiskPremiaAdvance
+                compositeReferenceAdvance = compositeReferenceBookEngine.advanceHour(
+                    book = CompositeReferenceBook(compositeReferenceStates.toMap()),
+                    definitions = compositeReferenceBenchmarkDefinitions,
+                    sourceCatalog = referenceSourceCatalog,
+                    input = CompositeReferenceAdvanceInput(
+                        sourceFrame = ReferenceSourceReturnFrame(
+                            benchmarkLogReturns = benchmarkReturns +
+                                alternative?.referenceLogReturns.orEmpty(),
+                            benchmarkAnnualIncomeYields = benchmarkIncomeYields +
+                                alternative?.estimatedAnnualIncomeYields.orEmpty(),
+                            benchmarkDurationsYears = benchmarkDurations +
+                                alternative?.effectiveDurationsYears.orEmpty(),
+                            instrumentLogReturns = instrumentReturns,
+                            instrumentAnnualIncomeYields = instrumentSourceIncomeYields,
+                            instrumentDurationsYears = instrumentSourceDurations,
+                            instrumentAvailability = instrumentSourceAvailability,
+                            fxLogReturns = sourceFxLogReturns,
+                        ),
+                        annualRiskFreeRate = macro.policyRate.coerceIn(-0.25, 1.0),
+                        mortgageRateAnnual = currentMortgageRateAnnual(
+                            fixedIncomeReferenceAdvance?.book?.states?.values
+                                ?: fixedIncomeReferenceStates.values,
+                        ),
+                    ),
+                    from = from,
+                    to = to,
+                )
+            }
+            structuredReferenceAdvancesResolved = true
+        }
+
+        fun explicitBenchmarkGrossLogReturn(ref: BenchmarkRef): Double? =
+            compositeReferenceAdvance?.referenceLogReturns?.get(ref)
+                ?: alternativeRiskPremiaAdvance?.referenceLogReturns?.get(ref)
+                ?: preStructuredBenchmarkGrossLogReturn(ref)
+
+        fun explicitBenchmarkAnnualIncomeYield(ref: BenchmarkRef): Double? =
+            compositeReferenceAdvance?.estimatedAnnualIncomeYields?.get(ref)
+                ?: alternativeRiskPremiaAdvance?.estimatedAnnualIncomeYields?.get(ref)
+                ?: preStructuredBenchmarkAnnualIncomeYield(ref)
+
+        val pricingStocks = stocks.sortedBy { stock ->
+            val profile = stock.fundProductProfile
+            val hasInstrumentReference = listOfNotNull(
+                profile?.dailyResetTerms?.reference,
+                profile?.optionStrategyTerms?.reference,
+                profile?.cashCollateralizedPutSpreadTerms?.optionReference,
+            ).any { it.kind == DailyResetReferenceKind.INSTRUMENT }
+            when {
+                !stock.isFundLike -> 0
+                hasInstrumentReference -> 2
+                else -> 1
+            }
+        }
+        for (stock in pricingStocks) {
+            if (stock.isFundLike) resolveStructuredReferenceAdvances()
             val previousQuote = quotes.getValue(stock.id)
             val listingState = listingLifecycleStates.getValue(stock.id)
             val matured = isInstrumentMatured(stock, from)
+            val fundReferenceFraction = stock.etfProfile?.let { profile ->
+                regionalTradingFraction(profile.exposureRegion, from, effectiveMarketFractions)
+            }
+            val productProfile = stock.fundProductProfile
+            val benchmarkGrossLogReturn = productProfile?.benchmarkRef
+                ?.let(::explicitBenchmarkGrossLogReturn)
+            val benchmarkAnnualIncomeYield = productProfile?.benchmarkRef
+                ?.let(::explicitBenchmarkAnnualIncomeYield)
+            val basketGrossLogReturn = benchmarkGrossLogReturn?.let { benchmarkReturn ->
+                benchmarkReturn + fundProductOverlayEngine.trackingErrorLogReturn(
+                    productId = stock.id,
+                    profile = requireNotNull(productProfile),
+                    from = from,
+                    referenceTradingFraction = requireNotNull(fundReferenceFraction),
+                )
+            }
+            val dailyResetTerms = productProfile?.dailyResetTerms
+            val dailyResetAdvance = dailyResetTerms
+                ?.takeIf { !matured && !listingState.isSettlementPending && !listingState.isTerminal }
+                ?.let { terms ->
+                    val referenceMarket = dailyResetReferenceMarket(terms.resetCalendar)
+                    val referenceFraction = when (terms.reference.kind) {
+                        DailyResetReferenceKind.BENCHMARK -> regionalTradingFraction(
+                            if (terms.resetCalendar == DailyResetCalendar.KRX_EQUITY) {
+                                EtfExposureRegion.KOREA
+                            } else {
+                                EtfExposureRegion.UNITED_STATES
+                            },
+                            from,
+                            effectiveMarketFractions,
+                        )
+                        DailyResetReferenceKind.INSTRUMENT -> {
+                            val underlyingId = requireNotNull(terms.reference.instrumentId)
+                            requireNotNull(stockTradingFractions[underlyingId]) {
+                                "일일 reset 기초 종목은 상품보다 먼저 가격이 계산되어야 합니다: $underlyingId"
+                            }
+                        }
+                    }
+                    val referenceReturn = when (terms.reference.kind) {
+                        DailyResetReferenceKind.BENCHMARK -> {
+                            val explicitReturn = requireNotNull(terms.reference.benchmarkRef)
+                                .let(::explicitBenchmarkGrossLogReturn)
+                            explicitReturn ?: priceEngine.coarseUnderlyingReferenceLogReturn(
+                                stock = stock,
+                                macro = macro,
+                                referenceTradingFraction = referenceFraction,
+                            )
+                        }
+                        DailyResetReferenceKind.INSTRUMENT -> {
+                            val underlyingId = requireNotNull(terms.reference.instrumentId)
+                            referencedInstrumentPriceLogReturn(underlyingId)
+                        }
+                    }
+                    require(referenceReturn.isFinite()) {
+                        "일일 reset 기초 수익률이 유한하지 않습니다: " +
+                            "product=${stock.id}, reference=${terms.reference}, value=$referenceReturn, " +
+                            "from=$from, to=$to, fraction=$referenceFraction"
+                    }
+                    dailyResetEngine.advance(
+                        DailyResetAdvanceInput(
+                            state = dailyResetStates.getValue(stock.id),
+                            terms = terms,
+                            referenceLogReturn = referenceReturn,
+                            elapsedYearFraction = referenceFraction / REFERENCE_TRADING_HOURS_PER_YEAR,
+                            cashRateAnnual = macro.policyRate.coerceIn(-0.10, 1.0),
+                            shortBorrowRateAnnual = (
+                                DAILY_RESET_BASE_SHORT_BORROW_RATE +
+                                    macro.liquidityStress * DAILY_RESET_STRESS_BORROW_SPREAD
+                                ).coerceIn(0.0, 2.0),
+                            productExpenseRateAnnual = requireNotNull(stock.etfProfile).annualExpenseRatio,
+                            referenceTradingDate = marketDate(referenceMarket, from),
+                            resetAtEnd = reachesDailyResetClose(terms.resetCalendar, from, to),
+                            to = to,
+                        ),
+                    )
+                }
+            val optionStrategyTerms = productProfile?.optionStrategyTerms
+            val optionStrategyAdvance = optionStrategyTerms
+                ?.takeIf { !matured && !listingState.isSettlementPending && !listingState.isTerminal }
+                ?.let { terms ->
+                    val referenceMarket = optionReferenceMarket(terms.rollCalendar)
+                    val optionCloseAtEnd = reachesOptionClose(terms.rollCalendar, from, to)
+                    val allowOpeningNewCycle = !hasPublishedDirectUnderlyingLiquidation(stock.id)
+                    val referenceFraction = when (terms.reference.kind) {
+                        DailyResetReferenceKind.BENCHMARK -> regionalTradingFraction(
+                            if (terms.rollCalendar == OptionRollCalendar.KRX_EQUITY) {
+                                EtfExposureRegion.KOREA
+                            } else {
+                                EtfExposureRegion.UNITED_STATES
+                            },
+                            from,
+                            effectiveMarketFractions,
+                        )
+                        DailyResetReferenceKind.INSTRUMENT -> {
+                            val underlyingId = requireNotNull(terms.reference.instrumentId)
+                            requireNotNull(stockTradingFractions[underlyingId]) {
+                                "옵션 전략 기초 종목은 상품보다 먼저 가격이 계산되어야 합니다: $underlyingId"
+                            }
+                        }
+                    }
+                    val referencePriceReturn = when (terms.reference.kind) {
+                        DailyResetReferenceKind.BENCHMARK -> {
+                            val ref = requireNotNull(terms.reference.benchmarkRef)
+                            explicitBenchmarkGrossLogReturn(ref)
+                                ?: priceEngine.coarseUnderlyingReferenceLogReturn(
+                                    stock = stock,
+                                    macro = macro,
+                                    referenceTradingFraction = referenceFraction,
+                                )
+                        }
+                        DailyResetReferenceKind.INSTRUMENT -> {
+                            val underlyingId = requireNotNull(terms.reference.instrumentId)
+                            referencedInstrumentPriceLogReturn(underlyingId)
+                        }
+                    }
+                    val annualIncomeYield = terms.reference.benchmarkRef
+                        ?.let(::explicitBenchmarkAnnualIncomeYield) ?: 0.0
+                    optionStrategyEngine.advance(
+                        OptionStrategyAdvanceInput(
+                            state = optionStrategyStates.getValue(stock.id),
+                            terms = terms,
+                            underlyingTotalLogReturn = referencePriceReturn +
+                                annualIncomeYield / REFERENCE_TRADING_HOURS_PER_YEAR * referenceFraction,
+                            cashRateAnnual = macro.policyRate.coerceIn(-0.10, 1.0),
+                            annualizedImpliedVolatility = optionImpliedVolatility(stock),
+                            elapsedYearFraction = ((to - from).inWholeNanoseconds.toDouble() /
+                                NANOSECONDS_PER_YEAR).coerceIn(0.0, 1.0),
+                            referenceTradingDate = marketDate(referenceMarket, from),
+                            tradingCloseAtEnd = optionCloseAtEnd,
+                            forceRollAtEnd = !allowOpeningNewCycle && optionCloseAtEnd,
+                            allowOpeningNewCycle = allowOpeningNewCycle,
+                            to = to,
+                        ),
+                    )
+                }
+            val optionProductLogReturn = optionStrategyAdvance?.productLogReturn
+                ?.takeIf { stock.instrumentType != InstrumentType.ETN }
+                ?.minus(
+                    requireNotNull(stock.etfProfile).annualExpenseRatio /
+                        REFERENCE_TRADING_HOURS_PER_YEAR * requireNotNull(fundReferenceFraction),
+                )
+            val elapsedWallYearFraction = ((to - from).inWholeNanoseconds.toDouble() /
+                NANOSECONDS_PER_YEAR).coerceIn(0.0, 1.0)
+            val cashCollateralizedPutSpreadTerms =
+                productProfile?.cashCollateralizedPutSpreadTerms
+            val cashCollateralizedPutSpreadAdvance = cashCollateralizedPutSpreadTerms
+                ?.takeIf { !matured && !listingState.isSettlementPending && !listingState.isTerminal }
+                ?.let { terms ->
+                    val referenceMarket = optionReferenceMarket(terms.rollCalendar)
+                    val optionCloseAtEnd = reachesOptionClose(terms.rollCalendar, from, to)
+                    val allowOpeningNewCycle = !hasPublishedDirectUnderlyingLiquidation(stock.id)
+                    val referenceFraction = regionalTradingFraction(
+                        if (terms.rollCalendar == OptionRollCalendar.KRX_EQUITY) {
+                            EtfExposureRegion.KOREA
+                        } else {
+                            EtfExposureRegion.UNITED_STATES
+                        },
+                        from,
+                        effectiveMarketFractions,
+                    )
+                    val cashPriceReturn = requireNotNull(
+                        explicitBenchmarkGrossLogReturn(terms.cashBenchmarkRef),
+                    ) { "현금담보 풋스프레드의 현금 benchmark 수익률이 필요합니다: ${stock.id}" }
+                    val cashIncomeYield = requireNotNull(
+                        explicitBenchmarkAnnualIncomeYield(terms.cashBenchmarkRef),
+                    ) { "현금담보 풋스프레드의 현금 benchmark 소득률이 필요합니다: ${stock.id}" }
+                    val optionPriceReturn = when (terms.optionReference.kind) {
+                        DailyResetReferenceKind.BENCHMARK -> {
+                            val ref = requireNotNull(terms.optionReference.benchmarkRef)
+                            requireNotNull(explicitBenchmarkGrossLogReturn(ref)) {
+                                "현금담보 풋스프레드의 옵션 기초 benchmark 수익률이 필요합니다: ${stock.id}"
+                            }
+                        }
+                        DailyResetReferenceKind.INSTRUMENT -> {
+                            val underlyingId = requireNotNull(terms.optionReference.instrumentId)
+                            referencedInstrumentPriceLogReturn(underlyingId)
+                        }
+                    }
+                    val optionIncomeYield = terms.optionReference.benchmarkRef
+                        ?.let(::explicitBenchmarkAnnualIncomeYield) ?: 0.0
+                    cashCollateralizedPutSpreadEngine.advance(
+                        CashCollateralizedPutSpreadAdvanceInput(
+                            state = cashCollateralizedPutSpreadStates.getValue(stock.id),
+                            terms = terms,
+                            cashBenchmarkTotalLogReturn = cashPriceReturn +
+                                cashIncomeYield / REFERENCE_TRADING_HOURS_PER_YEAR * referenceFraction,
+                            optionUnderlyingTotalLogReturn = optionPriceReturn +
+                                optionIncomeYield / REFERENCE_TRADING_HOURS_PER_YEAR * referenceFraction,
+                            optionDiscountRateAnnual = macro.policyRate.coerceIn(-0.10, 1.0),
+                            annualizedImpliedVolatility = optionImpliedVolatility(stock),
+                            elapsedYearFraction = elapsedWallYearFraction,
+                            referenceTradingDate = marketDate(referenceMarket, from),
+                            tradingCloseAtEnd = optionCloseAtEnd,
+                            forceRollAtEnd = !allowOpeningNewCycle && optionCloseAtEnd,
+                            allowOpeningNewCycle = allowOpeningNewCycle,
+                            to = to,
+                        ),
+                    )
+                }
+            val cashCollateralizedPutSpreadProductLogReturn =
+                cashCollateralizedPutSpreadAdvance?.productLogReturn?.minus(
+                    requireNotNull(stock.etfProfile).annualExpenseRatio /
+                        REFERENCE_TRADING_HOURS_PER_YEAR * requireNotNull(fundReferenceFraction),
+                )
+            val etnAdvance = productProfile?.etnProductTerms
+                ?.takeIf {
+                    !matured && !listingState.isSettlementPending && !listingState.isTerminal &&
+                        etnStates.getValue(stock.id).lifecycle == EtnLifecycle.ACTIVE
+                }
+                ?.let { terms ->
+                    val previous = etnStates.getValue(stock.id)
+                    val effectiveDate = marketDate(stock.market, to)
+                    val venueCloseReached = reachesMarketClose(stock.market, from, to)
+                    val contractualSettlementDate = nextTradingDateOnOrAfter(
+                        stock.market,
+                        terms.maturityDate,
+                    )
+                    val contractualMaturityReached = venueCloseReached &&
+                        effectiveDate == contractualSettlementDate
+                    val dueTerminationTerms = if (venueCloseReached) {
+                        resolveInstrumentTerminationAtSessionClose(
+                            stock = stock,
+                            events = newsEvents,
+                            evaluatedOn = effectiveDate,
+                            incumbentOccurrenceId =
+                                listingState.controllingTerminationOccurrenceId,
+                        )?.takeIf { decision ->
+                            decision.scheduledTerminationOn == effectiveDate
+                        }?.notice?.terms
+                    } else {
+                        null
+                    }
+                    val contractEvent = if (contractualMaturityReached) {
+                        EtnCreditEvent.CONTRACTUAL_MATURITY
+                    } else {
+                        when (dueTerminationTerms?.kind) {
+                            null -> EtnCreditEvent.NONE
+                            InstrumentTerminationKind.CONTRACTUAL_MATURITY ->
+                                EtnCreditEvent.CONTRACTUAL_MATURITY
+                            InstrumentTerminationKind.CREDIT_DEFAULT ->
+                                EtnCreditEvent.CREDIT_DEFAULT
+                            InstrumentTerminationKind.ISSUER_ACCELERATION ->
+                                EtnCreditEvent.ISSUER_ACCELERATION
+                            InstrumentTerminationKind.OPTIONAL_CALL ->
+                                EtnCreditEvent.ISSUER_CALL
+                            InstrumentTerminationKind.FUND_LIQUIDATION ->
+                                error("ETN에는 펀드 청산 계약 이벤트를 적용할 수 없습니다: ${stock.id}")
+                        }
+                    }
+                    val creditParameters = requireNotNull(productProfile.etnIssuerCreditModelParameters)
+                    val (spreadShock, hazardShock) = etnCreditShocks(
+                        stock = stock,
+                        previous = previous,
+                        parameters = creditParameters,
+                        elapsedYearFraction = elapsedWallYearFraction,
+                        from = from,
+                    )
+                    EtnEngine(terms).advance(
+                        state = previous,
+                        input = EtnAdvanceInput(
+                            effectiveAt = to,
+                            effectiveDate = effectiveDate,
+                            elapsedYearFraction = elapsedWallYearFraction,
+                            referenceLogReturn = optionStrategyAdvance?.productLogReturn
+                                ?: requireNotNull(benchmarkGrossLogReturn) {
+                                    "ETN에는 실행 가능한 옵션 또는 벤치마크 기준수익률이 필요합니다: ${stock.id}"
+                                },
+                            referenceCouponAccrualPerNote =
+                                optionStrategyAdvance?.grossPremiumReceived ?: 0.0,
+                            issuerCreditSpreadShock = spreadShock,
+                            issuerHazardRateShock = hazardShock,
+                            contractEvent = contractEvent,
+                            contractSettlementNotes = if (contractEvent != EtnCreditEvent.NONE) {
+                                previous.notesOutstanding
+                            } else {
+                                0L
+                            },
+                            contractualSettlementDeadlineReached = contractualMaturityReached,
+                            recordIndicativeValueObservation = venueCloseReached,
+                            creditEventRecoveryRate = dueTerminationTerms
+                                ?.accelerationRecoveryRate
+                                ?.takeIf { contractEvent == EtnCreditEvent.CREDIT_DEFAULT },
+                        ),
+                    )
+                }
+            val etnProductLogReturn = etnAdvance?.let { advance ->
+                val previous = etnStates.getValue(stock.id)
+                val terms = requireNotNull(productProfile.etnProductTerms)
+                val previousMarkedValue = etnCreditMarkedValue(
+                    state = previous,
+                    maturityDate = terms.maturityDate,
+                    valuationDate = marketDate(stock.market, from),
+                )
+                val nextMarkedValue = advance.ledgerEntries
+                    .lastOrNull { entry ->
+                        entry.kind == EtnLedgerKind.CONTRACT_SETTLEMENT &&
+                            entry.notesSettled > 0L
+                    }
+                    ?.let { entry ->
+                        entry.cashPaidToNoteholders / entry.notesSettled.toDouble()
+                    }
+                    ?: etnCreditMarkedValue(
+                        state = advance.state,
+                        maturityDate = terms.maturityDate,
+                        valuationDate = marketDate(stock.market, to),
+                    )
+                ln(nextMarkedValue.coerceAtLeast(ETN_MIN_MARKED_VALUE) / previousMarkedValue)
+            }
+            val closedEndFundAdvance = productProfile?.closedEndFundTerms
+                ?.takeIf { !matured && !listingState.isSettlementPending && !listingState.isTerminal }
+                ?.let { terms ->
+                    val previous = closedEndFundStates.getValue(stock.id)
+                    val parameters = requireNotNull(productProfile.closedEndFundMarketModelParameters)
+                    val referenceFraction = requireNotNull(fundReferenceFraction)
+                    val assetPriceLogReturn = benchmarkGrossLogReturn
+                        ?: priceEngine.coarseUnderlyingReferenceLogReturn(
+                            stock = stock,
+                            macro = macro,
+                            referenceTradingFraction = referenceFraction,
+                        )
+                    val annualIncomeYield = benchmarkAnnualIncomeYield ?: stock.dividendYield
+                    val incomeLogReturn = annualIncomeYield /
+                        REFERENCE_TRADING_HOURS_PER_YEAR * referenceFraction
+                    val grossInvestmentIncome = previous.grossAssets * incomeLogReturn
+                    ClosedEndFundEngine(terms, parameters).advance(
+                        state = previous,
+                        input = ClosedEndFundAdvanceInput(
+                            effectiveAt = to,
+                            elapsedYearFraction = elapsedWallYearFraction,
+                            assetTotalLogReturn = assetPriceLogReturn + incomeLogReturn,
+                            grossInvestmentIncome = grossInvestmentIncome,
+                            annualBorrowingRate = (
+                                macro.policyRate + parameters.annualBorrowingSpread
+                                ).coerceIn(0.0, 100.0),
+                            annualPreferredDistributionRate = (
+                                macro.policyRate + parameters.annualPreferredDistributionSpread
+                                ).coerceIn(0.0, 100.0),
+                            operatingExpenses = previous.grossAssets *
+                                requireNotNull(stock.etfProfile).annualExpenseRatio *
+                                elapsedWallYearFraction,
+                            realizedGainReserveChange = 0.0,
+                            marketDiscountShock = closedEndFundDiscountShock(
+                                stock = stock,
+                                state = previous,
+                                elapsedYearFraction = elapsedWallYearFraction,
+                                from = from,
+                                target = parameters.targetMarketDiscountRate,
+                                meanReversion = parameters.annualDiscountMeanReversionRate,
+                                annualVolatility = parameters.discountShockAnnualVolatility,
+                            ),
+                        ),
+                    )
+                }
+            val closedEndFundProductLogReturn = closedEndFundAdvance?.let { advance ->
+                ln(
+                    advance.state.marketPricePerCommonShare /
+                        closedEndFundStates.getValue(stock.id).marketPricePerCommonShare,
+                )
+            }
+            val productFairValueLogReturn = dailyResetAdvance?.productLogReturn
+                ?: etnProductLogReturn
+                ?: closedEndFundProductLogReturn
+                ?: cashCollateralizedPutSpreadProductLogReturn
+                ?: optionProductLogReturn
+            if (commit && dailyResetAdvance != null) {
+                dailyResetStates[stock.id] = dailyResetAdvance.state
+            }
+            if (commit && optionStrategyAdvance != null) {
+                optionStrategyStates[stock.id] = optionStrategyAdvance.state
+            }
+            if (commit && cashCollateralizedPutSpreadAdvance != null) {
+                cashCollateralizedPutSpreadStates[stock.id] =
+                    cashCollateralizedPutSpreadAdvance.state
+            }
+            if (commit && etnAdvance != null) {
+                val previous = etnStates.getValue(stock.id)
+                require(etnAdvance.previousRevision == previous.revision)
+                require(etnAdvance.ledgerEntries.none { next ->
+                    etnLedger.any { existing -> existing.id == next.id }
+                })
+                etnStates[stock.id] = etnAdvance.state
+                etnLedger += etnAdvance.ledgerEntries
+            }
+            if (commit && closedEndFundAdvance != null) {
+                val previous = closedEndFundStates.getValue(stock.id)
+                require(closedEndFundAdvance.previousRevision == previous.revision)
+                require(closedEndFundAdvance.ledgerEntries.none { next ->
+                    closedEndFundLedger.any { existing -> existing.id == next.id }
+                })
+                closedEndFundStates[stock.id] = closedEndFundAdvance.state
+                closedEndFundLedger += closedEndFundAdvance.ledgerEntries
+            }
             if (matured || !listingState.isTradable) {
                 stockTradingFractions[stock.id] = 0.0
                 if (commit && !matured && !listingState.isSettlementPending && !listingState.isTerminal) {
                     val haltedImpulse = EventShockCalculator.aggregate(turnEvents, stock, from, to)
                     val haltedReferenceReturn = if (stock.isFundLike) {
-                        val referenceFraction = regionalTradingFraction(
-                            requireNotNull(stock.etfProfile).exposureRegion,
-                            from,
-                            effectiveMarketFractions,
-                        )
                         priceEngine.referenceLogReturn(
                             stock = stock,
                             macro = macro,
-                            referenceTradingFraction = referenceFraction,
+                            referenceTradingFraction = requireNotNull(fundReferenceFraction),
                             fxTradingFraction = 1.0,
+                            basketGrossLogReturn = productFairValueLogReturn ?: basketGrossLogReturn,
                         ) + priceEngine.referenceEventLogReturn(stock, haltedImpulse) +
-                            priceEngine.referenceResidualLogReturn(
-                                stock = stock,
-                                startTime = from,
-                                macro = macro,
-                                eventImpulse = haltedImpulse,
-                                tradingFraction = effectiveMarketFractions.getValue(stock.market),
-                            ) +
-                            priceEngine.fundAccrualLogReturn(
-                                stock,
-                                ordinaryTradingFractions.getValue(stock.market),
-                            )
+                            if (benchmarkGrossLogReturn == null && productFairValueLogReturn == null) {
+                                priceEngine.referenceResidualLogReturn(
+                                    stock = stock,
+                                    startTime = from,
+                                    macro = macro,
+                                    eventImpulse = haltedImpulse,
+                                    tradingFraction = effectiveMarketFractions.getValue(stock.market),
+                                )
+                            } else {
+                                0.0
+                            } +
+                            if (productFairValueLogReturn == null) {
+                                priceEngine.fundAccrualLogReturn(
+                                    stock,
+                                    ordinaryTradingFractions.getValue(stock.market),
+                                    benchmarkAnnualIncomeYield,
+                                )
+                            } else {
+                                0.0
+                            }
                     } else {
                         priceEngine.referenceEventLogReturn(stock, haltedImpulse)
                     }
@@ -1908,11 +3336,40 @@ internal class SimulatorRuntime(
             } else {
                 fraction
             }
-            val totalReferenceFraction = stock.etfProfile?.let {
-                regionalTradingFraction(it.exposureRegion, from, effectiveMarketFractions)
-            } ?: fraction
+            val totalReferenceFraction = fundReferenceFraction ?: fraction
             val activeReferenceFraction = minOf(totalReferenceFraction, fairValueFraction)
             val closedReferenceFraction = (totalReferenceFraction - activeReferenceFraction).coerceIn(0.0, 1.0)
+            val managedReferenceLogReturn = productFairValueLogReturn ?: basketGrossLogReturn
+            val activeManagedReturn = managedReferenceLogReturn?.let { totalReturn ->
+                if (
+                    optionProductLogReturn != null ||
+                        cashCollateralizedPutSpreadProductLogReturn != null ||
+                        etnProductLogReturn != null ||
+                        closedEndFundProductLogReturn != null
+                ) {
+                    totalReturn * fairValueFraction
+                } else if (totalReferenceFraction == 0.0) {
+                    // Explicit reference engines may still accrue financing, borrow, FX or
+                    // implementation costs while the underlying exchange is closed.
+                    totalReturn * fairValueFraction
+                } else {
+                    totalReturn * activeReferenceFraction / totalReferenceFraction
+                }
+            }
+            val closedManagedReturn = managedReferenceLogReturn?.let { totalReturn ->
+                if (
+                    optionProductLogReturn != null ||
+                        cashCollateralizedPutSpreadProductLogReturn != null ||
+                        etnProductLogReturn != null ||
+                        closedEndFundProductLogReturn != null
+                ) {
+                    totalReturn * (1.0 - fairValueFraction)
+                } else if (totalReferenceFraction == 0.0) {
+                    totalReturn * (1.0 - fairValueFraction)
+                } else {
+                    totalReturn * closedReferenceFraction / totalReferenceFraction
+                }
+            }
             val closedFxFraction = (1.0 - fairValueFraction).coerceIn(0.0, 1.0)
             val previousCarry = if (fraction > 0.0) pendingEtfReferenceReturns[stock.id] ?: 0.0 else 0.0
             val previousEventCarry = if (fraction > 0.0) pendingClosedEventLogReturns[stock.id] ?: 0.0 else 0.0
@@ -1928,6 +3385,7 @@ internal class SimulatorRuntime(
                     macro = macro,
                     referenceTradingFraction = closedReferenceFraction,
                     fxTradingFraction = closedFxFraction,
+                    basketGrossLogReturn = closedManagedReturn,
                 )
             } else {
                 0.0
@@ -1950,10 +3408,11 @@ internal class SimulatorRuntime(
             } else {
                 0.0
             }
-            val closedFundAccrualReturn = if (stock.isFundLike) {
+            val closedFundAccrualReturn = if (stock.isFundLike && productFairValueLogReturn == null) {
                 priceEngine.fundAccrualLogReturn(
                     stock,
                     (ordinaryFraction - fairValueFraction).coerceIn(0.0, 1.0),
+                    benchmarkAnnualIncomeYield,
                 )
             } else {
                 0.0
@@ -1981,12 +3440,17 @@ internal class SimulatorRuntime(
                     ).coerceIn(-2.5, 2.5)
             }
             val firstRegularBar = fraction > 0.0 && !tracker.hasRegularTrading
-            val priceToReferenceLogGap = fundFinancialStates[stock.id]?.let { financialState ->
-                val referenceValue = if (stock.instrumentType == InstrumentType.ETN) {
-                    financialState.indicativeValuePerUnit
-                } else {
-                    financialState.navPerUnit
+            val currentReferenceValue = fundFinancialStates[stock.id]?.navPerUnit
+                ?: etnStates[stock.id]?.let { state ->
+                    val terms = requireNotNull(stock.fundProductProfile?.etnProductTerms)
+                    etnCreditMarkedValue(
+                        state = state,
+                        maturityDate = terms.maturityDate,
+                        valuationDate = marketDate(stock.market, from),
+                    )
                 }
+                ?: closedEndFundStates[stock.id]?.marketPricePerCommonShare
+            val priceToReferenceLogGap = currentReferenceValue?.let { referenceValue ->
                 ln(previousQuote.price / referenceValue)
             } ?: 0.0
             val result = priceEngine.generateHour(
@@ -2004,6 +3468,9 @@ internal class SimulatorRuntime(
                     regularTradingFraction = fraction,
                     fairValueTradingFraction = fairValueFraction,
                     referenceTradingFraction = activeReferenceFraction,
+                    basketGrossLogReturn = activeManagedReturn.takeIf { productFairValueLogReturn == null },
+                    productFairValueLogReturn = activeManagedReturn.takeIf { productFairValueLogReturn != null },
+                    basketAnnualIncomeYield = benchmarkAnnualIncomeYield,
                     carriedReferenceLogReturn = carriedReference,
                     carriedPriceDislocationLogReturn = carriedPriceDislocation,
                     priceToReferenceLogGap = priceToReferenceLogGap,
@@ -2011,35 +3478,75 @@ internal class SimulatorRuntime(
                 ),
             )
             priceAttributions[stock.id] = result.attribution
-            val effectiveBounds = if (commit) effectiveProtectionPriceBounds(stock, priceBounds[stock.id]) else null
-            val bar = effectiveBounds?.let { runtimeClampBarToBounds(result.bar, it) } ?: result.bar
+            // VI/LULD bounds constrain executable quotations. Applying them to a zero-fraction
+            // closed-session fair-value bar distorts an indicative value even though no trade can
+            // occur (notably sub-cent ETN values), so only clamp an actually executable interval.
+            val effectiveBounds = if (commit && fraction > 0.0) {
+                effectiveProtectionPriceBounds(stock, priceBounds[stock.id])
+            } else {
+                null
+            }
+            val bar = effectiveBounds?.let { runtimeClampBarToBounds(stock, result.bar, it) } ?: result.bar
             generatedBars[stock.id] = bar
             if (commit) {
-                val quote = if (bar == result.bar) {
+                val baseQuote = if (bar == result.bar) {
                     result.quote
                 } else {
                     result.quote.copy(
                         price = bar.close,
-                        open = if (firstRegularBar) bar.open else tracker.open,
-                        high = if (firstRegularBar) bar.high else maxOf(tracker.high, bar.high),
-                        low = if (firstRegularBar) bar.low else minOf(tracker.low, bar.low),
                         volume = bar.volume,
                     )
                 }
+                if (firstRegularBar) {
+                    tracker.open = bar.open
+                    tracker.hasRegularTrading = true
+                }
+                // Product fair value can move while the listing is closed. The persisted quote,
+                // bar and next hour's PriceGenerationInput must still share one containing daily
+                // range; only the executed-session open flag is conditional on actual trading.
+                tracker.high = maxOf(
+                    tracker.high,
+                    tracker.open,
+                    bar.high,
+                    baseQuote.price,
+                )
+                tracker.low = minOf(
+                    tracker.low,
+                    tracker.open,
+                    bar.low,
+                    baseQuote.price,
+                )
+                val quote = baseQuote.copy(
+                    price = bar.close,
+                    open = tracker.open,
+                    high = tracker.high,
+                    low = tracker.low,
+                    volume = bar.volume,
+                )
                 quotes[stock.id] = quote
                 appendHistory(stock.id, bar)
-                if (fraction > 0.0) {
-                    if (firstRegularBar) {
-                        tracker.open = bar.open
-                        tracker.high = bar.high
-                        tracker.low = bar.low
-                        tracker.hasRegularTrading = true
-                    } else {
-                        tracker.high = maxOf(tracker.high, bar.high)
-                        tracker.low = minOf(tracker.low, bar.low)
-                    }
-                }
             }
+        }
+        if (commit && referencePortfolioAdvance != null) {
+            commitReferencePortfolioAdvance(referencePortfolioAdvance)
+        }
+        if (commit && equityReferenceAdvance != null) {
+            commitEquityReferenceAdvance(equityReferenceAdvance)
+        }
+        if (commit && fundOfFundsAdvance != null) {
+            commitFundOfFundsAdvance(fundOfFundsAdvance)
+        }
+        if (commit && alternativeRiskPremiaAdvance != null) {
+            commitAlternativeRiskPremiaAdvance(alternativeRiskPremiaAdvance)
+        }
+        if (commit && compositeReferenceAdvance != null) {
+            commitCompositeReferenceAdvance(compositeReferenceAdvance)
+        }
+        if (commit && fixedIncomeReferenceAdvance != null) {
+            commitFixedIncomeReferenceAdvance(fixedIncomeReferenceAdvance)
+        }
+        if (commit && commodityReferenceAdvance != null) {
+            commitCommodityReferenceAdvance(commodityReferenceAdvance)
         }
         return TurnGenerationResult(
             bars = generatedBars,
@@ -2047,6 +3554,395 @@ internal class SimulatorRuntime(
             stockFirstExecutionTimes = stockFirstExecutionTimes,
             priceAttributions = priceAttributions,
         )
+    }
+
+    private fun commitReferencePortfolioAdvance(advance: ReferencePortfolioBookAdvance) {
+        require(advance.book.states.keys == referencePortfolioStates.keys)
+        val recordsByPortfolioId = advance.records.associateBy(ReferencePortfolioRecord::portfolioId)
+        for ((portfolioId, next) in advance.book.states) {
+            val previous = referencePortfolioStates.getValue(portfolioId)
+            val record = recordsByPortfolioId[portfolioId]
+            require(next.asOf >= previous.asOf) { "기준 포트폴리오 시각은 뒤로 이동할 수 없습니다." }
+            if (record == null) {
+                require(next.revision == previous.revision) {
+                    "재조정 원장 없이 기준 포트폴리오 revision을 변경할 수 없습니다."
+                }
+            } else {
+                require(next.revision == previous.revision + 1L && record.revision == next.revision) {
+                    "기준 포트폴리오 revision과 재조정 원장이 연속되지 않습니다."
+                }
+                require(
+                    record.portfolioId == next.portfolioId &&
+                        record.benchmarkRef == next.benchmarkRef &&
+                        record.effectiveDate == next.lastRebalanceDate &&
+                        record.resultingConstituentCount == next.positions.size &&
+                        abs(record.turnoverRate - next.lastTurnoverRate) <=
+                        ReferencePortfolioState.WEIGHT_EPSILON,
+                ) { "기준 포트폴리오 상태와 재조정 원장의 계보가 일치하지 않습니다." }
+                require(referencePortfolioLedger.none { it.id == record.id }) {
+                    "같은 기준 포트폴리오 재조정 원장을 두 번 기록할 수 없습니다."
+                }
+            }
+        }
+        referencePortfolioStates.clear()
+        referencePortfolioStates.putAll(advance.book.states)
+        referencePortfolioLedger += advance.records
+    }
+
+    private fun commitEquityReferenceAdvance(advance: EquityReferenceBookAdvance) {
+        require(advance.book.states.keys == equityReferenceStates.keys)
+        val recordsByRef = advance.rebalanceRecords.associateBy(EquityReferenceRebalanceRecord::benchmarkRef)
+        require(recordsByRef.size == advance.rebalanceRecords.size) {
+            "같은 시간에 하나의 일반 주식 benchmark를 두 번 재조정할 수 없습니다."
+        }
+        for ((benchmarkRef, next) in advance.book.states) {
+            val previous = equityReferenceStates.getValue(benchmarkRef)
+            val record = recordsByRef[benchmarkRef]
+            require(next.asOf == advance.book.asOf && next.asOf > previous.asOf) {
+                "일반 주식 기준 바스켓 시각은 매 tick 앞으로 이동해야 합니다."
+            }
+            if (record == null) {
+                require(next.revision == previous.revision) {
+                    "재조정 원장 없이 일반 주식 기준 revision을 변경할 수 없습니다."
+                }
+            } else {
+                val actionDate = when (record.kind) {
+                    com.amond.kmpbook.domain.model.reference.EquityReferenceActionKind.RECONSTITUTION ->
+                        next.lastSelectionDate
+                    com.amond.kmpbook.domain.model.reference.EquityReferenceActionKind.REWEIGHT ->
+                        next.lastReweightDate
+                }
+                require(
+                    next.revision == previous.revision + 1L &&
+                        record.revision == next.revision &&
+                        record.benchmarkRef == benchmarkRef &&
+                        record.selectionDate == actionDate &&
+                        record.effectiveAt == next.asOf &&
+                        record.compositionHashAfter == next.compositionHash &&
+                        record.resultingPositionCount == next.positions.size &&
+                        record.representedConstituentCount ==
+                        next.positions.sumOf { position -> position.representedConstituentCount },
+                ) { "일반 주식 기준 상태와 재조정 원장의 계보가 일치하지 않습니다." }
+                require(equityReferenceLedger.none { existing -> existing.id == record.id }) {
+                    "같은 일반 주식 기준 재조정 원장을 두 번 기록할 수 없습니다."
+                }
+            }
+        }
+        equityReferenceStates.clear()
+        equityReferenceStates.putAll(advance.book.states)
+        equityReferenceLedger += advance.rebalanceRecords
+    }
+
+    private fun commitFundOfFundsAdvance(advance: FundOfFundsBookAdvance) {
+        require(advance.book.states.keys == fundOfFundsStates.keys)
+        val recordsByRef = advance.rebalanceRecords.associateBy(FundOfFundsRebalanceRecord::benchmarkRef)
+        require(recordsByRef.size == advance.rebalanceRecords.size) {
+            "같은 시간에 하나의 펀드오브펀드 benchmark를 두 번 재조정할 수 없습니다."
+        }
+        for ((benchmarkRef, next) in advance.book.states) {
+            val previous = fundOfFundsStates.getValue(benchmarkRef)
+            val record = recordsByRef[benchmarkRef]
+            require(next.asOf == advance.book.asOf && next.asOf > previous.asOf) {
+                "펀드오브펀드 기준 바스켓 시각은 매 tick 앞으로 이동해야 합니다."
+            }
+            require(next.positions.all { position ->
+                fundOfFundsBookEngine.hasCanonicalCandidate(next.universe, position)
+            }) { "펀드오브펀드 상태에 canonical 후보군 밖의 종목이 포함되었습니다." }
+            if (record == null) {
+                require(next.revision == previous.revision) {
+                    "재조정 원장 없이 펀드오브펀드 revision을 변경할 수 없습니다."
+                }
+            } else {
+                val actionDate = when (record.kind) {
+                    com.amond.kmpbook.domain.model.reference.FundOfFundsActionKind.RECONSTITUTION ->
+                        next.lastSelectionDate
+                    com.amond.kmpbook.domain.model.reference.FundOfFundsActionKind.REWEIGHT ->
+                        next.lastReweightDate
+                }
+                require(
+                    next.revision == previous.revision + 1L &&
+                        record.revision == next.revision &&
+                        record.benchmarkRef == benchmarkRef &&
+                        record.effectiveDate == actionDate &&
+                        record.effectiveAt == next.asOf &&
+                        record.compositionHashAfter == next.compositionHash &&
+                        record.resultingFundCount == next.positions.size,
+                ) { "펀드오브펀드 상태와 재조정 원장의 계보가 일치하지 않습니다." }
+                require(fundOfFundsRebalanceLedger.none { existing -> existing.id == record.id }) {
+                    "같은 펀드오브펀드 재조정 원장을 두 번 기록할 수 없습니다."
+                }
+            }
+        }
+        fundOfFundsStates.clear()
+        fundOfFundsStates.putAll(advance.book.states)
+        fundOfFundsRebalanceLedger += advance.rebalanceRecords
+    }
+
+    private fun reconcileStructuredSourceAvailability(at: Instant) {
+        if (alternativeRiskPremiaStates.isNotEmpty()) {
+            commitAlternativeRiskPremiaAdvance(
+                advance = alternativeRiskPremiaBookEngine.reconcileAvailability(
+                    book = AlternativeRiskPremiaBook(alternativeRiskPremiaStates.toMap()),
+                    definitions = alternativeRiskPremiaBenchmarkDefinitions,
+                    sourceSnapshot = currentReferenceSourceSnapshot(),
+                    at = at,
+                ),
+                sameAsOfReconciliation = true,
+            )
+        }
+        if (compositeReferenceStates.isNotEmpty()) {
+            // ALT가 같은 시각에 직접 기초종목을 현금으로 치환했다면 그 결과의 소득률·듀레이션을
+            // 다시 읽어 ALT를 기초로 쓰는 복합 기준에도 한 tick 지연 없이 전파한다.
+            commitCompositeReferenceAdvance(
+                advance = compositeReferenceBookEngine.reconcileAvailability(
+                    book = CompositeReferenceBook(compositeReferenceStates.toMap()),
+                    definitions = compositeReferenceBenchmarkDefinitions,
+                    sourceSnapshot = currentReferenceSourceSnapshot(),
+                    at = at,
+                ),
+                sameAsOfReconciliation = true,
+            )
+        }
+    }
+
+    private fun commitAlternativeRiskPremiaAdvance(
+        advance: AlternativeRiskPremiaBookAdvance,
+        sameAsOfReconciliation: Boolean = false,
+    ) {
+        require(advance.book.states.keys == alternativeRiskPremiaStates.keys)
+        val recordsByRef = advance.rebalanceRecords.associateBy(
+            AlternativeRiskPremiaRebalanceRecord::benchmarkRef,
+        )
+        require(recordsByRef.size == advance.rebalanceRecords.size) {
+            "같은 시간에 하나의 대체위험 프리미엄 기준을 두 번 재조정할 수 없습니다."
+        }
+        for ((benchmarkRef, next) in advance.book.states) {
+            val previous = alternativeRiskPremiaStates.getValue(benchmarkRef)
+            val record = recordsByRef[benchmarkRef]
+            require(
+                next.asOf == advance.book.asOf &&
+                    if (sameAsOfReconciliation) next.asOf == previous.asOf else next.asOf > previous.asOf,
+            )
+            if (sameAsOfReconciliation && record != null) {
+                require(record.kind == AlternativeRiskPremiaActionKind.EXTRAORDINARY_SOURCE_TO_CASH)
+            }
+            if (record == null) {
+                require(next.revision == previous.revision &&
+                    next.compositionHash == previous.compositionHash
+                ) { "원장 없이 대체위험 프리미엄 목표 노출을 변경할 수 없습니다." }
+            } else {
+                val definition = requireNotNull(instrumentCatalog.findBenchmark(benchmarkRef))
+                val expectedActionDate = when (record.kind) {
+                    AlternativeRiskPremiaActionKind.REWEIGHT -> next.lastReweightDate
+                    AlternativeRiskPremiaActionKind.EXTRAORDINARY_SOURCE_TO_CASH ->
+                        marketDate(
+                            if (definition.baseCurrency == ReferenceCurrency.KRW) {
+                                Market.KOSPI
+                            } else {
+                                Market.NYSE
+                            },
+                            record.effectiveAt,
+                        )
+                }
+                val effectiveAtIsValid = when (record.kind) {
+                    AlternativeRiskPremiaActionKind.REWEIGHT ->
+                        record.effectiveAt > previous.asOf && record.effectiveAt <= next.asOf
+                    AlternativeRiskPremiaActionKind.EXTRAORDINARY_SOURCE_TO_CASH ->
+                        record.effectiveAt == previous.asOf
+                }
+                require(
+                    next.revision == previous.revision + 1L &&
+                        record.revision == next.revision &&
+                        record.benchmarkRef == benchmarkRef &&
+                        record.effectiveDate == expectedActionDate &&
+                        effectiveAtIsValid &&
+                        record.compositionHashBefore == previous.compositionHash &&
+                        record.compositionHashAfter == next.compositionHash &&
+                        abs(record.resultingGrossExposure - next.grossExposure) <= PRICE_EPSILON &&
+                        abs(record.resultingNetExposure - next.netExposure) <= PRICE_EPSILON &&
+                        abs(record.resultingDurationYears - next.effectiveDurationYears) <= PRICE_EPSILON,
+                ) { "대체위험 프리미엄 상태와 재조정 원장의 계보가 일치하지 않습니다." }
+                require(alternativeRiskPremiaRebalanceLedger.none { existing -> existing.id == record.id })
+            }
+        }
+        alternativeRiskPremiaStates.clear()
+        alternativeRiskPremiaStates.putAll(advance.book.states)
+        alternativeRiskPremiaRebalanceLedger += advance.rebalanceRecords
+        if (sameAsOfReconciliation && advance.rebalanceRecords.isNotEmpty()) {
+            alternativeRiskPremiaRebalanceLedger.sortWith(
+                compareBy<AlternativeRiskPremiaRebalanceRecord>(
+                    AlternativeRiskPremiaRebalanceRecord::effectiveAt,
+                ).thenBy(AlternativeRiskPremiaRebalanceRecord::benchmarkRef)
+                    .thenBy(AlternativeRiskPremiaRebalanceRecord::revision),
+            )
+        }
+    }
+
+    private fun commitCompositeReferenceAdvance(
+        advance: CompositeReferenceBookAdvance,
+        sameAsOfReconciliation: Boolean = false,
+    ) {
+        require(advance.book.states.keys == compositeReferenceStates.keys)
+        val recordsByRef = advance.rebalanceRecords.associateBy(
+            CompositeReferenceRebalanceRecord::benchmarkRef,
+        )
+        require(recordsByRef.size == advance.rebalanceRecords.size) {
+            "같은 시간에 하나의 복합 기준을 두 번 재조정할 수 없습니다."
+        }
+        for ((benchmarkRef, next) in advance.book.states) {
+            val previous = compositeReferenceStates.getValue(benchmarkRef)
+            val record = recordsByRef[benchmarkRef]
+            require(
+                next.asOf == advance.book.asOf &&
+                    if (sameAsOfReconciliation) next.asOf == previous.asOf else next.asOf > previous.asOf,
+            )
+            if (sameAsOfReconciliation && record != null) {
+                require(record.kind == CompositeReferenceActionKind.EXTRAORDINARY_SOURCE_TO_CASH)
+            }
+            if (record == null) {
+                require(next.revision == previous.revision &&
+                    next.compositionHash == previous.compositionHash
+                ) { "원장 없이 복합 기준 목표 비중을 변경할 수 없습니다." }
+            } else {
+                val actionDate = when (record.kind) {
+                    CompositeReferenceActionKind.SELECTION ->
+                        next.lastSelectionDate
+                    CompositeReferenceActionKind.REWEIGHT ->
+                        next.lastReweightDate
+                    CompositeReferenceActionKind.EXTRAORDINARY_SOURCE_TO_CASH -> {
+                        val definition = requireNotNull(instrumentCatalog.findBenchmark(benchmarkRef))
+                        marketDate(
+                            if (definition.baseCurrency == ReferenceCurrency.KRW) {
+                                Market.KOSPI
+                            } else {
+                                Market.NYSE
+                            },
+                            record.effectiveAt,
+                        )
+                    }
+                }
+                val effectiveAtIsValid = when (record.kind) {
+                    CompositeReferenceActionKind.SELECTION,
+                    CompositeReferenceActionKind.REWEIGHT,
+                    -> record.effectiveAt > previous.asOf && record.effectiveAt <= next.asOf
+                    CompositeReferenceActionKind.EXTRAORDINARY_SOURCE_TO_CASH ->
+                        record.effectiveAt == previous.asOf
+                }
+                require(
+                    next.revision == previous.revision + 1L &&
+                        record.revision == next.revision &&
+                        record.benchmarkRef == benchmarkRef &&
+                        record.effectiveDate == actionDate &&
+                        effectiveAtIsValid &&
+                        record.compositionHashBefore == previous.compositionHash &&
+                        record.compositionHashAfter == next.compositionHash &&
+                        abs(record.resultingGrossExposure - next.grossExposure) <= PRICE_EPSILON &&
+                        abs(record.resultingNetExposure - next.netExposure) <= PRICE_EPSILON &&
+                        abs(record.resultingDurationYears - next.effectiveDurationYears) <= PRICE_EPSILON,
+                ) { "복합 기준 상태와 재조정 원장의 계보가 일치하지 않습니다." }
+                require(compositeReferenceRebalanceLedger.none { existing -> existing.id == record.id })
+            }
+        }
+        compositeReferenceStates.clear()
+        compositeReferenceStates.putAll(advance.book.states)
+        compositeReferenceRebalanceLedger += advance.rebalanceRecords
+        if (sameAsOfReconciliation && advance.rebalanceRecords.isNotEmpty()) {
+            compositeReferenceRebalanceLedger.sortWith(
+                compareBy<CompositeReferenceRebalanceRecord>(
+                    CompositeReferenceRebalanceRecord::effectiveAt,
+                ).thenBy(CompositeReferenceRebalanceRecord::benchmarkRef)
+                    .thenBy(CompositeReferenceRebalanceRecord::revision),
+            )
+        }
+    }
+
+    private fun commitFixedIncomeReferenceAdvance(advance: FixedIncomeReferenceBookAdvance) {
+        val previousByRef = fixedIncomeReferenceStates.values.associateBy(
+            FixedIncomeReferenceState::benchmarkRef,
+        )
+        require(advance.book.states.keys == previousByRef.keys)
+        val recordsByRef = advance.rollRecords.associateBy(FixedIncomeRollRecord::benchmarkRef)
+        for ((benchmarkRef, next) in advance.book.states) {
+            val previous = previousByRef.getValue(benchmarkRef)
+            val record = recordsByRef[benchmarkRef]
+            require(next.asOf >= previous.asOf) {
+                "고정수익 기준 포트폴리오 시각은 뒤로 이동할 수 없습니다."
+            }
+            if (record == null) {
+                require(next.revision == previous.revision) {
+                    "만기 교체 원장 없이 고정수익 revision을 변경할 수 없습니다."
+                }
+            } else {
+                require(next.revision == previous.revision + 1L && record.revision == next.revision) {
+                    "고정수익 revision과 만기 교체 원장이 연속되지 않습니다."
+                }
+                val previousIds = previous.positions.mapTo(linkedSetOf()) { it.assetId }
+                val nextIds = next.positions.mapTo(linkedSetOf()) { it.assetId }
+                require(
+                    record.benchmarkRef == benchmarkRef &&
+                        record.effectiveAt == next.asOf &&
+                        record.removedAssetIds.all(previousIds::contains) &&
+                        record.addedAssetIds.all(nextIds::contains) &&
+                        nextIds == previousIds - record.removedAssetIds.toSet() +
+                        record.addedAssetIds.toSet(),
+                ) { "고정수익 상태와 만기 교체 원장의 계보가 일치하지 않습니다." }
+                require(fixedIncomeRollLedger.none { it.id == record.id }) {
+                    "같은 고정수익 만기 교체 원장을 두 번 기록할 수 없습니다."
+                }
+            }
+        }
+        fixedIncomeReferenceStates.clear()
+        advance.book.states.values.forEach { next ->
+            fixedIncomeReferenceStates[next.referenceId] = next
+        }
+        fixedIncomeRollLedger += advance.rollRecords
+    }
+
+    private fun commitCommodityReferenceAdvance(advance: CommodityReferenceBookAdvance) {
+        require(advance.book.spotStates.keys == commoditySpotReferenceStates.keys)
+        require(advance.book.futuresStates.keys == futuresReferenceStates.keys)
+        val rollRecordsByRef = advance.futuresRollRecords.groupBy(FuturesRollRecord::benchmarkRef)
+        val allocationRecordsByRef =
+            advance.futuresAllocationRecords.groupBy(FuturesAllocationRecord::benchmarkRef)
+        advance.book.spotStates.forEach { (benchmarkRef, next) ->
+            val previous = commoditySpotReferenceStates.getValue(benchmarkRef)
+            require(next.asOf > previous.asOf) {
+                "원자재 현물 benchmark 시각은 매 tick 앞으로 이동해야 합니다."
+            }
+        }
+        advance.book.futuresStates.forEach { (benchmarkRef, next) ->
+            val previous = futuresReferenceStates.getValue(benchmarkRef)
+            require(next.asOf > previous.asOf) {
+                "선물 benchmark 시각은 매 tick 앞으로 이동해야 합니다."
+            }
+            val newRolls = rollRecordsByRef[benchmarkRef].orEmpty()
+            val newAllocations = allocationRecordsByRef[benchmarkRef].orEmpty()
+            val revisions = (newRolls.map(FuturesRollRecord::revision) +
+                newAllocations.map(FuturesAllocationRecord::revision)).distinct().sorted()
+            if (revisions.isEmpty()) {
+                require(next.revision == previous.revision) {
+                    "선물 원장 없이 benchmark revision을 변경할 수 없습니다."
+                }
+            } else {
+                require(revisions.first() == previous.revision + 1L)
+                require(revisions.zipWithNext().all { (before, after) -> after == before + 1L })
+                require(next.revision == revisions.last()) {
+                    "선물 상태 revision과 roll·배분 원장의 마지막 revision이 다릅니다."
+                }
+            }
+        }
+        require(advance.futuresRollRecords.none { next ->
+            futuresRollLedger.any { existing -> existing.id == next.id }
+        }) { "같은 선물 roll 원장을 두 번 기록할 수 없습니다." }
+        require(advance.futuresAllocationRecords.none { next ->
+            futuresAllocationLedger.any { existing -> existing.id == next.id }
+        }) { "같은 선물 배분 원장을 두 번 기록할 수 없습니다." }
+        commoditySpotReferenceStates.clear()
+        commoditySpotReferenceStates.putAll(advance.book.spotStates)
+        futuresReferenceStates.clear()
+        futuresReferenceStates.putAll(advance.book.futuresStates)
+        futuresRollLedger += advance.futuresRollRecords
+        futuresAllocationLedger += advance.futuresAllocationRecords
     }
 
     private fun advanceFundFinancialStates(
@@ -2115,7 +4011,7 @@ internal class SimulatorRuntime(
         }
         tradingProtectionSnapshot.usLuldStates[stock.id]?.bands?.let { bands ->
             val luldBounds = RuntimePriceBounds(
-                lower = bands.lower.coerceAtLeast(0.01),
+                lower = bands.lower,
                 upper = bands.upper,
             )
             result = result?.merge(luldBounds) ?: luldBounds
@@ -2131,7 +4027,12 @@ internal class SimulatorRuntime(
                 stockById[action.stockId]?.let { regularTradingFraction(it.market, from, to) > 0.0 } == true
         }
         for (action in due) {
-            applyCorporateAction(action, from)
+            val stock = stockById.getValue(action.stockId)
+            if (isCorporateActionProductStateEligible(stock)) {
+                applyCorporateAction(action, from)
+            } else {
+                cancelPendingCorporateActionForProductState(action, stock, from)
+            }
             pendingCorporateActions.removeAll { it.id == action.id }
         }
     }
@@ -2146,7 +4047,12 @@ internal class SimulatorRuntime(
                 stockById[action.stockId]?.let { regularTradingFraction(it.market, at, next) > 0.0 } == true
         }
         for (action in due) {
-            applyCorporateAction(action, at)
+            val stock = stockById.getValue(action.stockId)
+            if (isCorporateActionProductStateEligible(stock)) {
+                applyCorporateAction(action, at)
+            } else {
+                cancelPendingCorporateActionForProductState(action, stock, at)
+            }
             pendingCorporateActions.removeAll { it.id == action.id }
         }
     }
@@ -2325,7 +4231,7 @@ internal class SimulatorRuntime(
                 otcTransferAvailable = otcTransferAvailable,
                 liquidationCashPerUnit = terminationNotice?.takeIf {
                     dispositionHint == ListingFinalDispositionType.CASH_LIQUIDATION
-                }?.let { notice -> listingLiquidationUnitPrice(stock, notice.terms, quote.price) },
+                }?.let { notice -> listingLiquidationUnitPrice(stock, notice.terms) },
                 controllingTerminationOccurrenceId = terminationNotice?.event?.id,
                 controllingTerminationNoticePriority = terminationNotice?.terms?.kind?.noticePriority,
                 controllingTerminationRawEffectiveOn = terminationDecision?.rawEffectiveOn,
@@ -2394,25 +4300,47 @@ internal class SimulatorRuntime(
     private fun listingLiquidationUnitPrice(
         stock: StockDefinition,
         terms: InstrumentTerminationTerms,
-        closingPrice: Double,
     ): Double = when (terms.valuationMethod) {
-        InstrumentTerminationValuationMethod.FINAL_INDICATIVE_VALUE_PROXY,
-        InstrumentTerminationValuationMethod.FINAL_NET_ASSET_VALUE_PROXY,
-        -> closingPrice.coerceAtLeast(0.0)
-        InstrumentTerminationValuationMethod.TRAILING_FIVE_SESSION_AVERAGE_WITH_RECOVERY -> {
-            val indicativeValueProxy = history.getValue(stock.id)
-                .asSequence()
-                .filter { it.volume > 0L }
-                .groupBy { marketDate(stock.market, it.endTime) }
-                .toSortedMap()
-                .values
-                .map { it.last().close }
-                .takeLast(5)
-                .takeIf { it.isNotEmpty() }
-                ?.average()
-                ?: closingPrice
-            indicativeValueProxy * requireNotNull(terms.accelerationRecoveryRate)
+        InstrumentTerminationValuationMethod.ETN_CONTRACT_SETTLEMENT,
+        InstrumentTerminationValuationMethod.ETN_CREDIT_DEFAULT_RECOVERY,
+        -> {
+            val expectedEvent = when (terms.kind) {
+                InstrumentTerminationKind.CONTRACTUAL_MATURITY ->
+                    EtnCreditEvent.CONTRACTUAL_MATURITY
+                InstrumentTerminationKind.CREDIT_DEFAULT -> EtnCreditEvent.CREDIT_DEFAULT
+                InstrumentTerminationKind.ISSUER_ACCELERATION ->
+                    EtnCreditEvent.ISSUER_ACCELERATION
+                InstrumentTerminationKind.OPTIONAL_CALL -> EtnCreditEvent.ISSUER_CALL
+                InstrumentTerminationKind.FUND_LIQUIDATION ->
+                    error("펀드 청산에는 ETN 평가 방식을 사용할 수 없습니다.")
+            }
+            val contractualSettlement = etnLedger.lastOrNull { entry ->
+                entry.productId == stock.id &&
+                    entry.kind == EtnLedgerKind.CONTRACT_SETTLEMENT &&
+                    entry.notesSettled > 0L &&
+                    entry.contractEvent == expectedEvent
+            }
+            contractualSettlement?.let { entry ->
+                entry.cashPaidToNoteholders / entry.notesSettled.toDouble()
+            } ?: requireNotNull(etnStates[stock.id]) {
+                "ETN 최종 지표가치에는 계약 상태가 필요합니다: ${stock.id}"
+            }.let { state ->
+                val contractualClaim =
+                    state.feeAdjustedIndicativeValuePerNote + state.accruedCouponPerNote
+                if (terms.valuationMethod ==
+                    InstrumentTerminationValuationMethod.ETN_CREDIT_DEFAULT_RECOVERY
+                ) {
+                    contractualClaim * requireNotNull(terms.accelerationRecoveryRate)
+                } else {
+                    contractualClaim
+                }
+            }
         }
+        InstrumentTerminationValuationMethod.FINAL_NET_ASSET_VALUE ->
+            closedEndFundStates[stock.id]?.navPerCommonShare
+                ?: requireNotNull(fundFinancialStates[stock.id]) {
+                    "펀드 최종 순자산가치에는 NAV 상태가 필요합니다: ${stock.id}"
+                }.navPerUnit
     }.coerceAtLeast(0.0)
 
     private fun evaluateListingRemediation(
@@ -3538,6 +5466,7 @@ internal class SimulatorRuntime(
 
     /** ETN처럼 계약상 만기가 있는 상품은 사전 알림과 실제 상환을 캠페인 원장에 남긴다. */
     private fun processInstrumentLifecycle(at: Instant) {
+        announceDirectUnderlyingFundLiquidations(at)
         for (stock in stocks) {
             if (stock.instrumentType != InstrumentType.ETN) continue
             if (listingLifecycleStates.getValue(stock.id).isTerminal) continue
@@ -3582,12 +5511,157 @@ internal class SimulatorRuntime(
                 instrumentTermination = InstrumentTerminationTerms(
                     kind = InstrumentTerminationKind.CONTRACTUAL_MATURITY,
                     contractualDate = maturity,
-                    valuationMethod = InstrumentTerminationValuationMethod.FINAL_INDICATIVE_VALUE_PROXY,
+                    valuationMethod =
+                        InstrumentTerminationValuationMethod.ETN_CONTRACT_SETTLEMENT,
                 ),
             )
             newsEvents += event
         }
     }
+
+    /**
+     * 단일 기업을 직접 기초로 삼는 상품은 그 기업의 청산·상장 종료 뒤에도 유령 가격으로
+     * 계속 운용될 수 없다. 기초기업이 지수 적격성을 잃은 첫 경계에서 상품 청산 공시를
+     * 확정해, 기존 상장 생명주기 엔진이 다음 거래소 종가의 최종 NAV와 현금 분배를 맡는다.
+     *
+     * 복합 기준의 일부 직접 편입 종목은 별도 source-to-cash 원장으로 처리하므로 여기에는
+     * 상품 수익 전체를 직접 지배하는 daily-reset/option reference만 포함한다.
+     */
+    private fun announceDirectUnderlyingFundLiquidations(at: Instant) {
+        for (stock in stocks) {
+            val listingState = listingLifecycleStates.getValue(stock.id)
+            if (listingState.isSettlementPending || listingState.isTerminal) continue
+            val directUnderlyingIds = directLiquidatingUnderlyingIds(stock)
+            if (directUnderlyingIds.isEmpty()) continue
+            val unavailableUnderlyingIds = directUnderlyingIds.filter { underlyingId ->
+                listingLifecycleStates[underlyingId]?.isIndexEligible == false
+            }
+            if (unavailableUnderlyingIds.isEmpty()) continue
+            announceDirectUnderlyingFundLiquidation(
+                stock = stock,
+                underlyingIds = unavailableUnderlyingIds,
+                announcedAt = at,
+                effectiveNotBefore = at,
+            )
+        }
+    }
+
+    /**
+     * 같은 거래소 종가에서 기초기업과 단일종목 상품을 함께 종료할 수 있도록, 이미 발표된
+     * 기초기업 종료 공시 또는 확정된 상장폐지 일정을 가격 계산 전에 상품 공시로 전파한다.
+     * 이 경계가 있어 옵션형 상품도 마지막 NAV를 확정하는 종가에 새 주기를 열지 않는다.
+     */
+    private fun announceDueDirectUnderlyingFundLiquidations(from: Instant, to: Instant) {
+        val dueUnderlyingCloseById = directlyReferencedInstrumentIds.mapNotNull { underlyingId ->
+            val underlying = stockById.getValue(underlyingId)
+            val lifecycle = listingLifecycleStates.getValue(underlyingId)
+            if (!lifecycle.isIndexEligible) return@mapNotNull underlyingId to from
+            val date = marketDate(underlying.market, from)
+            val closeAt = GameCalendar.regularSessionWindow(
+                underlying.market,
+                date,
+                runtimeClosedDates(underlying.market, date),
+            )?.closesAt ?: return@mapNotNull null
+            if (closeAt <= from || closeAt > to) return@mapNotNull null
+            val scheduledByListing =
+                lifecycle.status == ListingLifecycleStatus.DELISTING_SCHEDULED &&
+                    lifecycle.scheduledDelistingOn?.let { scheduledOn ->
+                        nextTradingDateOnOrAfter(underlying.market, scheduledOn) == date
+                    } == true
+            val scheduledByTerminationOn = resolveInstrumentTerminationAtSessionClose(
+                stock = underlying,
+                events = newsEvents,
+                evaluatedOn = date,
+                incumbentOccurrenceId = lifecycle.controllingTerminationOccurrenceId,
+            )?.scheduledTerminationOn
+            val scheduledByTermination = scheduledByTerminationOn?.let { scheduledOn ->
+                nextTradingDateOnOrAfter(underlying.market, scheduledOn) == date
+            } == true
+            underlyingId.takeIf { scheduledByListing || scheduledByTermination }?.let { it to closeAt }
+        }.toMap()
+        if (dueUnderlyingCloseById.isEmpty()) return
+
+        for (stock in stocks) {
+            val listingState = listingLifecycleStates.getValue(stock.id)
+            if (listingState.isSettlementPending || listingState.isTerminal) continue
+            val directIds = directLiquidatingUnderlyingIds(stock)
+            val dueIds = directIds.filter(dueUnderlyingCloseById::containsKey)
+            if (dueIds.isEmpty()) continue
+            announceDirectUnderlyingFundLiquidation(
+                stock = stock,
+                underlyingIds = dueIds,
+                announcedAt = from,
+                effectiveNotBefore = dueIds.maxOf(dueUnderlyingCloseById::getValue),
+            )
+        }
+    }
+
+    private fun directLiquidatingUnderlyingIds(stock: StockDefinition): List<String> {
+        val product = stock.fundProductProfile ?: return emptyList()
+        return buildSet {
+            listOfNotNull(
+                product.dailyResetTerms?.let { terms ->
+                    terms.reference to terms.directReferenceTerminationRule
+                },
+                product.optionStrategyTerms?.let { terms ->
+                    terms.reference to terms.directReferenceTerminationRule
+                },
+                product.cashCollateralizedPutSpreadTerms?.let { terms ->
+                    terms.optionReference to terms.directReferenceTerminationRule
+                },
+            ).forEach { (reference, rule) ->
+                if (reference.kind != DailyResetReferenceKind.INSTRUMENT) return@forEach
+                when (requireNotNull(rule).policy) {
+                    DirectReferenceTerminationPolicy.LIQUIDATE_AT_NEXT_VENUE_CLOSE ->
+                        add(requireNotNull(reference.instrumentId))
+                }
+            }
+        }.toList().sorted()
+    }
+
+    private fun announceDirectUnderlyingFundLiquidation(
+        stock: StockDefinition,
+        underlyingIds: List<String>,
+        announcedAt: Instant,
+        effectiveNotBefore: Instant,
+    ) {
+        val sortedIds = underlyingIds.sorted().distinct()
+        val eventId = "direct-underlying-liquidation:${stock.id}:${sortedIds.joinToString("+")}"
+        if (newsEvents.any { event -> event.id == eventId }) return
+        val unavailableNames = sortedIds.joinToString(", ") { underlyingId ->
+            stockById.getValue(underlyingId).name
+        }
+        newsEvents += GameEvent(
+            id = eventId,
+            title = "${stock.name} 기초자산 종료에 따른 청산 절차",
+            description =
+                "$unavailableNames 종목이 청산·상장 종료 단계에 들어가 더 이상 직접 " +
+                    "기초수익률을 산출할 수 없습니다. 다음 거래소 종가에 최종 순자산가치를 " +
+                    "확정하고 현금 분배 절차를 시작합니다.",
+            scope = EventScope.STOCK,
+            type = EventType.FUND_OPERATION,
+            severity = EventSeverity.CRITICAL,
+            impact = GameEventImpact(direction = ImpactDirection.NEGATIVE),
+            startsAt = announcedAt,
+            durationHours = 24,
+            recordKind = EventRecordKind.INSTRUMENT_LIFECYCLE,
+            affectedMarkets = setOf(stock.market),
+            affectedSectors = setOf(stock.sector),
+            affectedStockIds = setOf(stock.id),
+            sourceLabel = "직접 기초자산 생명주기 연동",
+            instrumentTermination = InstrumentTerminationTerms(
+                kind = InstrumentTerminationKind.FUND_LIQUIDATION,
+                effectiveNotBefore = effectiveNotBefore,
+                valuationMethod = InstrumentTerminationValuationMethod.FINAL_NET_ASSET_VALUE,
+            ),
+        )
+    }
+
+    private fun hasPublishedDirectUnderlyingLiquidation(productId: String): Boolean =
+        newsEvents.any { event ->
+            event.id.startsWith("direct-underlying-liquidation:$productId:") &&
+                event.instrumentTermination?.kind == InstrumentTerminationKind.FUND_LIQUIDATION
+        }
 
     private fun announceMaturityMilestone(
         stock: StockDefinition,
@@ -3694,15 +5768,62 @@ internal class SimulatorRuntime(
 
     private fun applyCorporateAction(action: PendingCorporateAction, effectiveAt: Instant) {
         val stock = stockById.getValue(action.stockId)
+        require(isCorporateActionProductStateEligible(stock)) {
+            "Corporate action is not executable for the product's current legal/strategy state: ${stock.id}"
+        }
         val multiplier = action.quantityMultiplier
-        val actionAccountingSequence = nextSequence++
+        val actionAccountingSequence = nextSequence
+        val adjustedFundFinancialState = fundFinancialStates[stock.id]?.let { state ->
+            instrumentMetricsEngine.applyFundUnitAdjustment(
+                state = state,
+                quantityMultiplier = multiplier,
+                corporateActionAccountingSequence = actionAccountingSequence,
+                at = effectiveAt,
+            )
+        }
+        val adjustedDailyResetState = dailyResetStates[stock.id]?.let { state ->
+            dailyResetEngine.applyProductUnitAdjustment(
+                state = state,
+                quantityMultiplier = multiplier,
+                corporateActionAccountingSequence = actionAccountingSequence,
+                at = effectiveAt,
+            )
+        }
+        val adjustedOptionStrategyState = optionStrategyStates[stock.id]?.let { state ->
+            optionStrategyEngine.applyProductUnitAdjustment(
+                state = state,
+                quantityMultiplier = multiplier,
+                corporateActionAccountingSequence = actionAccountingSequence,
+                at = effectiveAt,
+            )
+        }
+        val adjustedCashPutSpreadState = cashCollateralizedPutSpreadStates[stock.id]?.let { state ->
+            cashCollateralizedPutSpreadEngine.applyProductUnitAdjustment(
+                state = state,
+                quantityMultiplier = multiplier,
+                corporateActionAccountingSequence = actionAccountingSequence,
+                at = effectiveAt,
+            )
+        }
+        val adjustedClosedEndFundState = closedEndFundStates[stock.id]?.let { state ->
+            val profile = requireNotNull(stock.fundProductProfile)
+            ClosedEndFundEngine(
+                terms = requireNotNull(profile.closedEndFundTerms),
+                marketModelParameters = requireNotNull(profile.closedEndFundMarketModelParameters),
+            ).applyProductUnitAdjustment(
+                state = state,
+                quantityMultiplier = multiplier,
+                corporateActionAccountingSequence = actionAccountingSequence,
+                at = effectiveAt,
+            )
+        }
         val before = quotes.getValue(stock.id)
         fun adjustedPrice(value: Double): Double = MarketMicrostructure.roundNearest(
             stock,
             (value / multiplier).coerceAtLeast(MarketMicrostructure.minimumPrice(stock.market)),
         )
         val postPrice = adjustedPrice(before.price)
-        quotes[stock.id] = before.copy(
+        val adjustedQuote = before.copy(
             timestamp = effectiveAt,
             price = postPrice,
             previousClose = adjustedPrice(before.previousClose),
@@ -3714,6 +5835,26 @@ internal class SimulatorRuntime(
             bidQuantity = before.bidQuantity * multiplier,
             askQuantity = before.askQuantity * multiplier,
         )
+        quotes[stock.id] = adjustedQuote
+        if (stock.market.isUnitedStates) {
+            // A split changes every price-domain input atomically. Reusing the old LULD state
+            // would clamp the first post-action bar to pre-split bands (and would retain stale
+            // limit/pause deadlines), so establish a fresh NORMAL regime at the adjusted mark.
+            val local = GameCalendar.marketLocalDateTime(stock.market, effectiveAt)
+            val adjustedLuld = TradingProtectionEngine.initialUsLuld(
+                stockId = stock.id,
+                primaryMarket = stock.market,
+                tradingDate = local.date,
+                tier = usLuldTier(stock),
+                previousClose = adjustedQuote.previousClose,
+                referencePrice = adjustedQuote.price,
+                referencePriceEffectiveAt = effectiveAt,
+                easternTime = local.time,
+            )
+            tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
+                usLuldStates = tradingProtectionSnapshot.usLuldStates + (stock.id to adjustedLuld),
+            )
+        }
         dailyTrackers[stock.id]?.let { tracker ->
             tracker.basePrice = adjustedPrice(tracker.basePrice)
             tracker.open = adjustedPrice(tracker.open)
@@ -3794,13 +5935,12 @@ internal class SimulatorRuntime(
             }
         }
         applyDynamicShareMultiplier(stock.id, multiplier)
-        fundFinancialStates[stock.id]?.let { state ->
-            fundFinancialStates[stock.id] = instrumentMetricsEngine.applyFundUnitAdjustment(
-                state = state,
-                quantityMultiplier = multiplier,
-                at = effectiveAt,
-            )
-        }
+        adjustedFundFinancialState?.let { fundFinancialStates[stock.id] = it }
+        adjustedDailyResetState?.let { dailyResetStates[stock.id] = it }
+        adjustedOptionStrategyState?.let { optionStrategyStates[stock.id] = it }
+        adjustedCashPutSpreadState?.let { cashCollateralizedPutSpreadStates[stock.id] = it }
+        adjustedClosedEndFundState?.let { closedEndFundStates[stock.id] = it }
+        nextSequence += 1L
         val settledFraction = action.kind == CorporateActionKind.REVERSE_SPLIT &&
             !stock.supportsFractional && settleCorporateActionFraction(stock, postPrice, effectiveAt)
         val record = CorporateActionRecord(
@@ -3870,6 +6010,54 @@ internal class SimulatorRuntime(
             )
         }
         pendingCorporateActions.removeAll { action -> action.stockId == stock.id }
+    }
+
+    /** Closes an announced action whose product contract became non-executable during notice. */
+    private fun cancelPendingCorporateActionForProductState(
+        action: PendingCorporateAction,
+        stock: StockDefinition,
+        cancelledAt: Instant,
+    ) {
+        newsEvents += GameEvent(
+            id = "${action.id}:cancelled:product-state",
+            title = "${stock.name} ${action.kind.displayName} 일정 취소",
+            description =
+                "공시 후 상품의 계약·운용 상태가 바뀌어 기존 단위로 분할·병합을 실행할 수 없어 일정을 종료했습니다.",
+            scope = EventScope.STOCK,
+            type = EventType.CORPORATE_ACTION,
+            severity = EventSeverity.MODERATE,
+            impact = GameEventImpact(direction = ImpactDirection.NEUTRAL),
+            startsAt = cancelledAt,
+            durationHours = 24,
+            recordKind = EventRecordKind.CORPORATE_ACTION,
+            corporateActionReference = action.toProductStateCancellationNewsReference(cancelledAt),
+            affectedMarkets = setOf(stock.market),
+            affectedSectors = setOf(stock.sector),
+            affectedStockIds = setOf(stock.id),
+            sourceLabel = action.source.displayName,
+        )
+    }
+
+    private fun isCorporateActionProductStateEligible(stock: StockDefinition): Boolean {
+        val product = stock.fundProductProfile ?: return true
+        if (product.legalStructure == FundLegalStructure.EXCHANGE_TRADED_NOTE) return false
+        if (product.dailyResetTerms != null &&
+            dailyResetStates[stock.id]?.lifecycle != DailyResetLifecycle.ACTIVE
+        ) {
+            return false
+        }
+        if (product.optionStrategyTerms != null &&
+            optionStrategyStates[stock.id]?.lifecycle != OptionStrategyLifecycle.ACTIVE
+        ) {
+            return false
+        }
+        if (product.cashCollateralizedPutSpreadTerms != null &&
+            cashCollateralizedPutSpreadStates[stock.id]?.lifecycle !=
+            CashCollateralizedPutSpreadLifecycle.ACTIVE
+        ) {
+            return false
+        }
+        return true
     }
 
     /** 정수 수량 시장의 병합 단주는 자동 현금정산하고 FIFO 원가·양도손익을 함께 기록한다. */
@@ -4019,6 +6207,10 @@ internal class SimulatorRuntime(
         for (stock in stocks) {
             if (isInstrumentMatured(stock, to)) continue
             if (listingLifecycleStates[stock.id]?.isSettlementPending == true) continue
+            // ETN note denominations are part of stated principal, coupon, and minimum redemption
+            // terms. This campaign model has no versioned amendment/cash-in-lieu contract for
+            // those terms, so it must not manufacture an equity-style split for an ETN.
+            if (!isCorporateActionProductStateEligible(stock)) continue
             val crossedVenueClose = regularTradingFraction(stock.market, from, to) > 0.0 &&
                 regularTradingFraction(stock.market, to, to + 1.hours) == 0.0
             if (!crossedVenueClose) continue
@@ -4505,17 +6697,25 @@ internal class SimulatorRuntime(
                 ScheduledEventKind.US_CPI,
                 ScheduledEventKind.US_PCE,
                 ScheduledEventKind.KR_CPI,
-                -> macro.copy(
-                    inflationRate = actual / 100.0,
-                    inflationSurprise = 0.0,
-                )
+                -> {
+                    val nextInflation = actual / 100.0
+                    macro.copy(
+                        inflationRate = nextInflation,
+                        inflationSurprise = (nextInflation - macro.inflationRate)
+                            .coerceIn(-0.10, 0.10),
+                    )
+                }
 
                 ScheduledEventKind.US_GDP,
                 ScheduledEventKind.KR_GDP,
-                -> macro.copy(
-                    growthRate = actual / 100.0,
-                    growthSurprise = 0.0,
-                )
+                -> {
+                    val nextGrowth = actual / 100.0
+                    macro.copy(
+                        growthRate = nextGrowth,
+                        growthSurprise = (nextGrowth - macro.growthRate)
+                            .coerceIn(-0.15, 0.15),
+                    )
+                }
 
                 ScheduledEventKind.US_FOMC,
                 ScheduledEventKind.KR_BOK,
@@ -4523,7 +6723,7 @@ internal class SimulatorRuntime(
                     val nextRate = actual / 100.0
                     macro.copy(
                         policyRate = nextRate,
-                        policyRateChange = 0.0,
+                        policyRateChange = nextRate - macro.policyRate,
                     )
                 }
 
@@ -4786,7 +6986,9 @@ internal class SimulatorRuntime(
                 stockId = stock.id,
                 quantity = newQuantity,
                 averagePrice = totalCost / newQuantity,
-                currentPrice = price,
+                // Execution price belongs to the trade/cost basis. Portfolio valuation stays on
+                // the canonical quote mark even when an immediate fill occurs at best ask.
+                currentPrice = quotes.getValue(stock.id).price,
                 currency = stock.currency,
                 realizedProfit = previous?.realizedProfit ?: 0.0,
             )
@@ -4828,7 +7030,8 @@ internal class SimulatorRuntime(
             } else {
                 holdings[stock.id] = previous.copy(
                     quantity = remaining,
-                    currentPrice = price,
+                    // A best-bid fill must not replace the independently persisted quote mark.
+                    currentPrice = quotes.getValue(stock.id).price,
                     realizedProfit = previous.realizedProfit + realized,
                 )
             }
@@ -4977,55 +7180,207 @@ internal class SimulatorRuntime(
     }
 
     private fun processScheduledDividends(from: Instant, to: Instant) {
+        // Build every structural, market and holder-cash transition against the unchanged opening
+        // snapshot first. A later product must not leave earlier CEF/ETN state, quotes or cash
+        // partially committed if its legal accounting rejects the proposed distribution.
+        val commits = mutableListOf<() -> Unit>()
+        val plannedLastEvaluatedDistributionDateByStock =
+            lastEvaluatedDistributionDateByStock.toMutableMap()
+        val plannedDividends = mutableListOf<DividendLedgerEntry>()
+        val plannedCash = cash.toMutableMap()
+        var plannedFifoCostBasisBook = fifoCostBasisBook
+        var plannedNextSequence = nextSequence
+        val affectedTaxYears = linkedSetOf<Int>()
+
         for (stock in stocks) {
             if (isInstrumentMatured(stock, to)) continue
             if (listingLifecycleStates[stock.id]?.isSettlementPending == true) continue
-            if (stock.dividendYield <= 0.0) continue
             val fromDate = marketDate(stock.market, from)
             val payDate = marketDate(stock.market, to)
             val frequency = stock.behavior.distributionFrequency
-            if (payDate == fromDate || !isDistributionDate(payDate, frequency)) continue
+            if (
+                payDate == fromDate ||
+                !DistributionSchedule.isDistributionDate(payDate, frequency)
+            ) continue
+            val lastEvaluatedDate = lastEvaluatedDistributionDateByStock[stock.id]
+            require(lastEvaluatedDate == null || lastEvaluatedDate <= payDate) {
+                "Distribution evaluation date moved backwards for ${stock.id}: " +
+                    "last=$lastEvaluatedDate, next=$payDate"
+            }
+            if (lastEvaluatedDate == payDate) continue
+            // Mark the cadence boundary as evaluated before yield/cap calculation. A zero payout is
+            // still a completed decision and must not be recalculated differently on turn retry.
+            plannedLastEvaluatedDistributionDateByStock[stock.id] = payDate
+
+            val annualIncomeYield = currentProductAnnualDistributionYield(stock)
 
             // The game combines ex-date and payment date. Removing the gross per-unit
             // distribution from the quote prevents a buy-before-payment free-cash exploit.
             val quoteBeforeDistribution = quotes.getValue(stock.id)
             val periodsPerYear = frequency.periodsPerYear
             if (periodsPerYear <= 0) continue
-            val grossPerUnit = quoteBeforeDistribution.price * stock.dividendYield / periodsPerYear
+            val etnStateBeforeDistribution = etnStates[stock.id]
+                ?.takeIf { state -> state.lifecycle == EtnLifecycle.ACTIVE }
+            var grossPerUnit = if (stock.instrumentType == InstrumentType.ETN) {
+                etnStateBeforeDistribution?.accruedCouponPerNote ?: 0.0
+            } else {
+                if (annualIncomeYield <= 0.0) continue
+                quoteBeforeDistribution.price * annualIncomeYield / periodsPerYear
+            }
+            if (stock.instrumentType == InstrumentType.CLOSED_END_FUND) {
+                val previous = closedEndFundStates.getValue(stock.id)
+                val product = requireNotNull(stock.fundProductProfile)
+                val engine = ClosedEndFundEngine(
+                    terms = requireNotNull(product.closedEndFundTerms),
+                    marketModelParameters = requireNotNull(product.closedEndFundMarketModelParameters),
+                )
+                grossPerUnit = minOf(
+                    grossPerUnit,
+                    engine.maximumPermittedCommonDistributionPerShare(previous),
+                )
+            }
+            if (grossPerUnit <= 0.0) continue
+
+            var classifiedReturnOfCapitalPerUnit: Double? = null
+            val structuralPriceAfterDistribution = when (stock.instrumentType) {
+                InstrumentType.ETN -> {
+                    val previous = requireNotNull(etnStateBeforeDistribution)
+                    val terms = requireNotNull(stock.fundProductProfile?.etnProductTerms)
+                    val advance = EtnEngine(terms).advance(
+                        state = previous,
+                        input = EtnAdvanceInput(
+                            effectiveAt = to,
+                            effectiveDate = payDate,
+                            elapsedYearFraction = 0.0,
+                            referenceLogReturn = 0.0,
+                            couponPaymentPerNote = grossPerUnit,
+                        ),
+                    )
+                    require(advance.previousRevision == previous.revision)
+                    require(advance.ledgerEntries.none { next ->
+                        etnLedger.any { existing -> existing.id == next.id }
+                    })
+                    val nextState = advance.state
+                    val nextLedger = advance.ledgerEntries.toList()
+                    commits += {
+                        etnStates[stock.id] = nextState
+                        etnLedger += nextLedger
+                    }
+                    val markedBefore = etnCreditMarkedValue(
+                        state = previous,
+                        maturityDate = terms.maturityDate,
+                        valuationDate = payDate,
+                    )
+                    val markedAfter = etnCreditMarkedValue(
+                        state = advance.state,
+                        maturityDate = terms.maturityDate,
+                        valuationDate = payDate,
+                    )
+                    quoteBeforeDistribution.price * markedAfter / markedBefore
+                }
+                InstrumentType.CLOSED_END_FUND -> {
+                    val previous = closedEndFundStates.getValue(stock.id)
+                    val terms = requireNotNull(stock.fundProductProfile?.closedEndFundTerms)
+                    val parameters = requireNotNull(
+                        stock.fundProductProfile.closedEndFundMarketModelParameters,
+                    )
+                    val incomePerShare = minOf(
+                        grossPerUnit,
+                        previous.undistributedNetInvestmentIncome
+                            .coerceAtLeast(0.0) / previous.commonSharesOutstanding,
+                    )
+                    val afterIncome = grossPerUnit - incomePerShare
+                    val realizedGainPerShare = minOf(
+                        afterIncome,
+                        previous.distributionReserve / previous.commonSharesOutstanding,
+                    )
+                    val returnOfCapitalPerShare = afterIncome - realizedGainPerShare
+                    val distribution = ClosedEndFundDistribution(
+                        netInvestmentIncomePerShare = incomePerShare,
+                        realizedGainPerShare = realizedGainPerShare,
+                        returnOfCapitalPerShare = returnOfCapitalPerShare,
+                    )
+                    val advance = ClosedEndFundEngine(terms, parameters).advance(
+                        state = previous,
+                        input = ClosedEndFundAdvanceInput(
+                            effectiveAt = to,
+                            elapsedYearFraction = 0.0,
+                            assetTotalLogReturn = 0.0,
+                            grossInvestmentIncome = 0.0,
+                            annualBorrowingRate = 0.0,
+                            annualPreferredDistributionRate = 0.0,
+                            operatingExpenses = 0.0,
+                            realizedGainReserveChange = 0.0,
+                            marketDiscountShock = 0.0,
+                            distribution = distribution,
+                        ),
+                    )
+                    require(advance.previousRevision == previous.revision)
+                    require(advance.ledgerEntries.none { next ->
+                        closedEndFundLedger.any { existing -> existing.id == next.id }
+                    })
+                    val nextState = advance.state
+                    val nextLedger = advance.ledgerEntries.toList()
+                    commits += {
+                        closedEndFundStates[stock.id] = nextState
+                        closedEndFundLedger += nextLedger
+                    }
+                    classifiedReturnOfCapitalPerUnit = returnOfCapitalPerShare
+                    quoteBeforeDistribution.price *
+                        advance.state.marketPricePerCommonShare /
+                        previous.marketPricePerCommonShare
+                }
+                else -> {
+                    fundFinancialStates[stock.id]?.let { financialState ->
+                        val nextState = instrumentMetricsEngine.applyFundDistribution(
+                            state = financialState,
+                            grossPerUnit = grossPerUnit,
+                            at = to,
+                        )
+                        commits += { fundFinancialStates[stock.id] = nextState }
+                    }
+                    quoteBeforeDistribution.price - grossPerUnit
+                }
+            }
             val adjustedPrice = MarketMicrostructure.roundNearest(
                 stock,
-                (quoteBeforeDistribution.price - grossPerUnit)
+                structuralPriceAfterDistribution
                     .coerceAtLeast(MarketMicrostructure.tickSize(stock, quoteBeforeDistribution.price)),
             )
-            quotes[stock.id] = quoteBeforeDistribution.copy(
+            val adjustedQuote = quoteBeforeDistribution.copy(
                 price = adjustedPrice,
+                high = maxOf(quoteBeforeDistribution.high, adjustedPrice),
                 low = minOf(quoteBeforeDistribution.low, adjustedPrice),
                 bidPrice = null,
                 askPrice = null,
                 bidQuantity = 0.0,
                 askQuantity = 0.0,
             )
-            fundFinancialStates[stock.id]?.let { financialState ->
-                fundFinancialStates[stock.id] = instrumentMetricsEngine.applyFundDistribution(
-                    state = financialState,
-                    grossPerUnit = grossPerUnit,
-                    at = to,
-                )
-            }
-            holdings[stock.id]?.let { holding ->
-                holdings[stock.id] = holding.copy(currentPrice = adjustedPrice)
+            commits += {
+                quotes[stock.id] = adjustedQuote
+                dailyTrackers[stock.id]?.let { tracker ->
+                    // The post-bar distribution adjustment becomes the next interval's previous
+                    // price. Keep date/base/open, extending only the observed price range.
+                    tracker.high = maxOf(tracker.high, adjustedPrice)
+                    tracker.low = minOf(tracker.low, adjustedPrice)
+                }
+                holdings[stock.id]?.let { holding ->
+                    holdings[stock.id] = holding.copy(currentPrice = adjustedPrice)
+                }
             }
 
             val holding = holdings[stock.id] ?: continue
             val ledgerId = "dividend:${stock.id}:$payDate"
-            if (dividends.any { it.id == ledgerId }) continue
+            if (dividends.any { it.id == ledgerId } || plannedDividends.any { it.id == ledgerId }) continue
 
             val gross = holding.quantity * grossPerUnit
             val rocEligible = stock.market.isUnitedStates && stock.instrumentType in setOf(
                 InstrumentType.ETF,
                 InstrumentType.CLOSED_END_FUND,
             )
-            val taxableCoverage = if (rocEligible) {
+            val taxableCoverage = classifiedReturnOfCapitalPerUnit?.let { returnOfCapitalPerUnit ->
+                ((grossPerUnit - returnOfCapitalPerUnit) / grossPerUnit).coerceIn(0.0, 1.0)
+            } ?: if (rocEligible) {
                 stock.behavior.distributionCoverageRatio.coerceIn(0.0, 1.0)
             } else {
                 1.0
@@ -5049,9 +7404,17 @@ internal class SimulatorRuntime(
                     paidOn = payDate,
                     taxExchangeRateToKrw = if (stock.currency == Currency.USD) macro.usdKrw else 1.0,
                     w8BenValid = true,
-                    otherFinancialIncomeGrossKrw = dividends
-                        .filter { gameDate(it.paidAt).year == payDate.year }
-                        .sumOf { round(it.financialIncomeAmountKrw).toLong() },
+                    otherFinancialIncomeGrossKrw = CheckedMonetaryArithmetic.sum(
+                        (dividends.asSequence() + plannedDividends.asSequence())
+                            .filter { gameDate(it.paidAt).year == payDate.year }
+                            .map { entry ->
+                                CheckedMonetaryArithmetic.roundedToLong(
+                                    entry.financialIncomeAmountKrw,
+                                    "Dividend financial income",
+                                )
+                            },
+                        "Annual dividend financial income",
+                    ),
                 ),
             )
             val roundedTaxableGross = result.breakdown.taxableBase.amount
@@ -5060,13 +7423,16 @@ internal class SimulatorRuntime(
             val tax = result.breakdown.totalTax.amount
             val net = roundCurrency(result.netCash.amount + returnOfCapital, stock.currency)
             val exchangeRate = if (stock.currency == Currency.USD) macro.usdKrw else 1.0
-            val (updatedBasis, excessRocGainKrw) = fifoCostBasisBook.applyReturnOfCapital(
+            val (updatedBasis, excessRocGainKrw) = plannedFifoCostBasisBook.applyReturnOfCapital(
                 stockId = stock.id,
                 amountKrw = round(returnOfCapital * exchangeRate).toLong(),
             )
-            fifoCostBasisBook = updatedBasis
-            cash[stock.currency] = roundCurrency(cash.getValue(stock.currency) + net, stock.currency)
-            dividends += DividendLedgerEntry(
+            plannedFifoCostBasisBook = updatedBasis
+            plannedCash[stock.currency] = roundCurrency(
+                plannedCash.getValue(stock.currency) + net,
+                stock.currency,
+            )
+            plannedDividends += DividendLedgerEntry(
                 id = ledgerId,
                 stockId = stock.id,
                 paidAt = to,
@@ -5079,9 +7445,73 @@ internal class SimulatorRuntime(
                 taxableIncomeAmount = roundedTaxableGross,
                 returnOfCapitalAmount = returnOfCapital,
                 excessReturnOfCapitalGainKrw = excessRocGainKrw,
-                accountingSequence = nextSequence++,
+                accountingSequence = plannedNextSequence++,
             )
-            recalculateAnnualTax(payDate.year)
+            affectedTaxYears += payDate.year
+        }
+
+        // Annual tax construction is validating and therefore belongs to the immutable planning
+        // phase. No product state or holder cash has changed if a monetary bound is exceeded.
+        val plannedDividendSnapshot = dividends + plannedDividends
+        val plannedTaxProjections = affectedTaxYears.associateWith { year ->
+            requireNotNull(calculateAnnualTaxProjection(year, plannedDividendSnapshot, realizedGains))
+        }
+
+        // The planning phase above has completed without mutating Runtime state. From here every
+        // operation is a non-validating assignment/list append, so the batch is committed once.
+        commits.forEach { commit -> commit() }
+        lastEvaluatedDistributionDateByStock.clear()
+        lastEvaluatedDistributionDateByStock.putAll(plannedLastEvaluatedDistributionDateByStock)
+        fifoCostBasisBook = plannedFifoCostBasisBook
+        cash.clear()
+        cash.putAll(plannedCash)
+        dividends += plannedDividends
+        nextSequence = plannedNextSequence
+        plannedTaxProjections.forEach { (year, projection) ->
+            applyAnnualTaxProjection(year, projection)
+        }
+    }
+
+    /**
+     * Returns the latest income yield produced by the same benchmark state that drives NAV.
+     * Keeping this lookup shared with cash distributions prevents a reconstitution from changing
+     * price carry while leaving the next payment pinned to stale catalog metadata.
+     */
+    private fun currentBenchmarkAnnualIncomeYield(benchmarkRef: BenchmarkRef): Double? {
+        val methodologyPortfolioId = executablePortfolioIdByBenchmarkRef[benchmarkRef]
+        return methodologyPortfolioId
+            ?.let(referencePortfolioStates::get)
+            ?.estimatedAnnualIncomeYield
+            ?: equityReferenceStates[benchmarkRef]?.estimatedAnnualIncomeYield
+            ?: fundOfFundsStates[benchmarkRef]?.estimatedAnnualIncomeYield
+            ?: alternativeRiskPremiaStates[benchmarkRef]?.estimatedAnnualIncomeYield
+            ?: compositeReferenceStates[benchmarkRef]?.estimatedAnnualIncomeYield
+            ?: fixedIncomeReferenceStates[
+                FixedIncomeReferenceState.referenceIdFor(benchmarkRef)
+            ]?.estimatedAnnualIncomeYield
+            ?: 0.0.takeIf {
+                benchmarkRef in commoditySpotReferenceStates ||
+                    benchmarkRef in futuresReferenceStates
+            }
+    }
+
+    /**
+     * Plain and fund-of-funds products pass through the income generated by their current
+     * benchmark composition. Managed-distribution CEFs and derivative-income overlays instead
+     * follow a product payout policy: their benchmark yield is only one input and must not replace
+     * the declared product-level distribution rate. ETN cash coupons are settled from their
+     * contract state separately in [processScheduledDividends].
+     */
+    private fun currentProductAnnualDistributionYield(stock: StockDefinition): Double {
+        val profile = stock.fundProductProfile ?: return stock.dividendYield
+        val hasProductPayoutOverlay = profile.dailyResetTerms != null ||
+            profile.optionStrategyTerms != null ||
+            profile.cashCollateralizedPutSpreadTerms != null ||
+            profile.legalStructure == FundLegalStructure.CLOSED_END_FUND
+        return if (hasProductPayoutOverlay) {
+            stock.dividendYield
+        } else {
+            currentBenchmarkAnnualIncomeYield(profile.benchmarkRef) ?: stock.dividendYield
         }
     }
 
@@ -5098,21 +7528,6 @@ internal class SimulatorRuntime(
                 orders[index] = order.copy(status = OrderStatus.EXPIRED, updatedAt = time)
             }
         }
-    }
-
-    private fun isDistributionDate(date: LocalDate, frequency: DistributionFrequency): Boolean = when (frequency) {
-        DistributionFrequency.NONE -> false
-        DistributionFrequency.WEEKLY -> date.dayOfWeek == DayOfWeek.FRIDAY
-        DistributionFrequency.MONTHLY -> date.day == DIVIDEND_DAY
-        DistributionFrequency.QUARTERLY -> date.day == DIVIDEND_DAY && date.month in setOf(
-            Month.MARCH,
-            Month.JUNE,
-            Month.SEPTEMBER,
-            Month.DECEMBER,
-        )
-        DistributionFrequency.SEMIANNUAL -> date.day == DIVIDEND_DAY &&
-            date.month in setOf(Month.JUNE, Month.DECEMBER)
-        DistributionFrequency.ANNUAL -> date.day == DIVIDEND_DAY && date.month == Month.DECEMBER
     }
 
     private fun dayOrderTargetTradingDate(
@@ -5519,8 +7934,8 @@ internal class SimulatorRuntime(
                     stock.market,
                     local.date,
                     usLuldTier(stock),
-                    quote.previousClose.coerceAtLeast(0.01),
-                    quote.price.coerceAtLeast(0.01),
+                    quote.previousClose,
+                    quote.price,
                     at,
                     local.time,
                 )
@@ -5537,7 +7952,7 @@ internal class SimulatorRuntime(
                     val reopensAt = requireNotNull(luld.reopeningStartedAt) + US_REOPENING_AUCTION_MINUTES.minutes
                     val completion = TradingProtectionEngine.completeUsLuldReopening(
                         luld,
-                        quote.price.coerceAtLeast(0.01),
+                        quote.price,
                         reopensAt,
                         GameCalendar.marketLocalDateTime(stock.market, reopensAt).time,
                     )
@@ -6009,8 +8424,8 @@ internal class SimulatorRuntime(
                     primaryMarket = stock.market,
                     tradingDate = local.date,
                     tier = usLuldTier(stock),
-                    previousClose = previous?.previousClose ?: quotes.getValue(stock.id).previousClose.coerceAtLeast(0.01),
-                    referencePrice = bar.close.coerceAtLeast(0.01),
+                    previousClose = previous?.previousClose ?: quotes.getValue(stock.id).previousClose,
+                    referencePrice = bar.close,
                     referencePriceEffectiveAt = to,
                     easternTime = local.time,
                 )
@@ -6060,7 +8475,7 @@ internal class SimulatorRuntime(
             carriedBlock?.let { impact.addInstrumentBlock(stock.id, it) }
             impact.mergePriceBounds(
                 stock.id,
-                RuntimePriceBounds(state.bands.lower.coerceAtLeast(0.01), state.bands.upper),
+                RuntimePriceBounds(state.bands.lower, state.bands.upper),
             )
             val upperCross = if (bar.high >= state.bands.upper) {
                 upwardThresholdCrossing(
@@ -6133,7 +8548,7 @@ internal class SimulatorRuntime(
                 if (to >= reopensAt) {
                     val beforeReopening = state
                     val reopeningPrice = bar.close.coerceIn(
-                        state.bands.lower.coerceAtLeast(0.01),
+                        state.bands.lower,
                         state.bands.upper,
                     )
                     val transition = TradingProtectionEngine.completeUsLuldReopening(
@@ -6147,7 +8562,8 @@ internal class SimulatorRuntime(
                 }
             }
             if (state.phase == UsLuldPhase.NORMAL) {
-                val typical = ((bar.open + bar.high + bar.low + bar.close) / 4.0).coerceAtLeast(0.01)
+                val typical = ((bar.open + bar.high + bar.low + bar.close) / 4.0)
+                    .coerceAtLeast(MarketMicrostructure.minimumPrice(stock.market))
                 state = TradingProtectionEngine.updateUsLuldReferencePrice(
                     state,
                     typical,
@@ -6641,7 +9057,16 @@ internal class SimulatorRuntime(
 
     private fun recordDailySnapshot(date: LocalDate, timestamp: Instant) {
         val snapshot = portfolioSnapshot(timestamp)
-        if (portfolioSnapshots.lastOrNull()?.timestamp?.let(::gameDate) == date) portfolioSnapshots.removeLast()
+        // [timestamp] is the boundary at which the completed logical [date] is recorded. At a
+        // midnight boundary its calendar date is therefore the following day, so timestamp-based
+        // replacement would keep deleting the previous day's point. The explicitly stored daily
+        // date is the canonical key for all three aligned histories.
+        val replacesExistingDate = dailyStatistics.lastOrNull()?.date == date
+        if (replacesExistingDate) {
+            require(portfolioSnapshots.isNotEmpty() && benchmarkHistory.isNotEmpty())
+            portfolioSnapshots.removeLast()
+            benchmarkHistory.removeLast()
+        }
         portfolioSnapshots += snapshot
 
         val previous = dailyStatistics.lastOrNull { it.date != date }
@@ -6650,7 +9075,7 @@ internal class SimulatorRuntime(
         } else {
             snapshot.totalAssetValueKrw / previous.totalAssetsKrw - 1.0
         }
-        if (dailyStatistics.lastOrNull()?.date == date) dailyStatistics.removeLast()
+        if (replacesExistingDate) dailyStatistics.removeLast()
         dailyStatistics += DailyPortfolioStat(
             date = date,
             totalAssetsKrw = snapshot.totalAssetValueKrw,
@@ -6661,7 +9086,6 @@ internal class SimulatorRuntime(
             benchmarkValue = benchmarkValue,
             usdKrw = macro.usdKrw,
         )
-        if (benchmarkHistory.lastOrNull()?.timestamp?.let(::gameDate) == date) benchmarkHistory.removeLast()
         benchmarkHistory += BenchmarkPoint(
             timestamp = timestamp,
             value = benchmarkValue,
@@ -6932,9 +9356,13 @@ internal class SimulatorRuntime(
             .forEach(::recalculateAnnualTax)
     }
 
-    private fun recalculateAnnualTax(year: Int) {
-        if (year !in 2026..2040) return
-        val tradeGains = realizedGains.filter { it.settlementDate.year == year }.map { record ->
+    private fun calculateAnnualTaxProjection(
+        year: Int,
+        dividendEntries: List<DividendLedgerEntry>,
+        gainEntries: List<RealizedGainRecord>,
+    ): Pair<AnnualTaxLedger, List<TaxPaymentNotice>>? {
+        if (year !in 2026..2040) return null
+        val tradeGains = gainEntries.filter { it.settlementDate.year == year }.map { record ->
             RealizedStockGain(
                 id = record.tradeId,
                 stockId = record.stockId,
@@ -6949,7 +9377,7 @@ internal class SimulatorRuntime(
                 },
             )
         }
-        val yearDividends = dividends.filter { gameDate(it.paidAt).year == year }
+        val yearDividends = dividendEntries.filter { gameDate(it.paidAt).year == year }
         val rocGains = yearDividends.mapNotNull { entry ->
             val gain = entry.excessReturnOfCapitalGainKrw
             if (gain <= 0L) return@mapNotNull null
@@ -6964,36 +9392,90 @@ internal class SimulatorRuntime(
             )
         }
         val gains = tradeGains + rocGains
+        val dividendFinancialIncomeKrw = CheckedMonetaryArithmetic.sum(
+            yearDividends.asSequence().map { entry ->
+                CheckedMonetaryArithmetic.roundedToLong(
+                    entry.financialIncomeAmountKrw,
+                    "Dividend financial income",
+                )
+            },
+            "Annual dividend financial income",
+        )
+        val domesticEtfFinancialIncomeKrw = CheckedMonetaryArithmetic.sum(
+            gainEntries.asSequence()
+                .filter {
+                    it.settlementDate.year == year &&
+                        it.taxTreatment == StockGainTaxTreatment.DOMESTIC_ETF_HOLDING_PERIOD_WITHHELD
+                }
+                .map(RealizedGainRecord::taxableFinancialIncomeKrw),
+            "Annual domestic ETF financial income",
+        )
+        val financialIncomeGrossKrw = CheckedMonetaryArithmetic.add(
+            dividendFinancialIncomeKrw,
+            domesticEtfFinancialIncomeKrw,
+            "Annual gross financial income",
+        )
+        val foreignTaxPaidKrw = CheckedMonetaryArithmetic.sum(
+            yearDividends.asSequence()
+                .filter { it.currency == Currency.USD }
+                .map { entry ->
+                    CheckedMonetaryArithmetic.roundedToLong(
+                        entry.withholdingTaxKrw,
+                        "Foreign dividend withholding tax",
+                    )
+                },
+            "Annual foreign tax paid",
+        )
+        val withholdingCreditsKrw = CheckedMonetaryArithmetic.sum(
+            gainEntries.asSequence()
+                .filter {
+                    it.settlementDate.year == year &&
+                        it.taxTreatment == StockGainTaxTreatment.DOMESTIC_ETF_HOLDING_PERIOD_WITHHELD
+                }
+                .map { gain ->
+                    CheckedMonetaryArithmetic.roundedToLong(
+                        gain.saleTax * gain.exchangeRateToKrw,
+                        "Domestic ETF withholding credit",
+                    )
+                },
+            "Annual withholding credits",
+        )
         val ledger = annualStockTaxCalculator.calculate(
             AnnualStockTaxRequest(
                 taxYear = year,
                 gains = gains,
-                financialIncomeGrossKrw = yearDividends.sumOf { round(it.financialIncomeAmountKrw).toLong() } +
-                    realizedGains.filter {
-                        it.settlementDate.year == year &&
-                            it.taxTreatment == StockGainTaxTreatment.DOMESTIC_ETF_HOLDING_PERIOD_WITHHELD
-                    }.sumOf(RealizedGainRecord::taxableFinancialIncomeKrw),
-                foreignTaxPaidKrw = yearDividends
-                    .filter { it.currency == Currency.USD }
-                    .sumOf { round(it.withholdingTaxKrw).toLong() },
-                withholdingCreditsKrw = realizedGains.filter {
-                    it.settlementDate.year == year &&
-                        it.taxTreatment == StockGainTaxTreatment.DOMESTIC_ETF_HOLDING_PERIOD_WITHHELD
-                }.sumOf { round(it.saleTax * it.exchangeRateToKrw).toLong() },
+                financialIncomeGrossKrw = financialIncomeGrossKrw,
+                foreignTaxPaidKrw = foreignTaxPaidKrw,
+                withholdingCreditsKrw = withholdingCreditsKrw,
             ),
         )
-        annualTaxLedgers[year] = ledger
-        taxPaymentNotices.removeAll { it.taxYear == year }
-        taxPaymentNotices += ledger.liabilities.map { liability ->
+        val notices = ledger.liabilities.map { liability ->
             TaxPaymentNotice(
                 id = liability.id,
                 taxYear = year,
                 dueDate = liability.dueDate ?: LocalDate(year + 1, 5, 31),
                 amountKrw = liability.payableKrw,
                 status = liability.status,
-                message = "${year}년 ${liability.label} ${liability.payableKrw}원은 ${liability.dueDate ?: LocalDate(year + 1, 5, 31)}까지 납부 예정입니다.",
+                message = "${year}년 ${liability.label} ${liability.payableKrw}원은 " +
+                    "${liability.dueDate ?: LocalDate(year + 1, 5, 31)}까지 납부 예정입니다.",
             )
         }
+        return ledger to notices
+    }
+
+    private fun applyAnnualTaxProjection(
+        year: Int,
+        projection: Pair<AnnualTaxLedger, List<TaxPaymentNotice>>,
+    ) {
+        val (ledger, notices) = projection
+        annualTaxLedgers[year] = ledger
+        taxPaymentNotices.removeAll { it.taxYear == year }
+        taxPaymentNotices += notices
+    }
+
+    private fun recalculateAnnualTax(year: Int) {
+        val projection = calculateAnnualTaxProjection(year, dividends, realizedGains) ?: return
+        applyAnnualTaxProjection(year, projection)
     }
 
     private fun foreignInstrumentTaxClass(stock: StockDefinition): ForeignInstrumentTaxClass =
@@ -7210,6 +9692,16 @@ internal class SimulatorRuntime(
         /** 축소 게임 유니버스에서 2026 KRX 합산 시총 상위100 제외를 재현하는 기준일 프록시. */
         const val KRX_TOP_100_MARKET_CAP_PROXY_KRW = 3_000_000_000_000.0
         const val BENCHMARK_START = 100.0
+        const val DAILY_RESET_INITIAL_REFERENCE_LEVEL = 100.0
+        const val OPTION_INITIAL_REFERENCE_LEVEL = 100.0
+        const val REFERENCE_TRADING_HOURS_PER_YEAR = 252.0 * 6.5
+        const val NANOSECONDS_PER_YEAR = 365.25 * 24.0 * 60.0 * 60.0 * 1_000_000_000.0
+        const val ETN_MAX_CREDIT_DURATION_YEARS = 7.0
+        const val ETN_MIN_MARKED_VALUE = 1e-9
+        const val DAILY_RESET_BASE_SHORT_BORROW_RATE = 0.005
+        const val DAILY_RESET_STRESS_BORROW_SPREAD = 0.04
+        /** 미국 10년 명목곡선 위 게임용 주택담보대출 스프레드 가정이다. */
+        const val MODEL_MORTGAGE_SPREAD_ANNUAL = 0.0175
         const val BUY_RESERVE_MULTIPLIER = 1.003
         const val FX_SPREAD_RATE = 0.001
         const val FX_MEAN_REVERSION = 0.00025
@@ -7230,7 +9722,6 @@ internal class SimulatorRuntime(
         const val CORPORATE_ACTION_COOLDOWN_HOURS = 24 * 365
         const val CORPORATE_ACTION_BOARD_GATE = 8L
         const val LISTING_RESOLUTION_EVENT_PREFIX = "listing-resolution:"
-        const val DIVIDEND_DAY = 15
         const val PRICE_EPSILON = 1e-7
         const val QUANTITY_EPSILON = 1e-7
         const val TAX_RATE_EPSILON = 1e-9
@@ -7288,8 +9779,11 @@ internal class SimulatorRuntime(
         val WEEKEND = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
         val DEBUG_MUTABLE_PHASES = setOf(GamePhase.PLAYING, GamePhase.PAUSED)
 
-        fun restore(state: SimulatorUiState): SimulatorRuntime? = runCatching {
-            SimulatorRuntime(state.options).apply { restoreFrom(state) }
+        fun restore(
+            state: SimulatorUiState,
+            catalog: InstrumentCatalogSnapshot,
+        ): SimulatorRuntime? = runCatching {
+            SimulatorRuntime(state.options, catalog).apply { restoreFrom(state) }
         }.getOrNull()
     }
 }

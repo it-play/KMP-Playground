@@ -62,12 +62,17 @@ class PriceEngine(private val seed: Long) {
             input.eventImpulse.volatilityMultiplier *
             circuitVolatilityFactor *
             sqrt(input.regularTradingFraction)
-        val referenceResidualVolatility = referenceResidualVolatility(
-            stock = stock,
-            macro = input.macro,
-            eventImpulse = input.eventImpulse,
-            tradingFraction = input.regularTradingFraction,
-        )
+        val referenceReturnOverride = input.productFairValueLogReturn ?: input.basketGrossLogReturn
+        val referenceResidualVolatility = if (referenceReturnOverride == null) {
+            referenceResidualVolatility(
+                stock = stock,
+                macro = input.macro,
+                eventImpulse = input.eventImpulse,
+                tradingFraction = input.regularTradingFraction,
+            )
+        } else {
+            0.0
+        }
         val priceDislocationVolatility = (
             behavior.priceDislocationVolatility / sqrt(hoursPerTradingYear) * volatilityScale
             ).coerceIn(0.0, MAX_HOURLY_VOLATILITY)
@@ -77,21 +82,56 @@ class PriceEngine(private val seed: Long) {
         )
 
         val fundLeverage = stock.etfProfile?.leverage ?: 1.0
+        val basketGrossReturn = input.basketGrossLogReturn
+        val productFairValueReturn = input.productFairValueLogReturn
         val factor = factorReturn(stock, input.macro)
         val diffusionFraction = sqrt(referenceFraction)
-        val marketComponent = fundLeverage * stock.beta *
-            strategyParticipation(behavior, factor) * factor * diffusionFraction
+        val marketComponent = productFairValueReturn ?: basketGrossReturn ?: (
+            fundLeverage * stock.beta * strategyParticipation(behavior, factor) *
+                factor * diffusionFraction
+            )
         val sectorFactor = input.macro.sectorHourlyReturns[stock.sector] ?: 0.0
-        val sectorComponent = fundLeverage * SECTOR_LOADING *
-            strategyParticipation(behavior, sectorFactor) * sectorFactor * diffusionFraction
-        val ratesAndInflation = instrumentRateReturn(stock, input.macro)
-        val growthAndSentiment = instrumentGrowthAndCreditReturn(stock, input.macro)
-        val orderFlow = instrumentOrderFlowReturn(stock, input.macro)
+        val sectorComponent = if (referenceReturnOverride == null) {
+            fundLeverage * SECTOR_LOADING *
+                strategyParticipation(behavior, sectorFactor) * sectorFactor * diffusionFraction
+        } else {
+            0.0
+        }
+        val ratesAndInflation = if (referenceReturnOverride == null) {
+            instrumentRateReturn(stock, input.macro)
+        } else {
+            0.0
+        }
+        val growthAndSentiment = if (referenceReturnOverride == null) {
+            instrumentGrowthAndCreditReturn(stock, input.macro)
+        } else {
+            0.0
+        }
+        val orderFlow = if (referenceReturnOverride == null) {
+            instrumentOrderFlowReturn(stock, input.macro)
+        } else {
+            0.0
+        }
         val fxReturn = foreignExchangeReturn(stock, input.macro, input.fxSensitivity) *
             fairValueFraction
-        val fundCosts = fundAccrualLogReturn(stock, fairValueFraction)
-        val referenceResidual = -0.5 * referenceResidualVolatility * referenceResidualVolatility +
-            referenceResidualVolatility * random.nextGaussian()
+        val fundCosts = if (productFairValueReturn == null) {
+            fundAccrualLogReturn(
+                stock = stock,
+                fairValueFraction = fairValueFraction,
+                annualIncomeYieldOverride = input.basketAnnualIncomeYield,
+            )
+        } else {
+            0.0
+        }
+        // A bottom-up basket already contains constituent-specific dispersion and its explicit
+        // tracking-error term. Reusing the catalog volatility here would add a second, often much
+        // larger, unexplained NAV process on top of the actual holdings.
+        val referenceResidual = if (referenceReturnOverride == null) {
+            -0.5 * referenceResidualVolatility * referenceResidualVolatility +
+                referenceResidualVolatility * random.nextGaussian()
+        } else {
+            0.0
+        }
         val gapReversion = if (stock.isFundLike) {
             -priceDislocationReversionRate(stock) * input.priceToReferenceLogGap *
                 input.regularTradingFraction
@@ -247,29 +287,80 @@ class PriceEngine(private val seed: Long) {
         referenceTradingFraction: Double,
         fxTradingFraction: Double = 1.0,
         eventImpulse: PriceImpulse = PriceImpulse(),
+        /** 현재 구성 바스켓이 이미 합성한 비용 전 로그수익률. */
+        basketGrossLogReturn: Double? = null,
     ): Double {
         require(referenceTradingFraction in 0.0..1.0)
         require(fxTradingFraction in 0.0..1.0)
+        require(basketGrossLogReturn == null || basketGrossLogReturn.isFinite())
         val profile = stock.etfProfile ?: return 0.0
         val leverage = profile.leverage
         val behavior = stock.behavior
         val factor = factorReturn(stock, macro)
         val diffusionFraction = sqrt(referenceTradingFraction)
-        val market = leverage * stock.beta * strategyParticipation(behavior, factor) *
-            factor * diffusionFraction
+        val market = basketGrossLogReturn ?: (
+            leverage * stock.beta * strategyParticipation(behavior, factor) *
+                factor * diffusionFraction
+            )
         val sectorFactor = macro.sectorHourlyReturns[stock.sector] ?: 0.0
-        val sector = leverage * SECTOR_LOADING *
-            strategyParticipation(behavior, sectorFactor) * sectorFactor * diffusionFraction
-        val ratesAndInflation = leverage * instrumentRateReturn(stock, macro) * referenceTradingFraction
-        val growthAndSentiment = leverage * instrumentGrowthAndCreditReturn(stock, macro) *
-            referenceTradingFraction
-        val orderFlow = leverage * instrumentOrderFlowReturn(stock, macro) * referenceTradingFraction
+        val sector = if (basketGrossLogReturn == null) {
+            leverage * SECTOR_LOADING *
+                strategyParticipation(behavior, sectorFactor) * sectorFactor * diffusionFraction
+        } else {
+            0.0
+        }
+        val ratesAndInflation = if (basketGrossLogReturn == null) {
+            leverage * instrumentRateReturn(stock, macro) * referenceTradingFraction
+        } else {
+            0.0
+        }
+        val growthAndSentiment = if (basketGrossLogReturn == null) {
+            leverage * instrumentGrowthAndCreditReturn(stock, macro) * referenceTradingFraction
+        } else {
+            0.0
+        }
+        val orderFlow = if (basketGrossLogReturn == null) {
+            leverage * instrumentOrderFlowReturn(stock, macro) * referenceTradingFraction
+        } else {
+            0.0
+        }
         val fx = structuredFxReturn(stock, macro, profile.fxProfile) * fxTradingFraction
         val event = referenceEventLogReturn(stock, eventImpulse, referenceTradingFraction)
         // Expense and hedge-cost accrual belongs to the listing's regular-session NAV
         // path. Including it here would charge a foreign-market ETF once while its
         // reference trades and again while the listing trades.
         return market + sector + ratesAndInflation + growthAndSentiment + orderFlow + fx + event
+    }
+
+    /**
+     * 일일 reset 상품의 배율·환헤지·보수와 분리한 기초지수 1배 수익률이다.
+     *
+     * 상세 벤치마크 엔진이 없는 상품만 이 프록시를 사용한다. 상품 자체의 leverage를 여기서
+     * 적용하지 않으므로 [com.amond.kmpbook.domain.simulation.fundproduct.DailyResetEngine]이
+     * 전일 종가 기준 누적 단순수익률에 목표 배율을 정확히 한 번 적용할 수 있다.
+     */
+    fun coarseUnderlyingReferenceLogReturn(
+        stock: StockDefinition,
+        macro: MacroEnvironment,
+        referenceTradingFraction: Double,
+        eventImpulse: PriceImpulse = PriceImpulse(),
+    ): Double {
+        require(referenceTradingFraction in 0.0..1.0)
+        require(stock.isFundLike)
+        val behavior = stock.behavior
+        val factor = factorReturn(stock, macro)
+        val diffusionFraction = sqrt(referenceTradingFraction)
+        val market = stock.beta * strategyParticipation(behavior, factor) *
+            factor * diffusionFraction
+        val sectorFactor = macro.sectorHourlyReturns[stock.sector] ?: 0.0
+        val sector = SECTOR_LOADING * strategyParticipation(behavior, sectorFactor) *
+            sectorFactor * diffusionFraction
+        val ratesAndInflation = instrumentRateReturn(stock, macro) * referenceTradingFraction
+        val growthAndSentiment = instrumentGrowthAndCreditReturn(stock, macro) *
+            referenceTradingFraction
+        val orderFlow = instrumentOrderFlowReturn(stock, macro) * referenceTradingFraction
+        val event = referenceEventLogReturn(stock, eventImpulse, referenceTradingFraction)
+        return market + sector + ratesAndInflation + growthAndSentiment + orderFlow + event
     }
 
     /**
@@ -280,14 +371,17 @@ class PriceEngine(private val seed: Long) {
     fun fundAccrualLogReturn(
         stock: StockDefinition,
         fairValueFraction: Double,
+        annualIncomeYieldOverride: Double? = null,
     ): Double {
         require(fairValueFraction in 0.0..1.0)
+        require(annualIncomeYieldOverride == null || annualIncomeYieldOverride in 0.0..1.0)
         val profile = stock.etfProfile ?: return 0.0
         val hoursPerTradingYear = TRADING_DAYS_PER_YEAR * TRADING_HOURS_PER_DAY
         val behavior = stock.behavior
         // 분배 재원은 NAV에 먼저 적립된 뒤 배당락일에 빠진다. 커버드콜·ETN의
         // coverage<1 부분은 이 적립에서 제외되므로 반복 분배가 원금을 잠식할 수 있다.
-        val earnedDistributionCarry = stock.dividendYield * behavior.distributionCoverageRatio /
+        val annualIncomeYield = annualIncomeYieldOverride ?: stock.dividendYield
+        val earnedDistributionCarry = annualIncomeYield * behavior.distributionCoverageRatio /
             hoursPerTradingYear * fairValueFraction
         val annualFundCosts = profile.annualExpenseRatio + profile.fxProfile.annualHedgeCostRate
         return earnedDistributionCarry - (

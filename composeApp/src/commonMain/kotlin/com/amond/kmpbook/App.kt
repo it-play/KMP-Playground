@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.amond.kmpbook.debug.console.DebugConsoleCommandProcessor
 import com.amond.kmpbook.debug.console.DebugConsoleSession
+import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.model.game.GamePhase
 import com.amond.kmpbook.domain.model.game.Screen
 import com.amond.kmpbook.domain.model.market.Currency
@@ -127,6 +128,12 @@ private fun activeModCompatibilityError(
         return "${incompatible.id} 모드 버전이 저장 게임과 다릅니다. " +
             "필요 ${incompatible.version} · 설치 $currentVersion"
     }
+    val changedContent = required.firstOrNull { saved ->
+        saved.contentFingerprint != installedById.getValue(saved.id).instrumentPack?.fingerprint
+    }
+    if (changedContent != null) {
+        return "${changedContent.id} 모드의 종목 콘텐츠가 저장 게임을 시작할 때와 다릅니다."
+    }
     val invalidConfiguration = required.firstOrNull { saved ->
         val current = installedById.getValue(saved.id)
         val definitions = current.settings.associateBy { it.key }
@@ -140,15 +147,25 @@ private fun activeModCompatibilityError(
     return null
 }
 
+private fun resolveInstrumentCatalog(
+    baseCatalog: InstrumentCatalogSnapshot,
+    mods: Iterable<InstalledMod>,
+): InstrumentCatalogSnapshot = baseCatalog.withAdditionalPacks(
+    mods
+        .sortedBy(InstalledMod::id)
+        .mapNotNull(InstalledMod::instrumentPack),
+)
+
 @Composable
 fun App(
+    baseInstrumentCatalog: InstrumentCatalogSnapshot,
     onExitRequest: () -> Unit = {},
     onExitBlockedChanged: (Boolean) -> Unit = {},
     escapeRequest: Int = 0,
     debugConsoleToggleRequest: Int = 0,
     onDebugConsoleAvailabilityChanged: (Boolean) -> Unit = {},
 ) {
-    val viewModel = remember { SimulatorViewModel() }
+    val viewModel = remember(baseInstrumentCatalog) { SimulatorViewModel(baseInstrumentCatalog) }
     val debugConsoleProcessor = remember(viewModel) { DebugConsoleCommandProcessor(viewModel) }
     val debugConsoleSession = remember { DebugConsoleSession() }
     val storage = remember { GameSaveStorage() }
@@ -326,10 +343,23 @@ fun App(
                             )
                             if (modCompatibilityError != null) {
                                 saveStatus = modCompatibilityError
-                            } else if (viewModel.restoreGame(result.state)) {
-                                saveStatus = "${save.name} 게임을 불러왔습니다."
                             } else {
-                                saveStatus = "저장된 게임을 확인할 수 없습니다."
+                                val installedById = currentCatalog.mods.associateBy(InstalledMod::id)
+                                val requiredMods = result.state.options.activeMods.map { required ->
+                                    installedById.getValue(required.id)
+                                }
+                                val resolvedCatalog = runCatching {
+                                    resolveInstrumentCatalog(baseInstrumentCatalog, requiredMods)
+                                }.getOrElse { error ->
+                                    saveStatus = "저장 게임의 종목 카탈로그를 구성하지 못했습니다: " +
+                                        (error.message ?: "알 수 없는 오류")
+                                    return@launch
+                                }
+                                if (viewModel.restoreGame(result.state, resolvedCatalog)) {
+                                    saveStatus = "${save.name} 게임을 불러왔습니다."
+                                } else {
+                                    saveStatus = "저장된 게임을 확인할 수 없습니다."
+                                }
                             }
                         }
                     }
@@ -439,8 +469,17 @@ fun App(
                             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                                 try {
                                     val currentCatalog = refreshMods() ?: return@launch
-                                    val enabledMods = currentCatalog.mods.filter(InstalledMod::enabled)
+                                    val enabledMods = currentCatalog.mods
+                                        .filter(InstalledMod::enabled)
+                                        .sortedBy(InstalledMod::id)
                                     if (enabledMods.size > NewGameOptions.MAX_ACTIVE_MODS) return@launch
+                                    val resolvedCatalog = runCatching {
+                                        resolveInstrumentCatalog(baseInstrumentCatalog, enabledMods)
+                                    }.getOrElse { error ->
+                                        modStatusMessage = "활성 모드의 종목 카탈로그를 구성하지 못했습니다: " +
+                                            (error.message ?: "알 수 없는 오류")
+                                        return@launch
+                                    }
                                     viewModel.newGame(
                                         options.copy(
                                             activeMods = enabledMods.map { mod ->
@@ -452,10 +491,15 @@ fun App(
                                                             mod.settingValue(definition.key) ?: definition.defaultValue
                                                         )
                                                     },
+                                                    contentFingerprint = mod.instrumentPack?.fingerprint,
                                                 )
                                             },
                                         ),
-                                    )
+                                        resolvedCatalog,
+                                    )?.let { errorMessage ->
+                                        modStatusMessage = errorMessage
+                                        return@launch
+                                    }
                                 } finally {
                                     isStartingNewGame = false
                                 }
@@ -832,6 +876,8 @@ private fun ScreenContent(
         state.quotes,
         state.corporateFundamentals,
         state.fundFinancialStates,
+        state.etnStates,
+        state.closedEndFundStates,
     ) {
         val stockId = state.selectedStockId ?: state.stocks.firstOrNull()?.id ?: return@remember null
         val stock = state.stocks.firstOrNull { it.id == stockId } ?: return@remember null
@@ -841,6 +887,8 @@ private fun ScreenContent(
             quote = quote,
             corporateState = state.corporateFundamentals[stockId],
             fundState = state.fundFinancialStates[stockId],
+            etnState = state.etnStates[stockId],
+            closedEndFundState = state.closedEndFundStates[stockId],
         )
     }
 
