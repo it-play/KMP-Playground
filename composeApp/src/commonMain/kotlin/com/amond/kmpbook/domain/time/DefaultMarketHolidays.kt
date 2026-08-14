@@ -17,12 +17,13 @@ import kotlinx.datetime.plus
  */
 object DefaultMarketHolidays {
     fun closedDates(market: Market, year: Int): Set<LocalDate> {
-        require(year in 2026..2040) { "기본 휴장일 팩은 2026~2040년을 지원합니다." }
-        return if (market.isKorean) krx(year) else unitedStates(year)
+        require(year in SUPPORTED_YEARS) { "기본 휴장일 팩은 2026~2040년을 지원합니다." }
+        return CLOSED_DATES_BY_YEAR.getValue(year).getValue(market)
     }
 
-    fun closedDatesByMarket(year: Int): Map<Market, Set<LocalDate>> = Market.entries.associateWith {
-        closedDates(it, year)
+    fun closedDatesByMarket(year: Int): Map<Market, Set<LocalDate>> {
+        require(year in SUPPORTED_YEARS) { "기본 휴장일 팩은 2026~2040년을 지원합니다." }
+        return CLOSED_DATES_BY_YEAR.getValue(year)
     }
 
     private fun krx(year: Int): Set<LocalDate> {
@@ -165,5 +166,59 @@ object DefaultMarketHolidays {
     }
 
     private val WEEKEND = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
-}
+    private val SUPPORTED_YEARS = 2026..2040
 
+    /**
+     * Callers share these collections, so read-only wrappers keep an unsafe cast from
+     * corrupting later calendar lookups. They remain nested because they are an
+     * implementation detail of this cache rather than standalone domain types.
+     */
+    private class CachedSet<E>(private val delegate: Set<E>) : Set<E> by delegate {
+        override fun iterator(): Iterator<E> {
+            val iterator = delegate.iterator()
+            return object : Iterator<E> {
+                override fun hasNext(): Boolean = iterator.hasNext()
+                override fun next(): E = iterator.next()
+            }
+        }
+
+        override fun equals(other: Any?): Boolean = delegate == other
+        override fun hashCode(): Int = delegate.hashCode()
+        override fun toString(): String = delegate.toString()
+    }
+
+    private class CachedMap<K, V>(private val delegate: Map<K, V>) : Map<K, V> by delegate {
+        override val entries: Set<Map.Entry<K, V>>
+            get() = delegate.entries
+                .mapTo(linkedSetOf()) { entry -> CachedEntry(entry.key, entry.value) }
+        override val keys: Set<K> get() = delegate.keys.toSet()
+        override val values: Collection<V> get() = delegate.values.toList()
+
+        override fun equals(other: Any?): Boolean = delegate == other
+        override fun hashCode(): Int = delegate.hashCode()
+        override fun toString(): String = delegate.toString()
+    }
+
+    private class CachedEntry<K, V>(
+        override val key: K,
+        override val value: V,
+    ) : Map.Entry<K, V> {
+        override fun equals(other: Any?): Boolean =
+            other is Map.Entry<*, *> && key == other.key && value == other.value
+
+        override fun hashCode(): Int = (key?.hashCode() ?: 0) xor (value?.hashCode() ?: 0)
+        override fun toString(): String = "$key=$value"
+    }
+
+    private val CLOSED_DATES_BY_YEAR: Map<Int, Map<Market, Set<LocalDate>>> = CachedMap(
+        SUPPORTED_YEARS.associateWith { year ->
+            val koreanDates: Set<LocalDate> = CachedSet(krx(year))
+            val unitedStatesDates: Set<LocalDate> = CachedSet(unitedStates(year))
+            CachedMap(
+                Market.entries.associateWith { market ->
+                    if (market.isKorean) koreanDates else unitedStatesDates
+                },
+            )
+        },
+    )
+}
