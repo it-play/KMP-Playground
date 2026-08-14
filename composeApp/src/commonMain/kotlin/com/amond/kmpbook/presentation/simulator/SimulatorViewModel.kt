@@ -18,7 +18,9 @@ import com.amond.kmpbook.persistence.validation.validateSimulatorUiState
 import com.amond.kmpbook.presentation.trading.OrderRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -45,7 +48,9 @@ class SimulatorViewModel(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     private var stateChangeSequence: Long = 0L
+    private var advanceJob: Job? = null
     private var debugJumpJob: Job? = null
+    private var runtimeAccessGate = Mutex()
 
     val uiState: StateFlow<SimulatorUiState> = _uiState.asStateFlow()
     internal val stateChanges: SharedFlow<SimulatorStateChange> = _stateChanges.asSharedFlow()
@@ -63,15 +68,20 @@ class SimulatorViewModel(
             val detail = error.message?.take(240)?.takeIf(String::isNotBlank) ?: "알 수 없는 오류"
             return "새 게임의 종목 방법론을 초기화하지 못했습니다: $detail"
         }
+        cancelBackgroundCommands()
         lastOptions = detachedOptions
         lastCatalog = catalog
         runtime = candidateRuntime
+        runtimeAccessGate = Mutex()
         publish(SimulatorStateChangeKind.GAME_STARTED)
         return null
     }
 
     fun resetGame() {
-        runtime = SimulatorRuntime(lastOptions, lastCatalog, startInSetup = true)
+        val resetRuntime = SimulatorRuntime(lastOptions, lastCatalog, startInSetup = true)
+        cancelBackgroundCommands()
+        runtime = resetRuntime
+        runtimeAccessGate = Mutex()
         publish()
     }
 
@@ -100,7 +110,9 @@ class SimulatorViewModel(
             _uiState.value = _uiState.value.copy(lastMessage = "저장 데이터를 복원할 수 없습니다.")
             return false
         }
+        cancelBackgroundCommands()
         runtime = restored
+        runtimeAccessGate = Mutex()
         publish(
             if (candidate.startsCampaignComparedWith(previousState)) {
                 SimulatorStateChangeKind.GAME_STARTED
@@ -113,86 +125,129 @@ class SimulatorViewModel(
         return true
     }
 
-    fun selectScreen(screen: Screen) {
-        if (_uiState.value.isAdvancing) return
+    fun selectScreen(screen: Screen) = withRuntimeAccess(blocked = {}) {
         runtime.selectScreen(screen)
         publish()
     }
 
-    fun selectStock(stockId: String): Boolean {
+    fun selectStock(stockId: String): Boolean = withRuntimeAccess(blocked = { false }) {
         val result = runtime.selectStock(stockId)
         publish()
-        return result
+        result
     }
 
-    fun selectTurnStep(step: TurnStep) {
+    fun selectTurnStep(step: TurnStep) = withRuntimeAccess(blocked = {}) {
         runtime.selectTurnStep(step)
         publish()
     }
 
     fun advance(step: TurnStep = _uiState.value.selectedTurnStep) {
-        if (_uiState.value.isAdvancing) return
-        val advancingRuntime = runtime
-        val commandCatalog = lastCatalog
-        val preCommandState = advancingRuntime.snapshot().withDetachedActiveMods()
-        val previousTurn = _uiState.value.turn
-        publishSnapshot(
-            _uiState.value.copy(isAdvancing = true, lastMessage = null),
-            SimulatorStateChangeKind.STATE_CHANGED,
-        )
-        viewModelScope.launch {
-            try {
-                val advancedState = withContext(Dispatchers.Default) {
-                    advancingRuntime.advance(step)
-                    advancingRuntime.snapshot()
-                }
-                if (runtime === advancingRuntime) {
-                    if (advancedState.turn > previousTurn) {
-                        publishSnapshot(
-                            advancedState,
-                            SimulatorStateChangeKind.TURN_COMPLETED,
-                            previousTurn = previousTurn,
-                        )
-                    } else {
-                        publishSnapshot(advancedState, SimulatorStateChangeKind.STATE_CHANGED)
+        val commandGate = runtimeAccessGate
+        if (!commandGate.tryLock()) return
+        var completionOwnsGate = false
+        try {
+            val advancingRuntime = runtime
+            val commandCatalog = lastCatalog
+            val publishedState = _uiState.value
+            val previousTurn = publishedState.turn
+            publishSnapshot(
+                publishedState.copy(isAdvancing = true, lastMessage = null),
+                SimulatorStateChangeKind.STATE_CHANGED,
+            )
+            val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+                val commandJob = currentCoroutineContext()[Job]
+                var preCommandState: SimulatorUiState? = null
+                try {
+                    val advancedState = withContext(Dispatchers.Default) {
+                        // Capture the rollback boundary away from Main. Do not trust the publicly
+                        // exposed UI collection views as a canonical persistence checkpoint.
+                        preCommandState = advancingRuntime.snapshot().withDetachedActiveMods()
+                        currentCoroutineContext().ensureActive()
+                        // This suspend variant is the canonical hourly loop with ensureActive() at
+                        // each simulated-hour boundary. A single hour remains atomic for rollback.
+                        advancingRuntime.advance(step)
+                        advancingRuntime.snapshot()
                     }
-                    when (advancedState.phase) {
-                        GamePhase.SETTLEMENT -> publishSnapshot(
-                            advancedState,
-                            SimulatorStateChangeKind.SETTLEMENT_STARTED,
-                        )
-                        GamePhase.FINISHED -> publishSnapshot(
-                            advancedState,
-                            SimulatorStateChangeKind.GAME_ENDED,
-                        )
-                        else -> Unit
+                    if (runtime === advancingRuntime) {
+                        if (advancedState.turn > previousTurn) {
+                            publishSnapshot(
+                                advancedState,
+                                SimulatorStateChangeKind.TURN_COMPLETED,
+                                previousTurn = previousTurn,
+                            )
+                        } else {
+                            publishSnapshot(advancedState, SimulatorStateChangeKind.STATE_CHANGED)
+                        }
+                        when (advancedState.phase) {
+                            GamePhase.SETTLEMENT -> publishSnapshot(
+                                advancedState,
+                                SimulatorStateChangeKind.SETTLEMENT_STARTED,
+                            )
+                            GamePhase.FINISHED -> publishSnapshot(
+                                advancedState,
+                                SimulatorStateChangeKind.GAME_ENDED,
+                            )
+                            else -> Unit
+                        }
                     }
-                }
-            } catch (cancelled: CancellationException) {
-                if (runtime === advancingRuntime) {
-                    rollbackCommand(
-                        preCommandState,
-                        commandCatalog,
-                        "게임 진행이 취소되어 시작 전 상태로 복원했습니다.",
-                    )
-                }
-                throw cancelled
-            } catch (error: Throwable) {
-                if (runtime === advancingRuntime) {
-                    rollbackCommand(
-                        preCommandState,
-                        commandCatalog,
-                        "게임 진행에 실패해 시작 전 상태로 복원했습니다: ${error.conciseDetail()}",
-                    )
+                } catch (cancelled: CancellationException) {
+                    if (runtime === advancingRuntime) {
+                        val checkpoint = preCommandState
+                            ?: withContext(NonCancellable + Dispatchers.Default) {
+                                advancingRuntime.snapshot().withDetachedActiveMods()
+                            }
+                        rollbackCommand(
+                            advancingRuntime,
+                            checkpoint,
+                            commandCatalog,
+                            "게임 진행이 취소되어 시작 전 상태로 복원했습니다.",
+                        )
+                    }
+                    throw cancelled
+                } catch (error: Throwable) {
+                    if (runtime === advancingRuntime) {
+                        val checkpoint = preCommandState
+                            ?: withContext(NonCancellable + Dispatchers.Default) {
+                                advancingRuntime.snapshot().withDetachedActiveMods()
+                            }
+                        rollbackCommand(
+                            advancingRuntime,
+                            checkpoint,
+                            commandCatalog,
+                            "게임 진행에 실패해 시작 전 상태로 복원했습니다: ${error.conciseDetail()}",
+                        )
+                    }
+                } finally {
+                    if (advanceJob === commandJob) advanceJob = null
                 }
             }
+            advanceJob = job
+            job.invokeOnCompletion {
+                if (advanceJob === job) advanceJob = null
+                commandGate.unlock()
+            }
+            completionOwnsGate = true
+            job.start()
+        } finally {
+            if (!completionOwnsGate) commandGate.unlock()
         }
     }
 
-    fun placeOrder(request: OrderRequest): Boolean {
+    /** Requests cancellation at the next atomic simulated-hour boundary. */
+    fun cancelAdvance(): Boolean {
+        val jobs = listOfNotNull(advanceJob, debugJumpJob).filter(Job::isActive)
+        if (jobs.isEmpty()) return false
+        _uiState.value = _uiState.value.copy(
+            lastMessage = "현재 시간 계산이 끝나는 즉시 진행을 취소하고 이전 상태로 복원합니다.",
+        )
+        jobs.forEach(Job::cancel)
+        return true
+    }
+
+    fun placeOrder(request: OrderRequest): Boolean = withRuntimeAccess(blocked = { false }) {
         val result = runtime.placeOrder(request)
         publish()
-        return result
+        result
     }
 
     fun placeOrder(
@@ -213,47 +268,49 @@ class SimulatorViewModel(
         ),
     )
 
-    fun cancelOrder(orderId: String): Boolean {
+    fun cancelOrder(orderId: String): Boolean = withRuntimeAccess(blocked = { false }) {
         val result = runtime.cancelOrder(orderId)
         publish()
-        return result
+        result
     }
 
-    fun exchange(from: Currency, to: Currency, amount: Double): Boolean {
+    fun exchange(from: Currency, to: Currency, amount: Double): Boolean =
+        withRuntimeAccess(blocked = { false }) {
         val result = runtime.exchange(from, to, amount)
         publish()
-        return result
+        result
     }
 
-    fun setAutoExchange(enabled: Boolean) {
+    fun setAutoExchange(enabled: Boolean) = withRuntimeAccess(blocked = {}) {
         runtime.setAutoExchange(enabled)
         publish()
     }
 
-    fun setExternalMarketForces(forces: ExternalMarketForces) {
+    fun setExternalMarketForces(forces: ExternalMarketForces) = withRuntimeAccess(blocked = {}) {
         runtime.setExternalMarketForces(forces)
         publish()
     }
 
-    fun markEventRead(eventId: String) {
+    fun markEventRead(eventId: String) = withRuntimeAccess(blocked = {}) {
         runtime.markEventRead(eventId)
         publish()
     }
 
-    fun markStockNewsListViewed(stockId: String, eventIds: Set<String>) {
+    fun markStockNewsListViewed(stockId: String, eventIds: Set<String>) =
+        withRuntimeAccess(blocked = {}) {
         runtime.markStockNewsListViewed(stockId, eventIds)
         publish()
     }
 
-    fun markAllEventsRead() {
+    fun markAllEventsRead() = withRuntimeAccess(blocked = {}) {
         runtime.markAllEventsRead()
         publish()
     }
 
-    fun toggleWatchlist(stockId: String): Boolean {
+    fun toggleWatchlist(stockId: String): Boolean = withRuntimeAccess(blocked = { false }) {
         val added = runtime.toggleWatchlist(stockId)
         publish()
-        return added
+        added
     }
 
     fun clearMessage() {
@@ -261,21 +318,23 @@ class SimulatorViewModel(
             _uiState.value = _uiState.value.copy(lastMessage = null)
             return
         }
-        runtime.clearMessage()
-        publish()
+        withRuntimeAccess(blocked = {}) {
+            runtime.clearMessage()
+            publish()
+        }
     }
 
-    fun pause() {
+    fun pause() = withRuntimeAccess(blocked = {}) {
         runtime.pause()
         publish()
     }
 
-    fun resume() {
+    fun resume() = withRuntimeAccess(blocked = {}) {
         runtime.resume()
         publish()
     }
 
-    fun finishSettlement() {
+    fun finishSettlement() = withRuntimeAccess(blocked = {}) {
         val previousPhase = _uiState.value.phase
         runtime.finishSettlement()
         val snapshot = runtime.snapshot()
@@ -329,14 +388,16 @@ class SimulatorViewModel(
         debugMutate { runtime.debugCancelAllOrders() }
 
     internal fun debugEventGuide(query: String?): List<DebugEventGuide> =
-        if (
-            debugAccessFailure() == null &&
-            !currentState.isAdvancing &&
-            debugJumpJob?.isActive != true
-        ) {
-            runtime.debugEventGuide(query)
-        } else {
-            emptyList()
+        withRuntimeAccess(blocked = { emptyList() }) {
+            if (
+                debugAccessFailure() == null &&
+                !currentState.isAdvancing &&
+                debugJumpJob?.isActive != true
+            ) {
+                runtime.debugEventGuide(query)
+            } else {
+                emptyList()
+            }
         }
 
     internal fun debugTriggerEvent(templateId: String, target: String?): DebugRuntimeResult =
@@ -382,123 +443,148 @@ class SimulatorViewModel(
         if (targetTurn !in 0L..maxTurn) {
             return DebugRuntimeResult.failure("목표 턴은 0..$maxTurn 범위여야 합니다.")
         }
-        val originalRuntime = runtime
-        val originalState = currentState
-        val commandCatalog = lastCatalog
-        val isBackward = targetTurn < originalState.turn
-        if (isBackward && !resetForBackwardJump) {
-            return DebugRuntimeResult.failure("과거 턴으로 이동하면 현재 진행을 잃습니다. '--reset'을 명시해 주세요.")
+        val commandGate = runtimeAccessGate
+        if (!commandGate.tryLock()) {
+            return DebugRuntimeResult.failure("이미 게임 진행 작업이 실행 중입니다. 'turn cancel'로 취소할 수 있습니다.")
         }
-        if (targetTurn == originalState.turn && !finishSettlement) {
-            return DebugRuntimeResult.success("이미 $targetTurn 턴입니다.", targetTurn.toString())
-        }
+        var backgroundOwnsGate = false
+        try {
+            val originalRuntime = runtime
+            // Debug commands are rare and may mutate many fields. Use a private Runtime snapshot
+            // so rollback cannot be influenced by externally held UI collection views.
+            val originalState = runtime.snapshot().withDetachedActiveMods()
+            val commandCatalog = lastCatalog
+            val isBackward = targetTurn < originalState.turn
+            if (isBackward && !resetForBackwardJump) {
+                return DebugRuntimeResult.failure(
+                    "과거 턴으로 이동하면 현재 진행을 잃습니다. '--reset'을 명시해 주세요.",
+                )
+            }
+            if (targetTurn == originalState.turn && !finishSettlement) {
+                return DebugRuntimeResult.success("이미 $targetTurn 턴입니다.", targetTurn.toString())
+            }
 
-        val workingRuntime = if (isBackward) {
-            SimulatorRuntime(originalState.options.withDetachedActiveMods(), lastCatalog)
-        } else {
-            originalRuntime
-        }
-        val restorePause = originalState.phase == GamePhase.PAUSED
-        if (workingRuntime.phase == GamePhase.PAUSED) workingRuntime.resume()
-        publishSnapshot(
-            originalState.copy(
-                isAdvancing = true,
-                lastMessage = "디버그 콘솔이 $targetTurn 턴으로 이동하고 있습니다.",
-            ),
-            SimulatorStateChangeKind.STATE_CHANGED,
-        )
+            val workingRuntime = if (isBackward) {
+                SimulatorRuntime(originalState.options.withDetachedActiveMods(), lastCatalog)
+            } else {
+                originalRuntime
+            }
+            val restorePause = originalState.phase == GamePhase.PAUSED
+            if (workingRuntime.phase == GamePhase.PAUSED) workingRuntime.resume()
+            publishSnapshot(
+                originalState.copy(
+                    isAdvancing = true,
+                    lastMessage = "디버그 콘솔이 $targetTurn 턴으로 이동하고 있습니다.",
+                ),
+                SimulatorStateChangeKind.STATE_CHANGED,
+            )
 
-        debugJumpJob = viewModelScope.launch {
-            var completed = false
-            var cancelled = false
-            var failure: Throwable? = null
-            var settlementSnapshot: SimulatorUiState? = null
-            try {
-                withContext(Dispatchers.Default) {
-                    while (workingRuntime.turn < targetTurn && workingRuntime.phase == GamePhase.PLAYING) {
+            val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+                val commandJob = currentCoroutineContext()[Job]
+                var completed = false
+                var cancelled = false
+                var failure: Throwable? = null
+                var settlementSnapshot: SimulatorUiState? = null
+                try {
+                    withContext(Dispatchers.Default) {
+                        while (
+                            workingRuntime.turn < targetTurn &&
+                            workingRuntime.phase == GamePhase.PLAYING
+                        ) {
+                            currentCoroutineContext().ensureActive()
+                            val remainingTurns = targetTurn - workingRuntime.turn
+                            val step = TurnStep.entries.lastOrNull { candidate ->
+                                candidate.hours.toLong() <= remainingTurns
+                            } ?: TurnStep.ONE_HOUR
+                            workingRuntime.advance(step)
+                        }
                         currentCoroutineContext().ensureActive()
-                        val remainingTurns = targetTurn - workingRuntime.turn
-                        val step = TurnStep.entries.lastOrNull { candidate ->
-                            candidate.hours.toLong() <= remainingTurns
-                        } ?: TurnStep.ONE_HOUR
-                        workingRuntime.debugAdvance(step)
+                        if (workingRuntime.phase == GamePhase.SETTLEMENT) {
+                            settlementSnapshot = workingRuntime.snapshot()
+                        }
                     }
                     currentCoroutineContext().ensureActive()
-                    if (workingRuntime.phase == GamePhase.SETTLEMENT) {
-                        settlementSnapshot = workingRuntime.snapshot()
+                    if (finishSettlement && workingRuntime.phase == GamePhase.SETTLEMENT) {
+                        workingRuntime.finishSettlement()
                     }
-                }
-                currentCoroutineContext().ensureActive()
-                if (finishSettlement && workingRuntime.phase == GamePhase.SETTLEMENT) {
-                    workingRuntime.finishSettlement()
-                }
-                completed = true
-            } catch (_: CancellationException) {
-                cancelled = true
-            } catch (error: Throwable) {
-                failure = error
-            } finally {
-                // A command that throws or is cancelled may have mutated several hourly states.
-                // Rebuild from the one immutable command-boundary snapshot instead of exposing a
-                // partially advanced Runtime. A concurrently replaced game remains untouched.
-                if (runtime === originalRuntime && completed) {
-                    runtime = workingRuntime
-                    if (restorePause && runtime.phase == GamePhase.PLAYING) runtime.pause()
-                    val snapshot = runtime.snapshot().copy(
-                        lastMessage = "디버그 턴 이동을 완료했습니다: ${runtime.turn}턴.",
-                    )
-                    val settlement = when {
-                        settlementSnapshot != null ->
-                            settlementSnapshot.copy(lastMessage = snapshot.lastMessage)
-                        snapshot.phase == GamePhase.SETTLEMENT -> snapshot
-                        else -> null
-                    }
-                    if (settlement != null) {
-                        if (settlement.turn > originalState.turn) {
+                    completed = true
+                } catch (_: CancellationException) {
+                    cancelled = true
+                } catch (error: Throwable) {
+                    failure = error
+                } finally {
+                    // A command that throws or is cancelled may have mutated several hourly
+                    // states. Rebuild from the immutable command boundary; a concurrently
+                    // replaced Runtime always wins.
+                    if (runtime === originalRuntime && completed) {
+                        runtime = workingRuntime
+                        if (restorePause && runtime.phase == GamePhase.PLAYING) runtime.pause()
+                        val snapshot = runtime.snapshot().copy(
+                            lastMessage = "디버그 턴 이동을 완료했습니다: ${runtime.turn}턴.",
+                        )
+                        val settlement = when {
+                            settlementSnapshot != null ->
+                                settlementSnapshot.copy(lastMessage = snapshot.lastMessage)
+                            snapshot.phase == GamePhase.SETTLEMENT -> snapshot
+                            else -> null
+                        }
+                        if (settlement != null) {
+                            if (settlement.turn > originalState.turn) {
+                                publishSnapshot(
+                                    settlement,
+                                    SimulatorStateChangeKind.TURN_COMPLETED,
+                                    previousTurn = originalState.turn,
+                                )
+                            }
                             publishSnapshot(
                                 settlement,
-                                SimulatorStateChangeKind.TURN_COMPLETED,
-                                previousTurn = originalState.turn,
+                                SimulatorStateChangeKind.SETTLEMENT_STARTED,
+                            )
+                            if (snapshot.phase == GamePhase.FINISHED) {
+                                publishSnapshot(snapshot, SimulatorStateChangeKind.GAME_ENDED)
+                            }
+                        } else {
+                            val kind = when {
+                                isBackward -> SimulatorStateChangeKind.GAME_STARTED
+                                snapshot.turn > originalState.turn ->
+                                    SimulatorStateChangeKind.TURN_COMPLETED
+                                else -> SimulatorStateChangeKind.STATE_CHANGED
+                            }
+                            publishSnapshot(
+                                snapshot,
+                                kind,
+                                previousTurn = originalState.turn.takeIf {
+                                    kind == SimulatorStateChangeKind.TURN_COMPLETED
+                                },
                             )
                         }
-                        publishSnapshot(
-                            settlement,
-                            SimulatorStateChangeKind.SETTLEMENT_STARTED,
-                        )
-                        if (snapshot.phase == GamePhase.FINISHED) {
-                            publishSnapshot(snapshot, SimulatorStateChangeKind.GAME_ENDED)
+                        lastOptions = snapshot.options.withDetachedActiveMods()
+                    } else if (runtime === originalRuntime) {
+                        val message = if (cancelled) {
+                            "디버그 턴 이동을 취소해 시작 전 상태로 복원했습니다."
+                        } else {
+                            "디버그 턴 이동에 실패해 시작 전 상태로 복원했습니다: " +
+                                requireNotNull(failure).conciseDetail()
                         }
-                    } else {
-                        val kind = when {
-                            isBackward -> SimulatorStateChangeKind.GAME_STARTED
-                            snapshot.turn > originalState.turn -> SimulatorStateChangeKind.TURN_COMPLETED
-                            else -> SimulatorStateChangeKind.STATE_CHANGED
-                        }
-                        publishSnapshot(
-                            snapshot,
-                            kind,
-                            previousTurn = originalState.turn.takeIf {
-                                kind == SimulatorStateChangeKind.TURN_COMPLETED
-                            },
-                        )
+                        rollbackCommand(originalRuntime, originalState, commandCatalog, message)
                     }
-                    lastOptions = snapshot.options.withDetachedActiveMods()
-                } else if (runtime === originalRuntime) {
-                    val message = if (cancelled) {
-                        "디버그 턴 이동을 취소해 시작 전 상태로 복원했습니다."
-                    } else {
-                        "디버그 턴 이동에 실패해 시작 전 상태로 복원했습니다: " +
-                            requireNotNull(failure).conciseDetail()
-                    }
-                    rollbackCommand(originalState, commandCatalog, message)
+                    if (debugJumpJob === commandJob) debugJumpJob = null
                 }
-                debugJumpJob = null
             }
+            debugJumpJob = job
+            job.invokeOnCompletion {
+                if (debugJumpJob === job) debugJumpJob = null
+                commandGate.unlock()
+            }
+            backgroundOwnsGate = true
+            job.start()
+            return DebugRuntimeResult.success(
+                message = "$targetTurn 턴 이동을 시작했습니다. 계산 중에도 콘솔에서 'turn cancel'을 사용할 수 있습니다.",
+                value = targetTurn.toString(),
+            )
+        } finally {
+            if (!backgroundOwnsGate) commandGate.unlock()
         }
-        return DebugRuntimeResult.success(
-            message = "$targetTurn 턴 이동을 시작했습니다. 계산 중에도 콘솔에서 'turn cancel'을 사용할 수 있습니다.",
-            value = targetTurn.toString(),
-        )
     }
 
     internal fun debugCancelTurnJump(): DebugRuntimeResult {
@@ -512,45 +598,63 @@ class SimulatorViewModel(
         }
     }
 
-    private fun debugMutate(block: () -> DebugRuntimeResult): DebugRuntimeResult {
-        debugAccessFailure()?.let { return it }
-        if (currentState.isAdvancing || debugJumpJob?.isActive == true) {
-            return DebugRuntimeResult.failure("게임 진행 계산 중에는 상태를 변경할 수 없습니다.")
+    private fun debugMutate(block: () -> DebugRuntimeResult): DebugRuntimeResult =
+        withRuntimeAccess(
+            blocked = {
+                DebugRuntimeResult.failure("게임 진행 계산 중에는 상태를 변경할 수 없습니다.")
+            },
+        ) {
+            debugAccessFailure()?.let { return@withRuntimeAccess it }
+            if (currentState.isAdvancing || debugJumpJob?.isActive == true) {
+                return@withRuntimeAccess DebugRuntimeResult.failure(
+                    "게임 진행 계산 중에는 상태를 변경할 수 없습니다.",
+                )
+            }
+            val before = runtime.snapshot().withDetachedActiveMods()
+            val result = block()
+            if (!result.success) {
+                publish()
+                return@withRuntimeAccess result
+            }
+            val candidate = runtime.snapshot().withDetachedActiveMods()
+            val problem = validateSimulatorUiState(candidate, lastCatalog)
+            if (problem != null) {
+                runtime = requireNotNull(SimulatorRuntime.restore(before, lastCatalog))
+                publish()
+                return@withRuntimeAccess DebugRuntimeResult.failure(
+                    "변경이 게임 불변식을 위반해 되돌렸습니다: $problem",
+                )
+            }
+            lastOptions = candidate.options.withDetachedActiveMods()
+            publishSnapshot(candidate, SimulatorStateChangeKind.STATE_CHANGED)
+            result
         }
-        val before = runtime.snapshot().withDetachedActiveMods()
-        val result = block()
-        if (!result.success) {
-            publish()
-            return result
-        }
-        val candidate = runtime.snapshot().withDetachedActiveMods()
-        val problem = validateSimulatorUiState(candidate, lastCatalog)
-        if (problem != null) {
-            runtime = requireNotNull(SimulatorRuntime.restore(before, lastCatalog))
-            publish()
-            return DebugRuntimeResult.failure("변경이 게임 불변식을 위반해 되돌렸습니다: $problem")
-        }
-        lastOptions = candidate.options.withDetachedActiveMods()
-        publishSnapshot(candidate, SimulatorStateChangeKind.STATE_CHANGED)
-        return result
-    }
 
     /** Restores the canonical command boundary after any partially mutating background failure. */
-    private fun rollbackCommand(
+    private suspend fun rollbackCommand(
+        failedRuntime: SimulatorRuntime,
         preCommandState: SimulatorUiState,
         commandCatalog: InstrumentCatalogSnapshot,
         message: String,
-    ) {
+    ) = withContext(NonCancellable) {
         val canonicalState = preCommandState
             .withDetachedActiveMods()
-            .copy(isAdvancing = false)
-        runtime = checkNotNull(SimulatorRuntime.restore(canonicalState, commandCatalog)) {
-            "A Runtime-generated command boundary could not be restored"
+            .copy(
+                isAdvancing = false,
+                lastMessage = message.take(300),
+            )
+        val restoredRuntime = withContext(Dispatchers.Default) {
+            checkNotNull(SimulatorRuntime.restore(canonicalState, commandCatalog)) {
+                "A Runtime-generated command boundary could not be restored"
+            }
         }
+        // Runtime replacement (new/load/reset) wins if it happened while reconstruction ran.
+        if (runtime !== failedRuntime) return@withContext
+        runtime = restoredRuntime
         lastCatalog = commandCatalog
         lastOptions = canonicalState.options.withDetachedActiveMods()
         publishSnapshot(
-            runtime.snapshot().copy(isAdvancing = false, lastMessage = message.take(300)),
+            canonicalState,
             SimulatorStateChangeKind.STATE_CHANGED,
         )
     }
@@ -563,6 +667,28 @@ class SimulatorViewModel(
             ?.takeIf(String::isNotEmpty)
             ?.take(220)
             ?: "원인을 확인할 수 없는 내부 오류"
+
+    /** Runtime replacement owns the screen; all work tied to the previous identity is obsolete. */
+    private fun cancelBackgroundCommands() {
+        advanceJob?.cancel()
+        debugJumpJob?.cancel()
+        advanceJob = null
+        debugJumpJob = null
+    }
+
+    /** Serializes every access to the mutable Runtime while a background command owns it. */
+    private inline fun <T> withRuntimeAccess(
+        blocked: () -> T,
+        action: () -> T,
+    ): T {
+        val gate = runtimeAccessGate
+        if (!gate.tryLock()) return blocked()
+        return try {
+            action()
+        } finally {
+            gate.unlock()
+        }
+    }
 
     private fun debugAccessFailure(): DebugRuntimeResult? = when {
         !isDebugConsoleEnabled() -> DebugRuntimeResult.failure("현재 캠페인에 호환되는 디버그 모드가 활성화되지 않았습니다.")

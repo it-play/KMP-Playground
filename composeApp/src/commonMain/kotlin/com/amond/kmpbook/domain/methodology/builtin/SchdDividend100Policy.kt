@@ -23,7 +23,12 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
 
-/** Exact supported policy for the Dow Jones U.S. Dividend 100/SCHD reference methodology. */
+/**
+ * Supported v1 policy for the Dow Jones U.S. Dividend 100/SCHD reference methodology.
+ *
+ * This version does not apply the business-activity screen of the separate S&P U.S. Dividend 100
+ * Index, and it does not implement the constituent M&A handling effective on 2026-04-29.
+ */
 internal object SchdDividend100Policy : EquityMethodologyPolicy {
     override val schedule = SchdDividend100Schedule
     override val requiredDecimalSignalIds: Set<String> = buildSet {

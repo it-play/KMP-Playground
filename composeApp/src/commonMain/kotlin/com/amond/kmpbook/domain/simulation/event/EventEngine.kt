@@ -18,6 +18,34 @@ import kotlin.math.ln
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
 
+private fun EventTemplate.detachedForEngine(): EventTemplate = copy(
+    durationHours = durationHours.first..durationHours.last,
+    shockReturn = shockReturn.start..shockReturn.endInclusive,
+    hourlyDrift = hourlyDrift.start..hourlyDrift.endInclusive,
+    volatilityMultiplier = volatilityMultiplier.start..volatilityMultiplier.endInclusive,
+    volumeMultiplier = volumeMultiplier.start..volumeMultiplier.endInclusive,
+    liquidityMultiplier = liquidityMultiplier.start..liquidityMultiplier.endInclusive,
+    sentiment = sentiment.start..sentiment.endInclusive,
+    eligibleMarkets = eligibleMarkets.toSet(),
+    eligibleSectors = eligibleSectors.toSet(),
+    eligibleInstrumentTypes = eligibleInstrumentTypes.toSet(),
+    eligibleStrategies = eligibleStrategies.toSet(),
+    impactInsights = impactInsights.map { insight ->
+        insight.copy(markets = insight.markets.toSet())
+    },
+    causalSignals = causalSignals.toList(),
+    listingRiskTags = listingRiskTags.toSet(),
+    listingRecoveryConditions = listingRecoveryConditions.toSet(),
+    terminationTemplate = terminationTemplate?.copy(
+        accelerationRecoveryRate = terminationTemplate.accelerationRecoveryRate?.let { range ->
+            range.start..range.endInclusive
+        },
+    ),
+    tradingHaltDirective = tradingHaltDirective?.copy(
+        eligibleMarkets = tradingHaltDirective.eligibleMarkets.toSet(),
+    ),
+)
+
 private fun MacroEnvironment.toCausalMarketRegimeSnapshot(): CausalMarketRegimeSnapshot =
     CausalMarketRegimeSnapshot(
         riskSentiment = riskSentiment,
@@ -33,13 +61,16 @@ private fun MacroEnvironment.toCausalMarketRegimeSnapshot(): CausalMarketRegimeS
  */
 class EventEngine(
     seed: Long,
-    val templates: List<EventTemplate> = DefaultEventTemplates.all,
+    templates: List<EventTemplate> = DefaultEventTemplates.all,
 ) {
     private val random = DeterministicRandom(seed)
+    private val templates: List<EventTemplate> = templates.map(EventTemplate::detachedForEngine)
     private var sequence: Long = 0L
     private val lastTriggeredAt = mutableMapOf<String, Long>()
     private val generatedActiveEvents = mutableListOf<GameEvent>()
     private val templatesById = templates.associateBy(EventTemplate::id)
+    private var structuralTargetUniverse: List<StockDefinition>? = null
+    private var structuralTargetsByTemplateId: Map<String, List<SelectedEventTarget>> = emptyMap()
 
     init {
         require(templates.map(EventTemplate::id).distinct().size == templates.size) {
@@ -55,6 +86,7 @@ class EventEngine(
         val activeTriggerKeys = (generatedActiveEvents + externallyActive)
             .mapNotNullTo(mutableSetOf(), ::triggerKeyFromEvent)
         val newEvents = mutableListOf<GameEvent>()
+        val structuralTargets = structuralTargetsFor(context.stocks)
 
         var cursor = context.timestamp
         var remainingHours = context.elapsedHours.toDouble()
@@ -65,7 +97,11 @@ class EventEngine(
                 if (template.oneShot && oneShotTriggerKey(template) in lastTriggeredAt) {
                     return@mapNotNull null
                 }
-                val availableTargets = eligibleTargets(template, context.stocks, context.macro)
+                val availableTargets = eligibleTargets(
+                    template = template,
+                    structuralTargets = structuralTargets.getValue(template.id),
+                    macro = context.macro,
+                )
                     .filter { target ->
                         val key = triggerKey(template, target)
                         key !in activeTriggerKeys && !isCoolingDown(template, key, cursor)
@@ -110,13 +146,14 @@ class EventEngine(
      */
     internal fun debugGuideEntries(stocks: List<StockDefinition>): List<DebugEventGuide> {
         requireUniqueStockIds(stocks)
+        val structuralTargets = structuralTargetsFor(stocks)
         return templates.sortedBy(EventTemplate::id).map { template ->
             DebugEventGuide(
                 templateId = template.id,
                 title = template.titleTemplate,
                 scope = template.scope,
                 argumentName = debugArgumentName(template.scope),
-                eligibleTargets = structurallyEligibleTargets(template, stocks)
+                eligibleTargets = structuralTargets.getValue(template.id)
                     .map { target -> debugTargetArgument(template.scope, target) }
                     .filterNotNull()
                     .distinct()
@@ -147,7 +184,7 @@ class EventEngine(
             return DebugEventTriggerResult.rejected("이벤트 '$templateId'은(는) 최근 정기 발표와 서사가 중복됩니다.")
         }
         val normalizedTarget = targetArgument?.trim()?.takeIf(String::isNotEmpty)
-        val targets = structurallyEligibleTargets(template, stocks)
+        val targets = structuralTargetsFor(stocks).getValue(template.id)
         val selectedTarget = when (template.scope) {
             EventScope.GLOBAL -> {
                 if (normalizedTarget != null) {
@@ -257,8 +294,9 @@ class EventEngine(
      */
     internal fun possibleTriggerKeys(stocks: List<StockDefinition>): Set<String> {
         requireUniqueStockIds(stocks)
+        val structuralTargets = structuralTargetsFor(stocks)
         return templates.flatMapTo(linkedSetOf()) { template ->
-            structurallyEligibleTargets(template, stocks).map { target -> triggerKey(template, target) }
+            structuralTargets.getValue(template.id).map { target -> triggerKey(template, target) }
         }
     }
 
@@ -283,7 +321,7 @@ class EventEngine(
             ?: return "Generated event '${event.id}' does not reference a generator template"
         val template = templatesById[templateId]
             ?: return "Generated event '${event.id}' references unknown template '$templateId'"
-        val matchingTargets = structurallyEligibleTargets(template, stocks)
+        val matchingTargets = structuralTargetsFor(stocks).getValue(template.id)
             .filter { target -> target.matches(event) }
         if (matchingTargets.size != 1) {
             return "Generated event '${event.id}' target is not an exact eligible target for template '$templateId'"
@@ -535,16 +573,41 @@ class EventEngine(
 
     private fun eligibleTargets(
         template: EventTemplate,
-        stocks: List<StockDefinition>,
+        structuralTargets: List<SelectedEventTarget>,
         macro: MacroEnvironment,
-    ): List<SelectedEventTarget> = structurallyEligibleTargets(template, stocks).filter { target ->
+    ): List<SelectedEventTarget> = if (
         template.scope != EventScope.MARKET ||
+        template.condition !in MARKET_TARGET_CONDITIONS
+    ) {
+        structuralTargets
+    } else {
+        structuralTargets.filter { target ->
             target.markets.singleOrNull()?.let { market ->
                 marketMatchesCondition(template.condition, market, macro)
             } == true
+        }
     }
 
-    private fun structurallyEligibleTargets(
+    /**
+     * Stock definitions and templates are immutable campaign schema. Lifecycle removals create a
+     * different list, which invalidates this cache; an equal universe reuses the pure filtering and
+     * stable sorting shared by generation, debug tooling, and restore validation.
+     */
+    private fun structuralTargetsFor(
+        stocks: List<StockDefinition>,
+    ): Map<String, List<SelectedEventTarget>> {
+        if (structuralTargetUniverse == stocks) return structuralTargetsByTemplateId
+
+        val universeSnapshot = stocks.toList()
+        val targets = templates.associate { template ->
+            template.id to computeStructurallyEligibleTargets(template, universeSnapshot)
+        }
+        structuralTargetUniverse = universeSnapshot
+        structuralTargetsByTemplateId = targets
+        return targets
+    }
+
+    private fun computeStructurallyEligibleTargets(
         template: EventTemplate,
         stocks: List<StockDefinition>,
     ): List<SelectedEventTarget> {
@@ -721,6 +784,10 @@ class EventEngine(
     }
 
     companion object {
+        private val MARKET_TARGET_CONDITIONS = setOf(
+            EventCondition.MARKET_DRAWDOWN,
+            EventCondition.MARKET_RALLY,
+        )
         private const val SECONDS_PER_HOUR: Long = 3_600L
         private const val HOURS_PER_DAY: Double = 24.0
         private const val MIN_HAZARD_UNIFORM: Double = 1e-12

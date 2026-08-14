@@ -47,8 +47,8 @@ import kotlinx.datetime.toLocalDateTime
  * Shared rules-based engine for provisional equity references.
  *
  * Constituents and rebalance ledgers are explicit, while hourly returns are evaluated from a
- * vectorized country/sector/style/shared-residual exposure compiled at rebalance. This keeps 329+
- * benchmarks bounded without recomputing every representative constituent on every game hour.
+ * vectorized country/sector/style/shared-residual exposure compiled at rebalance. This keeps the
+ * benchmark catalog bounded without recomputing every representative constituent on every game hour.
  * Product fees, tracking error, leverage, FX hedges and option overlays are intentionally absent.
  */
 class EquityReferenceBookEngine private constructor(

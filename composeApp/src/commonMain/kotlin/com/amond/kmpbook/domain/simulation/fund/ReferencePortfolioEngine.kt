@@ -39,13 +39,15 @@ import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 
 /**
- * 버전된 주식 벤치마크 방법론을 비거래 기준자산에 적용하는 결정론적 포트폴리오 엔진이다.
+ * 등록된 버전형 주식 방법론을 비거래 기준자산에 적용하는 provider-neutral 결정론적 host다.
  *
  * 경로 의존 상태는 모두 [ReferencePortfolioState]에 있고, 이 객체가 보유하는 캐시는 seed와 연도만으로
  * 다시 만들 수 있는 불변 파생 데이터다. 따라서 provisional/final 가격 패스가 같은 입력을 계산해도
  * 구성안·수익률·원장이 달라지지 않는다.
- * 이 상태는 SCHD의 미래 실제 보유종목이 아니라 공식 규칙을 재현하는 비거래 reference/index
- * portfolio이며, 플레이어가 주문할 수 있는 기업 목록으로 노출되지 않는다.
+ * 상태의 포지션은 방법론/index의 reference portfolio이며 실제 펀드의 현재·미래 holdings나
+ * 플레이어가 주문할 수 있는 기업 목록이 아니다. 복제 방식과 법적 구조는 상품 계약 검증·라우팅
+ * 메타데이터이며, 보수·추적오차·레버리지·FX hedge·옵션 효과는 기준수익률 뒤의 상품 계층에서
+ * 별도로 계산한다.
  */
 class ReferencePortfolioEngine private constructor(
     private val seed: Long,

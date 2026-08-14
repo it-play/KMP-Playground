@@ -1,5 +1,6 @@
 package com.amond.kmpbook.domain.simulation.event
 
+import com.amond.kmpbook.domain.model.causal.CausalStockImpact
 import com.amond.kmpbook.domain.model.event.GameEvent
 import com.amond.kmpbook.domain.model.event.GameEventImpact
 import com.amond.kmpbook.domain.model.event.ImpactDirection
@@ -197,7 +198,13 @@ object EventShockCalculator {
         return (integratedWeight / intervalHours).coerceIn(0.0, 1.0)
     }
 
-    /** 가격 방향과 해외 전염 강도를 종목별 충격에 함께 반영한다. */
+    /**
+     * 가격 방향과 해외 전염 강도를 종목별 충격에 함께 반영한다.
+     *
+     * 비가격 배수는 화면 표시를 위해 개수가 제한된 [CausalStockImpact.traces]가 아니라
+     * factor별 [CausalStockImpact.marketTransmissionsByFactor]를 합성한다. 따라서 UI에서 생략된
+     * 약한 trace의 시작 요인도 가격 계산에서는 빠지지 않는다.
+     */
     private fun GameEvent.impactFor(stock: StockDefinition): GameEventImpact {
         val resolved = resolvedImpactFor(stock)
         fun directional(value: Double): Double = when (resolved.direction) {
@@ -206,8 +213,8 @@ object EventShockCalculator {
             ImpactDirection.MIXED -> value * resolved.relativeSensitivity
             ImpactDirection.NEUTRAL -> 0.0
         }
-        val transmissions = resolved.causalImpact?.marketTransmissionsByFactor.orEmpty().values
-        val transmissionScale = transmissions.takeIf { it.isNotEmpty() }?.fold(1.0) { survival, trace ->
+        val factorTransmissions = resolved.causalImpact?.marketTransmissionsByFactor.orEmpty().values
+        val transmissionScale = factorTransmissions.takeIf { it.isNotEmpty() }?.fold(1.0) { survival, trace ->
             survival * (1.0 - trace.responseIntensity / MarketContagionEngine.MAX_RESPONSE_INTENSITY)
         }?.let { survival ->
             MarketContagionEngine.MAX_RESPONSE_INTENSITY * (1.0 - survival)
@@ -221,9 +228,18 @@ object EventShockCalculator {
         return impact.copy(
             shockReturn = directional(impact.shockReturn).coerceAtLeast(-0.95),
             hourlyDrift = directional(impact.hourlyDrift),
-            volatilityMultiplier = transmittedMultiplier(impact.volatilityMultiplier, 20.0),
-            volumeMultiplier = transmittedMultiplier(impact.volumeMultiplier, 100.0),
-            liquidityMultiplier = transmittedMultiplier(impact.liquidityMultiplier, 20.0),
+            volatilityMultiplier = transmittedMultiplier(
+                impact.volatilityMultiplier,
+                MAX_TRANSMITTED_VOLATILITY_MULTIPLIER,
+            ),
+            volumeMultiplier = transmittedMultiplier(
+                impact.volumeMultiplier,
+                MAX_TRANSMITTED_VOLUME_MULTIPLIER,
+            ),
+            liquidityMultiplier = transmittedMultiplier(
+                impact.liquidityMultiplier,
+                MAX_TRANSMITTED_LIQUIDITY_MULTIPLIER,
+            ),
             sentiment = (impact.sentiment * transmissionScale).coerceIn(-1.0, 1.0),
         )
     }
@@ -234,6 +250,12 @@ object EventShockCalculator {
     }
 
     private const val NANOS_PER_HOUR: Double = 3_600_000_000_000.0
+    /** 전염 반응을 지수 적용할 때 허용하는 개별 사건 변동성 배수의 입력 상한이다. */
+    private const val MAX_TRANSMITTED_VOLATILITY_MULTIPLIER: Double = 20.0
+    /** 전염 반응을 지수 적용할 때 허용하는 개별 사건 거래량 배수의 입력 상한이다. */
+    private const val MAX_TRANSMITTED_VOLUME_MULTIPLIER: Double = 100.0
+    /** 전염 반응을 지수 적용할 때 허용하는 개별 사건 유동성 배수의 입력 상한이다. */
+    private const val MAX_TRANSMITTED_LIQUIDITY_MULTIPLIER: Double = 20.0
     private const val MIN_EVENT_RETURN_FACTOR: Double = 0.30
     private const val MAX_EVENT_RETURN_FACTOR: Double = 2.50
     private const val EVENT_RETURN_LOG_SOFT_KNEE: Double = 0.14

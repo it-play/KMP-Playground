@@ -12,6 +12,7 @@ import com.amond.kmpbook.domain.model.market.Currency
 import com.amond.kmpbook.domain.model.market.IndustrySegment
 import com.amond.kmpbook.domain.model.market.Market
 import com.amond.kmpbook.domain.model.market.Sector
+import kotlin.jvm.Transient
 import kotlin.math.abs
 import kotlin.math.round
 
@@ -48,6 +49,13 @@ data class StockDefinition(
     /** 뉴스의 세부 산업 전달 경로에 쓰는 명시적 노출. 종목 추가 시 필요한 항목만 선언한다. */
     val industrySegments: Set<IndustrySegment> = emptySet(),
 ) {
+    /** 저장 스키마와 data-class equality/copy 계약에는 포함하지 않는 파생 ID 캐시다. */
+    @Transient
+    private val cachedId: String? = "${market.name}:$symbol"
+
+    /** 시장까지 포함하므로 같은 티커가 다른 시장에 있어도 충돌하지 않는다. */
+    val id: String get() = cachedId ?: "${market.name}:$symbol"
+
     init {
         require(symbol.isNotBlank()) { "종목 코드는 비어 있을 수 없습니다." }
         require(symbol == symbol.trim()) { "종목 코드 앞뒤에는 공백을 둘 수 없습니다." }
@@ -98,8 +106,6 @@ data class StockDefinition(
         fundProductProfile?.let { product -> validateFundProductProfile(product, requireNotNull(etfProfile)) }
     }
 
-    /** 시장까지 포함하므로 같은 티커가 다른 시장에 있어도 충돌하지 않는다. */
-    val id: String get() = "${market.name}:$symbol"
     val currency: Currency get() = market.currency
     val supportsFractional: Boolean get() = quantityStep < 1.0
     val instrumentType: InstrumentType

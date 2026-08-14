@@ -24,7 +24,11 @@ internal fun CausalStockImpact.explanatoryTraceOrNull(): CausalImpactTrace? = tr
     )
     .firstOrNull()
 
-/** 사건 → 경제 변수 → 사업 경로 → 가격 압력을 자연어로 번역한다. */
+/**
+ * 선택된 실제 trace를 사건 → 경제 변수 → 사업 경로 → 가격 압력으로 번역한다. 사건 제목은
+ * 맥락 표시에만 사용하며, 제목 문자열에서 국가·원인·중간 경로를 추론하지 않는다. 구조화된
+ * 경제 요인과 방향이 완전하지 않으면 근거 없는 문장을 만들지 않고 `null`을 반환한다.
+ */
 internal fun GameEvent.causalNarrativeFor(
     stock: StockDefinition,
     impact: CausalStockImpact,

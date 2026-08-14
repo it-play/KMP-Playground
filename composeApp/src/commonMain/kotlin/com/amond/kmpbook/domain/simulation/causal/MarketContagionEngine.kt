@@ -26,9 +26,12 @@ import kotlin.math.pow
 object MarketContagionEngine {
     const val MAX_MARKET_DEPTH: Int = 3
     const val MIN_MARKET_REACH: Double = 0.015
+    /** 국면 증폭 뒤의 유효 seed 강도를 원본 seed 강도와 비교한 최대 비율이다. */
     const val MAX_RESPONSE_INTENSITY: Double = MAX_CAUSAL_MARKET_RESPONSE_INTENSITY
 
     private const val MIN_PATH_CONTRIBUTION: Double = 0.002
+    /** 구성 비중이 없는 글로벌 펀드가 한 출발 지역에 갖는 직접 기초자산 노출이다. */
+    private const val GLOBAL_FUND_SOURCE_REGION_EXPOSURE: Double = 0.45
 
     val edges: List<MarketContagionEdge> = listOf(
         MarketContagionEdge(Market.KOSPI, Market.KOSDAQ, 0.84),
@@ -144,6 +147,12 @@ object MarketContagionEngine {
         return MarketContagionResult(transmissions)
     }
 
+    /**
+     * 시장 경계 전파를 먼저 계산한 뒤 도착 seed를 경제 요인 그래프에 한 번 전달한다.
+     * 시장층은 [CausalSignalSeed.direction]을 바꾸지 않고, [MarketSignalTransmission.transmittedSeed]의
+     * 강도는 원본에 다시 곱할 계수가 아니라 reach와 국면 반응이 이미 반영된 대체값이다. 따라서
+     * [CausalMarketEngine]만 이 유효 강도의 부호를 경로 기여에 한 번 적용한다.
+     */
     fun impactFor(
         seeds: List<CausalSignalSeed>,
         sourceMarkets: Set<Market>,
@@ -171,7 +180,8 @@ object MarketContagionEngine {
 
     /**
      * 작은 도착 신호만 크게 확대되고 큰 신호는 자연스럽게 포화되는 결정론적 반응 함수다.
-     * 중립 국면(g=1)에는 effective=s*reach가 되어 기존 선형 결과를 정확히 보존한다.
+     * 중립 국면(g=1)에는 effective=s*reach가 되어 기존 선형 결과를 정확히 보존한다. 증폭된
+     * 유효 강도는 1과 `원본 강도 * MAX_RESPONSE_INTENSITY` 중 작은 값에서 포화한다.
      */
     private fun responseFor(
         seed: CausalSignalSeed,
@@ -271,6 +281,10 @@ object MarketContagionEngine {
         CausalTransmissionProfile.GLOBAL_REFERENCE_PRICE -> 2.20
     }
 
+    /**
+     * 현지 미시구조 신호는 상품의 상장시장을, 경제·자금 신호는 펀드의 기초시장 노출을 사용한다.
+     * 구성 비중을 알 수 없는 글로벌 펀드는 한 출발 지역을 완전 노출로 취급하지 않는다.
+     */
     private fun directExposureFor(
         transmissionProfile: CausalTransmissionProfile,
         stock: StockDefinition,
@@ -289,7 +303,7 @@ object MarketContagionEngine {
             when (region) {
                 EtfExposureRegion.KOREA -> 1.0.takeIf { sources.any(Market::isKorean) }
                 EtfExposureRegion.UNITED_STATES -> 1.0.takeIf { sources.any(Market::isUnitedStates) }
-                EtfExposureRegion.GLOBAL -> 0.45.takeIf { sources.isNotEmpty() }
+                EtfExposureRegion.GLOBAL -> GLOBAL_FUND_SOURCE_REGION_EXPOSURE.takeIf { sources.isNotEmpty() }
                 EtfExposureRegion.DEVELOPED_EX_US,
                 EtfExposureRegion.EMERGING_MARKETS,
                 -> null

@@ -25431,7 +25431,9 @@
       "displayName": "Dow Jones U.S. Dividend 100 Index",
       "administrator": "S&P Dow Jones Indices",
       "officialSourceUrls": [
-        "https://www.spglobal.com/spdji/en/documents/methodologies/methodology-dj-dividend-indices.pdf"
+        "https://www.spglobal.com/spdji/en/documents/methodologies/methodology-dj-dividend-indices.pdf",
+        "https://www.spglobal.com/spdji/en/indices/dividends-factors/dow-jones-us-dividend-100-index/",
+        "https://www.spglobal.com/spdji/en/methodology/article/index-mathematics-methodology/"
       ],
       "baseCurrency": "USD",
       "engineKind": "EQUITY_METHODOLOGY",

@@ -48,7 +48,11 @@ data class GameEvent(
     val sourceLabel: String = "게임 뉴스",
     /** 제목에서 파생한 예측치가 아니라 대상별 인과·방향을 담는 불변 분석 경로다. */
     val impactInsights: List<EventImpactInsight> = emptyList(),
-    /** 경제 요인 그래프를 통해 명시 경로 밖의 산업·종목으로 전파되는 구조화된 시작 신호다. */
+    /**
+     * 경제 요인 그래프를 통해 명시 경로 밖의 산업·종목으로 전파되는 구조화된 시작 신호다.
+     * 국가·시장 사건은 상장 미시구조와 글로벌 기초자산 채널이 섞이지 않도록 한 전염 프로필만
+     * 가지며, 서로 다른 채널은 별도 사건으로 나눈 뒤 가격 단계에서 합성한다.
+     */
     val causalSignals: List<CausalSignalSeed> = emptyList(),
     /** 발생 순간의 시장 취약도를 고정해 비선형 해외 전염을 저장·뉴스·가격에서 동일하게 재현한다. */
     val marketRegimeSnapshot: CausalMarketRegimeSnapshot = CausalMarketRegimeSnapshot(),

@@ -45,7 +45,9 @@ object MarketMicrostructure {
 
     /** KRX-listed ETF/ETN quotation unit is KRW 5 at every price level. */
     fun tickSize(stock: StockDefinition, price: Double): Double = when {
-        stock.market.isKorean && stock.instrumentType in setOf(InstrumentType.ETF, InstrumentType.ETN) -> 5.0
+        stock.market.isKorean &&
+            (stock.instrumentType == InstrumentType.ETF || stock.instrumentType == InstrumentType.ETN) -> 5.0
+
         else -> tickSize(stock.market, price)
     }
 

@@ -14,6 +14,7 @@ import com.amond.kmpbook.domain.model.pricing.PriceBar
 import com.amond.kmpbook.domain.model.pricing.PriceBarInterval
 import com.amond.kmpbook.domain.model.pricing.Quote
 import com.amond.kmpbook.domain.model.venue.MarketSession
+import com.amond.kmpbook.domain.simulation.market.DailyPriceLimits
 import com.amond.kmpbook.domain.simulation.market.MacroEnvironment
 import com.amond.kmpbook.domain.simulation.market.MarketMicrostructure
 import com.amond.kmpbook.domain.simulation.protection.TradingStabilizer
@@ -32,7 +33,10 @@ import kotlin.time.Instant
  * stock's history.
  */
 class PriceEngine(private val seed: Long) {
-    fun generateHour(input: PriceGenerationInput): PriceGenerationResult {
+    fun generateHour(
+        input: PriceGenerationInput,
+        stockSeedKey: Long = stableHash64(input.stock.id),
+    ): PriceGenerationResult {
         val endTime = input.startTime + 1.hours
         val stock = input.stock
         val referenceFraction = input.referenceTradingFraction ?: input.regularTradingFraction
@@ -49,7 +53,7 @@ class PriceEngine(private val seed: Long) {
         }
 
         val random = DeterministicRandom(
-            DeterministicRandom.mixSeed(seed, stableHash64(stock.id), input.startTime.epochSeconds),
+            DeterministicRandom.mixSeed(seed, stockSeedKey, input.startTime.epochSeconds),
         )
 
         val hoursPerTradingYear = TRADING_DAYS_PER_YEAR * TRADING_HOURS_PER_DAY
@@ -177,7 +181,8 @@ class PriceEngine(private val seed: Long) {
             MAX_RAW_LOG_RETURN,
         )
         val rawOpen = input.previousPrice * exp(boundedCarry)
-        val open = boundedPrice(stock, rawOpen, input.dailyBasePrice)
+        val dailyPriceLimits = MarketMicrostructure.dailyPriceLimits(stock, input.dailyBasePrice)
+        val open = boundedPrice(stock, rawOpen, dailyPriceLimits)
         val activeLogReturn = (
                 attribution.market + attribution.sector + attribution.ratesAndInflation +
                 attribution.growthAndSentiment + attribution.orderFlow + attribution.foreignExchange +
@@ -192,15 +197,15 @@ class PriceEngine(private val seed: Long) {
         val volatilityPause = stock.market.isUnitedStates && stabilizedLogReturn != activeLogReturn
 
         val rawClose = open.price * exp(stabilizedLogReturn)
-        val boundedClose = boundedPrice(stock, rawClose, input.dailyBasePrice)
+        val boundedClose = boundedPrice(stock, rawClose, dailyPriceLimits)
         val close = boundedClose.price
 
         val rangeScale = (hourlyVolatility + abs(stabilizedLogReturn) * 0.35)
             .coerceAtMost(MAX_INTRAHOUR_RANGE)
         val rawHigh = max(open.price, close) * exp(abs(random.nextGaussian()) * rangeScale * 0.55)
         val rawLow = min(open.price, close) * exp(-abs(random.nextGaussian()) * rangeScale * 0.55)
-        val high = boundHigh(stock, rawHigh, input.dailyBasePrice, max(open.price, close))
-        val low = boundLow(stock, rawLow, input.dailyBasePrice, min(open.price, close))
+        val high = boundHigh(stock, rawHigh, dailyPriceLimits, max(open.price, close))
+        val low = boundLow(stock, rawLow, dailyPriceLimits, min(open.price, close))
 
         val returnRate = close / open.price - 1.0
         val circuitVolumeFactor = if (circuitLevel in 1..2) US_REOPENED_VOLUME_FACTOR else 1.0
@@ -400,6 +405,7 @@ class PriceEngine(private val seed: Long) {
         macro: MacroEnvironment,
         eventImpulse: PriceImpulse,
         tradingFraction: Double,
+        stockSeedKey: Long = stableHash64(stock.id),
     ): Double {
         require(tradingFraction in 0.0..1.0)
         val volatility = referenceResidualVolatility(
@@ -409,7 +415,7 @@ class PriceEngine(private val seed: Long) {
             tradingFraction = tradingFraction,
         )
         val random = DeterministicRandom(
-            DeterministicRandom.mixSeed(seed, stableHash64(stock.id), startTime.epochSeconds),
+            DeterministicRandom.mixSeed(seed, stockSeedKey, startTime.epochSeconds),
         )
         return -0.5 * volatility * volatility + volatility * random.nextGaussian()
     }
@@ -586,10 +592,9 @@ class PriceEngine(private val seed: Long) {
 
     private fun dailyResetVolatilityDrag(stock: StockDefinition, hoursPerTradingYear: Double): Double {
         val leverage = stock.etfProfile?.leverage ?: return 0.0
-        if (stock.behavior.strategy !in setOf(
-                InstrumentStrategy.DAILY_LEVERAGED,
-                InstrumentStrategy.DAILY_INVERSE,
-            )
+        val strategy = stock.behavior.strategy
+        if (strategy != InstrumentStrategy.DAILY_LEVERAGED &&
+            strategy != InstrumentStrategy.DAILY_INVERSE
         ) {
             return 0.0
         }
@@ -658,9 +663,12 @@ class PriceEngine(private val seed: Long) {
             .toLong()
     }
 
-    private fun boundedPrice(stock: StockDefinition, rawPrice: Double, basePrice: Double): BoundedPrice {
+    private fun boundedPrice(
+        stock: StockDefinition,
+        rawPrice: Double,
+        limits: DailyPriceLimits?,
+    ): BoundedPrice {
         val positive = rawPrice.coerceAtLeast(MarketMicrostructure.minimumPrice(stock.market))
-        val limits = MarketMicrostructure.dailyPriceLimits(stock, basePrice)
         if (limits == null) {
             val rounded = MarketMicrostructure.roundNearest(stock, positive)
             return BoundedPrice(rounded, rounded != rawPrice)
@@ -680,10 +688,9 @@ class PriceEngine(private val seed: Long) {
     private fun boundHigh(
         stock: StockDefinition,
         rawPrice: Double,
-        basePrice: Double,
+        limits: DailyPriceLimits?,
         minimum: Double,
     ): BoundedPrice {
-        val limits = MarketMicrostructure.dailyPriceLimits(stock, basePrice)
         val limited = if (limits == null) rawPrice else rawPrice.coerceAtMost(limits.upper)
         val rounded = MarketMicrostructure.roundUp(stock, max(limited, minimum))
         val finalPrice = if (limits == null) rounded else rounded.coerceAtMost(limits.upper)
@@ -693,10 +700,9 @@ class PriceEngine(private val seed: Long) {
     private fun boundLow(
         stock: StockDefinition,
         rawPrice: Double,
-        basePrice: Double,
+        limits: DailyPriceLimits?,
         maximum: Double,
     ): BoundedPrice {
-        val limits = MarketMicrostructure.dailyPriceLimits(stock, basePrice)
         val limited = if (limits == null) rawPrice else rawPrice.coerceAtLeast(limits.lower)
         val rounded = MarketMicrostructure.roundDown(stock, min(limited, maximum))
         val finalPrice = if (limits == null) rounded else rounded.coerceAtLeast(limits.lower)

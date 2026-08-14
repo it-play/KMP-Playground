@@ -5,6 +5,10 @@ package com.amond.kmpbook.domain.model.methodology
  *
  * [ownerSourceId] is the instrument-pack source that owns the implementation. This prevents a
  * trusted mode from replacing a built-in implementation or another mode's implementation.
+ * Executable provider code is outside the instrument-pack JSON fingerprint, so a behavior change
+ * requires a new [version] and a new version of every enclosing benchmark reference.
+ *
+ * @property version Executable-methodology contract version, including provider behavior.
  */
 data class EquityMethodologyRef(
     val ownerSourceId: String,

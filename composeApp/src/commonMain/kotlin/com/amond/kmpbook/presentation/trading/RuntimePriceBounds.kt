@@ -14,7 +14,15 @@ internal data class RuntimePriceBounds(
     }
 
     fun merge(other: RuntimePriceBounds): RuntimePriceBounds = RuntimePriceBounds(
-        lower = listOfNotNull(lower, other.lower).maxOrNull(),
-        upper = listOfNotNull(upper, other.upper).minOrNull(),
+        lower = when {
+            lower == null -> other.lower
+            other.lower == null -> lower
+            else -> maxOf(lower, other.lower)
+        },
+        upper = when {
+            upper == null -> other.upper
+            other.upper == null -> upper
+            else -> minOf(upper, other.upper)
+        },
     )
 }

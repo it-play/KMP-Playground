@@ -58,6 +58,7 @@ data class NewsUiProjection(
     val homeStories: List<NewsStoryUi>,
     val storiesByStockId: Map<String, List<NewsStoryUi>>,
 ) {
+    /** 직접 대상·구체성·활성 상태·발생 시각·ID 순으로 안정 정렬된 종목별 기사다. */
     fun storiesForStock(stockId: String): List<NewsStoryUi> = storiesByStockId[stockId].orEmpty()
 }
 
@@ -67,6 +68,10 @@ data class NewsUiProjection(
  * 가격 효과 상태는 임의의 [GameEvent.durationHours]가 아니라 [activeEventIds]를 우선한다.
  * 거래소 조치는 현재 보호장치·상장 상태를 사용해 과거 발동 뉴스가 계속 `영향 중`으로
  * 남지 않게 한다.
+ *
+ * 전체 기사는 활동 우선순위, 개인 관련성, 최신 시각, ID 순으로 결정론적으로 정렬한다.
+ * 홈은 개인 관련성 뒤에 미열람을 추가하고, 종목별 목록은 직접 대상, 구체성, 활성 여부,
+ * 활동 우선순위, 최신 시각, ID 순으로 다시 정렬한다.
  */
 fun buildNewsUiProjection(
     currentTime: Instant,
@@ -1036,6 +1041,10 @@ private fun resolvedStatus(
     summary = summary,
 )
 
+/**
+ * 작성자가 선언한 insight와 실제 causal graph trace만 경로 카드로 만든다. 스코프가 겹친다는
+ * 이유만으로 합성 경로를 만들지 않으므로 scope fallback은 관련 종목에는 포함돼도 이 목록에는 없다.
+ */
 private fun GameEvent.impactPaths(
     stockById: Map<String, StockDefinition>,
     holdingIds: Set<String>,

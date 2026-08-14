@@ -21,6 +21,10 @@ class FundOfFundsUniverseRepository private constructor(private val seed: Long) 
     private val candidateById: Map<String, FundOfFundsCandidate> = candidatesByUniverse.values
         .flatten()
         .associateBy(FundOfFundsCandidate::candidateFundId)
+    private val supportedSnapshotsByCandidateId: Map<String, List<FundOfFundsCandidateSnapshot>> =
+        candidateById.mapValues { (_, candidate) ->
+            SUPPORTED_YEARS.map { year -> snapshot(candidate, year) }
+        }
 
     val universeFingerprint: String = stableHex(
         "$UNIVERSE_MODEL_VERSION|$seed|" + candidatesByUniverse.entries.joinToString { (universe, values) ->
@@ -33,8 +37,14 @@ class FundOfFundsUniverseRepository private constructor(private val seed: Long) 
     internal fun snapshotFor(
         candidateFundId: String,
         year: Int,
-    ): FundOfFundsCandidateSnapshot? = candidateById[candidateFundId]?.let { candidate ->
-        snapshot(candidate, year)
+    ): FundOfFundsCandidateSnapshot? {
+        val candidate = candidateById[candidateFundId] ?: return null
+        return if (year in FIRST_SUPPORTED_YEAR..LAST_SUPPORTED_YEAR) {
+            supportedSnapshotsByCandidateId.getValue(candidateFundId)[year - FIRST_SUPPORTED_YEAR]
+        } else {
+            // Keep the historical internal contract for callers inspecting an out-of-campaign year.
+            snapshot(candidate, year)
+        }
     }
 
     internal fun snapshots(
@@ -48,7 +58,10 @@ class FundOfFundsUniverseRepository private constructor(private val seed: Long) 
         require(candidates.size == profile.candidateUniverseSize) {
             "The configured fund-of-funds candidate universe is larger than the canonical repository."
         }
-        return candidates.map { candidate -> snapshot(candidate, year) }
+        val snapshotIndex = year - FIRST_SUPPORTED_YEAR
+        return candidates.map { candidate ->
+            supportedSnapshotsByCandidateId.getValue(candidate.candidateFundId)[snapshotIndex]
+        }
     }
 
     private fun buildCandidates(universe: FundOfFundsUniverse): List<FundOfFundsCandidate> {
@@ -177,6 +190,7 @@ class FundOfFundsUniverseRepository private constructor(private val seed: Long) 
         private const val BASE_YEAR: Int = 2026
         private const val FIRST_SUPPORTED_YEAR: Int = 2026
         private const val LAST_SUPPORTED_YEAR: Int = 2040
+        private val SUPPORTED_YEARS: IntRange = FIRST_SUPPORTED_YEAR..LAST_SUPPORTED_YEAR
         private const val CLOSED_END_CANDIDATE_COUNT: Int = 320
         private const val OPTION_INCOME_CANDIDATE_COUNT: Int = 192
     }

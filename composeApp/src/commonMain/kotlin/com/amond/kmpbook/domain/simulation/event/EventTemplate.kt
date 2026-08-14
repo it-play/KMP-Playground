@@ -51,7 +51,11 @@ data class EventTemplate(
     val recordKind: EventRecordKind = EventRecordKind.NEWS,
     /** 같은 사건이 서로 다른 시장·산업·종목에 전달되는 구조화된 분석 경로다. */
     val impactInsights: List<EventImpactInsight> = emptyList(),
-    /** 경제 요인 그래프에 넣을 저장 가능한 시작 신호. 생성 이벤트에 그대로 복사한다. */
+    /**
+     * 경제 요인 그래프에 넣고 생성 이벤트에 그대로 복사할 시작 신호다. 국가·시장 템플릿은
+     * 상장 미시구조와 글로벌 기초자산 채널의 직접 노출 규칙이 섞이지 않도록 한 전염 프로필만
+     * 가지며, 다른 채널은 별도 이벤트 템플릿으로 선언한다.
+     */
     val causalSignals: List<CausalSignalSeed> = emptyList(),
     /** 분석 경로에 없는 스코프 대상으로 기본 영향을 확장할지 결정한다. */
     val impactCoveragePolicy: EventImpactCoveragePolicy =

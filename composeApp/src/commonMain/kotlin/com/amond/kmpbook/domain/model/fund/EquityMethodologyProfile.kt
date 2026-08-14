@@ -9,6 +9,9 @@ import kotlinx.datetime.LocalDate
  *
  * Product-specific constituent counts, caps, calendars and trigger thresholds belong to the
  * registered provider's typed [parameters], rather than becoming mandatory SCHD-shaped fields.
+ *
+ * @property effectiveFrom Provider bootstrap action date used to construct deterministic state;
+ * it is not necessarily the methodology publication date or an official rule-effective date.
  */
 class EquityMethodologyProfile(
     val methodologyRef: EquityMethodologyRef,

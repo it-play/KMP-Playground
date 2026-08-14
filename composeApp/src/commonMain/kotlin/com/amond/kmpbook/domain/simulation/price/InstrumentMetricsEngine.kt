@@ -19,10 +19,18 @@ import kotlin.time.Duration.Companion.days
 import kotlin.time.Instant
 
 /**
- * 빠른 시장가격과 느린 회계·NAV 상태를 분리해 갱신한다.
+ * 느린 원시 회계 상태를 갱신하며 시장가격과 화면용 파생 지표는 소유하지 않는다.
  *
- * PER·AUM 같은 화면용 비율은 저장하지 않으며 [InstrumentMetricsProjection]이 현재 시세에서
- * 다시 계산한다. 일반 설정·환매 난수는 종목과 시각으로 키를 고정해 반복 순서와 무관하다.
+ * 기업은 분기 원장과 자본, 개방형 ETF는 좌당 기준가·좌수·최근 순유량만
+ * 저장한다. PER·ROE·AUM·괴리율은 [InstrumentMetricsProjection]이 이 상태와 현재
+ * 호가를 결합해 다시 계산한다. ETF 기준가는 추적오차를 포함한 공정가치 기여분만 소비하며,
+ * 미시구조와 시장가격 괴리는 별도 가격 계층에 남는다.
+ *
+ * 실적은 발생 ID 원장으로 재적용을 무해화하고, 좌수 조정은 엄격히 증가하는
+ * 기업행동 회계 순번으로 재실행을 차단한다. 일반 ETF 유량 난수는 종목과 시각으로
+ * 키를 고정하며, 이벤트 유량은 런타임이 휴장 중 보관했다가 다음 거래 구간에
+ * 한 번 소비한다. 현재 런타임의 이 유량 경로는 개방형 ETF만 대상으로 하며,
+ * ETN의 일반 발행·취소·상환 유량을 생성하지 않는다.
  */
 class InstrumentMetricsEngine(private val seed: Long) {
     fun initialCorporateState(stock: StockDefinition, at: Instant): CorporateFundamentalState {
@@ -116,6 +124,8 @@ class InstrumentMetricsEngine(private val seed: Long) {
     /**
      * 공정가치 수익은 좌당 NAV·지표가치에, 설정·환매는 좌수·발행수량에만 반영한다.
      * [externalFlowRate]는 ETF 자금 유입·환매 사건의 일회성 비율이며 일반 시간당 흐름과 합성한다.
+     * 현재 런타임은 이 메서드를 개방형 ETF에만 호출한다. ETN은 별도 계약 상태를
+     * 사용하며 평상시 notes outstanding 발행·취소 입력은 런타임에서 주입되지 않는다.
      */
     fun advanceFund(
         state: FundFinancialState,

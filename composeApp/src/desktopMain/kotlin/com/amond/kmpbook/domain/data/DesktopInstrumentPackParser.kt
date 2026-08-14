@@ -140,7 +140,21 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import kotlinx.datetime.LocalDate
 
-/** Desktop/JVM 경계에서 종목팩 JSON을 도메인 객체로 명시적으로 변환한다. */
+/**
+ * 종목팩 JSON 바이트를 [InstrumentPack]으로 변환하는 Desktop/JVM의 정준 경계다.
+ *
+ * [MAX_PACK_BYTES], 내부 스키마 버전, 필드·노드·깊이·개수 제한과 도메인 상수가
+ * 수용 계약의 단일 기준이다. [parse]는 잘못된 UTF-8, 완화된 JSON 문법, 알 수 없거나
+ * 중복된 필드, 누락된 필수 필드, 순서·중복·자원 규칙 위반을 거부한다.
+ * [InstrumentPack.fingerprint]는 파싱 전 입력 바이트 전체의 소문자 SHA-256이므로,
+ * 공백만 바뀐 콘텐츠도 다른 저장 호환성 식별자를 갖는다.
+ *
+ * 이 파서는 독립된 팩을 만들 뿐 기존 정의를 덮어쓰지 않는다. 현재 앱의
+ * [InstrumentCatalogSnapshot.withAdditionalPacks] 합성은 추가 전용이며, 기존 종목 ID·
+ * 동일 시장의 종목 코드·
+ * 벤치마크 키와 충돌하는 팩을 거부한다. JSON은 선언적 데이터이며 실행 코드를
+ * 로드하지 않는다.
+ */
 object DesktopInstrumentPackParser {
     const val MAX_PACK_BYTES: Int = 4 * 1024 * 1024
 

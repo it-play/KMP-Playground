@@ -1,5 +1,6 @@
 package com.amond.kmpbook.domain.methodology
 
+import com.amond.kmpbook.domain.model.fund.BenchmarkRef
 import com.amond.kmpbook.domain.model.methodology.EquityMethodologyRef
 
 /** Mutable pre-game builder. The produced registry is immutable. */
@@ -9,6 +10,13 @@ class EquityMethodologyRegistryBuilder internal constructor(
     private val registrations = existing.toMutableMap()
     private var built: Boolean = false
 
+    /**
+     * Registers executable provider code under an immutable versioned reference.
+     *
+     * Provider code is not covered by the instrument-pack JSON fingerprint. A behavior change must
+     * therefore use a new [EquityMethodologyRef.version], and each enclosing [BenchmarkRef.version]
+     * must advance with it.
+     */
     fun register(registration: EquityMethodologyRegistration): EquityMethodologyRegistryBuilder {
         check(!built) { "이미 동결된 방법론 등록부 builder입니다." }
         val ref = registration.descriptor.ref

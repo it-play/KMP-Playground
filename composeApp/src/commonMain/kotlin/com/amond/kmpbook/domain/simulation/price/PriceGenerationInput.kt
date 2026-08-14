@@ -68,18 +68,14 @@ data class PriceGenerationInput(
             "Daily base price must be positive and finite"
         }
         require(averageDailyVolume >= 0L) { "Average daily volume cannot be negative" }
-        val priceBoundaryContext =
-            "stock=${stock.id}, startTime=$startTime, previousPrice=$previousPrice, " +
-                "dailyBasePrice=$dailyBasePrice, dayOpen=$dayOpen, dayHigh=$dayHigh, " +
-                "dayLow=$dayLow, session=$session"
         require(dayOpen > 0.0 && dayHigh > 0.0 && dayLow > 0.0) {
-            "Daily OHLC values must be positive: $priceBoundaryContext"
+            "Daily OHLC values must be positive: ${priceBoundaryContext()}"
         }
         require(dayHigh >= max(previousPrice, dayOpen)) {
-            "Daily high must include previous price and open: $priceBoundaryContext"
+            "Daily high must include previous price and open: ${priceBoundaryContext()}"
         }
         require(dayLow <= min(previousPrice, dayOpen)) {
-            "Daily low must include previous price and open: $priceBoundaryContext"
+            "Daily low must include previous price and open: ${priceBoundaryContext()}"
         }
         require(fxSensitivity.isFinite())
         require(regularTradingFraction in 0.0..1.0) {
@@ -110,6 +106,12 @@ data class PriceGenerationInput(
         require(carriedPriceDislocationLogReturn.isFinite())
         require(priceToReferenceLogGap.isFinite())
     }
+
+    /** Built only for a failed boundary invariant; valid bars stay allocation-free here. */
+    private fun priceBoundaryContext(): String =
+        "stock=${stock.id}, startTime=$startTime, previousPrice=$previousPrice, " +
+            "dailyBasePrice=$dailyBasePrice, dayOpen=$dayOpen, dayHigh=$dayHigh, " +
+            "dayLow=$dayLow, session=$session"
 
     companion object {
         fun defaultAverageDailyVolume(stock: StockDefinition): Long =

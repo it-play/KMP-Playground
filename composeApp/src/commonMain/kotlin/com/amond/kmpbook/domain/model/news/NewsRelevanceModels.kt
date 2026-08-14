@@ -44,6 +44,12 @@ fun GameEvent.relevanceTo(
     )
 }
 
+/**
+ * [GameEvent.impactCoverageFor]의 단일 판정 출처를 가격과 UI가 공유할 형태로 해석한다.
+ * 명시 경로는 가장 구체적인 단계만 남기고 같은 단계의 양·음 방향 민감도를 부호 평균한다.
+ * 그 다음 후보는 causal graph, seed가 없는 사건의 scope fallback, 무영향 순이며, 선언된 causal
+ * seed가 종목에 도달하지 않았다는 이유로 fallback 충격을 만들지 않는다.
+ */
 fun GameEvent.resolvedImpactFor(stock: StockDefinition): ResolvedEventImpact {
     val coverage = impactCoverageFor(stock)
     val applicable = coverage.applicableInsights

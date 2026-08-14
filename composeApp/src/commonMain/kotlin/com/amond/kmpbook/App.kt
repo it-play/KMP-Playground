@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -64,6 +65,7 @@ import com.amond.kmpbook.persistence.result.GameSaveFailure
 import com.amond.kmpbook.persistence.result.GameSaveSuccess
 import com.amond.kmpbook.persistence.storage.GameSaveStorage
 import com.amond.kmpbook.presentation.metrics.InstrumentMetricsProjection
+import com.amond.kmpbook.presentation.news.NewsUiProjection
 import com.amond.kmpbook.presentation.news.buildNewsUiProjection
 import com.amond.kmpbook.presentation.protection.ProtectionUiProjection
 import com.amond.kmpbook.presentation.protection.buildProtectionUiProjection
@@ -636,18 +638,25 @@ private fun RunningGame(
     onOpenSaveDirectory: () -> Unit,
     onReturnToLobby: () -> Unit,
 ) {
-    val selectedMarket = state.selectedStock?.market
+    val needsInstrumentProtection = state.screen == Screen.MARKET || state.screen == Screen.STOCK_DETAIL
+    val protectionListingStates = if (needsInstrumentProtection) {
+        state.listingLifecycleStates
+    } else {
+        emptyMap()
+    }
+    val protectionStockId = if (needsInstrumentProtection) state.selectedStockId else null
+    val selectedMarket = if (needsInstrumentProtection) state.selectedStock?.market else null
     val protectionProjection = remember(
         state.tradingProtectionSnapshot,
-        state.listingLifecycleStates,
-        state.selectedStockId,
+        protectionListingStates,
+        protectionStockId,
         selectedMarket,
         state.currentTime,
     ) {
         buildProtectionUiProjection(
             snapshot = state.tradingProtectionSnapshot,
-            listingStates = state.listingLifecycleStates,
-            selectedStockId = state.selectedStockId,
+            listingStates = protectionListingStates,
+            selectedStockId = protectionStockId,
             selectedMarket = selectedMarket,
             at = state.currentTime,
         )
@@ -748,6 +757,7 @@ private fun RunningGame(
             TurnAdvanceLoadingOverlay(
                 hours = state.selectedTurnStep.hours,
                 detailMessage = state.lastMessage,
+                onCancel = viewModel::cancelAdvance,
             )
         }
     }
@@ -757,6 +767,7 @@ private fun RunningGame(
 private fun TurnAdvanceLoadingOverlay(
     hours: Int,
     detailMessage: String?,
+    onCancel: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -775,33 +786,42 @@ private fun TurnAdvanceLoadingOverlay(
             shape = RoundedCornerShape(14.dp),
             shadowElevation = 6.dp,
         ) {
-            Row(
+            Column(
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
-                horizontalArrangement = Arrangement.spacedBy(18.dp),
-                verticalAlignment = Alignment.CenterVertically,
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(38.dp),
-                    color = MarketColors.SignalLine,
-                    strokeWidth = 3.dp,
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(
-                        text = "턴 처리 중",
-                        style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(38.dp),
                         color = MarketColors.SignalLine,
+                        strokeWidth = 3.dp,
                     )
-                    Text(
-                        text = "시장을 계산하고 있습니다",
-                        style = MarketType.heading,
-                        color = Color.White,
-                    )
-                    Text(
-                        text = detailMessage
-                            ?: "${hours}시간 동안의 시세·주문·이벤트를 순서대로 반영합니다.",
-                        style = MarketType.body,
-                        color = MarketColors.Grey200,
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(
+                            text = "턴 처리 중",
+                            style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                            color = MarketColors.SignalLine,
+                        )
+                        Text(
+                            text = "시장을 계산하고 있습니다",
+                            style = MarketType.heading,
+                            color = Color.White,
+                        )
+                        Text(
+                            text = detailMessage
+                                ?: "${hours}시간 동안의 시세·주문·이벤트를 순서대로 반영합니다.",
+                            style = MarketType.body,
+                            color = MarketColors.Grey200,
+                        )
+                    }
+                }
+                TextButton(
+                    onClick = onCancel,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text("진행 취소", style = MarketType.label, color = MarketColors.Grey200)
                 }
             }
         }
@@ -827,37 +847,7 @@ private fun ScreenContent(
     onReturnToLobby: () -> Unit,
 ) {
     var eventNewsFilterState by remember { mutableStateOf(EventNewsFilterState()) }
-    val portfolioHistory = state.portfolioSnapshots.ifEmpty { listOf(state.currentPortfolio) }
-    val estimatedTax = state.annualTaxSummary?.totalPayableKrw?.toDouble() ?: 0.0
-    val newsProjection = remember(
-        state.currentTime,
-        state.newsEvents,
-        state.activeEvents,
-        state.readEventIds,
-        state.stocks,
-        state.holdings.keys,
-        state.watchlist,
-        state.listingLifecycleStates,
-        state.listingLifecycleLedger,
-        state.pendingCorporateActions,
-        state.corporateActionLedger,
-        state.tradingProtectionSnapshot,
-    ) {
-        buildNewsUiProjection(
-            currentTime = state.currentTime,
-            events = state.newsEvents,
-            activeEventIds = state.activeEvents.mapTo(linkedSetOf()) { it.id },
-            readEventIds = state.readEventIds,
-            stocks = state.stocks,
-            holdingIds = state.holdings.keys,
-            watchlistIds = state.watchlist,
-            listingStates = state.listingLifecycleStates,
-            listingLifecycleLedger = state.listingLifecycleLedger,
-            pendingCorporateActions = state.pendingCorporateActions,
-            corporateActionLedger = state.corporateActionLedger,
-            tradingProtectionSnapshot = state.tradingProtectionSnapshot,
-        )
-    }
+    val newsProjection = rememberNewsUiProjection(state)
     val openStock: (String) -> Unit = { stockId ->
         viewModel.selectStock(stockId)
         viewModel.selectScreen(Screen.STOCK_DETAIL)
@@ -870,76 +860,60 @@ private fun ScreenContent(
         )
         viewModel.selectScreen(Screen.EVENTS)
     }
-    val selectedMetrics = remember(
-        state.selectedStockId,
-        state.stocks,
-        state.quotes,
-        state.corporateFundamentals,
-        state.fundFinancialStates,
-        state.etnStates,
-        state.closedEndFundStates,
-    ) {
-        val stockId = state.selectedStockId ?: state.stocks.firstOrNull()?.id ?: return@remember null
-        val stock = state.stocks.firstOrNull { it.id == stockId } ?: return@remember null
-        val quote = state.quotes[stockId] ?: return@remember null
-        InstrumentMetricsProjection.project(
-            stock = stock,
-            quote = quote,
-            corporateState = state.corporateFundamentals[stockId],
-            fundState = state.fundFinancialStates[stockId],
-            etnState = state.etnStates[stockId],
-            closedEndFundState = state.closedEndFundStates[stockId],
-        )
-    }
 
     when (state.screen) {
-        Screen.HOME -> HomeDashboardScreen(
-            snapshot = state.currentPortfolio,
-            history = portfolioHistory,
-            stocks = state.stocks,
-            marketIndices = state.marketIndices,
-            news = newsProjection,
-            estimatedTaxKrw = estimatedTax,
-            usdKrw = state.macro.usdKrw,
-            maxDrawdown = state.maximumDrawdown,
-            onOpenStock = openStock,
-            onOpenEvents = openNews,
-            onOpenTax = { viewModel.selectScreen(Screen.TAX_REPORT) },
-        )
+        Screen.HOME -> {
+            HomeDashboardScreen(
+                snapshot = state.currentPortfolio,
+                history = state.portfolioSnapshots.ifEmpty { listOf(state.currentPortfolio) },
+                stocks = state.stocks,
+                marketIndices = state.marketIndices,
+                news = newsProjection.value,
+                estimatedTaxKrw = state.annualTaxSummary?.totalPayableKrw?.toDouble() ?: 0.0,
+                usdKrw = state.macro.usdKrw,
+                maxDrawdown = state.maximumDrawdown,
+                onOpenStock = openStock,
+                onOpenEvents = openNews,
+                onOpenTax = { viewModel.selectScreen(Screen.TAX_REPORT) },
+            )
+        }
 
         Screen.MARKET,
         Screen.STOCK_DETAIL,
-        -> MarketTradingScreen(
-            stocks = state.stocks,
-            quotes = state.quotes,
-            chartPriceHistory = state.chartPriceHistory,
-            selectedStockId = state.selectedStockId,
-            holding = state.selectedHolding,
-            orderBook = state.selectedOrderBook?.toOrderBook(),
-            cashKrw = state.cashByCurrency[Currency.KRW] ?: 0.0,
-            cashUsd = state.cashByCurrency[Currency.USD] ?: 0.0,
-            usdKrw = state.macro.usdKrw,
-            onExchangeKrwToUsd = { viewModel.exchange(Currency.KRW, Currency.USD, it) },
-            onExchangeUsdToKrw = { viewModel.exchange(Currency.USD, Currency.KRW, it) },
-            onSelectStock = viewModel::selectStock,
-            watchlistedStockIds = state.watchlist,
-            onToggleWatchlist = viewModel::toggleWatchlist,
-            onSubmitOrder = { side, type, timeInForce, quantity, limitPrice ->
-                state.selectedStockId?.let { stockId ->
-                    viewModel.placeOrder(stockId, side, type, quantity, limitPrice, timeInForce)
-                }
-            },
-            protectionBadges = protectionProjection.symbolBadges,
-            selectedProtectionDetail = protectionProjection.selectedSymbolDetail,
-            selectedMetrics = selectedMetrics,
-            orderUnavailableReason = { stockId, orderType ->
-                state.orderSubmissionBlockReason(stockId, orderType)
-            },
-            relatedNews = newsProjection.stories,
-            readStockNewsEventIds = state.readStockNewsEventIds,
-            onRelatedNewsListViewed = viewModel::markStockNewsListViewed,
-            onOpenEvent = { _, eventId -> openNews(eventId) },
-        )
+        -> {
+            val selectedMetrics = rememberSelectedInstrumentMetrics(state)
+            MarketTradingScreen(
+                stocks = state.stocks,
+                quotes = state.quotes,
+                chartPriceHistory = state.chartPriceHistory,
+                selectedStockId = state.selectedStockId,
+                holding = state.selectedHolding,
+                orderBook = state.selectedOrderBook?.toOrderBook(),
+                cashKrw = state.cashByCurrency[Currency.KRW] ?: 0.0,
+                cashUsd = state.cashByCurrency[Currency.USD] ?: 0.0,
+                usdKrw = state.macro.usdKrw,
+                onExchangeKrwToUsd = { viewModel.exchange(Currency.KRW, Currency.USD, it) },
+                onExchangeUsdToKrw = { viewModel.exchange(Currency.USD, Currency.KRW, it) },
+                onSelectStock = viewModel::selectStock,
+                watchlistedStockIds = state.watchlist,
+                onToggleWatchlist = viewModel::toggleWatchlist,
+                onSubmitOrder = { side, type, timeInForce, quantity, limitPrice ->
+                    state.selectedStockId?.let { stockId ->
+                        viewModel.placeOrder(stockId, side, type, quantity, limitPrice, timeInForce)
+                    }
+                },
+                protectionBadges = protectionProjection.symbolBadges,
+                selectedProtectionDetail = protectionProjection.selectedSymbolDetail,
+                selectedMetrics = selectedMetrics,
+                orderUnavailableReason = { stockId, orderType ->
+                    state.orderSubmissionBlockReason(stockId, orderType)
+                },
+                relatedNews = newsProjection.value.stories,
+                readStockNewsEventIds = state.readStockNewsEventIds,
+                onRelatedNewsListViewed = viewModel::markStockNewsListViewed,
+                onOpenEvent = { _, eventId -> openNews(eventId) },
+            )
+        }
 
         Screen.ORDER -> OrdersScreen(
             orders = state.orders,
@@ -954,24 +928,26 @@ private fun ScreenContent(
 
         Screen.PORTFOLIO -> PortfolioScreen(
             snapshot = state.currentPortfolio,
-            history = portfolioHistory,
+            history = state.portfolioSnapshots.ifEmpty { listOf(state.currentPortfolio) },
             stocks = state.stocks,
             onOpenStock = openStock,
         )
 
-        Screen.EVENTS -> EventsScreen(
-            projection = newsProjection,
-            upcomingEvents = state.upcomingScheduledEvents,
-            onOpenStock = openStock,
-            onEventViewed = viewModel::markEventRead,
-            onMarkAllEventsRead = viewModel::markAllEventsRead,
-            filterState = eventNewsFilterState,
-            onFilterStateChange = { eventNewsFilterState = it },
-        )
+        Screen.EVENTS -> {
+            EventsScreen(
+                projection = newsProjection.value,
+                upcomingEvents = state.upcomingScheduledEvents,
+                onOpenStock = openStock,
+                onEventViewed = viewModel::markEventRead,
+                onMarkAllEventsRead = viewModel::markAllEventsRead,
+                filterState = eventNewsFilterState,
+                onFilterStateChange = { eventNewsFilterState = it },
+            )
+        }
 
         Screen.ANALYTICS -> AnalyticsScreen(
             snapshot = state.currentPortfolio,
-            history = portfolioHistory,
+            history = state.portfolioSnapshots.ifEmpty { listOf(state.currentPortfolio) },
             trades = state.trades,
             stocks = state.stocks,
             grossTurnoverKrw = state.grossTradeTurnoverKrw,
@@ -1009,14 +985,71 @@ private fun ScreenContent(
 
         Screen.ENDING -> EndingScreen(
             snapshot = state.currentPortfolio,
-            history = portfolioHistory,
+            history = state.portfolioSnapshots.ifEmpty { listOf(state.currentPortfolio) },
             tradeCount = state.trades.size,
             eventCount = state.newsEvents.size,
-            totalTaxKrw = state.totalSaleTaxKrw + estimatedTax,
+            totalTaxKrw = state.totalSaleTaxKrw +
+                (state.annualTaxSummary?.totalPayableKrw?.toDouble() ?: 0.0),
             maxDrawdown = state.maximumDrawdown,
             onNewGame = viewModel::resetGame,
         )
     }
+}
+
+@Composable
+private fun rememberNewsUiProjection(state: SimulatorUiState): Lazy<NewsUiProjection> = remember(
+    state.currentTime,
+    state.newsEvents,
+    state.activeEvents,
+    state.readEventIds,
+    state.stocks,
+    state.holdings.keys,
+    state.watchlist,
+    state.listingLifecycleStates,
+    state.listingLifecycleLedger,
+    state.pendingCorporateActions,
+    state.corporateActionLedger,
+    state.tradingProtectionSnapshot,
+) {
+    lazy(LazyThreadSafetyMode.NONE) {
+        buildNewsUiProjection(
+            currentTime = state.currentTime,
+            events = state.newsEvents,
+            activeEventIds = state.activeEvents.mapTo(linkedSetOf()) { it.id },
+            readEventIds = state.readEventIds,
+            stocks = state.stocks,
+            holdingIds = state.holdings.keys,
+            watchlistIds = state.watchlist,
+            listingStates = state.listingLifecycleStates,
+            listingLifecycleLedger = state.listingLifecycleLedger,
+            pendingCorporateActions = state.pendingCorporateActions,
+            corporateActionLedger = state.corporateActionLedger,
+            tradingProtectionSnapshot = state.tradingProtectionSnapshot,
+        )
+    }
+}
+
+@Composable
+private fun rememberSelectedInstrumentMetrics(state: SimulatorUiState) = remember(
+    state.selectedStockId,
+    state.stocks,
+    state.quotes,
+    state.corporateFundamentals,
+    state.fundFinancialStates,
+    state.etnStates,
+    state.closedEndFundStates,
+) {
+    val stockId = state.selectedStockId ?: state.stocks.firstOrNull()?.id ?: return@remember null
+    val stock = state.stocks.firstOrNull { it.id == stockId } ?: return@remember null
+    val quote = state.quotes[stockId] ?: return@remember null
+    InstrumentMetricsProjection.project(
+        stock = stock,
+        quote = quote,
+        corporateState = state.corporateFundamentals[stockId],
+        fundState = state.fundFinancialStates[stockId],
+        etnState = state.etnStates[stockId],
+        closedEndFundState = state.closedEndFundStates[stockId],
+    )
 }
 
 private fun SimulatorUiState.orderSubmissionBlockReason(stockId: String, orderType: OrderType): String? {

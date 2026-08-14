@@ -6,6 +6,12 @@ import com.amond.kmpbook.domain.model.market.Sector
 import com.amond.kmpbook.domain.simulation.causal.CausalMarketEngine
 import com.amond.kmpbook.domain.simulation.causal.MarketContagionEngine
 
+/**
+ * 종목 커버리지를 `명시 insight -> causal graph -> scope fallback -> 무영향` 순서로 판정한다.
+ * 일치하는 insight가 있으면 causal graph를 실행하지 않는다. 선언된 causal seed가 도달하지 못한
+ * 경우도 저자의 구조화된 범위 제한으로 보므로 scope fallback으로 되살리지 않는다. fallback은
+ * causal seed가 전혀 없는 사건에서 정책과 스코프가 모두 일치할 때만 허용한다.
+ */
 internal fun GameEvent.impactCoverageFor(stock: StockDefinition): EventImpactCoverageMatch {
     val applicableInsights = impactInsights.filter { it.appliesTo(stock) }
     val causalImpact = causalSignals

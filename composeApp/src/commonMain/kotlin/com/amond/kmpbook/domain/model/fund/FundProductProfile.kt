@@ -15,6 +15,9 @@ import com.amond.kmpbook.domain.model.fundstructure.EtnProductTerms
  *
  * 구성종목 선정 규칙은 [benchmarkRef]가 가리키는 [BenchmarkDefinition]에만 둔다.
  * null 추적오차는 0이 아니라 아직 공식 수치로 검증하지 않았다는 뜻이다.
+ *
+ * @property benchmarkRef 검증된 상품-벤치마크 연결은 이름 유사성이 아니라 명시적 출처 근거가
+ * 있어야 한다. 연결을 검증했더라도 벤치마크의 지원 수준과 provenance는 provisional일 수 있다.
  */
 class FundProductProfile(
     val benchmarkRef: BenchmarkRef,

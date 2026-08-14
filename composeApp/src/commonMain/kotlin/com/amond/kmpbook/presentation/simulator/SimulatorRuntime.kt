@@ -220,6 +220,8 @@ import com.amond.kmpbook.domain.simulation.price.InstrumentMetricsEngine
 import com.amond.kmpbook.domain.simulation.price.PriceAttribution
 import com.amond.kmpbook.domain.simulation.price.PriceEngine
 import com.amond.kmpbook.domain.simulation.price.PriceGenerationInput
+import com.amond.kmpbook.domain.simulation.price.PriceGenerationResult
+import com.amond.kmpbook.domain.simulation.price.PriceImpulse
 import com.amond.kmpbook.domain.simulation.protection.TradingProtectionEngine
 import com.amond.kmpbook.domain.simulation.protection.TradingProtectionRules
 import com.amond.kmpbook.domain.simulation.schedule.ScheduledEventEngine
@@ -280,8 +282,13 @@ import kotlinx.datetime.LocalTime
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
 /** Uses the real persistence deadline when it fits in this turn; otherwise leaves a pending observation at turn-end. */
 private fun runtimePersistenceObservationAt(
@@ -313,11 +320,9 @@ private fun runtimeTradableIntervals(
 ): List<RuntimeTradingInterval> {
     require(to >= from)
     if (to == from) return emptyList()
-    val localDates = linkedSetOf(
-        GameCalendar.marketLocalDateTime(market, from).date,
-        GameCalendar.marketLocalDateTime(market, to).date,
-    )
-    val regular = localDates.mapNotNull { date ->
+    val firstDate = GameCalendar.marketLocalDateTime(market, from).date
+    val lastDate = GameCalendar.marketLocalDateTime(market, to).date
+    fun regularInterval(date: LocalDate): RuntimeTradingInterval? =
         GameCalendar.regularSessionWindow(
             market,
             date,
@@ -327,7 +332,23 @@ private fun runtimeTradableIntervals(
             val end = minOf(to, window.closesAt)
             if (end > start) RuntimeTradingInterval(start, end) else null
         }
+    val firstInterval = regularInterval(firstDate)
+    val lastInterval = if (lastDate == firstDate) null else regularInterval(lastDate)
+    val regular = when {
+        firstInterval == null && lastInterval == null -> emptyList()
+        firstInterval == null -> listOf(requireNotNull(lastInterval))
+        lastInterval == null -> listOf(firstInterval)
+        else -> listOf(firstInterval, lastInterval)
     }
+
+    return runtimeSubtractTradingIntervals(regular, blocked)
+}
+
+/** Subtracts half-open protection intervals from an already canonical regular-session frame. */
+private fun runtimeSubtractTradingIntervals(
+    regular: List<RuntimeTradingInterval>,
+    blocked: List<RuntimeTradingInterval>,
+): List<RuntimeTradingInterval> {
     if (regular.isEmpty() || blocked.isEmpty()) return regular
 
     return blocked.sortedBy(RuntimeTradingInterval::startsAt).fold(regular) { available, exclusion ->
@@ -739,6 +760,9 @@ internal class SimulatorRuntime(
         initialForces = options.initialExternalMarketForces,
     )
     private val priceEngine = PriceEngine(DeterministicRandom.mixSeed(options.seed, PRICE_STREAM_ID))
+    private val priceSeedKeyByStockId = stocks.associate { stock ->
+        stock.id to PriceEngine.stableHash64(stock.id)
+    }
     private val executableBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
         .filter { it.engineKind == BenchmarkEngineKind.EQUITY_METHODOLOGY }
     private val compiledExecutableMethodologies = executableBenchmarkDefinitions.associate { definition ->
@@ -763,6 +787,8 @@ internal class SimulatorRuntime(
     private val fundOfFundsProfiles = fundOfFundsBenchmarkDefinitions.associate { definition ->
         definition.ref to requireNotNull(definition.fundOfFundsMethodologyProfile)
     }
+    private val fundOfFundsComponentBenchmarkRefs = fundOfFundsProfiles.values
+        .flatMapTo(linkedSetOf()) { profile -> profile.componentBenchmarkRefs }
     private val alternativeRiskPremiaBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
         .filter { it.engineKind == BenchmarkEngineKind.ALTERNATIVE_RISK_PREMIA }
     private val compositeReferenceBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
@@ -798,6 +824,24 @@ internal class SimulatorRuntime(
             addAll(requireNotNull(definition.compositeReferenceProfile).componentBenchmarkRefs)
         }
     }
+    /**
+     * Pricing dependencies are catalog properties. Keep only IDs because corporate actions can
+     * replace the corresponding [StockDefinition] while preserving its identity and dependency.
+     */
+    private val pricingStockIds: List<String> = stocks.sortedBy { stock ->
+        val profile = stock.fundProductProfile
+        val hasInstrumentReference = listOfNotNull(
+            profile?.dailyResetTerms?.reference,
+            profile?.optionStrategyTerms?.reference,
+            profile?.cashCollateralizedPutSpreadTerms?.optionReference,
+        ).any { it.kind == DailyResetReferenceKind.INSTRUMENT }
+        when {
+            !stock.isFundLike -> 0
+            hasInstrumentReference -> 2
+            else -> 1
+        }
+    }.map(StockDefinition::id)
+    private val pricingMapCapacity: Int = pricingStockIds.size * 4 / 3 + 1
     private val referencePortfolioEngine = ReferencePortfolioEngine.forCampaignSeed(
         campaignSeed = options.seed,
         methodologyRegistry = instrumentCatalog.equityMethodologyRegistry,
@@ -1183,26 +1227,8 @@ internal class SimulatorRuntime(
         }
     }
 
-    fun advance(step: TurnStep) {
-        if (phase != GamePhase.PLAYING) {
-            fail(if (phase == GamePhase.SETTLEMENT || phase == GamePhase.FINISHED) "종료된 게임은 진행할 수 없습니다." else "게임이 일시 정지되어 있습니다.")
-            return
-        }
-        isAdvancing = true
-        lastMessage = null
-        var advanced = 0
-        repeat(step.hours) {
-            if (GameCalendar.isFinished(currentTime)) return@repeat
-            advanceOneHour()
-            advanced += 1
-        }
-        if (GameCalendar.isFinished(currentTime)) enterSettlement()
-        isAdvancing = false
-        if (phase == GamePhase.PLAYING) lastMessage = "${advanced}시간 진행했습니다."
-    }
-
     /** Canonical hourly advance with a cancellation boundary between every simulated hour. */
-    internal suspend fun debugAdvance(step: TurnStep) {
+    internal suspend fun advance(step: TurnStep) {
         if (phase != GamePhase.PLAYING) {
             fail(if (phase == GamePhase.PAUSED) "게임이 일시 정지되어 있습니다." else "종료된 게임은 진행할 수 없습니다.")
             return
@@ -1214,7 +1240,9 @@ internal class SimulatorRuntime(
             repeat(step.hours) {
                 currentCoroutineContext().ensureActive()
                 if (GameCalendar.isFinished(currentTime)) return@repeat
-                advanceOneHour()
+                // Runtime state and engine caches form one hourly transaction. Complete that
+                // small unit atomically, then observe cancellation at the next boundary.
+                withContext(NonCancellable) { advanceOneHour() }
                 advanced++
             }
             currentCoroutineContext().ensureActive()
@@ -2224,15 +2252,17 @@ internal class SimulatorRuntime(
         market: Market,
         from: Instant,
         to: Instant,
+        marketDateAtStart: LocalDate = marketDate(market, from),
+        marketDateAtEnd: LocalDate = marketDate(market, to),
     ): Boolean {
-        val dates = linkedSetOf(marketDate(market, from), marketDate(market, to))
-        return dates.any { date ->
+        fun crossesClose(date: LocalDate): Boolean =
             GameCalendar.regularSessionWindow(
                 market,
                 date,
                 runtimeClosedDates(market, date),
             )?.let { window -> from < window.closesAt && to >= window.closesAt } == true
-        }
+        return crossesClose(marketDateAtStart) ||
+            (marketDateAtEnd != marketDateAtStart && crossesClose(marketDateAtEnd))
     }
 
     private fun reachesOptionClose(
@@ -2398,7 +2428,13 @@ internal class SimulatorRuntime(
         )
     }
 
-    private fun advanceOneHour() {
+    /**
+     * `[from, to]`를 개장 경계 조치 → 거시·이벤트 → 임시 보호 판정·확정 봉 →
+     * 공정가치 기여분을 쓰는 펀드 회계 → 지수·주문·감시 → 예정 분배 →
+     * 다음 거래구간 전 기업행동 판단·세금·일일 마감 순으로 처리한다. 후속 단계는 확정 봉과 원장이
+     * 앞서 커밋되었다는 전제를 사용하므로 이 순서가 한 턴의 단계 계약이다.
+     */
+    private suspend fun advanceOneHour() {
         val from = currentTime
         val to = GameCalendar.advanceHours(from, 1)
         if (to <= from) return
@@ -2420,6 +2456,7 @@ internal class SimulatorRuntime(
 
         val previousClosesByStockId = quotes.mapValues { (_, quote) -> quote.price }
         val turnEvents = activeEvents + scheduledImpactEvents
+        val calendarFacts = buildTurnCalendarFacts(from, to)
         val ordinaryTradingFractions = Market.entries.associateWith { market ->
             regularTradingFraction(market, from, to)
         }
@@ -2431,13 +2468,39 @@ internal class SimulatorRuntime(
                 ordinaryTradingFractions.getValue(market),
             )
         }
+        val provisionalRegionalFractions = regionalTradingFractions(
+            time = from,
+            effectiveMarketFractions = provisionalMarketFractions,
+        )
         val protectionBeforeObservation = tradingProtectionSnapshot
+        val macroBeforeProtection = macro
+        // Both passes observe the same events and stock definitions. Aggregate once per stock,
+        // while keeping it lazy so terminal instruments retain the previous no-work behavior.
+        val sharedPricingInputs = buildTurnPricingSharedInputs()
+        val (eventImpulsesByStockId, provisionalBaseReferenceAdvances) = coroutineScope {
+            val eventImpulses = async(Dispatchers.Default) {
+                calculateEventImpulses(turnEvents, from, to)
+            }
+            val baseReferences = async(Dispatchers.Default) {
+                calculateBaseReferenceAdvances(
+                    from = from,
+                    to = to,
+                    effectiveMarketFractions = provisionalMarketFractions,
+                    regionalFractions = provisionalRegionalFractions,
+                )
+            }
+            eventImpulses.await() to baseReferences.await()
+        }
         val provisional = generateTurnBars(
             from = from,
             to = to,
-            turnEvents = turnEvents,
             ordinaryTradingFractions = ordinaryTradingFractions,
             effectiveMarketFractions = provisionalMarketFractions,
+            eventImpulsesByStockId = eventImpulsesByStockId,
+            sharedInputs = sharedPricingInputs,
+            calendarFacts = calendarFacts,
+            regionalFractions = provisionalRegionalFractions,
+            reusableBaseReferenceAdvances = provisionalBaseReferenceAdvances,
             commit = false,
         )
         val provisionalIndices = calculateMarketIndices(
@@ -2463,15 +2526,34 @@ internal class SimulatorRuntime(
                 protectionImpact.marketBlocks[market].orEmpty(),
             )
         }
+        val canReuseProvisionalReferences =
+            provisionalMarketFractions == tradingFractions && macro == macroBeforeProtection
+        val finalRegionalFractions = if (provisionalMarketFractions == tradingFractions) {
+            provisionalRegionalFractions
+        } else {
+            regionalTradingFractions(
+                time = from,
+                effectiveMarketFractions = tradingFractions,
+            )
+        }
         val finalized = generateTurnBars(
             from = from,
             to = to,
-            turnEvents = turnEvents,
             ordinaryTradingFractions = ordinaryTradingFractions,
             effectiveMarketFractions = tradingFractions,
             additionalInstrumentBlocks = protectionImpact.instrumentBlocks,
             priceBounds = protectionImpact.priceBounds,
             temporaryProtectionMarkets = protectionImpact.temporaryProtectionMarkets,
+            eventImpulsesByStockId = eventImpulsesByStockId,
+            sharedInputs = sharedPricingInputs,
+            calendarFacts = calendarFacts,
+            regionalFractions = finalRegionalFractions,
+            reusableBaseReferenceAdvances = provisional.baseReferenceAdvances.takeIf {
+                canReuseProvisionalReferences
+            },
+            reusableFundOfFundsAdvance = provisional.fundOfFundsAdvance.takeIf {
+                canReuseProvisionalReferences
+            },
             commit = true,
         )
         advanceFundFinancialStates(to, finalized)
@@ -2552,120 +2634,49 @@ internal class SimulatorRuntime(
      * deterministic. The provisional pass is read-only; only the finalized pass consumes carry,
      * advances daily trackers, writes quotes, and appends one history bar.
      */
-    private fun generateTurnBars(
+    private suspend fun generateTurnBars(
         from: Instant,
         to: Instant,
-        turnEvents: List<GameEvent>,
         ordinaryTradingFractions: Map<Market, Double>,
         effectiveMarketFractions: Map<Market, Double>,
         additionalInstrumentBlocks: Map<String, List<RuntimeTradingInterval>> = emptyMap(),
         priceBounds: Map<String, RuntimePriceBounds> = emptyMap(),
         temporaryProtectionMarkets: Set<Market> = emptySet(),
+        eventImpulsesByStockId: Map<String, PriceImpulse>,
+        sharedInputs: TurnPricingSharedInputs,
+        calendarFacts: TurnCalendarFacts,
+        regionalFractions: Map<EtfExposureRegion, Double>,
+        reusableBaseReferenceAdvances: BaseReferenceAdvanceFrame? = null,
+        reusableFundOfFundsAdvance: FundOfFundsBookAdvance? = null,
         commit: Boolean,
     ): TurnGenerationResult {
-        val generatedBars = linkedMapOf<String, PriceBar>()
-        val stockTradingFractions = mutableMapOf<String, Double>()
-        val stockFirstExecutionTimes = mutableMapOf<String, Instant>()
-        val priceAttributions = mutableMapOf<String, PriceAttribution>()
-        val openingReferencedInstrumentPrices = directlyReferencedInstrumentIds.associateWith { stockId ->
-            quotes.getValue(stockId).price
-        }
+        val generatedBars = LinkedHashMap<String, PriceBar>(pricingMapCapacity)
+        val stockTradingFractions = LinkedHashMap<String, Double>(pricingMapCapacity)
+        val stockFirstExecutionTimes = LinkedHashMap<String, Instant>(pricingMapCapacity)
+        val priceAttributions = LinkedHashMap<String, PriceAttribution>(pricingMapCapacity)
         fun referencedInstrumentPriceLogReturn(stockId: String): Double {
             if (!listingLifecycleStates.getValue(stockId).isIndexEligible) return 0.0
             val bar = requireNotNull(generatedBars[stockId]) {
                 "참조 사업회사 기초 봉이 먼저 생성되지 않았습니다: $stockId"
             }
-            val openingPrice = openingReferencedInstrumentPrices.getValue(stockId)
+            val openingPrice = sharedInputs.openingReferencedInstrumentPrices.getValue(stockId)
             require(openingPrice.isFinite() && openingPrice > 0.0 && bar.close.isFinite() && bar.close > 0.0) {
                 "참조 사업회사 가격이 유효하지 않습니다: " +
                     "$stockId open=$openingPrice close=${bar.close}"
             }
             return ln(bar.close / openingPrice)
         }
-        val referencePortfolioAdvance = if (referencePortfolioStates.isEmpty()) {
-            null
-        } else {
-            referencePortfolioEngine.advanceHour(
-                book = ReferencePortfolioBook(referencePortfolioStates.toMap()),
-                definitions = executableBenchmarkDefinitions,
-                referenceDates = compiledExecutableMethodologies.mapValues { (_, methodology) ->
-                    methodology.schedule.marketDate(from)
-                },
-                referenceTradingFractions = compiledExecutableMethodologies.mapValues { (_, methodology) ->
-                    regionalTradingFraction(
-                        region = methodology.schedule.exposureRegion,
-                        time = from,
-                        effectiveMarketFractions = effectiveMarketFractions,
-                    )
-                },
+        val baseReferenceAdvances = reusableBaseReferenceAdvances
+            ?: calculateBaseReferenceAdvances(
                 from = from,
                 to = to,
-                macro = macro,
+                effectiveMarketFractions = effectiveMarketFractions,
+                regionalFractions = regionalFractions,
             )
-        }
-        val equityReferenceAdvance = if (equityReferenceStates.isEmpty()) {
-            null
-        } else {
-            equityReferenceBookEngine.advanceHour(
-                book = EquityReferenceBook(equityReferenceStates.toMap()),
-                definitions = equityReferenceBenchmarkDefinitions,
-                macro = macro,
-                marketTradingFractions = effectiveMarketFractions,
-                from = from,
-                to = to,
-            )
-        }
-        val fixedIncomeReferenceAdvance = if (fixedIncomeReferenceStates.isEmpty()) {
-            null
-        } else {
-            val statesByRef = fixedIncomeReferenceStates.values.associateBy(
-                FixedIncomeReferenceState::benchmarkRef,
-            )
-            val fractions = fixedIncomeBenchmarkDefinitions.associate { definition ->
-                val profile = requireNotNull(definition.fixedIncomeProfile)
-                val region = when (profile.geography) {
-                    FixedIncomeGeography.KOREA -> EtfExposureRegion.KOREA
-                    FixedIncomeGeography.UNITED_STATES -> EtfExposureRegion.UNITED_STATES
-                    FixedIncomeGeography.GLOBAL -> EtfExposureRegion.GLOBAL
-                    FixedIncomeGeography.DEVELOPED_EX_US -> EtfExposureRegion.DEVELOPED_EX_US
-                    FixedIncomeGeography.EMERGING_MARKETS -> EtfExposureRegion.EMERGING_MARKETS
-                }
-                definition.ref to (
-                    regionalTradingFraction(region, from, effectiveMarketFractions) /
-                        REFERENCE_TRADING_HOURS_PER_YEAR
-                    )
-            }
-            fixedIncomeReferenceBookEngine.advance(
-                book = FixedIncomeReferenceBook(statesByRef),
-                definitions = fixedIncomeBenchmarkDefinitions,
-                macro = macro,
-                elapsedYearFractions = fractions,
-                to = to,
-            )
-        }
-        val commodityReferenceAdvance = if (
-            commoditySpotReferenceStates.isEmpty() && futuresReferenceStates.isEmpty()
-        ) {
-            null
-        } else {
-            val book = CommodityReferenceBook(
-                spotStates = commoditySpotReferenceStates.toMap(),
-                futuresStates = futuresReferenceStates.toMap(),
-            )
-            val frame = commodityMarketModel.advanceFrame(
-                book = book,
-                spotTerms = commoditySpotBenchmarkDefinitions.map { definition ->
-                    requireNotNull(definition.commoditySpotTerms)
-                },
-                futuresTerms = futuresBenchmarkDefinitions.map { definition ->
-                    requireNotNull(definition.futuresReferenceTerms)
-                },
-                macro = macro,
-                from = from,
-                to = to,
-            )
-            commodityReferenceBookEngine.advance(book, frame)
-        }
+        val referencePortfolioAdvance = baseReferenceAdvances.referencePortfolio
+        val equityReferenceAdvance = baseReferenceAdvances.equity
+        val fixedIncomeReferenceAdvance = baseReferenceAdvances.fixedIncome
+        val commodityReferenceAdvance = baseReferenceAdvances.commodity
         fun baseBenchmarkGrossLogReturn(ref: BenchmarkRef): Double? =
             referencePortfolioAdvance?.grossReferenceLogReturns?.get(ref)
                 ?: equityReferenceAdvance?.grossReferenceLogReturns?.get(ref)
@@ -2682,33 +2693,27 @@ internal class SimulatorRuntime(
                     commodityReferenceAdvance?.grossReferenceLogReturns?.containsKey(ref) == true
                 }
         }
-        val fundOfFundsAdvance = if (fundOfFundsStates.isEmpty()) {
+        val fundOfFundsAdvance = reusableFundOfFundsAdvance ?: if (fundOfFundsStates.isEmpty()) {
             null
         } else {
-            val componentRefs = fundOfFundsProfiles.values.flatMapTo(linkedSetOf()) { profile ->
-                profile.componentBenchmarkRefs
-            }
             fundOfFundsBookEngine.advanceHour(
                 book = FundOfFundsBook(fundOfFundsStates.toMap()),
                 profiles = fundOfFundsProfiles,
-                componentGrossLogReturns = componentRefs.associateWith { ref ->
+                componentGrossLogReturns = fundOfFundsComponentBenchmarkRefs.associateWith { ref ->
                     requireNotNull(baseBenchmarkGrossLogReturn(ref)) {
                         "펀드오브펀드 구성 benchmark 수익률이 먼저 계산되지 않았습니다: $ref"
                     }
                 },
-                componentAnnualIncomeYields = componentRefs.associateWith { ref ->
+                componentAnnualIncomeYields = fundOfFundsComponentBenchmarkRefs.associateWith { ref ->
                     requireNotNull(baseBenchmarkAnnualIncomeYield(ref)) {
                         "펀드오브펀드 구성 benchmark 소득률이 먼저 계산되지 않았습니다: $ref"
                     }
                 },
                 macro = macro,
-                referenceTradingDate = marketDate(Market.NYSE, from),
-                referenceTradingFraction = regionalTradingFraction(
-                    EtfExposureRegion.UNITED_STATES,
-                    from,
-                    effectiveMarketFractions,
-                ),
-                reachesReferenceClose = reachesMarketClose(Market.NYSE, from, to),
+                referenceTradingDate = calendarFacts.marketDatesAtStart.getValue(Market.NYSE),
+                referenceTradingFraction = regionalFractions
+                    .getValue(EtfExposureRegion.UNITED_STATES),
+                reachesReferenceClose = calendarFacts.marketCloseReached.getValue(Market.NYSE),
                 from = from,
                 to = to,
             )
@@ -2727,29 +2732,6 @@ internal class SimulatorRuntime(
                 position.currentWeight * position.modifiedDurationYears
             }
 
-        val instrumentSourceIncomeYields = directlyReferencedInstrumentIds.associateWith { stockId ->
-            stockById.getValue(stockId).dividendYield
-        }
-        val instrumentSourceDurations = directlyReferencedInstrumentIds.associateWith { 0.0 }
-        val instrumentSourceAvailability = directlyReferencedInstrumentIds.associateWith { stockId ->
-            listingLifecycleStates.getValue(stockId).isIndexEligible
-        }
-        val sourceFxLogReturns = buildMap {
-            for (sourceCurrency in ReferenceCurrency.entries) {
-                for (targetCurrency in ReferenceCurrency.entries) {
-                    if (sourceCurrency == targetCurrency) continue
-                    val sourceReturn = ln(
-                        macro.rateToKrw(sourceCurrency) /
-                            macro.rateToKrw(sourceCurrency, previous = true),
-                    )
-                    val targetReturn = ln(
-                        macro.rateToKrw(targetCurrency) /
-                            macro.rateToKrw(targetCurrency, previous = true),
-                    )
-                    put(ReferenceCurrencyPair(sourceCurrency, targetCurrency), sourceReturn - targetReturn)
-                }
-            }
-        }
         var alternativeRiskPremiaAdvance: AlternativeRiskPremiaBookAdvance? = null
         var compositeReferenceAdvance: CompositeReferenceBookAdvance? = null
         var structuredReferenceAdvancesResolved = false
@@ -2777,10 +2759,10 @@ internal class SimulatorRuntime(
                 benchmarkAnnualIncomeYields = benchmarkIncomeYields,
                 benchmarkDurationsYears = benchmarkDurations,
                 instrumentLogReturns = instrumentReturns,
-                instrumentAnnualIncomeYields = instrumentSourceIncomeYields,
-                instrumentDurationsYears = instrumentSourceDurations,
-                instrumentAvailability = instrumentSourceAvailability,
-                fxLogReturns = sourceFxLogReturns,
+                instrumentAnnualIncomeYields = sharedInputs.instrumentSourceIncomeYields,
+                instrumentDurationsYears = sharedInputs.instrumentSourceDurations,
+                instrumentAvailability = sharedInputs.instrumentSourceAvailability,
+                fxLogReturns = sharedInputs.sourceFxLogReturns,
             )
             if (alternativeRiskPremiaStates.isNotEmpty()) {
                 alternativeRiskPremiaAdvance = alternativeRiskPremiaBookEngine.advanceHour(
@@ -2810,10 +2792,10 @@ internal class SimulatorRuntime(
                             benchmarkDurationsYears = benchmarkDurations +
                                 alternative?.effectiveDurationsYears.orEmpty(),
                             instrumentLogReturns = instrumentReturns,
-                            instrumentAnnualIncomeYields = instrumentSourceIncomeYields,
-                            instrumentDurationsYears = instrumentSourceDurations,
-                            instrumentAvailability = instrumentSourceAvailability,
-                            fxLogReturns = sourceFxLogReturns,
+                            instrumentAnnualIncomeYields = sharedInputs.instrumentSourceIncomeYields,
+                            instrumentDurationsYears = sharedInputs.instrumentSourceDurations,
+                            instrumentAvailability = sharedInputs.instrumentSourceAvailability,
+                            fxLogReturns = sharedInputs.sourceFxLogReturns,
                         ),
                         annualRiskFreeRate = macro.policyRate.coerceIn(-0.25, 1.0),
                         mortgageRateAnnual = currentMortgageRateAnnual(
@@ -2838,26 +2820,122 @@ internal class SimulatorRuntime(
                 ?: alternativeRiskPremiaAdvance?.estimatedAnnualIncomeYields?.get(ref)
                 ?: preStructuredBenchmarkAnnualIncomeYield(ref)
 
-        val pricingStocks = stocks.sortedBy { stock ->
-            val profile = stock.fundProductProfile
-            val hasInstrumentReference = listOfNotNull(
-                profile?.dailyResetTerms?.reference,
-                profile?.optionStrategyTerms?.reference,
-                profile?.cashCollateralizedPutSpreadTerms?.optionReference,
-            ).any { it.kind == DailyResetReferenceKind.INSTRUMENT }
-            when {
-                !stock.isFundLike -> 0
-                hasInstrumentReference -> 2
-                else -> 1
-            }
+        val marketTradingIntervals = Market.entries.associateWith { market ->
+            runtimeTradableIntervals(
+                market = market,
+                from = from,
+                to = to,
+                blocked = marketProtectionBlocks(
+                    market = market,
+                    from = from,
+                    to = to,
+                    marketDateAtStart = calendarFacts.marketDatesAtStart.getValue(market),
+                ),
+            )
         }
-        for (stock in pricingStocks) {
-            if (stock.isFundLike) resolveStructuredReferenceAdvances()
+        val pendingPricePlans = mutableListOf<StockPricePlan>()
+        suspend fun calculateAndCommitPendingPrices() {
+            if (pendingPricePlans.isEmpty()) return
+            val results = arrayOfNulls<PriceGenerationResult>(pendingPricePlans.size)
+            if (pendingPricePlans.size <= PRICE_CALCULATION_CHUNK_SIZE) {
+                pendingPricePlans.forEachIndexed { index, plan ->
+                    plan.input?.let { input ->
+                        results[index] = priceEngine.generateHour(input, plan.stockSeedKey)
+                    }
+                }
+            } else {
+                coroutineScope {
+                    pendingPricePlans.indices
+                        .chunked(PRICE_CALCULATION_CHUNK_SIZE)
+                        .map { indices ->
+                            async(Dispatchers.Default) {
+                                indices.forEach { index ->
+                                    val plan = pendingPricePlans[index]
+                                    plan.input?.let { input ->
+                                        results[index] = priceEngine.generateHour(
+                                            input,
+                                            plan.stockSeedKey,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        .forEach { calculation -> calculation.await() }
+                }
+            }
+            pendingPricePlans.forEachIndexed { index, plan ->
+                val flatBar = plan.flatBar
+                if (flatBar != null) {
+                    generatedBars[plan.stock.id] = flatBar
+                    if (commit) {
+                        quotes[plan.stock.id] = plan.previousQuote.copy(
+                            timestamp = to,
+                            volume = 0L,
+                            bidPrice = null,
+                            askPrice = null,
+                            bidQuantity = 0.0,
+                            askQuantity = 0.0,
+                            session = MarketSession.CLOSED,
+                        )
+                        appendHistory(plan.stock.id, flatBar)
+                    }
+                    return@forEachIndexed
+                }
+
+                val result = requireNotNull(results[index])
+                priceAttributions[plan.stock.id] = result.attribution
+                // VI/LULD bounds constrain executable quotations. Applying them to a zero-fraction
+                // closed-session fair-value bar distorts an indicative value even though no trade
+                // can occur (notably sub-cent ETN values), so clamp only executable intervals.
+                val effectiveBounds = if (commit && plan.tradingFraction > 0.0) {
+                    effectiveProtectionPriceBounds(plan.stock, priceBounds[plan.stock.id])
+                } else {
+                    null
+                }
+                val bar = effectiveBounds?.let { bounds ->
+                    runtimeClampBarToBounds(plan.stock, result.bar, bounds)
+                } ?: result.bar
+                generatedBars[plan.stock.id] = bar
+                if (commit) {
+                    val tracker = requireNotNull(plan.tracker)
+                    val baseQuote = if (bar == result.bar) {
+                        result.quote
+                    } else {
+                        result.quote.copy(price = bar.close, volume = bar.volume)
+                    }
+                    if (plan.firstRegularBar) {
+                        tracker.open = bar.open
+                        tracker.hasRegularTrading = true
+                    }
+                    tracker.high = maxOf(tracker.high, tracker.open, bar.high, baseQuote.price)
+                    tracker.low = minOf(tracker.low, tracker.open, bar.low, baseQuote.price)
+                    quotes[plan.stock.id] = baseQuote.copy(
+                        price = bar.close,
+                        open = tracker.open,
+                        high = tracker.high,
+                        low = tracker.low,
+                        volume = bar.volume,
+                    )
+                    appendHistory(plan.stock.id, bar)
+                }
+            }
+            pendingPricePlans.clear()
+        }
+
+        for (stockId in pricingStockIds) {
+            val stock = stockById.getValue(stockId)
+            if (stock.isFundLike && !structuredReferenceAdvancesResolved) {
+                // Direct product/reference sources are catalog-validated operating companies.
+                // Complete their pure price calculations before resolving all independent funds.
+                calculateAndCommitPendingPrices()
+                resolveStructuredReferenceAdvances()
+            }
             val previousQuote = quotes.getValue(stock.id)
+            val marketDateAtStart = calendarFacts.marketDatesAtStart.getValue(stock.market)
             val listingState = listingLifecycleStates.getValue(stock.id)
             val matured = isInstrumentMatured(stock, from)
             val fundReferenceFraction = stock.etfProfile?.let { profile ->
-                regionalTradingFraction(profile.exposureRegion, from, effectiveMarketFractions)
+                regionalFractions.getValue(profile.exposureRegion)
             }
             val productProfile = stock.fundProductProfile
             val benchmarkGrossLogReturn = productProfile?.benchmarkRef
@@ -2878,14 +2956,12 @@ internal class SimulatorRuntime(
                 ?.let { terms ->
                     val referenceMarket = dailyResetReferenceMarket(terms.resetCalendar)
                     val referenceFraction = when (terms.reference.kind) {
-                        DailyResetReferenceKind.BENCHMARK -> regionalTradingFraction(
+                        DailyResetReferenceKind.BENCHMARK -> regionalFractions.getValue(
                             if (terms.resetCalendar == DailyResetCalendar.KRX_EQUITY) {
                                 EtfExposureRegion.KOREA
                             } else {
                                 EtfExposureRegion.UNITED_STATES
                             },
-                            from,
-                            effectiveMarketFractions,
                         )
                         DailyResetReferenceKind.INSTRUMENT -> {
                             val underlyingId = requireNotNull(terms.reference.instrumentId)
@@ -2926,8 +3002,10 @@ internal class SimulatorRuntime(
                                     macro.liquidityStress * DAILY_RESET_STRESS_BORROW_SPREAD
                                 ).coerceIn(0.0, 2.0),
                             productExpenseRateAnnual = requireNotNull(stock.etfProfile).annualExpenseRatio,
-                            referenceTradingDate = marketDate(referenceMarket, from),
-                            resetAtEnd = reachesDailyResetClose(terms.resetCalendar, from, to),
+                            referenceTradingDate = calendarFacts.marketDatesAtStart
+                                .getValue(referenceMarket),
+                            resetAtEnd = calendarFacts.marketCloseReached
+                                .getValue(referenceMarket),
                             to = to,
                         ),
                     )
@@ -2937,17 +3015,16 @@ internal class SimulatorRuntime(
                 ?.takeIf { !matured && !listingState.isSettlementPending && !listingState.isTerminal }
                 ?.let { terms ->
                     val referenceMarket = optionReferenceMarket(terms.rollCalendar)
-                    val optionCloseAtEnd = reachesOptionClose(terms.rollCalendar, from, to)
+                    val optionCloseAtEnd = calendarFacts.marketCloseReached
+                        .getValue(referenceMarket)
                     val allowOpeningNewCycle = !hasPublishedDirectUnderlyingLiquidation(stock.id)
                     val referenceFraction = when (terms.reference.kind) {
-                        DailyResetReferenceKind.BENCHMARK -> regionalTradingFraction(
+                        DailyResetReferenceKind.BENCHMARK -> regionalFractions.getValue(
                             if (terms.rollCalendar == OptionRollCalendar.KRX_EQUITY) {
                                 EtfExposureRegion.KOREA
                             } else {
                                 EtfExposureRegion.UNITED_STATES
                             },
-                            from,
-                            effectiveMarketFractions,
                         )
                         DailyResetReferenceKind.INSTRUMENT -> {
                             val underlyingId = requireNotNull(terms.reference.instrumentId)
@@ -2983,7 +3060,8 @@ internal class SimulatorRuntime(
                             annualizedImpliedVolatility = optionImpliedVolatility(stock),
                             elapsedYearFraction = ((to - from).inWholeNanoseconds.toDouble() /
                                 NANOSECONDS_PER_YEAR).coerceIn(0.0, 1.0),
-                            referenceTradingDate = marketDate(referenceMarket, from),
+                            referenceTradingDate = calendarFacts.marketDatesAtStart
+                                .getValue(referenceMarket),
                             tradingCloseAtEnd = optionCloseAtEnd,
                             forceRollAtEnd = !allowOpeningNewCycle && optionCloseAtEnd,
                             allowOpeningNewCycle = allowOpeningNewCycle,
@@ -3005,16 +3083,15 @@ internal class SimulatorRuntime(
                 ?.takeIf { !matured && !listingState.isSettlementPending && !listingState.isTerminal }
                 ?.let { terms ->
                     val referenceMarket = optionReferenceMarket(terms.rollCalendar)
-                    val optionCloseAtEnd = reachesOptionClose(terms.rollCalendar, from, to)
+                    val optionCloseAtEnd = calendarFacts.marketCloseReached
+                        .getValue(referenceMarket)
                     val allowOpeningNewCycle = !hasPublishedDirectUnderlyingLiquidation(stock.id)
-                    val referenceFraction = regionalTradingFraction(
+                    val referenceFraction = regionalFractions.getValue(
                         if (terms.rollCalendar == OptionRollCalendar.KRX_EQUITY) {
                             EtfExposureRegion.KOREA
                         } else {
                             EtfExposureRegion.UNITED_STATES
                         },
-                        from,
-                        effectiveMarketFractions,
                     )
                     val cashPriceReturn = requireNotNull(
                         explicitBenchmarkGrossLogReturn(terms.cashBenchmarkRef),
@@ -3047,7 +3124,8 @@ internal class SimulatorRuntime(
                             optionDiscountRateAnnual = macro.policyRate.coerceIn(-0.10, 1.0),
                             annualizedImpliedVolatility = optionImpliedVolatility(stock),
                             elapsedYearFraction = elapsedWallYearFraction,
-                            referenceTradingDate = marketDate(referenceMarket, from),
+                            referenceTradingDate = calendarFacts.marketDatesAtStart
+                                .getValue(referenceMarket),
                             tradingCloseAtEnd = optionCloseAtEnd,
                             forceRollAtEnd = !allowOpeningNewCycle && optionCloseAtEnd,
                             allowOpeningNewCycle = allowOpeningNewCycle,
@@ -3067,8 +3145,8 @@ internal class SimulatorRuntime(
                 }
                 ?.let { terms ->
                     val previous = etnStates.getValue(stock.id)
-                    val effectiveDate = marketDate(stock.market, to)
-                    val venueCloseReached = reachesMarketClose(stock.market, from, to)
+                    val effectiveDate = calendarFacts.marketDatesAtEnd.getValue(stock.market)
+                    val venueCloseReached = calendarFacts.marketCloseReached.getValue(stock.market)
                     val contractualSettlementDate = nextTradingDateOnOrAfter(
                         stock.market,
                         terms.maturityDate,
@@ -3147,7 +3225,7 @@ internal class SimulatorRuntime(
                 val previousMarkedValue = etnCreditMarkedValue(
                     state = previous,
                     maturityDate = terms.maturityDate,
-                    valuationDate = marketDate(stock.market, from),
+                    valuationDate = calendarFacts.marketDatesAtStart.getValue(stock.market),
                 )
                 val nextMarkedValue = advance.ledgerEntries
                     .lastOrNull { entry ->
@@ -3160,7 +3238,7 @@ internal class SimulatorRuntime(
                     ?: etnCreditMarkedValue(
                         state = advance.state,
                         maturityDate = terms.maturityDate,
-                        valuationDate = marketDate(stock.market, to),
+                        valuationDate = calendarFacts.marketDatesAtEnd.getValue(stock.market),
                     )
                 ln(nextMarkedValue.coerceAtLeast(ETN_MIN_MARKED_VALUE) / previousMarkedValue)
             }
@@ -3251,7 +3329,7 @@ internal class SimulatorRuntime(
             if (matured || !listingState.isTradable) {
                 stockTradingFractions[stock.id] = 0.0
                 if (commit && !matured && !listingState.isSettlementPending && !listingState.isTerminal) {
-                    val haltedImpulse = EventShockCalculator.aggregate(turnEvents, stock, from, to)
+                    val haltedImpulse = eventImpulsesByStockId[stock.id] ?: EMPTY_PRICE_IMPULSE
                     val haltedReferenceReturn = if (stock.isFundLike) {
                         priceEngine.referenceLogReturn(
                             stock = stock,
@@ -3267,6 +3345,7 @@ internal class SimulatorRuntime(
                                     macro = macro,
                                     eventImpulse = haltedImpulse,
                                     tradingFraction = effectiveMarketFractions.getValue(stock.market),
+                                    stockSeedKey = priceSeedKeyByStockId.getValue(stock.id),
                                 )
                             } else {
                                 0.0
@@ -3308,38 +3387,41 @@ internal class SimulatorRuntime(
                     close = previousQuote.price,
                     volume = 0L,
                 )
-                generatedBars[stock.id] = flatBar
-                if (commit) {
-                    quotes[stock.id] = previousQuote.copy(
-                        timestamp = to,
-                        volume = 0L,
-                        bidPrice = null,
-                        askPrice = null,
-                        bidQuantity = 0.0,
-                        askQuantity = 0.0,
-                        session = MarketSession.CLOSED,
-                    )
-                    appendHistory(stock.id, flatBar)
-                }
+                pendingPricePlans += StockPricePlan(
+                    stock = stock,
+                    previousQuote = previousQuote,
+                    tracker = null,
+                    firstRegularBar = false,
+                    tradingFraction = 0.0,
+                    stockSeedKey = priceSeedKeyByStockId.getValue(stock.id),
+                    input = null,
+                    flatBar = flatBar,
+                )
                 continue
             }
 
             val tracker = if (commit) {
-                trackerFor(stock, from, previousQuote.price)
+                trackerFor(stock, marketDateAtStart, previousQuote.price)
             } else {
-                dailyTrackerSnapshot(stock, from, previousQuote.price)
+                dailyTrackerSnapshot(
+                    stock = stock,
+                    time = from,
+                    previousPrice = previousQuote.price,
+                    localDate = marketDateAtStart,
+                )
             }
             val tradingIntervals = instrumentProtectionTradingIntervals(
                 stock = stock,
                 from = from,
                 to = to,
                 additionalBlocks = additionalInstrumentBlocks[stock.id].orEmpty(),
+                baseMarketIntervals = marketTradingIntervals.getValue(stock.market),
             )
             val fraction = runtimeTradingFraction(from, to, tradingIntervals)
             stockTradingFractions[stock.id] = fraction
             tradingIntervals.firstOrNull()?.startsAt?.let { stockFirstExecutionTimes[stock.id] = it }
             val session = if (fraction > 0.0) MarketSession.REGULAR else marketSession(stock.market, from)
-            val impulse = EventShockCalculator.aggregate(turnEvents, stock, from, to)
+            val impulse = eventImpulsesByStockId[stock.id] ?: EMPTY_PRICE_IMPULSE
             val ordinaryFraction = ordinaryTradingFractions.getValue(stock.market)
             val fairValueFraction = if (
                 stock.market.isUnitedStates &&
@@ -3459,15 +3541,21 @@ internal class SimulatorRuntime(
                     etnCreditMarkedValue(
                         state = state,
                         maturityDate = terms.maturityDate,
-                        valuationDate = marketDate(stock.market, from),
+                        valuationDate = marketDateAtStart,
                     )
                 }
                 ?: closedEndFundStates[stock.id]?.marketPricePerCommonShare
             val priceToReferenceLogGap = currentReferenceValue?.let { referenceValue ->
                 ln(previousQuote.price / referenceValue)
             } ?: 0.0
-            val result = priceEngine.generateHour(
-                PriceGenerationInput(
+            pendingPricePlans += StockPricePlan(
+                stock = stock,
+                previousQuote = previousQuote,
+                tracker = tracker,
+                firstRegularBar = firstRegularBar,
+                tradingFraction = fraction,
+                stockSeedKey = priceSeedKeyByStockId.getValue(stock.id),
+                input = PriceGenerationInput(
                     stock = stock,
                     startTime = from,
                     previousPrice = previousQuote.price,
@@ -3489,57 +3577,10 @@ internal class SimulatorRuntime(
                     priceToReferenceLogGap = priceToReferenceLogGap,
                     isFirstRegularBarOfDay = firstRegularBar,
                 ),
+                flatBar = null,
             )
-            priceAttributions[stock.id] = result.attribution
-            // VI/LULD bounds constrain executable quotations. Applying them to a zero-fraction
-            // closed-session fair-value bar distorts an indicative value even though no trade can
-            // occur (notably sub-cent ETN values), so only clamp an actually executable interval.
-            val effectiveBounds = if (commit && fraction > 0.0) {
-                effectiveProtectionPriceBounds(stock, priceBounds[stock.id])
-            } else {
-                null
-            }
-            val bar = effectiveBounds?.let { runtimeClampBarToBounds(stock, result.bar, it) } ?: result.bar
-            generatedBars[stock.id] = bar
-            if (commit) {
-                val baseQuote = if (bar == result.bar) {
-                    result.quote
-                } else {
-                    result.quote.copy(
-                        price = bar.close,
-                        volume = bar.volume,
-                    )
-                }
-                if (firstRegularBar) {
-                    tracker.open = bar.open
-                    tracker.hasRegularTrading = true
-                }
-                // Product fair value can move while the listing is closed. The persisted quote,
-                // bar and next hour's PriceGenerationInput must still share one containing daily
-                // range; only the executed-session open flag is conditional on actual trading.
-                tracker.high = maxOf(
-                    tracker.high,
-                    tracker.open,
-                    bar.high,
-                    baseQuote.price,
-                )
-                tracker.low = minOf(
-                    tracker.low,
-                    tracker.open,
-                    bar.low,
-                    baseQuote.price,
-                )
-                val quote = baseQuote.copy(
-                    price = bar.close,
-                    open = tracker.open,
-                    high = tracker.high,
-                    low = tracker.low,
-                    volume = bar.volume,
-                )
-                quotes[stock.id] = quote
-                appendHistory(stock.id, bar)
-            }
         }
+        calculateAndCommitPendingPrices()
         if (commit && referencePortfolioAdvance != null) {
             commitReferencePortfolioAdvance(referencePortfolioAdvance)
         }
@@ -3566,6 +3607,187 @@ internal class SimulatorRuntime(
             stockTradingFractions = stockTradingFractions,
             stockFirstExecutionTimes = stockFirstExecutionTimes,
             priceAttributions = priceAttributions,
+            baseReferenceAdvances = baseReferenceAdvances,
+            fundOfFundsAdvance = fundOfFundsAdvance,
+        )
+    }
+
+    private fun buildTurnPricingSharedInputs(): TurnPricingSharedInputs {
+        val referencedCapacity = directlyReferencedInstrumentIds.size * 4 / 3 + 1
+        val openingPrices = LinkedHashMap<String, Double>(referencedCapacity)
+        val incomeYields = LinkedHashMap<String, Double>(referencedCapacity)
+        val durations = LinkedHashMap<String, Double>(referencedCapacity)
+        val availability = LinkedHashMap<String, Boolean>(referencedCapacity)
+        directlyReferencedInstrumentIds.forEach { stockId ->
+            openingPrices[stockId] = quotes.getValue(stockId).price
+            incomeYields[stockId] = stockById.getValue(stockId).dividendYield
+            durations[stockId] = 0.0
+            availability[stockId] = listingLifecycleStates.getValue(stockId).isIndexEligible
+        }
+        val currencies = ReferenceCurrency.entries
+        val pairCount = currencies.size * (currencies.size - 1)
+        val fxReturns = LinkedHashMap<ReferenceCurrencyPair, Double>(pairCount * 4 / 3 + 1)
+        val currencyLogReturns = currencies.associateWith { currency ->
+            ln(macro.rateToKrw(currency) / macro.rateToKrw(currency, previous = true))
+        }
+        for (sourceCurrency in currencies) {
+            for (targetCurrency in currencies) {
+                if (sourceCurrency == targetCurrency) continue
+                fxReturns[ReferenceCurrencyPair(sourceCurrency, targetCurrency)] =
+                    currencyLogReturns.getValue(sourceCurrency) -
+                    currencyLogReturns.getValue(targetCurrency)
+            }
+        }
+        return TurnPricingSharedInputs(
+            openingReferencedInstrumentPrices = openingPrices,
+            instrumentSourceIncomeYields = incomeYields,
+            instrumentSourceDurations = durations,
+            instrumentSourceAvailability = availability,
+            sourceFxLogReturns = fxReturns,
+        )
+    }
+
+    /** Event aggregation is stock-local and consumes no RNG or Runtime state. */
+    private suspend fun calculateEventImpulses(
+        events: List<GameEvent>,
+        from: Instant,
+        to: Instant,
+    ): Map<String, PriceImpulse> {
+        if (events.isEmpty()) return emptyMap()
+        val results = arrayOfNulls<PriceImpulse>(pricingStockIds.size)
+        coroutineScope {
+            pricingStockIds.indices
+                .chunked(PRICE_CALCULATION_CHUNK_SIZE)
+                .map { indices ->
+                    async(Dispatchers.Default) {
+                        indices.forEach { index ->
+                            val stock = stockById.getValue(pricingStockIds[index])
+                            results[index] = EventShockCalculator.aggregate(events, stock, from, to)
+                        }
+                    }
+                }
+                .forEach { calculation -> calculation.await() }
+        }
+        return LinkedHashMap<String, PriceImpulse>(pricingMapCapacity).apply {
+            pricingStockIds.forEachIndexed { index, stockId ->
+                put(stockId, requireNotNull(results[index]))
+            }
+        }
+    }
+
+    /**
+     * Each task owns a distinct book engine. Stateful portfolio/equity engines remain whole-book
+     * calls, so their internal caches are never accessed concurrently by the same engine instance.
+     */
+    private suspend fun calculateBaseReferenceAdvances(
+        from: Instant,
+        to: Instant,
+        effectiveMarketFractions: Map<Market, Double>,
+        regionalFractions: Map<EtfExposureRegion, Double>,
+    ): BaseReferenceAdvanceFrame = coroutineScope {
+        val macroSnapshot = macro
+        val referencePortfolioBook = referencePortfolioStates
+            .takeUnless(Map<*, *>::isEmpty)
+            ?.let { states -> ReferencePortfolioBook(states.toMap()) }
+        val referenceDates = compiledExecutableMethodologies.mapValues { (_, methodology) ->
+            methodology.schedule.marketDate(from)
+        }
+        val referenceTradingFractions = compiledExecutableMethodologies.mapValues { (_, methodology) ->
+            regionalFractions.getValue(methodology.schedule.exposureRegion)
+        }
+        val equityReferenceBook = equityReferenceStates
+            .takeUnless(Map<*, *>::isEmpty)
+            ?.let { states -> EquityReferenceBook(states.toMap()) }
+        val fixedIncomeBook = fixedIncomeReferenceStates
+            .takeUnless(Map<*, *>::isEmpty)
+            ?.values
+            ?.associateBy(FixedIncomeReferenceState::benchmarkRef)
+            ?.let(::FixedIncomeReferenceBook)
+        val fixedIncomeFractions = fixedIncomeBenchmarkDefinitions.associate { definition ->
+            val profile = requireNotNull(definition.fixedIncomeProfile)
+            val region = when (profile.geography) {
+                FixedIncomeGeography.KOREA -> EtfExposureRegion.KOREA
+                FixedIncomeGeography.UNITED_STATES -> EtfExposureRegion.UNITED_STATES
+                FixedIncomeGeography.GLOBAL -> EtfExposureRegion.GLOBAL
+                FixedIncomeGeography.DEVELOPED_EX_US -> EtfExposureRegion.DEVELOPED_EX_US
+                FixedIncomeGeography.EMERGING_MARKETS -> EtfExposureRegion.EMERGING_MARKETS
+            }
+            definition.ref to (
+                regionalFractions.getValue(region) /
+                    REFERENCE_TRADING_HOURS_PER_YEAR
+                )
+        }
+        val commodityBook = if (
+            commoditySpotReferenceStates.isEmpty() && futuresReferenceStates.isEmpty()
+        ) {
+            null
+        } else {
+            CommodityReferenceBook(
+                spotStates = commoditySpotReferenceStates.toMap(),
+                futuresStates = futuresReferenceStates.toMap(),
+            )
+        }
+        val commoditySpotTerms = commoditySpotBenchmarkDefinitions.map { definition ->
+            requireNotNull(definition.commoditySpotTerms)
+        }
+        val futuresTerms = futuresBenchmarkDefinitions.map { definition ->
+            requireNotNull(definition.futuresReferenceTerms)
+        }
+
+        val referencePortfolio = async(Dispatchers.Default) {
+            referencePortfolioBook?.let { book ->
+                referencePortfolioEngine.advanceHour(
+                    book = book,
+                    definitions = executableBenchmarkDefinitions,
+                    referenceDates = referenceDates,
+                    referenceTradingFractions = referenceTradingFractions,
+                    from = from,
+                    to = to,
+                    macro = macroSnapshot,
+                )
+            }
+        }
+        val equity = async(Dispatchers.Default) {
+            equityReferenceBook?.let { book ->
+                equityReferenceBookEngine.advanceHour(
+                    book = book,
+                    definitions = equityReferenceBenchmarkDefinitions,
+                    macro = macroSnapshot,
+                    marketTradingFractions = effectiveMarketFractions,
+                    from = from,
+                    to = to,
+                )
+            }
+        }
+        val fixedIncome = async(Dispatchers.Default) {
+            fixedIncomeBook?.let { book ->
+                fixedIncomeReferenceBookEngine.advance(
+                    book = book,
+                    definitions = fixedIncomeBenchmarkDefinitions,
+                    macro = macroSnapshot,
+                    elapsedYearFractions = fixedIncomeFractions,
+                    to = to,
+                )
+            }
+        }
+        val commodity = async(Dispatchers.Default) {
+            commodityBook?.let { book ->
+                val frame = commodityMarketModel.advanceFrame(
+                    book = book,
+                    spotTerms = commoditySpotTerms,
+                    futuresTerms = futuresTerms,
+                    macro = macroSnapshot,
+                    from = from,
+                    to = to,
+                )
+                commodityReferenceBookEngine.advance(book, frame)
+            }
+        }
+        BaseReferenceAdvanceFrame(
+            referencePortfolio = referencePortfolio.await(),
+            equity = equity.await(),
+            fixedIncome = fixedIncome.await(),
+            commodity = commodity.await(),
         )
     }
 
@@ -3995,13 +4217,20 @@ internal class SimulatorRuntime(
         stock: StockDefinition,
         time: Instant,
         previousPrice: Double,
+        localDate: LocalDate = marketDate(stock.market, time),
     ): DailyPriceTracker {
         val existing = dailyTrackers.getValue(stock.id)
-        val date = marketDate(stock.market, time)
-        return if (existing.date == date) {
+        return if (existing.date == localDate) {
             existing.copy()
         } else {
-            DailyPriceTracker(date, previousPrice, previousPrice, previousPrice, previousPrice, false)
+            DailyPriceTracker(
+                localDate,
+                previousPrice,
+                previousPrice,
+                previousPrice,
+                previousPrice,
+                false,
+            )
         }
     }
 
@@ -6760,8 +6989,11 @@ internal class SimulatorRuntime(
         }
     }
 
-    private fun trackerFor(stock: StockDefinition, time: Instant, previousPrice: Double): DailyPriceTracker {
-        val localDate = marketDate(stock.market, time)
+    private fun trackerFor(
+        stock: StockDefinition,
+        localDate: LocalDate,
+        previousPrice: Double,
+    ): DailyPriceTracker {
         val tracker = dailyTrackers.getValue(stock.id)
         if (tracker.date != localDate) {
             tracker.date = localDate
@@ -7664,10 +7896,11 @@ internal class SimulatorRuntime(
         stock: StockDefinition,
         from: Instant,
         to: Instant,
+        baseMarketIntervals: List<RuntimeTradingInterval>,
         additionalBlocks: List<RuntimeTradingInterval> = emptyList(),
     ): List<RuntimeTradingInterval> {
         if (!listingLifecycleStates.getValue(stock.id).isTradable) return emptyList()
-        val blocks = marketProtectionBlocks(stock.market, from, to).toMutableList()
+        val blocks = mutableListOf<RuntimeTradingInterval>()
         tradingProtectionSnapshot.instrumentTradingHalts[stock.id]?.let { halt ->
             if (halt.status == TradingHaltStatus.ACTIVE) {
                 runtimeTradingBlock(halt.startedAt, halt.scheduledReleaseAt ?: to, from, to)?.let(blocks::add)
@@ -7725,17 +7958,18 @@ internal class SimulatorRuntime(
             luldBlock?.let(blocks::add)
         }
         blocks += additionalBlocks
-        return runtimeTradableIntervals(stock.market, from, to, blocks)
+        return runtimeSubtractTradingIntervals(baseMarketIntervals, blocks)
     }
 
     private fun marketProtectionBlocks(
         market: Market,
         from: Instant,
         to: Instant,
+        marketDateAtStart: LocalDate = marketDate(market, from),
     ): List<RuntimeTradingInterval> {
         if (market.isKorean) {
             val state = tradingProtectionSnapshot.krxCircuitBreakers[market] ?: return emptyList()
-            if (state.tradingDate != marketDate(market, from)) return emptyList()
+            if (state.tradingDate != marketDateAtStart) return emptyList()
             val end = when (state.phase) {
                 KrxCircuitBreakerPhase.NORMAL -> return emptyList()
                 KrxCircuitBreakerPhase.HALTED,
@@ -7747,7 +7981,7 @@ internal class SimulatorRuntime(
         }
 
         val state = tradingProtectionSnapshot.usMarketWideCircuitBreaker ?: return emptyList()
-        if (state.tradingDate != marketDate(market, from) || state.phase == UsMwcbPhase.NORMAL) return emptyList()
+        if (state.tradingDate != marketDateAtStart || state.phase == UsMwcbPhase.NORMAL) return emptyList()
         val venue = state.venueStatuses[market] ?: return emptyList()
         if (venue.phase == UsMwcbVenuePhase.REOPENED) return emptyList()
         val end = if (state.phase == UsMwcbPhase.CLOSED_FOR_DAY) {
@@ -9589,12 +9823,46 @@ internal class SimulatorRuntime(
         )
     }
 
+    private fun buildTurnCalendarFacts(from: Instant, to: Instant): TurnCalendarFacts {
+        val datesAtStart = Market.entries.associateWith { market -> marketDate(market, from) }
+        val datesAtEnd = Market.entries.associateWith { market -> marketDate(market, to) }
+        val closeReached = Market.entries.associateWith { market ->
+            reachesMarketClose(
+                market = market,
+                from = from,
+                to = to,
+                marketDateAtStart = datesAtStart.getValue(market),
+                marketDateAtEnd = datesAtEnd.getValue(market),
+            )
+        }
+        return TurnCalendarFacts(
+            marketDatesAtStart = datesAtStart,
+            marketDatesAtEnd = datesAtEnd,
+            marketCloseReached = closeReached,
+        )
+    }
+
+    private fun regionalTradingFractions(
+        time: Instant,
+        effectiveMarketFractions: Map<Market, Double>,
+    ): Map<EtfExposureRegion, Double> {
+        val utcHour = time.toLocalDateTime(kotlinx.datetime.TimeZone.UTC).hour
+        return EtfExposureRegion.entries.associateWith { region ->
+            regionalTradingFraction(
+                region = region,
+                time = time,
+                effectiveMarketFractions = effectiveMarketFractions,
+                utcHour = utcHour,
+            )
+        }
+    }
+
     private fun regionalTradingFraction(
         region: EtfExposureRegion,
         time: Instant,
         effectiveMarketFractions: Map<Market, Double>? = null,
+        utcHour: Int = time.toLocalDateTime(kotlinx.datetime.TimeZone.UTC).hour,
     ): Double {
-        val utcHour = time.toLocalDateTime(kotlinx.datetime.TimeZone.UTC).hour
         fun marketFraction(market: Market): Double = effectiveMarketFractions?.get(market)
             ?: regularTradingFraction(market, time, time + 1.hours)
         return when (region) {
@@ -9684,6 +9952,8 @@ internal class SimulatorRuntime(
         const val MAX_RECENT_BARS = 256
         /** 각 캔들 주기별로 같은 화면 밀도를 유지하는 OHLCV 보존 한도. */
         const val MAX_CHART_BARS_PER_INTERVAL = 84
+        private const val PRICE_CALCULATION_CHUNK_SIZE = 32
+        private val EMPTY_PRICE_IMPULSE = PriceImpulse()
         val CHART_INTERVALS = setOf(
             PriceBarInterval.ONE_DAY,
             PriceBarInterval.ONE_WEEK,

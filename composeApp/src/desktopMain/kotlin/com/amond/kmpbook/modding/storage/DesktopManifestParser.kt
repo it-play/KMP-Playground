@@ -23,6 +23,18 @@ import javax.xml.stream.XMLStreamException
 import javax.xml.stream.XMLStreamReader
 import kotlinx.datetime.LocalDate
 
+/**
+ * `manifest.xml`을 [DesktopParsedModManifest]로 변환하는 데스크톱의 엄격한 스키마 경계다.
+ *
+ * [CURRENT_MOD_SCHEMA_VERSION], 같은 패키지의 자원 상한, 이 객체의 개수·문자열
+ * 제한이 지원 계약의 단일 기준이다. [parse]는 디렉토리 이름·manifest ID·
+ * API/스키마 버전의 일치,
+ * 알 수 없거나 중복된 요소·속성, 엄격한 UTF-8, 자원 상한을 검증한다. DTD,
+ * 외부 엔티티, XML 네임스페이스는 허용하지 않는다.
+ *
+ * manifest와 참조된 종목 JSON·커버는 모드 루트의 일반 파일이어야 하며 심볼릭
+ * 링크를 거부한다. 이 파서는 선언적 메타데이터만 읽고 실행 코드를 로드하지 않는다.
+ */
 internal object DesktopManifestParser {
     private const val MAX_NAME_LENGTH: Int = 120
     private const val MAX_DESCRIPTION_LENGTH: Int = 8_000

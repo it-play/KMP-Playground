@@ -7,7 +7,19 @@ import com.amond.kmpbook.domain.model.fundstructure.ClosedEndFundState
 import com.amond.kmpbook.domain.model.fundstructure.EtnState
 import com.amond.kmpbook.domain.model.pricing.Quote
 
-/** 저장된 원시 상태와 현재 시세를 결합하되 파생 비율 자체는 저장하지 않는다. */
+/**
+ * 저장된 원시 회계·계약 상태와 현재 호가를 화면용 파생 지표로 투영한다.
+ *
+ * 기업 지표는 분기 원장에서 TTM 손익과 매출을 집계하고, 개방형 ETF의 AUM은
+ * `NAV × 좌수`, ETN 발행잔액은 `지표가치 × notes outstanding`, 폐쇄형 펀드의
+ * 순자산은 `좌당 NAV × 보통주수`로 매번 계산한다. 시장가격은 이 공정가치를
+ * 덮어쓰지 않고 시가총액·가격 배수와 상품의 프리미엄·디스카운트 계산에 사용된다. 비율과
+ * 시가총액은 저장하지 않으며 `asOf`는 호가와 원시 상태 중 더 늦은 기준 시각이다.
+ *
+ * ETN은 [com.amond.kmpbook.domain.model.fundstructure.EtnState]의 주어진 발행잔량을 읽을 뿐이다.
+ * 이 투영 계층과 현재 런타임은 일반 ETN 발행·취소·상환 유량을 만들지 않으며,
+ * 그러므로 ETN의 `lastNetFlow`는 0으로 투영한다.
+ */
 object InstrumentMetricsProjection {
     fun project(
         stock: StockDefinition,
@@ -99,8 +111,8 @@ object InstrumentMetricsProjection {
     ): FundMetricsSnapshot {
         require(state.productId == stock.id && quote.stockId == stock.id)
         val profile = requireNotNull(stock.etfProfile)
-        val indicativeValue = state.feeAdjustedIndicativeValuePerNote.coerceAtLeast(MIN_DISPLAY_VALUE)
-        val notes = state.notesOutstanding.toDouble().coerceAtLeast(1.0)
+        val indicativeValue = state.feeAdjustedIndicativeValuePerNote
+        val notes = state.notesOutstanding.toDouble()
         return FundMetricsSnapshot(
             stockId = stock.id,
             asOf = maxOf(state.asOf, quote.timestamp),
@@ -113,7 +125,8 @@ object InstrumentMetricsProjection {
             indicativeValuePerUnit = indicativeValue,
             assetsUnderManagement = null,
             outstandingNotional = indicativeValue * notes,
-            premiumDiscountRate = quote.price / indicativeValue - 1.0,
+            premiumDiscountRate = indicativeValue.takeIf { it > 0.0 }
+                ?.let { quote.price / it - 1.0 },
             lastNetFlow = 0.0,
         )
     }
@@ -142,6 +155,4 @@ object InstrumentMetricsProjection {
             lastNetFlow = 0.0,
         )
     }
-
-    private const val MIN_DISPLAY_VALUE = 1e-9
 }
