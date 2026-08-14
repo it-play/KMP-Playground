@@ -39,10 +39,10 @@ data class EquityMethodologyRef(
         private val OWNER_ID = Regex("[a-z0-9][a-z0-9:._-]{2,255}")
         private val METHODOLOGY_ID = Regex("[a-z0-9][a-z0-9._-]{2,127}")
 
-        val SCHD_DIVIDEND_100_V1: EquityMethodologyRef = EquityMethodologyRef(
+        val SCHD_DIVIDEND_100_V2: EquityMethodologyRef = EquityMethodologyRef(
             ownerSourceId = "builtin:base",
             methodologyId = "schd-dividend-100",
-            version = 1,
+            version = 2,
         )
 
     }

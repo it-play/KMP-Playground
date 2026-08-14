@@ -18,6 +18,7 @@ data class ReferencePortfolioRecord(
     val turnoverRate: Double,
     val resultingConstituentCount: Int,
     val revision: Long,
+    val corporateAction: ReferencePortfolioCorporateAction? = null,
 ) {
     init {
         require(RECORD_ID.matches(id))
@@ -36,13 +37,33 @@ data class ReferencePortfolioRecord(
         require(resultingConstituentCount in 1..ReferencePortfolioLimits.MAX_CONSTITUENTS)
         require(revision > 0L)
         when (kind) {
-            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> Unit
+            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> require(corporateAction == null)
             ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
             ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
-            -> require(addedAssetIds.isEmpty() && removedAssetIds.isEmpty())
+            -> require(
+                addedAssetIds.isEmpty() && removedAssetIds.isEmpty() && corporateAction == null,
+            )
             ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL -> {
-                require(addedAssetIds.isEmpty() && removedAssetIds.isNotEmpty())
+                require(addedAssetIds.isEmpty() && removedAssetIds.isNotEmpty() && corporateAction == null)
             }
+            ReferencePortfolioActionKind.CONSTITUENT_MERGER -> require(
+                corporateAction?.kind == ReferencePortfolioCorporateActionKind.MERGER &&
+                    addedAssetIds.isEmpty() && removedAssetIds.isNotEmpty(),
+            )
+            ReferencePortfolioActionKind.SPIN_OFF_ADDITION -> require(
+                corporateAction?.kind == ReferencePortfolioCorporateActionKind.SPIN_OFF &&
+                    addedAssetIds == listOfNotNull(corporateAction.secondaryAssetId) &&
+                    removedAssetIds.isEmpty(),
+            )
+            ReferencePortfolioActionKind.SPIN_OFF_REMOVAL -> require(
+                corporateAction?.kind == ReferencePortfolioCorporateActionKind.SPIN_OFF &&
+                    addedAssetIds.isEmpty() &&
+                    removedAssetIds == listOfNotNull(corporateAction.secondaryAssetId),
+            )
+            ReferencePortfolioActionKind.TERMINAL_REMOVAL -> require(
+                corporateAction?.kind == ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL &&
+                    addedAssetIds.isEmpty() && removedAssetIds == listOf(corporateAction.primaryAssetId),
+            )
         }
     }
 

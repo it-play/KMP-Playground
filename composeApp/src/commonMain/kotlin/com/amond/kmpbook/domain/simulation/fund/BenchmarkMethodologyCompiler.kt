@@ -20,10 +20,14 @@ internal object BenchmarkMethodologyCompiler {
         StandardEquityMethodologySignalIds.FIVE_YEAR_DIVIDEND_GROWTH,
     )
     private val supportedIntegerSignalIds: Set<String> = setOf(
+        StandardEquityMethodologySignalIds.GICS_CLASSIFICATION_CODE,
         StandardEquityMethodologySignalIds.DIVIDEND_PAYMENT_YEARS,
     )
     private val supportedBooleanSignalIds: Set<String> = setOf(
-        StandardEquityMethodologySignalIds.DIVIDEND_PROGRAM_SUSPENDED,
+        StandardEquityMethodologySignalIds.ZERO_TOTAL_DEBT,
+        StandardEquityMethodologySignalIds.NEGATIVE_BOOK_VALUE_PER_SHARE,
+        StandardEquityMethodologySignalIds.SCHEDULED_DIVIDEND_PAYMENT_OMITTED,
+        StandardEquityMethodologySignalIds.DIVIDEND_PROGRAM_CEASED_INDEFINITELY,
     )
     private val supportedTextSignalIds: Set<String> = emptySet()
 

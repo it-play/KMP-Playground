@@ -25427,11 +25427,13 @@
     },
     {
       "benchmarkId": "spdj-dow-jones-us-dividend-100",
-      "version": 1,
+      "version": 2,
       "displayName": "Dow Jones U.S. Dividend 100 Index",
       "administrator": "S&P Dow Jones Indices",
       "officialSourceUrls": [
+        "https://www.spglobal.com/spdji/en/documents/indexnews/announcements/20260417-1482712/1482712_dj-dividend-indices-coac-update-20260417.pdf",
         "https://www.spglobal.com/spdji/en/documents/methodologies/methodology-dj-dividend-indices.pdf",
+        "https://www.spglobal.com/spdji/en/documents/methodologies/methodology-sp-equity-indices-policies-practices.pdf",
         "https://www.spglobal.com/spdji/en/indices/dividends-factors/dow-jones-us-dividend-100-index/",
         "https://www.spglobal.com/spdji/en/methodology/article/index-mathematics-methodology/"
       ],
@@ -25443,7 +25445,7 @@
         "methodologyRef": {
           "ownerSourceId": "builtin:base",
           "methodologyId": "schd-dividend-100",
-          "version": 1
+          "version": 2
         },
         "effectiveFrom": "2026-03-23",
         "referenceUniverse": "US_BROAD_EQUITY",
@@ -25451,8 +25453,10 @@
           "integers": {
             "annualReconstitutionMonth": 3,
             "dailyCapReweightDelayTradingDays": 2,
+            "februaryDividendReviewCutoffDay": 18,
             "incumbentRankBuffer": 200,
             "minDividendPaymentYears": 10,
+            "monthlyDividendReviewCutoffDay": 21,
             "targetConstituentCount": 100
           },
           "decimals": {
@@ -25465,8 +25469,14 @@
             "sectorWeightCap": 0.25
           },
           "booleans": {},
-          "texts": {},
+          "texts": {
+            "constituentMergerRuleEffectiveDate": "2026-04-30"
+          },
           "integerSets": {
+            "excludedGicsClassificationCodes": [
+              6010,
+              402040
+            ],
             "rebalanceMonths": [
               3,
               6,
@@ -72776,7 +72786,7 @@
       "fundProductProfile": {
         "benchmarkRef": {
           "benchmarkId": "spdj-dow-jones-us-dividend-100",
-          "version": 1
+          "version": 2
         },
         "replicationMode": "PHYSICAL_FULL_REPLICATION",
         "returnVariant": "TOTAL_RETURN",

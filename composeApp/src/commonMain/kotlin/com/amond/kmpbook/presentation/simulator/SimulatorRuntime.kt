@@ -24,6 +24,7 @@ import com.amond.kmpbook.domain.model.fund.FixedIncomeGeography
 import com.amond.kmpbook.domain.model.fund.FundLegalStructure
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioBook
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioBookAdvance
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioCompositionHasher
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioRecord
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioState
 import com.amond.kmpbook.domain.model.fundproduct.DailyResetCalendar
@@ -3793,19 +3794,34 @@ internal class SimulatorRuntime(
 
     private fun commitReferencePortfolioAdvance(advance: ReferencePortfolioBookAdvance) {
         require(advance.book.states.keys == referencePortfolioStates.keys)
-        val recordsByPortfolioId = advance.records.associateBy(ReferencePortfolioRecord::portfolioId)
+        val recordsByPortfolioId = advance.records.groupBy(ReferencePortfolioRecord::portfolioId)
+        require(recordsByPortfolioId.keys.all(referencePortfolioStates::containsKey))
         for ((portfolioId, next) in advance.book.states) {
             val previous = referencePortfolioStates.getValue(portfolioId)
-            val record = recordsByPortfolioId[portfolioId]
+            val records = recordsByPortfolioId[portfolioId].orEmpty()
             require(next.asOf >= previous.asOf) { "기준 포트폴리오 시각은 뒤로 이동할 수 없습니다." }
-            if (record == null) {
+            if (records.isEmpty()) {
                 require(next.revision == previous.revision) {
                     "재조정 원장 없이 기준 포트폴리오 revision을 변경할 수 없습니다."
                 }
             } else {
-                require(next.revision == previous.revision + 1L && record.revision == next.revision) {
+                require(next.revision == previous.revision + records.size &&
+                    records.withIndex().all { (index, record) ->
+                        record.revision == previous.revision + index + 1L
+                    }
+                ) {
                     "기준 포트폴리오 revision과 재조정 원장이 연속되지 않습니다."
                 }
+                require(records.zipWithNext().all { (before, after) ->
+                    before.afterCompositionHash == after.beforeCompositionHash
+                }) { "같은 시각의 기준 포트폴리오 행동 원장 해시가 연속되지 않습니다." }
+                require(
+                    records.first().beforeCompositionHash ==
+                        ReferencePortfolioCompositionHasher.hash(previous.positions) &&
+                        records.last().afterCompositionHash ==
+                        ReferencePortfolioCompositionHasher.hash(next.positions),
+                ) { "기준 포트폴리오 상태 경계와 재조정 원장 해시가 일치하지 않습니다." }
+                val record = records.last()
                 require(
                     record.portfolioId == next.portfolioId &&
                         record.benchmarkRef == next.benchmarkRef &&
@@ -3814,7 +3830,9 @@ internal class SimulatorRuntime(
                         abs(record.turnoverRate - next.lastTurnoverRate) <=
                         ReferencePortfolioState.WEIGHT_EPSILON,
                 ) { "기준 포트폴리오 상태와 재조정 원장의 계보가 일치하지 않습니다." }
-                require(referencePortfolioLedger.none { it.id == record.id }) {
+                require(records.none { candidate ->
+                    referencePortfolioLedger.any { it.id == candidate.id }
+                }) {
                     "같은 기준 포트폴리오 재조정 원장을 두 번 기록할 수 없습니다."
                 }
             }

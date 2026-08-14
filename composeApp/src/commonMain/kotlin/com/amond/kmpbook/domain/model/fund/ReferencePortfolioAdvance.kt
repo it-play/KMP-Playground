@@ -4,12 +4,15 @@ package com.amond.kmpbook.domain.model.fund
 data class ReferencePortfolioAdvance(
     val state: ReferencePortfolioState,
     val grossReferenceLogReturn: Double,
-    val record: ReferencePortfolioRecord? = null,
+    val records: List<ReferencePortfolioRecord> = emptyList(),
 ) {
     init {
         require(grossReferenceLogReturn.isFinite())
-        require(record == null || record.portfolioId == state.portfolioId)
-        require(record == null || record.benchmarkRef == state.benchmarkRef)
-        require(record == null || record.revision == state.revision)
+        require(records.all { it.portfolioId == state.portfolioId })
+        require(records.all { it.benchmarkRef == state.benchmarkRef })
+        require(records.zipWithNext().all { (previous, next) ->
+            previous.revision + 1L == next.revision
+        })
+        require(records.lastOrNull()?.revision == state.revision || records.isEmpty())
     }
 }

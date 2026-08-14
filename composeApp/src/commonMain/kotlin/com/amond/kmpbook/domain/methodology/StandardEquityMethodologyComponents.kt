@@ -61,12 +61,12 @@ object StandardEquityMethodologyComponents : EquityMethodologyComponentCatalog {
         val retained = rankedAssetIds.filter { assetId ->
             assetId in incumbentAssetIds && ranks.getValue(assetId) <= incumbentRankBuffer
         }.take(targetCount)
-        val retainedIds = retained.toHashSet()
         return buildList {
             addAll(retained)
             addAll(
                 rankedAssetIds.asSequence()
-                    .filterNot(retainedIds::contains)
+                    // Incumbents outside the buffer do not re-enter through the newcomer lane.
+                    .filterNot(incumbentAssetIds::contains)
                     .take(targetCount - retained.size),
             )
         }

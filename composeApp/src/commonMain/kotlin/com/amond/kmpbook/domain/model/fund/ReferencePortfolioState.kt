@@ -19,6 +19,8 @@ data class ReferencePortfolioState(
     val lastRebalanceDate: LocalDate,
     val nextReconstitutionDate: LocalDate,
     val nextRebalanceDate: LocalDate,
+    val pendingSelectionDate: LocalDate? = null,
+    val pendingSelectionIncumbentAssetIds: List<String>? = null,
     val pendingPlans: List<ReferencePortfolioPlan>,
     val lastTurnoverRate: Double,
     val estimatedAnnualIncomeYield: Double,
@@ -45,13 +47,21 @@ data class ReferencePortfolioState(
         require(positions.all { it.enteredOn <= lastRebalanceDate })
         require(lastReconstitutionDate < nextReconstitutionDate)
         require(lastRebalanceDate < nextRebalanceDate)
+        require((pendingSelectionDate == null) == (pendingSelectionIncumbentAssetIds == null))
+        pendingSelectionDate?.let { selectionDate ->
+            require(selectionDate > lastReconstitutionDate && selectionDate < nextReconstitutionDate)
+        }
+        pendingSelectionIncumbentAssetIds?.let { incumbentAssetIds ->
+            require(incumbentAssetIds.size in 1..ReferencePortfolioLimits.MAX_CONSTITUENTS)
+            require(incumbentAssetIds == incumbentAssetIds.distinct().sorted())
+            require(incumbentAssetIds.all(ASSET_ID::matches))
+        }
         require(pendingPlans.size <= MAX_PENDING_PLANS)
         require(pendingPlans == pendingPlans.sortedWith(PLAN_ORDER))
         require(pendingPlans.map(ReferencePortfolioPlan::id).distinct().size == pendingPlans.size)
-        require(pendingPlans.map(ReferencePortfolioPlan::effectiveDate).distinct().size == pendingPlans.size)
         require(pendingPlans.all { plan ->
             plan.portfolioId == portfolioId && plan.benchmarkRef == benchmarkRef &&
-                plan.effectiveDate > lastRebalanceDate
+                plan.effectiveDate >= lastRebalanceDate
         })
         require(lastTurnoverRate.isFinite() && lastTurnoverRate in 0.0..1.0)
         require(estimatedAnnualIncomeYield.isFinite() && estimatedAnnualIncomeYield in 0.0..1.0)
@@ -64,7 +74,21 @@ data class ReferencePortfolioState(
         const val WEIGHT_EPSILON: Double = 1e-8
         const val MAX_PENDING_PLANS: Int = 8
         private val PORTFOLIO_ID = Regex("[a-z0-9][a-z0-9:._-]{2,199}")
+        private val ASSET_ID = Regex("[A-Za-z0-9][A-Za-z0-9:._-]{0,199}")
         private val PLAN_ORDER = compareBy<ReferencePortfolioPlan>(ReferencePortfolioPlan::effectiveDate)
+            .thenBy { plan -> plan.kind.executionPriority() }
             .thenBy(ReferencePortfolioPlan::id)
+
+        private fun ReferencePortfolioActionKind.executionPriority(): Int = when (this) {
+            ReferencePortfolioActionKind.CONSTITUENT_MERGER,
+            ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
+            ReferencePortfolioActionKind.TERMINAL_REMOVAL,
+            -> 0
+            ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL -> 1
+            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> 2
+            ReferencePortfolioActionKind.SCHEDULED_REWEIGHT -> 3
+            ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT -> 4
+            ReferencePortfolioActionKind.SPIN_OFF_ADDITION -> 5
+        }
     }
 }

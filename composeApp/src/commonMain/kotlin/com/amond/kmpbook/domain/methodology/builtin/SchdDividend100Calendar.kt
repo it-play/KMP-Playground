@@ -94,6 +94,12 @@ internal object SchdDividend100Calendar {
         return result
     }
 
+    fun firstUsTradingDateOnOrAfter(date: LocalDate): LocalDate {
+        var result = date
+        while (!isUsTradingDate(result)) result = result.plus(1, DateTimeUnit.DAY)
+        return result
+    }
+
     fun isUsTradingDate(date: LocalDate): Boolean {
         if (date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY) return false
         return date.year !in HOLIDAY_CALENDAR_START_YEAR..GameCalendar.CAMPAIGN_END_DATE.year ||

@@ -10,8 +10,8 @@ object BuiltInEquityMethodologies {
             .register(
                 EquityMethodologyRegistration(
                     descriptor = EquityMethodologyDescriptor(
-                        ref = EquityMethodologyRef.SCHD_DIVIDEND_100_V1,
-                        displayName = "SCHD / Dow Jones U.S. Dividend 100 v1",
+                        ref = EquityMethodologyRef.SCHD_DIVIDEND_100_V2,
+                        displayName = "SCHD / Dow Jones U.S. Dividend 100 v2",
                     ),
                     policy = SchdDividend100Policy,
                 ),

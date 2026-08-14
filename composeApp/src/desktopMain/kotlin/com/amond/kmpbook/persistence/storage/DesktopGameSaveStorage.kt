@@ -33,6 +33,8 @@ import com.amond.kmpbook.domain.model.fund.FundReturnTransform
 import com.amond.kmpbook.domain.model.fund.FundReturnVariant
 import com.amond.kmpbook.domain.model.fund.MethodologyEquitySector
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioActionKind
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioCorporateActionConsiderationKind
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioCorporateActionKind
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioState
 import com.amond.kmpbook.domain.model.fundproduct.DailyResetCalendar
 import com.amond.kmpbook.domain.model.fundproduct.DailyResetLifecycle
@@ -689,9 +691,13 @@ actual class GameSaveStorage actual constructor() {
             }
         }
 
-        fun JsonObject.requireReferencePortfolioPosition(path: String) {
+        fun JsonObject.requireReferencePortfolioPosition(path: String): String {
             requireExactFields(REFERENCE_PORTFOLIO_POSITION_FIELDS, path)
-            requiredBoundedNonBlankString("assetId", "$path.assetId", MAX_REFERENCE_ASSET_ID_LENGTH)
+            val assetId = requiredBoundedNonBlankString(
+                "assetId",
+                "$path.assetId",
+                MAX_REFERENCE_ASSET_ID_LENGTH,
+            )
             listOf("currentWeight", "targetWeight").forEach { field ->
                 val weight = requiredFiniteDouble(field, "$path.$field")
                 if (weight !in MIN_FUND_CONSTITUENT_WEIGHT..1.0) {
@@ -714,19 +720,24 @@ actual class GameSaveStorage actual constructor() {
             if (rank !in 1..MAX_FUND_SELECTION_RANK) {
                 throw JsonParseException("필드 '$path.selectionRank'가 허용 범위를 벗어났습니다.")
             }
+            return assetId
         }
 
-        fun JsonObject.requireReferencePortfolioPositions(field: String, path: String) {
+        fun JsonObject.requireReferencePortfolioPositions(field: String, path: String): List<String> {
             val positions = requiredArray(field)
             if (positions.size() == 0 || positions.size() > ReferencePortfolioLimits.MAX_CONSTITUENTS) {
                 throw JsonParseException(
                     "필드 '$path'는 1~${ReferencePortfolioLimits.MAX_CONSTITUENTS}개 항목이어야 합니다.",
                 )
             }
-            positions.forEachIndexed { index, positionElement ->
+            return positions.mapIndexed { index, positionElement ->
                 val positionPath = "$path[$index]"
                 positionElement.requireObject(positionPath)
                     .requireReferencePortfolioPosition(positionPath)
+            }.also { assetIds ->
+                if (assetIds != assetIds.distinct().sorted()) {
+                    throw JsonParseException("필드 '$path'는 assetId 순서의 고유 구성종목이어야 합니다.")
+                }
             }
         }
 
@@ -740,6 +751,151 @@ actual class GameSaveStorage actual constructor() {
                 val id = idElement.requireStrictString(idPath)
                 if (id.isBlank() || id.length > MAX_REFERENCE_ASSET_ID_LENGTH) {
                     throw JsonParseException("필드 '$idPath'의 길이가 올바르지 않습니다.")
+                }
+            }
+        }
+
+        fun JsonObject.requireNullableReferenceAssetIdArray(
+            field: String,
+            path: String,
+        ): List<String>? {
+            requireMember(field)
+            val element = get(field)
+            if (element.isJsonNull) return null
+            if (!element.isJsonArray) {
+                throw JsonParseException("필드 '$path'는 배열 또는 null이어야 합니다.")
+            }
+            val ids = element.asJsonArray
+            if (ids.size() > ReferencePortfolioLimits.MAX_CONSTITUENTS) {
+                throw JsonParseException("필드 '$path'의 항목이 너무 많습니다.")
+            }
+            return ids.mapIndexed { index, idElement ->
+                val idPath = "$path[$index]"
+                idElement.requireStrictString(idPath).also { id ->
+                    if (!REFERENCE_ASSET_ID.matches(id)) {
+                        throw JsonParseException("필드 '$idPath'의 자산 ID 형식이 유효하지 않습니다.")
+                    }
+                }
+            }.also { assetIds ->
+                if (assetIds != assetIds.distinct().sorted()) {
+                    throw JsonParseException("필드 '$path'는 정렬된 고유 자산 ID 목록이어야 합니다.")
+                }
+            }
+        }
+
+        fun JsonObject.requireWeightReferenceMarketValues(
+            field: String,
+            path: String,
+            expectedAssetIds: List<String>,
+        ): Boolean {
+            requireMember(field)
+            val element = get(field)
+            if (element.isJsonNull) return false
+            val marketValues = element.requireObject(path)
+            if (marketValues.size() == 0 ||
+                marketValues.size() > ReferencePortfolioLimits.MAX_CONSTITUENTS
+            ) {
+                throw JsonParseException(
+                    "필드 '$path'는 1~${ReferencePortfolioLimits.MAX_CONSTITUENTS}개 항목이어야 합니다.",
+                )
+            }
+            val assetIds = marketValues.keySet().toList()
+            if (assetIds != assetIds.sorted() || assetIds != expectedAssetIds ||
+                assetIds.any { assetId -> !REFERENCE_ASSET_ID.matches(assetId) }
+            ) {
+                throw JsonParseException(
+                    "필드 '$path'는 positions와 같은 순서·ID의 시가가치 맵이어야 합니다.",
+                )
+            }
+            assetIds.forEach { assetId ->
+                if (marketValues.requiredFiniteDouble(assetId, "$path.$assetId") <= 0.0) {
+                    throw JsonParseException("필드 '$path.$assetId'는 양수여야 합니다.")
+                }
+            }
+            return true
+        }
+
+        fun JsonObject.requireReferencePortfolioCorporateAction(field: String, path: String) {
+            requireMember(field)
+            val element = get(field)
+            if (element.isJsonNull) return
+            element.requireObject(path).apply {
+                requireExactFields(REFERENCE_PORTFOLIO_CORPORATE_ACTION_FIELDS, path)
+                val eventId = requiredStrictString("eventId", "$path.eventId")
+                if (!REFERENCE_EVENT_ID.matches(eventId)) {
+                    throw JsonParseException("필드 '$path.eventId'의 기업행동 ID 형식이 유효하지 않습니다.")
+                }
+                val kind = requiredEnum<ReferencePortfolioCorporateActionKind>(
+                    "kind",
+                    "$path.kind",
+                )
+                val announcementDate = requiredLocalDate(
+                    "announcementDate",
+                    "$path.announcementDate",
+                )
+                val effectiveDate = requiredLocalDate("effectiveDate", "$path.effectiveDate")
+                if (announcementDate >= effectiveDate) {
+                    throw JsonParseException("필드 '$path'의 발표일은 효력일보다 앞서야 합니다.")
+                }
+                val primaryAssetId = requiredStrictString(
+                    "primaryAssetId",
+                    "$path.primaryAssetId",
+                )
+                val secondaryAssetId = nullableStrictString(
+                    "secondaryAssetId",
+                    "$path.secondaryAssetId",
+                )
+                if (!REFERENCE_ASSET_ID.matches(primaryAssetId) ||
+                    secondaryAssetId?.let(REFERENCE_ASSET_ID::matches) == false ||
+                    secondaryAssetId == primaryAssetId
+                ) {
+                    throw JsonParseException("필드 '$path'의 기준자산 ID 구조가 유효하지 않습니다.")
+                }
+                val considerationKind =
+                    requiredEnum<ReferencePortfolioCorporateActionConsiderationKind>(
+                        "considerationKind",
+                        "$path.considerationKind",
+                    )
+                val valueTransferFraction = requiredFiniteDouble(
+                    "valueTransferFraction",
+                    "$path.valueTransferFraction",
+                )
+                if (valueTransferFraction !in 0.0..1.0) {
+                    throw JsonParseException("필드 '$path.valueTransferFraction'은 0과 1 사이여야 합니다.")
+                }
+                val followUpEffectiveDate = nullableLocalDate(
+                    "followUpEffectiveDate",
+                    "$path.followUpEffectiveDate",
+                )
+                if (followUpEffectiveDate?.let { date -> date <= effectiveDate } == true) {
+                    throw JsonParseException("필드 '$path.followUpEffectiveDate'는 최초 효력일보다 늦어야 합니다.")
+                }
+                val validKindStructure = when (kind) {
+                    ReferencePortfolioCorporateActionKind.MERGER ->
+                        secondaryAssetId != null && followUpEffectiveDate == null &&
+                            when (considerationKind) {
+                                ReferencePortfolioCorporateActionConsiderationKind.CASH ->
+                                    valueTransferFraction == 0.0
+                                ReferencePortfolioCorporateActionConsiderationKind.STOCK ->
+                                    valueTransferFraction == 1.0
+                                ReferencePortfolioCorporateActionConsiderationKind.MIXED ->
+                                    valueTransferFraction > 0.0 && valueTransferFraction < 1.0
+                                ReferencePortfolioCorporateActionConsiderationKind.NONE -> false
+                            }
+
+                    ReferencePortfolioCorporateActionKind.SPIN_OFF ->
+                        secondaryAssetId != null &&
+                            considerationKind == ReferencePortfolioCorporateActionConsiderationKind.NONE &&
+                            valueTransferFraction > 0.0 && valueTransferFraction < 1.0 &&
+                            followUpEffectiveDate != null
+
+                    ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL ->
+                        secondaryAssetId == null &&
+                            considerationKind == ReferencePortfolioCorporateActionConsiderationKind.NONE &&
+                            valueTransferFraction == 0.0 && followUpEffectiveDate == null
+                }
+                if (!validKindStructure) {
+                    throw JsonParseException("필드 '$path'의 기업행동 종류별 구조가 유효하지 않습니다.")
                 }
             }
         }
@@ -1140,12 +1296,35 @@ actual class GameSaveStorage actual constructor() {
                 if (requiredLong("revision", "$path.revision") < 0L) {
                     throw JsonParseException("필드 '$path.revision'은 0 이상이어야 합니다.")
                 }
-                listOf(
+                val lastReconstitutionDate = requiredLocalDate(
                     "lastReconstitutionDate",
-                    "lastRebalanceDate",
+                    "$path.lastReconstitutionDate",
+                )
+                requiredLocalDate("lastRebalanceDate", "$path.lastRebalanceDate")
+                val nextReconstitutionDate = requiredLocalDate(
                     "nextReconstitutionDate",
-                    "nextRebalanceDate",
-                ).forEach { field -> requiredLocalDate(field, "$path.$field") }
+                    "$path.nextReconstitutionDate",
+                )
+                requiredLocalDate("nextRebalanceDate", "$path.nextRebalanceDate")
+                val pendingSelectionDate = nullableLocalDate(
+                    "pendingSelectionDate",
+                    "$path.pendingSelectionDate",
+                )
+                val pendingSelectionIncumbentAssetIds = requireNullableReferenceAssetIdArray(
+                    "pendingSelectionIncumbentAssetIds",
+                    "$path.pendingSelectionIncumbentAssetIds",
+                )
+                if ((pendingSelectionDate == null) !=
+                    (pendingSelectionIncumbentAssetIds == null) ||
+                    pendingSelectionIncumbentAssetIds?.isEmpty() == true ||
+                    pendingSelectionDate?.let { date ->
+                        date <= lastReconstitutionDate || date >= nextReconstitutionDate
+                    } == true
+                ) {
+                    throw JsonParseException(
+                        "필드 '$path'의 대기 중 선택일 구성 스냅샷이 재구성 일정과 맞지 않습니다.",
+                    )
+                }
                 val pendingPlans = requiredArray("pendingPlans")
                 if (pendingPlans.size() > ReferencePortfolioState.MAX_PENDING_PLANS) {
                     throw JsonParseException(
@@ -1168,13 +1347,70 @@ actual class GameSaveStorage actual constructor() {
                         )
                         requiredObject("benchmarkRef")
                             .requireBenchmarkRef("$planPath.benchmarkRef")
-                        requiredEnum<ReferencePortfolioActionKind>("kind", "$planPath.kind")
-                        listOf("selectionDate", "weightReferenceDate", "effectiveDate").forEach { field ->
-                            requiredLocalDate(field, "$planPath.$field")
+                        val kind = requiredEnum<ReferencePortfolioActionKind>("kind", "$planPath.kind")
+                        val selectionDate = requiredLocalDate(
+                            "selectionDate",
+                            "$planPath.selectionDate",
+                        )
+                        requiredLocalDate("weightReferenceDate", "$planPath.weightReferenceDate")
+                        val effectiveDate = requiredLocalDate(
+                            "effectiveDate",
+                            "$planPath.effectiveDate",
+                        )
+                        val selectionIncumbentAssetIds = requireNullableReferenceAssetIdArray(
+                            "selectionIncumbentAssetIds",
+                            "$planPath.selectionIncumbentAssetIds",
+                        )
+                        val selectionAvailabilityDate = nullableLocalDate(
+                            "selectionAvailabilityDate",
+                            "$planPath.selectionAvailabilityDate",
+                        )
+                        val hasSelectionBasis = selectionIncumbentAssetIds != null &&
+                            selectionAvailabilityDate != null
+                        if ((selectionIncumbentAssetIds == null) !=
+                            (selectionAvailabilityDate == null) ||
+                            hasSelectionBasis !=
+                            (kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION) ||
+                            selectionAvailabilityDate?.let { date ->
+                                date !in selectionDate..effectiveDate
+                            } == true
+                        ) {
+                            throw JsonParseException(
+                                "필드 '$planPath'의 정기 재구성 선택 근거가 행동 종류·일정과 맞지 않습니다.",
+                            )
                         }
-                        requireReferencePortfolioPositions("positions", "$planPath.positions")
+                        val positionAssetIds = requireReferencePortfolioPositions(
+                            "positions",
+                            "$planPath.positions",
+                        )
                         requireReferenceAssetIdArray("addedAssetIds", "$planPath.addedAssetIds")
                         requireReferenceAssetIdArray("removedAssetIds", "$planPath.removedAssetIds")
+                        val hasWeightReferenceMarketValues = requireWeightReferenceMarketValues(
+                            "weightReferenceMarketValues",
+                            "$planPath.weightReferenceMarketValues",
+                            positionAssetIds,
+                        )
+                        val requiresWeightReferenceMarketValues = when (kind) {
+                            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION,
+                            ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
+                            ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
+                            -> true
+                            ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL,
+                            ReferencePortfolioActionKind.CONSTITUENT_MERGER,
+                            ReferencePortfolioActionKind.SPIN_OFF_ADDITION,
+                            ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
+                            ReferencePortfolioActionKind.TERMINAL_REMOVAL,
+                            -> false
+                        }
+                        if (hasWeightReferenceMarketValues != requiresWeightReferenceMarketValues) {
+                            throw JsonParseException(
+                                "필드 '$planPath.weightReferenceMarketValues'가 행동 종류와 맞지 않습니다.",
+                            )
+                        }
+                        requireReferencePortfolioCorporateAction(
+                            "corporateAction",
+                            "$planPath.corporateAction",
+                        )
                     }
                 }
                 listOf("lastTurnoverRate", "estimatedAnnualIncomeYield").forEach { field ->
@@ -1227,6 +1463,7 @@ actual class GameSaveStorage actual constructor() {
                 if (requiredLong("revision", "$path.revision") <= 0L) {
                     throw JsonParseException("필드 '$path.revision'은 0보다 커야 합니다.")
                 }
+                requireReferencePortfolioCorporateAction("corporateAction", "$path.corporateAction")
             }
         }
         state.requiredObject("dailyResetStates").entrySet().forEach { (productId, element) ->
@@ -4659,6 +4896,8 @@ actual class GameSaveStorage actual constructor() {
             "lastRebalanceDate",
             "nextReconstitutionDate",
             "nextRebalanceDate",
+            "pendingSelectionDate",
+            "pendingSelectionIncumbentAssetIds",
             "pendingPlans",
             "lastTurnoverRate",
             "estimatedAnnualIncomeYield",
@@ -4683,9 +4922,13 @@ actual class GameSaveStorage actual constructor() {
             "selectionDate",
             "weightReferenceDate",
             "effectiveDate",
+            "selectionIncumbentAssetIds",
+            "selectionAvailabilityDate",
             "positions",
             "addedAssetIds",
             "removedAssetIds",
+            "weightReferenceMarketValues",
+            "corporateAction",
         )
 
         val REFERENCE_PORTFOLIO_RECORD_FIELDS: Set<String> = setOf(
@@ -4703,6 +4946,19 @@ actual class GameSaveStorage actual constructor() {
             "turnoverRate",
             "resultingConstituentCount",
             "revision",
+            "corporateAction",
+        )
+
+        val REFERENCE_PORTFOLIO_CORPORATE_ACTION_FIELDS: Set<String> = setOf(
+            "eventId",
+            "kind",
+            "announcementDate",
+            "effectiveDate",
+            "primaryAssetId",
+            "secondaryAssetId",
+            "considerationKind",
+            "valueTransferFraction",
+            "followUpEffectiveDate",
         )
 
         val DAILY_RESET_STATE_FIELDS: Set<String> = setOf(
@@ -5266,6 +5522,8 @@ actual class GameSaveStorage actual constructor() {
         const val MAX_TAX_TEXT_LENGTH: Int = 512
         const val MAX_TAX_WARNING_LENGTH: Int = 2_048
         val REFERENCE_COMPOSITION_HASH: Regex = Regex("[0-9a-f]{16}")
+        val REFERENCE_EVENT_ID: Regex = Regex("[A-Za-z0-9][A-Za-z0-9:._-]{0,511}")
+        val REFERENCE_ASSET_ID: Regex = Regex("[A-Za-z0-9][A-Za-z0-9:._-]{0,199}")
         val EQUITY_COUNTRY_CODE_PATTERN: Regex = Regex("[A-Z]{2}")
         val EQUITY_THEME_ID_PATTERN: Regex = Regex("[a-z0-9]+(?:[.-][a-z0-9]+)*")
         val EQUITY_REFERENCE_ASSET_ID_PATTERN: Regex = Regex("[a-z0-9][a-z0-9:._-]{2,199}")

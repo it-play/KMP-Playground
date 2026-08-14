@@ -35,4 +35,8 @@ interface EquityMethodologyPolicy {
     fun extraordinaryRemovalDecision(
         input: EquityMethodologyRemovalInput,
     ): EquityMethodologyRemovalDecision? = null
+
+    fun corporateActionDecision(
+        input: EquityMethodologyCorporateActionInput,
+    ): EquityMethodologyCorporateActionDecision? = null
 }

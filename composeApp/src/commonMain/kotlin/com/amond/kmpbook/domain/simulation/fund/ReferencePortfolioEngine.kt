@@ -1,6 +1,8 @@
 package com.amond.kmpbook.domain.simulation.fund
 
 import com.amond.kmpbook.domain.methodology.EquityMethodologyCandidate
+import com.amond.kmpbook.domain.methodology.EquityMethodologyCorporateActionDecision
+import com.amond.kmpbook.domain.methodology.EquityMethodologyCorporateActionInput
 import com.amond.kmpbook.domain.methodology.EquityMethodologyConstraintInput
 import com.amond.kmpbook.domain.methodology.EquityMethodologyRegistry
 import com.amond.kmpbook.domain.methodology.EquityMethodologyRemovalInput
@@ -17,6 +19,10 @@ import com.amond.kmpbook.domain.model.fund.ReferencePortfolioBook
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioBookAdvance
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioState
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioActionKind
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioCorporateAction
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioCorporateActionConsiderationKind
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioCorporateActionKind
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioCompositionHasher
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioLimits
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioPlan
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioPosition
@@ -53,7 +59,15 @@ class ReferencePortfolioEngine private constructor(
     private val seed: Long,
     private val methodologyRegistry: EquityMethodologyRegistry,
 ) {
-    private val referenceEquities: List<SimulatedReferenceEquity> = buildReferenceEquities()
+    private val ordinaryReferenceEquities: List<SimulatedReferenceEquity> = buildReferenceEquities()
+    private val ordinaryReferenceEquityIds: Set<String> =
+        ordinaryReferenceEquities.mapTo(linkedSetOf(), SimulatedReferenceEquity::assetId)
+    private val spinOffReferenceEquities: List<SimulatedReferenceEquity> =
+        buildSpinOffReferenceEquities(ordinaryReferenceEquities)
+    private val spinOffChildAssetIds: Set<String> =
+        spinOffReferenceEquities.mapTo(linkedSetOf(), SimulatedReferenceEquity::assetId)
+    private val referenceEquities: List<SimulatedReferenceEquity> =
+        ordinaryReferenceEquities + spinOffReferenceEquities
     private val referenceEquityById = referenceEquities.associateBy(SimulatedReferenceEquity::assetId)
     private val referenceIdentityById = referenceEquities.associate { equity ->
         equity.assetId to ReferenceAssetIdentity(
@@ -72,6 +86,10 @@ class ReferencePortfolioEngine private constructor(
     private val selectionTradingFractionCache = mutableMapOf<Pair<EquityMethodologyProfile, LocalDate>, Double>()
     private val selectionMarketReturnCache = mutableMapOf<LocalDate, Double>()
     private val selectionSectorReturnsCache = mutableMapOf<LocalDate, DoubleArray>()
+    private val corporateActionByDateCache =
+        mutableMapOf<Pair<EquityMethodologyProfile, LocalDate>, ReferencePortfolioCorporateAction?>()
+    private val unavailableScheduledAssetIdsCache =
+        mutableMapOf<Pair<EquityMethodologyProfile, LocalDate>, Set<String>>()
     private val preflightedProfiles = mutableSetOf<EquityMethodologyProfile>()
     private val compiledMethodologies = mutableMapOf<BenchmarkRef, CompiledEquityMethodology>()
 
@@ -81,6 +99,137 @@ class ReferencePortfolioEngine private constructor(
 
     internal fun hasCanonicalReferenceAssetId(assetId: String): Boolean =
         assetId in referenceEquityById
+
+    internal fun isCanonicalCorporateAction(
+        definition: BenchmarkDefinition,
+        action: ReferencePortfolioCorporateAction,
+    ): Boolean = canonicalCorporateActionOn(compile(definition), action.announcementDate) == action
+
+    internal fun canonicalCorporateActionsThrough(
+        definition: BenchmarkDefinition,
+        throughDate: LocalDate,
+    ): List<ReferencePortfolioCorporateAction> {
+        val methodology = compile(definition)
+        require(throughDate >= methodology.profile.effectiveFrom)
+        val lastDate = minOf(throughDate, GameCalendar.CAMPAIGN_END_DATE)
+        return buildList {
+            var date = methodology.profile.effectiveFrom
+            while (date <= lastDate) {
+                canonicalCorporateActionOn(methodology, date)?.let(::add)
+                date = date.plus(1, DateTimeUnit.DAY)
+            }
+        }
+    }
+
+    internal fun canonicalCorporateActionDecision(
+        definition: BenchmarkDefinition,
+        action: ReferencePortfolioCorporateAction,
+        currentAssetIds: Set<String>,
+    ): EquityMethodologyCorporateActionDecision? = runCatching {
+        val methodology = compile(definition)
+        require(canonicalCorporateActionOn(methodology, action.announcementDate) == action)
+        corporateActionDecision(
+            methodology = methodology,
+            event = action,
+            currentIds = currentAssetIds,
+        )
+    }.getOrNull()
+
+    internal fun canonicalCorporateActionTargetWeights(
+        definition: BenchmarkDefinition,
+        action: ReferencePortfolioCorporateAction,
+        currentPositions: List<ReferencePortfolioPosition>,
+        kind: ReferencePortfolioActionKind,
+    ): Map<String, Double>? = runCatching {
+        val methodology = compile(definition)
+        require(canonicalCorporateActionOn(methodology, action.announcementDate) == action)
+        val currentIds = currentPositions.mapTo(linkedSetOf(), ReferencePortfolioPosition::assetId)
+        val positions = when (kind) {
+            ReferencePortfolioActionKind.CONSTITUENT_MERGER,
+            ReferencePortfolioActionKind.SPIN_OFF_ADDITION,
+            ReferencePortfolioActionKind.TERMINAL_REMOVAL,
+            -> {
+                val expectedEventKind = when (kind) {
+                    ReferencePortfolioActionKind.CONSTITUENT_MERGER ->
+                        ReferencePortfolioCorporateActionKind.MERGER
+                    ReferencePortfolioActionKind.SPIN_OFF_ADDITION ->
+                        ReferencePortfolioCorporateActionKind.SPIN_OFF
+                    ReferencePortfolioActionKind.TERMINAL_REMOVAL ->
+                        ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL
+                }
+                require(action.kind == expectedEventKind)
+                val decision = requireNotNull(
+                    corporateActionDecision(methodology, action, currentIds),
+                )
+                positionsForCorporateAction(currentPositions, action, decision, action.effectiveDate)
+            }
+            ReferencePortfolioActionKind.SPIN_OFF_REMOVAL -> {
+                require(action.kind == ReferencePortfolioCorporateActionKind.SPIN_OFF)
+                val childId = requireNotNull(action.secondaryAssetId)
+                require(childId in currentIds && currentPositions.size > 1)
+                currentPositions.filterNot { position -> position.assetId == childId }
+                    .normalizeBothWeights()
+            }
+            else -> error("Only corporate-action plans have canonical corporate target weights.")
+        }
+        buildMap {
+            positions.forEach { position -> put(position.assetId, position.targetWeight) }
+        }
+    }.getOrNull()
+
+    internal fun canonicalWeightingTargetWeights(
+        definition: BenchmarkDefinition,
+        plan: ReferencePortfolioPlan,
+    ): Map<String, Double>? = runCatching {
+        require(
+            plan.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION ||
+                plan.kind == ReferencePortfolioActionKind.SCHEDULED_REWEIGHT ||
+                plan.kind == ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
+        )
+        val methodology = compile(definition)
+        require(plan.benchmarkRef == definition.ref)
+        val marketValues = requireNotNull(plan.weightReferenceMarketValues)
+        val snapshots = snapshotMapForKnownDataAt(plan.weightReferenceDate, methodology)
+        val selected = plan.positions.map { position ->
+            RankedReferenceCandidate(
+                snapshot = requireNotNull(snapshots[position.assetId]),
+                compositeRank = position.selectionRank,
+            )
+        }
+        targetWeights(
+            methodology = methodology,
+            selected = selected,
+            actionKind = plan.kind,
+            observationDate = plan.weightReferenceDate,
+            effectiveDate = plan.effectiveDate,
+            rawFloatMarketValues = marketValues,
+        )
+    }.getOrNull()
+
+    internal fun canonicalScheduledSelectionRanks(
+        definition: BenchmarkDefinition,
+        plan: ReferencePortfolioPlan,
+    ): Map<String, Int>? = runCatching {
+        require(plan.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION)
+        require(plan.benchmarkRef == definition.ref)
+        val methodology = compile(definition)
+        val action = requireNotNull(scheduledActionOn(methodology, plan.effectiveDate))
+        require(action.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION)
+        require(action.selectionDate == plan.selectionDate)
+        require(action.weightReferenceDate == plan.weightReferenceDate)
+        val selected = selectConstituents(
+            methodology = methodology,
+            action = action,
+            incumbentAssetIds = requireNotNull(plan.selectionIncumbentAssetIds).toSet(),
+            unavailableOnDate = requireNotNull(plan.selectionAvailabilityDate),
+        )
+        buildMap {
+            selected.sortedBy { candidate -> candidate.snapshot.definition.assetId }
+                .forEach { candidate ->
+                    put(candidate.snapshot.definition.assetId, candidate.compositeRank)
+                }
+        }
+    }.getOrNull()
 
     internal fun referenceAssetIdentity(assetId: String): ReferenceAssetIdentity? =
         referenceIdentityById[assetId]
@@ -145,7 +294,7 @@ class ReferencePortfolioEngine private constructor(
             )
             nextStates[portfolioId] = advance.state
             returns[ref] = advance.grossReferenceLogReturn
-            advance.record?.let(records::add)
+            records.addAll(advance.records)
         }
         return ReferencePortfolioBookAdvance(
             book = ReferencePortfolioBook(nextStates),
@@ -310,7 +459,7 @@ class ReferencePortfolioEngine private constructor(
          */
         val initialAction = initialScheduledAction(methodology)
         require(initialAction.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION) {
-            "The v1 reference-portfolio host requires an initial scheduled reconstitution."
+            "The reference-portfolio host requires an initial scheduled reconstitution."
         }
         val firstReconstitution = initialAction.effectiveDate
         val firstSelectionDate = initialAction.selectionDate
@@ -373,7 +522,7 @@ class ReferencePortfolioEngine private constructor(
         var replayDate = firstReconstitution
         while (replayDate <= lastReplayDate) {
             if (schedule.isTradingDate(replayDate)) {
-                state = applyBootstrapDuePlan(state, methodology, replayDate)
+                state = applyBootstrapDuePlans(state, methodology, replayDate)
                 val snapshots = snapshotMapForKnownDataAt(replayDate, methodology)
                 val trackedAssetIds = buildSet {
                     state.positions.mapTo(this, ReferencePortfolioPosition::assetId)
@@ -706,59 +855,60 @@ class ReferencePortfolioEngine private constructor(
             .coerceIn(-MAX_BOOTSTRAP_DAILY_LOG_MOVE, MAX_BOOTSTRAP_DAILY_LOG_MOVE)
     }
 
-    private fun applyBootstrapDuePlan(
+    private fun applyBootstrapDuePlans(
         state: ReferencePortfolioState,
         methodology: CompiledEquityMethodology,
         referenceDate: LocalDate,
     ): ReferencePortfolioState {
-        val duePlans = state.pendingPlans.filter { it.effectiveDate <= referenceDate }
-        if (duePlans.isEmpty()) return state
-        val plan = duePlans.minWith(PLAN_ORDER)
-        val turnover = oneWayTurnover(state.positions, plan.positions)
-        val remainingPlans = reconcilePendingPlans(
-            currentPositions = plan.positions,
-            plans = state.pendingPlans - plan,
-            afterEffectiveDate = plan.effectiveDate,
-            methodology = methodology,
-        )
-        return state.copy(
-            positions = plan.positions,
-            revision = 0L,
-            lastReconstitutionDate = if (plan.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION) {
-                plan.effectiveDate
-            } else {
-                state.lastReconstitutionDate
-            },
-            lastRebalanceDate = plan.effectiveDate,
-            nextReconstitutionDate = if (plan.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION) {
-                nextScheduledAction(
-                    methodology = methodology,
-                    afterExclusive = plan.effectiveDate,
-                    kind = ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION,
-                ).effectiveDate
-            } else {
-                state.nextReconstitutionDate
-            },
-            nextRebalanceDate = if (
-                plan.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION ||
-                plan.kind == ReferencePortfolioActionKind.SCHEDULED_REWEIGHT ||
-                state.nextRebalanceDate <= plan.effectiveDate
-            ) {
-                nextScheduledAction(
-                    methodology = methodology,
-                    afterExclusive = plan.effectiveDate,
-                ).effectiveDate
-            } else {
-                state.nextRebalanceDate
-            },
-            pendingPlans = remainingPlans,
-            lastTurnoverRate = turnover,
-            estimatedAnnualIncomeYield = portfolioIncomeYield(
-                plan.positions,
-                snapshotMapForKnownDataAt(referenceDate, methodology),
-            ),
-            lastAppliedActionKind = plan.kind,
-        )
+        var result = state
+        var appliedCount = 0
+        while (result.pendingPlans.any { it.effectiveDate <= referenceDate }) {
+            require(++appliedCount <= ReferencePortfolioState.MAX_PENDING_PLANS)
+            val plan = result.pendingPlans.filter { it.effectiveDate <= referenceDate }.minWith(PLAN_ORDER)
+            val turnover = oneWayTurnover(result.positions, plan.positions)
+            val remainingPlans = reconcilePendingPlans(
+                currentPositions = plan.positions,
+                plans = result.pendingPlans - plan,
+                afterEffectiveDate = plan.effectiveDate,
+                methodology = methodology,
+            )
+            result = result.copy(
+                positions = plan.positions,
+                revision = 0L,
+                lastReconstitutionDate = if (plan.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION) {
+                    plan.effectiveDate
+                } else {
+                    result.lastReconstitutionDate
+                },
+                lastRebalanceDate = plan.effectiveDate,
+                nextReconstitutionDate = if (plan.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION) {
+                    nextScheduledAction(
+                        methodology = methodology,
+                        afterExclusive = plan.effectiveDate,
+                        kind = ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION,
+                    ).effectiveDate
+                } else {
+                    result.nextReconstitutionDate
+                },
+                nextRebalanceDate = if (
+                    plan.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION ||
+                    plan.kind == ReferencePortfolioActionKind.SCHEDULED_REWEIGHT ||
+                    result.nextRebalanceDate <= plan.effectiveDate
+                ) {
+                    nextScheduledAction(methodology, plan.effectiveDate).effectiveDate
+                } else {
+                    result.nextRebalanceDate
+                },
+                pendingPlans = remainingPlans,
+                lastTurnoverRate = turnover,
+                estimatedAnnualIncomeYield = portfolioIncomeYield(
+                    plan.positions,
+                    snapshotMapForKnownDataAt(referenceDate, methodology),
+                ),
+                lastAppliedActionKind = plan.kind,
+            )
+        }
+        return result
     }
 
     private fun reconcilePendingPlans(
@@ -766,53 +916,220 @@ class ReferencePortfolioEngine private constructor(
         plans: List<ReferencePortfolioPlan>,
         afterEffectiveDate: LocalDate,
         methodology: CompiledEquityMethodology,
+        rebaseAsOfDate: LocalDate = afterEffectiveDate,
     ): List<ReferencePortfolioPlan> {
-        val currentIds = currentPositions.mapTo(linkedSetOf(), ReferencePortfolioPosition::assetId)
-        return plans.asSequence()
-            .filter { it.effectiveDate > afterEffectiveDate }
-            .mapNotNull { plan ->
+        var baselinePositions = currentPositions
+        val result = mutableListOf<ReferencePortfolioPlan>()
+        plans.filter { it.effectiveDate >= afterEffectiveDate }
+            .sortedWith(PLAN_ORDER)
+            .forEach { plan ->
+                val currentIds = baselinePositions.mapTo(linkedSetOf(), ReferencePortfolioPosition::assetId)
                 val plannedIds = plan.positions.mapTo(linkedSetOf(), ReferencePortfolioPosition::assetId)
-                when (plan.kind) {
-                    ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> plan.copy(
-                        addedAssetIds = (plannedIds - currentIds).sorted(),
-                        removedAssetIds = (currentIds - plannedIds).sorted(),
-                    )
+                val rebased = when (plan.kind) {
+                    ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> if (plannedIds == currentIds) {
+                        plan
+                    } else {
+                        recompileScheduledReconstitutionPlan(
+                            currentPositions = baselinePositions,
+                            plan = plan,
+                            methodology = methodology,
+                            unavailableOnDate = rebaseAsOfDate,
+                        )
+                    }
 
                     ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
                     ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
                     -> when {
                         plannedIds == currentIds -> plan
-                        currentIds.all { it in plannedIds } -> plan.copy(
-                            positions = cappedPositionsForExistingBasket(
-                                positions = plan.positions.filter { it.assetId in currentIds },
+                        currentIds.all { it in plannedIds } -> {
+                            val retainedPositions = plan.positions.filter { it.assetId in currentIds }
+                            val fixedMarketValues = requireNotNull(plan.weightReferenceMarketValues)
+                            val retainedMarketValues = buildMap {
+                                retainedPositions.forEach { position ->
+                                    put(position.assetId, fixedMarketValues.getValue(position.assetId))
+                                }
+                            }
+                            val fixedPositions = cappedPositionsForExistingBasket(
+                                positions = retainedPositions,
                                 methodology = methodology,
                                 actionKind = plan.kind,
                                 referenceDate = plan.weightReferenceDate,
                                 effectiveDate = plan.effectiveDate,
-                            ),
-                            addedAssetIds = emptyList(),
-                            removedAssetIds = emptyList(),
-                        )
+                                rawFloatMarketValues = retainedMarketValues,
+                            )
+                            plan.copy(
+                                positions = preservePendingPlanDrift(
+                                    fixedPositions = fixedPositions,
+                                    previousPlanPositions = plan.positions,
+                                    weightReferenceMarketValues = retainedMarketValues,
+                                ),
+                                addedAssetIds = emptyList(),
+                                removedAssetIds = emptyList(),
+                                weightReferenceMarketValues = retainedMarketValues,
+                            )
+                        }
                         else -> null
                     }
 
                     ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL -> {
                         val removals = plan.removedAssetIds.filterTo(linkedSetOf()) { it in currentIds }
-                        if (removals.isEmpty() || removals.size >= currentPositions.size) {
+                        if (removals.isEmpty() || removals.size >= baselinePositions.size) {
                             null
                         } else {
                             plan.copy(
-                                positions = currentPositions.filterNot { it.assetId in removals }
+                                positions = baselinePositions.filterNot { it.assetId in removals }
                                     .normalizeBothWeights(),
                                 addedAssetIds = emptyList(),
                                 removedAssetIds = removals.sorted(),
                             )
                         }
                     }
+
+                    ReferencePortfolioActionKind.CONSTITUENT_MERGER,
+                    ReferencePortfolioActionKind.SPIN_OFF_ADDITION,
+                    ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
+                    ReferencePortfolioActionKind.TERMINAL_REMOVAL,
+                    -> rebaseCorporateActionPlan(baselinePositions, plan, methodology)
+                }
+                if (rebased != null) {
+                    result += rebased
+                    baselinePositions = rebased.positions
                 }
             }
-            .sortedWith(PLAN_ORDER)
-            .toList()
+        return result
+    }
+
+    private fun recompileScheduledReconstitutionPlan(
+        currentPositions: List<ReferencePortfolioPosition>,
+        plan: ReferencePortfolioPlan,
+        methodology: CompiledEquityMethodology,
+        unavailableOnDate: LocalDate,
+    ): ReferencePortfolioPlan {
+        val action = requireNotNull(scheduledActionOn(methodology, plan.effectiveDate))
+        require(action.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION)
+        val selectionAvailabilityDate = maxOf(
+            requireNotNull(plan.selectionAvailabilityDate),
+            unavailableOnDate,
+        )
+        val selected = selectConstituents(
+            methodology = methodology,
+            action = action,
+            incumbentAssetIds = requireNotNull(plan.selectionIncumbentAssetIds).toSet(),
+            unavailableOnDate = selectionAvailabilityDate,
+        )
+        val currentById = currentPositions.associateBy(ReferencePortfolioPosition::assetId)
+        val originalMarketValues = requireNotNull(plan.weightReferenceMarketValues)
+        val weightReferenceMarketValues = selected.associate { candidate ->
+            val assetId = candidate.snapshot.definition.assetId
+            assetId to (
+                originalMarketValues[assetId]
+                    ?: simulatedReferenceMarketValueBetween(
+                        methodology = methodology,
+                        snapshot = candidate.snapshot,
+                        fromDate = action.selectionDate,
+                        throughDate = action.weightReferenceDate,
+                    )
+                )
+        }
+        val fixedPositions = positionsForSelection(
+            selected = selected,
+            rawFloatMarketValues = weightReferenceMarketValues,
+            methodology = methodology,
+            actionKind = action.kind,
+            observationDate = action.weightReferenceDate,
+            effectiveDate = action.effectiveDate,
+            previousPositions = currentById,
+        )
+        val positions = preservePendingPlanDrift(
+            fixedPositions = fixedPositions,
+            previousPlanPositions = plan.positions,
+            weightReferenceMarketValues = weightReferenceMarketValues,
+        )
+        val currentIds = currentById.keys
+        val nextIds = positions.mapTo(linkedSetOf(), ReferencePortfolioPosition::assetId)
+        return plan.copy(
+            positions = positions,
+            addedAssetIds = (nextIds - currentIds).sorted(),
+            removedAssetIds = (currentIds - nextIds).sorted(),
+            weightReferenceMarketValues = buildMap {
+                positions.forEach { position ->
+                    put(position.assetId, weightReferenceMarketValues.getValue(position.assetId))
+                }
+            },
+            selectionAvailabilityDate = selectionAvailabilityDate,
+        )
+    }
+
+    /**
+     * Re-selection can change a pending annual basket after its weighting close. Existing plan
+     * lines keep their observed post-reference drift. A replacement absent from the original
+     * plan activates at this rebase with a 1.0 pre-activation drift factor because the public
+     * methodology does not publish a reserve-security share assignment convention.
+     */
+    private fun preservePendingPlanDrift(
+        fixedPositions: List<ReferencePortfolioPosition>,
+        previousPlanPositions: List<ReferencePortfolioPosition>,
+        weightReferenceMarketValues: Map<String, Double>,
+    ): List<ReferencePortfolioPosition> {
+        val previousById = previousPlanPositions.associateBy(ReferencePortfolioPosition::assetId)
+        val driftedMarketValues = fixedPositions.associate { position ->
+            val fixedValue = weightReferenceMarketValues.getValue(position.assetId)
+            val observedValue = previousById[position.assetId]?.referenceFloatMarketValue
+                ?: fixedValue
+            position.assetId to observedValue
+        }
+        val rawCurrentWeights = fixedPositions.associate { position ->
+            val fixedValue = weightReferenceMarketValues.getValue(position.assetId)
+            position.assetId to position.targetWeight *
+                (driftedMarketValues.getValue(position.assetId) / fixedValue)
+        }
+        val currentWeightTotal = rawCurrentWeights.values.sum()
+        require(currentWeightTotal.isFinite() && currentWeightTotal > 0.0)
+        return fixedPositions.map { position ->
+            position.copy(
+                currentWeight = rawCurrentWeights.getValue(position.assetId) / currentWeightTotal,
+                referenceFloatMarketValue = driftedMarketValues.getValue(position.assetId),
+            )
+        }.repairCurrentWeightRounding().sortedBy(ReferencePortfolioPosition::assetId)
+    }
+
+    private fun rebaseCorporateActionPlan(
+        currentPositions: List<ReferencePortfolioPosition>,
+        plan: ReferencePortfolioPlan,
+        methodology: CompiledEquityMethodology,
+    ): ReferencePortfolioPlan? {
+        val event = requireNotNull(plan.corporateAction)
+        val currentIds = currentPositions.mapTo(linkedSetOf(), ReferencePortfolioPosition::assetId)
+        val positions = when (plan.kind) {
+            ReferencePortfolioActionKind.CONSTITUENT_MERGER,
+            ReferencePortfolioActionKind.SPIN_OFF_ADDITION,
+            ReferencePortfolioActionKind.TERMINAL_REMOVAL,
+            -> {
+                val decision = corporateActionDecision(
+                    methodology = methodology,
+                    event = event,
+                    currentIds = currentIds,
+                ) ?: return null
+                positionsForCorporateAction(
+                    currentPositions = currentPositions,
+                    event = event,
+                    decision = decision,
+                    effectiveDate = plan.effectiveDate,
+                )
+            }
+            ReferencePortfolioActionKind.SPIN_OFF_REMOVAL -> {
+                val childId = requireNotNull(event.secondaryAssetId)
+                if (childId !in currentIds || currentPositions.size <= 1) return null
+                currentPositions.filterNot { position -> position.assetId == childId }.normalizeBothWeights()
+            }
+            else -> error("Only corporate-action plans can be rebased here.")
+        }
+        val nextIds = positions.mapTo(linkedSetOf(), ReferencePortfolioPosition::assetId)
+        return plan.copy(
+            positions = positions,
+            addedAssetIds = (nextIds - currentIds).sorted(),
+            removedAssetIds = (currentIds - nextIds).sorted(),
+        )
     }
 
     internal fun advanceHour(
@@ -836,12 +1153,12 @@ class ReferencePortfolioEngine private constructor(
         val mayApplyDuePlan = referenceTradingFraction > 0.0 ||
             schedule.isTradingDate(referenceDate) && schedule.intersectsRegularSession(from, to)
         val applied = if (mayApplyDuePlan) {
-            applyDuePlan(state, methodology, referenceDate)
+            applyDuePlans(state, methodology, referenceDate)
         } else {
-            state to null
+            state to emptyList()
         }
         val openingState = applied.first
-        val record = applied.second
+        val records = applied.second
 
         if (referenceTradingFraction == 0.0) {
             var nextState = openingState.copy(asOf = to)
@@ -851,7 +1168,7 @@ class ReferencePortfolioEngine private constructor(
             return ReferencePortfolioAdvance(
                 state = nextState,
                 grossReferenceLogReturn = 0.0,
-                record = record,
+                records = records,
             )
         }
 
@@ -894,21 +1211,33 @@ class ReferencePortfolioEngine private constructor(
         return ReferencePortfolioAdvance(
             state = nextState,
             grossReferenceLogReturn = grossLogReturn,
-            record = record,
+            records = records,
         )
     }
 
-    private fun applyDuePlan(
+    private fun applyDuePlans(
         state: ReferencePortfolioState,
         methodology: CompiledEquityMethodology,
         referenceDate: LocalDate,
-    ): Pair<ReferencePortfolioState, ReferencePortfolioRecord?> {
-        val due = state.pendingPlans.filter { it.effectiveDate <= referenceDate }
-        if (due.isEmpty()) return state to null
-        // A market-wide zero-return day can leave multiple, differently dated plans overdue.
-        // Apply exactly one in stable order so each ledger revision still has one record; the
-        // next valid hour applies the next plan. Same-date plans are prevented by state validation.
-        val plan = due.minWith(PLAN_ORDER)
+    ): Pair<ReferencePortfolioState, List<ReferencePortfolioRecord>> {
+        var current = state
+        val records = mutableListOf<ReferencePortfolioRecord>()
+        var appliedCount = 0
+        while (current.pendingPlans.any { it.effectiveDate <= referenceDate }) {
+            require(++appliedCount <= ReferencePortfolioState.MAX_PENDING_PLANS)
+            val applied = applyOneDuePlan(current, methodology, referenceDate)
+            current = applied.first
+            records += applied.second
+        }
+        return current to records
+    }
+
+    private fun applyOneDuePlan(
+        state: ReferencePortfolioState,
+        methodology: CompiledEquityMethodology,
+        referenceDate: LocalDate,
+    ): Pair<ReferencePortfolioState, ReferencePortfolioRecord> {
+        val plan = state.pendingPlans.filter { it.effectiveDate <= referenceDate }.minWith(PLAN_ORDER)
         val effectiveDate = plan.effectiveDate
         val previousPositions = state.positions
         val turnover = oneWayTurnover(previousPositions, plan.positions)
@@ -969,11 +1298,12 @@ class ReferencePortfolioEngine private constructor(
             effectiveDate = effectiveDate,
             addedAssetIds = plan.addedAssetIds,
             removedAssetIds = plan.removedAssetIds,
-            beforeCompositionHash = compositionHash(previousPositions),
-            afterCompositionHash = compositionHash(plan.positions),
+            beforeCompositionHash = ReferencePortfolioCompositionHasher.hash(previousPositions),
+            afterCompositionHash = ReferencePortfolioCompositionHasher.hash(plan.positions),
             turnoverRate = turnover,
             resultingConstituentCount = plan.positions.size,
             revision = revision,
+            corporateAction = plan.corporateAction,
         )
         return nextState to record
     }
@@ -986,20 +1316,36 @@ class ReferencePortfolioEngine private constructor(
         val profile = methodology.profile
         val schedule = methodology.schedule
         var plans = state.pendingPlans
+        var planAdded = false
+        var pendingRebaseDate = referenceDate
+        var pendingSelectionDate = state.pendingSelectionDate
+        var pendingSelectionIncumbentAssetIds = state.pendingSelectionIncumbentAssetIds
 
         val reconstitutionAction = requireNotNull(
             scheduledActionOn(methodology, state.nextReconstitutionDate),
         ) { "The next reconstitution state date is not a provider-scheduled action." }
         require(reconstitutionAction.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION)
+        if (referenceDate == reconstitutionAction.selectionDate && pendingSelectionDate == null) {
+            pendingSelectionDate = referenceDate
+            pendingSelectionIncumbentAssetIds =
+                state.positions.map(ReferencePortfolioPosition::assetId).sorted()
+        }
         if (
             referenceDate == reconstitutionAction.weightReferenceDate &&
             plans.none { it.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION }
         ) {
             plans = plans + createAnnualPlan(
-                state.copy(pendingPlans = plans),
+                state.copy(
+                    pendingPlans = plans,
+                    pendingSelectionDate = pendingSelectionDate,
+                    pendingSelectionIncumbentAssetIds = pendingSelectionIncumbentAssetIds,
+                ),
                 methodology,
                 reconstitutionAction,
             )
+            pendingSelectionDate = null
+            pendingSelectionIncumbentAssetIds = null
+            planAdded = true
         }
 
         val nextScheduledAction = requireNotNull(
@@ -1017,6 +1363,47 @@ class ReferencePortfolioEngine private constructor(
                 referenceDate = nextScheduledAction.weightReferenceDate,
                 effectiveDate = nextScheduledAction.effectiveDate,
             )
+            planAdded = true
+        }
+
+        canonicalCorporateActionOn(methodology, referenceDate)?.takeIf { event ->
+            event.effectiveDate <= GameCalendar.CAMPAIGN_END_DATE &&
+                plans.none { pending -> pending.corporateAction?.eventId == event.eventId }
+        }?.let { event ->
+            val kind = corporateActionPlanKind(event)
+            val prospectivePlanId = referencePortfolioPlanId(
+                portfolioId = state.portfolioId,
+                kind = kind,
+                weightReferenceDate = event.announcementDate,
+                effectiveDate = event.effectiveDate,
+                corporateAction = event,
+            )
+            val projectedPositions = projectedPositionsBefore(
+                currentPositions = state.positions,
+                plans = plans,
+                effectiveDate = event.effectiveDate,
+                kind = kind,
+                planId = prospectivePlanId,
+            )
+            val invalidatesPendingSelection =
+                event.kind != ReferencePortfolioCorporateActionKind.SPIN_OFF &&
+                    plans.any { pending ->
+                        pending.effectiveDate >= event.effectiveDate &&
+                            pending.positions.any { position -> position.assetId == event.primaryAssetId }
+                    }
+            createCorporateActionPlans(
+                state = state.copy(pendingPlans = plans),
+                methodology = methodology,
+                event = event,
+                baselinePositions = projectedPositions,
+            ).takeIf { corporatePlans -> corporatePlans.isNotEmpty() }?.let { corporatePlans ->
+                plans = plans + corporatePlans
+                planAdded = true
+            }
+            if (invalidatesPendingSelection) {
+                planAdded = true
+                if (event.effectiveDate > pendingRebaseDate) pendingRebaseDate = event.effectiveDate
+            }
         }
 
         val isExtraordinaryReviewDate = nextExtraordinaryReviewDate(
@@ -1040,6 +1427,7 @@ class ReferencePortfolioEngine private constructor(
                         pending.kind == ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT &&
                             pending.effectiveDate >= deletionPlan.effectiveDate
                     } + deletionPlan
+                    planAdded = true
                 }
         }
 
@@ -1065,10 +1453,24 @@ class ReferencePortfolioEngine private constructor(
                     referenceDate = referenceDate,
                     effectiveDate = effectiveDate,
                 )
+                planAdded = true
             }
         }
 
-        return state.copy(pendingPlans = plans.sortedWith(PLAN_ORDER))
+        if (planAdded) {
+            plans = reconcilePendingPlans(
+                currentPositions = state.positions,
+                plans = plans,
+                afterEffectiveDate = state.lastRebalanceDate,
+                methodology = methodology,
+                rebaseAsOfDate = pendingRebaseDate,
+            )
+        }
+        return state.copy(
+            pendingPlans = plans.sortedWith(PLAN_ORDER),
+            pendingSelectionDate = pendingSelectionDate,
+            pendingSelectionIncumbentAssetIds = pendingSelectionIncumbentAssetIds,
+        )
     }
 
     private fun createAnnualPlan(
@@ -1080,26 +1482,32 @@ class ReferencePortfolioEngine private constructor(
         val selectionDate = action.selectionDate
         val weightReferenceDate = action.weightReferenceDate
         val effectiveDate = action.effectiveDate
+        require(state.pendingSelectionDate == selectionDate) {
+            "The annual plan is missing its selection-close incumbent snapshot."
+        }
+        val selectionIncumbentAssetIds = requireNotNull(state.pendingSelectionIncumbentAssetIds)
         val selected = selectConstituents(
             methodology = methodology,
             action = action,
-            incumbentAssetIds = state.positions.mapTo(linkedSetOf(), ReferencePortfolioPosition::assetId),
+            incumbentAssetIds = selectionIncumbentAssetIds.toSet(),
+            unavailableOnDate = weightReferenceDate,
         )
         val currentById = state.positions.associateBy(ReferencePortfolioPosition::assetId)
+        val weightReferenceMarketValues = selected.associate { candidate ->
+            val assetId = candidate.snapshot.definition.assetId
+            assetId to (
+                currentById[assetId]?.referenceFloatMarketValue
+                    ?: simulatedReferenceMarketValueBetween(
+                        snapshot = candidate.snapshot,
+                        methodology = methodology,
+                        fromDate = selectionDate,
+                        throughDate = weightReferenceDate,
+                    )
+                )
+        }
         val positions = positionsForSelection(
             selected = selected,
-            rawFloatMarketValues = selected.associate { candidate ->
-                val assetId = candidate.snapshot.definition.assetId
-                assetId to (
-                    currentById[assetId]?.referenceFloatMarketValue
-                        ?: simulatedReferenceMarketValueBetween(
-                            snapshot = candidate.snapshot,
-                            methodology = methodology,
-                            fromDate = selectionDate,
-                            throughDate = weightReferenceDate,
-                        )
-                    )
-            },
+            rawFloatMarketValues = weightReferenceMarketValues,
             methodology = methodology,
             actionKind = action.kind,
             observationDate = weightReferenceDate,
@@ -1113,6 +1521,13 @@ class ReferencePortfolioEngine private constructor(
             weightReferenceDate = weightReferenceDate,
             effectiveDate = effectiveDate,
             positions = positions,
+            weightReferenceMarketValues = buildMap {
+                positions.forEach { position ->
+                    put(position.assetId, weightReferenceMarketValues.getValue(position.assetId))
+                }
+            },
+            selectionIncumbentAssetIds = selectionIncumbentAssetIds,
+            selectionAvailabilityDate = weightReferenceDate,
         )
     }
 
@@ -1131,11 +1546,12 @@ class ReferencePortfolioEngine private constructor(
                 compositeRank = position.selectionRank,
             )
         }
+        val weightReferenceMarketValues = state.positions.associate {
+            it.assetId to it.referenceFloatMarketValue
+        }
         val positions = positionsForSelection(
             selected = selected,
-            rawFloatMarketValues = state.positions.associate {
-                it.assetId to it.referenceFloatMarketValue
-            },
+            rawFloatMarketValues = weightReferenceMarketValues,
             methodology = methodology,
             actionKind = kind,
             observationDate = referenceDate,
@@ -1149,6 +1565,7 @@ class ReferencePortfolioEngine private constructor(
             weightReferenceDate = referenceDate,
             effectiveDate = effectiveDate,
             positions = positions,
+            weightReferenceMarketValues = weightReferenceMarketValues,
         )
     }
 
@@ -1181,6 +1598,182 @@ class ReferencePortfolioEngine private constructor(
         )
     }
 
+    private fun createCorporateActionPlans(
+        state: ReferencePortfolioState,
+        methodology: CompiledEquityMethodology,
+        event: ReferencePortfolioCorporateAction,
+        baselinePositions: List<ReferencePortfolioPosition> = state.positions,
+    ): List<ReferencePortfolioPlan> {
+        val currentIds = baselinePositions.mapTo(linkedSetOf(), ReferencePortfolioPosition::assetId)
+        val decision = corporateActionDecision(
+            methodology = methodology,
+            event = event,
+            currentIds = currentIds,
+        ) ?: return emptyList()
+        val positions = positionsForCorporateAction(
+            currentPositions = baselinePositions,
+            event = event,
+            decision = decision,
+            effectiveDate = event.effectiveDate,
+        )
+        val kind = corporateActionPlanKind(event)
+        val primaryPlan = newPlan(
+            state = state,
+            kind = kind,
+            selectionDate = event.announcementDate,
+            weightReferenceDate = event.announcementDate,
+            effectiveDate = event.effectiveDate,
+            positions = positions,
+            corporateAction = event,
+            baselinePositions = baselinePositions,
+        )
+        if (event.kind != ReferencePortfolioCorporateActionKind.SPIN_OFF) {
+            return listOf(primaryPlan)
+        }
+        val childId = requireNotNull(event.secondaryAssetId)
+        val removalPositions = primaryPlan.positions
+            .filterNot { position -> position.assetId == childId }
+            .normalizeBothWeights()
+        val removalPlan = newPlan(
+            state = state,
+            kind = ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
+            selectionDate = event.announcementDate,
+            weightReferenceDate = event.announcementDate,
+            effectiveDate = requireNotNull(event.followUpEffectiveDate),
+            positions = removalPositions,
+            corporateAction = event,
+            baselinePositions = primaryPlan.positions,
+        )
+        return listOf(primaryPlan, removalPlan)
+    }
+
+    private fun corporateActionDecision(
+        methodology: CompiledEquityMethodology,
+        event: ReferencePortfolioCorporateAction,
+        currentIds: Set<String>,
+    ): EquityMethodologyCorporateActionDecision? {
+        if (currentIds.isEmpty() || currentIds.size > ReferencePortfolioLimits.MAX_CONSTITUENTS) return null
+        if (currentIds.any { assetId -> !hasCanonicalReferenceAssetId(assetId) }) return null
+        if (event.primaryAssetId !in currentIds) return null
+        if (event.primaryAssetId in spinOffChildAssetIds) return null
+        val secondaryId = event.secondaryAssetId
+        if (event.kind == ReferencePortfolioCorporateActionKind.SPIN_OFF && secondaryId in currentIds) {
+            return null
+        }
+        if (event.kind == ReferencePortfolioCorporateActionKind.SPIN_OFF &&
+            currentIds.size >= methodology.constraints.maximumConstituentCount
+        ) return null
+        if (secondaryId != null && !hasCanonicalReferenceAssetId(secondaryId)) return null
+        val snapshots = snapshotMapForKnownDataAt(event.announcementDate, methodology)
+        val unavailableIds = unavailableScheduledAssetIdsAt(methodology, event.announcementDate)
+        val universeIds = snapshots.keys.filterTo(linkedSetOf()) { assetId -> assetId !in unavailableIds }
+        secondaryId?.let(universeIds::add)
+        currentIds.forEach(universeIds::add)
+        val decision = methodology.policy.corporateActionDecision(
+            EquityMethodologyCorporateActionInput(
+                profile = methodology.profile,
+                event = event,
+                currentConstituents = currentIds.sorted().map { assetId ->
+                    snapshots.getValue(assetId).toMethodologyCandidate(methodology, event.announcementDate)
+                },
+                universeCandidates = universeIds.sorted().map { assetId ->
+                    snapshots.getValue(assetId).toMethodologyCandidate(methodology, event.announcementDate)
+                },
+            ),
+        ) ?: return null
+        requireCanonicalCorporateActionDecision(event, currentIds, decision, methodology)
+        return decision
+    }
+
+    private fun requireCanonicalCorporateActionDecision(
+        event: ReferencePortfolioCorporateAction,
+        currentIds: Set<String>,
+        decision: EquityMethodologyCorporateActionDecision,
+        methodology: CompiledEquityMethodology,
+    ) {
+        require(decision.removedAssetIds.all(currentIds::contains))
+        require(decision.addedAssetIds.none(currentIds::contains))
+        require((decision.removedAssetIds + decision.addedAssetIds).all(referenceEquityById::containsKey))
+        require(currentIds.size - decision.removedAssetIds.size + decision.addedAssetIds.size in
+            methodology.constraints.minimumConstituentCount..methodology.constraints.maximumConstituentCount)
+        when (event.kind) {
+            ReferencePortfolioCorporateActionKind.MERGER -> {
+                require(decision.removedAssetIds.contains(event.primaryAssetId))
+                require(decision.addedAssetIds.isEmpty() && decision.followUpRemovalDate == null)
+                require(decision.survivingAcquirerAssetId == null ||
+                    decision.survivingAcquirerAssetId == event.secondaryAssetId &&
+                    decision.survivingAcquirerAssetId in currentIds)
+                require(decision.transferredValueFraction <= event.valueTransferFraction)
+            }
+            ReferencePortfolioCorporateActionKind.SPIN_OFF -> {
+                require(decision.removedAssetIds.isEmpty())
+                require(decision.addedAssetIds == setOf(event.secondaryAssetId))
+                require(decision.survivingAcquirerAssetId == null)
+                require(decision.transferredValueFraction == event.valueTransferFraction)
+                require(decision.followUpRemovalDate == event.followUpEffectiveDate)
+            }
+            ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL -> {
+                require(decision.removedAssetIds == setOf(event.primaryAssetId))
+                require(decision.addedAssetIds.isEmpty())
+                require(decision.survivingAcquirerAssetId == null)
+                require(decision.transferredValueFraction == 0.0)
+                require(decision.followUpRemovalDate == null)
+            }
+        }
+    }
+
+    private fun positionsForCorporateAction(
+        currentPositions: List<ReferencePortfolioPosition>,
+        event: ReferencePortfolioCorporateAction,
+        decision: EquityMethodologyCorporateActionDecision,
+        effectiveDate: LocalDate,
+    ): List<ReferencePortfolioPosition> {
+        val positions = currentPositions.associateByTo(linkedMapOf(), ReferencePortfolioPosition::assetId)
+        when (event.kind) {
+            ReferencePortfolioCorporateActionKind.MERGER -> {
+                val target = positions.getValue(event.primaryAssetId)
+                decision.survivingAcquirerAssetId?.takeIf { decision.transferredValueFraction > 0.0 }
+                    ?.let { acquirerId ->
+                        val acquirer = positions.getValue(acquirerId)
+                        val fraction = decision.transferredValueFraction
+                        positions[acquirerId] = acquirer.copy(
+                            currentWeight = acquirer.currentWeight + target.currentWeight * fraction,
+                            targetWeight = acquirer.targetWeight + target.targetWeight * fraction,
+                            referenceFloatMarketValue = (
+                                acquirer.referenceFloatMarketValue +
+                                    target.referenceFloatMarketValue * fraction
+                                ).coerceAtMost(MAX_REFERENCE_MARKET_CAP),
+                        )
+                    }
+                decision.removedAssetIds.forEach(positions::remove)
+            }
+            ReferencePortfolioCorporateActionKind.SPIN_OFF -> {
+                val parent = positions.getValue(event.primaryAssetId)
+                val childId = requireNotNull(event.secondaryAssetId)
+                val fraction = decision.transferredValueFraction
+                positions[event.primaryAssetId] = parent.copy(
+                    currentWeight = parent.currentWeight * (1.0 - fraction),
+                    targetWeight = parent.targetWeight * (1.0 - fraction),
+                    referenceFloatMarketValue = (parent.referenceFloatMarketValue * (1.0 - fraction))
+                        .coerceAtLeast(MIN_REFERENCE_MARKET_CAP),
+                )
+                positions[childId] = ReferencePortfolioPosition(
+                    assetId = childId,
+                    currentWeight = parent.currentWeight * fraction,
+                    targetWeight = parent.targetWeight * fraction,
+                    referenceFloatMarketValue = (parent.referenceFloatMarketValue * fraction)
+                        .coerceAtLeast(MIN_REFERENCE_MARKET_CAP),
+                    enteredOn = effectiveDate,
+                    selectionRank = currentPositions.maxOf(ReferencePortfolioPosition::selectionRank) + 1,
+                )
+            }
+            ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL ->
+                decision.removedAssetIds.forEach(positions::remove)
+        }
+        require(positions.isNotEmpty())
+        return positions.values.toList().normalizeBothWeights()
+    }
+
     private fun newPlan(
         state: ReferencePortfolioState,
         kind: ReferencePortfolioActionKind,
@@ -1188,11 +1781,22 @@ class ReferencePortfolioEngine private constructor(
         weightReferenceDate: LocalDate,
         effectiveDate: LocalDate,
         positions: List<ReferencePortfolioPosition>,
+        weightReferenceMarketValues: Map<String, Double>? = null,
+        selectionIncumbentAssetIds: List<String>? = null,
+        selectionAvailabilityDate: LocalDate? = null,
+        corporateAction: ReferencePortfolioCorporateAction? = null,
+        baselinePositions: List<ReferencePortfolioPosition> = state.positions,
     ): ReferencePortfolioPlan {
-        val previousIds = state.positions.mapTo(linkedSetOf(), ReferencePortfolioPosition::assetId)
+        val previousIds = baselinePositions.mapTo(linkedSetOf(), ReferencePortfolioPosition::assetId)
         val nextIds = positions.mapTo(linkedSetOf(), ReferencePortfolioPosition::assetId)
         return ReferencePortfolioPlan(
-            id = "reference-plan:${state.portfolioId}:${kind.name}:$weightReferenceDate:$effectiveDate",
+            id = referencePortfolioPlanId(
+                portfolioId = state.portfolioId,
+                kind = kind,
+                weightReferenceDate = weightReferenceDate,
+                effectiveDate = effectiveDate,
+                corporateAction = corporateAction,
+            ),
             portfolioId = state.portfolioId,
             benchmarkRef = state.benchmarkRef,
             kind = kind,
@@ -1202,25 +1806,74 @@ class ReferencePortfolioEngine private constructor(
             positions = positions,
             addedAssetIds = (nextIds - previousIds).sorted(),
             removedAssetIds = (previousIds - nextIds).sorted(),
+            weightReferenceMarketValues = weightReferenceMarketValues,
+            selectionIncumbentAssetIds = selectionIncumbentAssetIds,
+            selectionAvailabilityDate = selectionAvailabilityDate,
+            corporateAction = corporateAction,
         )
+    }
+
+    private fun referencePortfolioPlanId(
+        portfolioId: String,
+        kind: ReferencePortfolioActionKind,
+        weightReferenceDate: LocalDate,
+        effectiveDate: LocalDate,
+        corporateAction: ReferencePortfolioCorporateAction?,
+    ): String = if (corporateAction == null) {
+        "reference-plan:$portfolioId:${kind.name}:$weightReferenceDate:$effectiveDate"
+    } else {
+        "reference-plan:$portfolioId:${kind.name}:${corporateAction.eventId}:" +
+            "$weightReferenceDate:$effectiveDate"
+    }
+
+    private fun corporateActionPlanKind(
+        event: ReferencePortfolioCorporateAction,
+    ): ReferencePortfolioActionKind = when (event.kind) {
+        ReferencePortfolioCorporateActionKind.MERGER -> ReferencePortfolioActionKind.CONSTITUENT_MERGER
+        ReferencePortfolioCorporateActionKind.SPIN_OFF -> ReferencePortfolioActionKind.SPIN_OFF_ADDITION
+        ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL -> ReferencePortfolioActionKind.TERMINAL_REMOVAL
+    }
+
+    private fun projectedPositionsBefore(
+        currentPositions: List<ReferencePortfolioPosition>,
+        plans: List<ReferencePortfolioPlan>,
+        effectiveDate: LocalDate,
+        kind: ReferencePortfolioActionKind,
+        planId: String,
+    ): List<ReferencePortfolioPosition> {
+        var projected = currentPositions
+        plans.sortedWith(PLAN_ORDER).forEach { pending ->
+            val precedes = pending.effectiveDate < effectiveDate ||
+                pending.effectiveDate == effectiveDate && (
+                    pending.kind.executionPriority() < kind.executionPriority() ||
+                        pending.kind.executionPriority() == kind.executionPriority() && pending.id < planId
+                    )
+            if (!precedes) return projected
+            projected = pending.positions
+        }
+        return projected
     }
 
     private fun selectConstituents(
         methodology: CompiledEquityMethodology,
         action: EquityMethodologyScheduledAction,
         incumbentAssetIds: Set<String>,
+        unavailableOnDate: LocalDate = action.selectionDate,
     ): List<RankedReferenceCandidate> {
         require(action.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION)
+        val unavailableIds = unavailableScheduledAssetIdsAt(methodology, unavailableOnDate)
         val snapshots = selectionSnapshotMapForAction(action, methodology)
+            .filterKeys { assetId -> assetId in ordinaryReferenceEquityIds && assetId !in unavailableIds }
         val candidatesById = snapshots.mapValues { (_, snapshot) ->
             snapshot.toMethodologyCandidate(methodology, action.selectionDate)
         }
+        val eligibleIncumbentIds = incumbentAssetIds.filterTo(linkedSetOf(), candidatesById::containsKey)
         val selected = methodology.policy.select(
             EquityMethodologySelectionInput(
                 profile = methodology.profile,
                 scheduledAction = action,
                 candidates = candidatesById.values.toList(),
-                incumbentAssetIds = incumbentAssetIds,
+                incumbentAssetIds = eligibleIncumbentIds,
             ),
         ).asSequence().take(ReferencePortfolioLimits.MAX_CONSTITUENTS + 1).toList()
         val constraints = methodology.constraints
@@ -1290,8 +1943,10 @@ class ReferencePortfolioEngine private constructor(
         actionKind: ReferencePortfolioActionKind,
         referenceDate: LocalDate,
         effectiveDate: LocalDate,
+        rawFloatMarketValues: Map<String, Double>,
     ): List<ReferencePortfolioPosition> {
         require(positions.isNotEmpty()) { "빈 구성에는 상한 비중을 배정할 수 없습니다." }
+        require(rawFloatMarketValues.keys == positions.mapTo(linkedSetOf(), ReferencePortfolioPosition::assetId))
         val snapshots = snapshotMapForKnownDataAt(referenceDate, methodology)
         val selected = positions.map { position ->
             RankedReferenceCandidate(
@@ -1305,9 +1960,7 @@ class ReferencePortfolioEngine private constructor(
             actionKind = actionKind,
             observationDate = referenceDate,
             effectiveDate = effectiveDate,
-            rawFloatMarketValues = positions.associate { position ->
-                position.assetId to position.referenceFloatMarketValue
-            },
+            rawFloatMarketValues = rawFloatMarketValues,
         )
         return positions.map { position ->
             val targetWeight = targetWeights.getValue(position.assetId)
@@ -1394,27 +2047,131 @@ class ReferencePortfolioEngine private constructor(
         return decision.effectiveDate to removedIds
     }
 
+    /** Canonical seed-derived reference-asset event announced at one methodology close. */
+    private fun canonicalCorporateActionOn(
+        methodology: CompiledEquityMethodology,
+        announcementDate: LocalDate,
+    ): ReferencePortfolioCorporateAction? = corporateActionByDateCache.getOrPut(
+        methodology.profile to announcementDate,
+    ) {
+        if (!methodology.schedule.isTradingDate(announcementDate) ||
+            announcementDate < methodology.profile.effectiveFrom ||
+            announcementDate >= GameCalendar.CAMPAIGN_END_DATE
+        ) {
+            return@getOrPut null
+        }
+        val random = DeterministicRandom.keyed(
+            seed,
+            "fund-reference-corporate-action:${methodology.profile.methodologyRef}:$announcementDate",
+        )
+        if (!random.nextBoolean(REFERENCE_CORPORATE_ACTION_DAILY_PROBABILITY)) {
+            return@getOrPut null
+        }
+        val kind = when (random.nextInt(100)) {
+            in 0..54 -> ReferencePortfolioCorporateActionKind.MERGER
+            in 55..79 -> ReferencePortfolioCorporateActionKind.SPIN_OFF
+            else -> ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL
+        }
+        val primaryIndex = random.nextInt(ordinaryReferenceEquities.size)
+        val primaryId = ordinaryReferenceEquities[primaryIndex].assetId
+        val secondaryId = when (kind) {
+            ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL -> null
+            ReferencePortfolioCorporateActionKind.SPIN_OFF -> spinOffChildAssetId(announcementDate)
+            ReferencePortfolioCorporateActionKind.MERGER -> ordinaryReferenceEquities[
+                (primaryIndex + 1 + random.nextInt(ordinaryReferenceEquities.size - 1)) %
+                    ordinaryReferenceEquities.size
+            ].assetId
+        }
+        val effectiveDate = methodology.schedule.addTradingDays(announcementDate, 1)
+        val consideration = if (kind == ReferencePortfolioCorporateActionKind.MERGER) {
+            when (random.nextInt(3)) {
+                0 -> ReferencePortfolioCorporateActionConsiderationKind.CASH
+                1 -> ReferencePortfolioCorporateActionConsiderationKind.STOCK
+                else -> ReferencePortfolioCorporateActionConsiderationKind.MIXED
+            }
+        } else {
+            ReferencePortfolioCorporateActionConsiderationKind.NONE
+        }
+        val transferFraction = when {
+            kind == ReferencePortfolioCorporateActionKind.SPIN_OFF -> random.nextDouble(0.04, 0.24)
+            consideration == ReferencePortfolioCorporateActionConsiderationKind.STOCK -> 1.0
+            consideration == ReferencePortfolioCorporateActionConsiderationKind.MIXED ->
+                random.nextDouble(0.20, 0.80)
+            else -> 0.0
+        }
+        val followUpDate = if (kind == ReferencePortfolioCorporateActionKind.SPIN_OFF) {
+            methodology.schedule.addTradingDays(effectiveDate, 1)
+        } else {
+            null
+        }
+        ReferencePortfolioCorporateAction(
+            eventId = "reference-event:${methodology.definition.ref.benchmarkId}:v" +
+                "${methodology.definition.ref.version}:$announcementDate:${kind.name}:$primaryId",
+            kind = kind,
+            announcementDate = announcementDate,
+            effectiveDate = effectiveDate,
+            primaryAssetId = primaryId,
+            secondaryAssetId = secondaryId,
+            considerationKind = consideration,
+            valueTransferFraction = transferFraction,
+            followUpEffectiveDate = followUpDate,
+        )
+    }
+
+    /** Assets that cannot participate in a normal annual selection at [date]. */
+    private fun unavailableScheduledAssetIdsAt(
+        methodology: CompiledEquityMethodology,
+        date: LocalDate,
+    ): Set<String> = unavailableScheduledAssetIdsCache.getOrPut(methodology.profile to date) {
+        val unavailable = spinOffChildAssetIds.toMutableSet()
+        var cursor = methodology.profile.effectiveFrom
+        while (cursor <= date) {
+            canonicalCorporateActionOn(methodology, cursor)?.let { action ->
+                if (action.effectiveDate <= date &&
+                    (action.kind == ReferencePortfolioCorporateActionKind.MERGER ||
+                        action.kind == ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL)
+                ) {
+                    unavailable += action.primaryAssetId
+                }
+            }
+            cursor = cursor.plus(1, DateTimeUnit.DAY)
+        }
+        unavailable.toSet()
+    }
+
     private fun SimulatedReferenceEquitySnapshot.toMethodologyCandidate(
         methodology: CompiledEquityMethodology,
         observationDate: LocalDate,
     ): EquityMethodologyCandidate {
         val supportedDecimals = mapOf(
             StandardEquityMethodologySignalIds.FLOAT_MARKET_CAP to floatMarketCap,
-            StandardEquityMethodologySignalIds.AVERAGE_DAILY_VALUE_TRADED to averageDailyValueTraded,
+            StandardEquityMethodologySignalIds.AVERAGE_DAILY_VALUE_TRADED to
+                threeMonthAverageDailyValueTraded,
             StandardEquityMethodologySignalIds.INDICATED_DIVIDEND_YIELD to indicatedDividendYield,
             StandardEquityMethodologySignalIds.FREE_CASH_FLOW_TO_DEBT to freeCashFlowToDebt,
             StandardEquityMethodologySignalIds.RETURN_ON_EQUITY to returnOnEquity,
             StandardEquityMethodologySignalIds.FIVE_YEAR_DIVIDEND_GROWTH to fiveYearDividendGrowth,
         )
         val supportedIntegers = mapOf(
+            StandardEquityMethodologySignalIds.GICS_CLASSIFICATION_CODE to
+                definition.gicsClassificationCode,
             StandardEquityMethodologySignalIds.DIVIDEND_PAYMENT_YEARS to dividendPaymentYears,
         )
         val supportedBooleans = mapOf(
-            StandardEquityMethodologySignalIds.DIVIDEND_PROGRAM_SUSPENDED to
-                dividendProgramSuspended(
+            StandardEquityMethodologySignalIds.ZERO_TOTAL_DEBT to zeroTotalDebt,
+            StandardEquityMethodologySignalIds.NEGATIVE_BOOK_VALUE_PER_SHARE to
+                negativeBookValuePerShare,
+            StandardEquityMethodologySignalIds.SCHEDULED_DIVIDEND_PAYMENT_OMITTED to
+                hasDividendEventInCurrentReviewWindow(
                     definition,
-                    observationDate.year,
-                    observationDate.month.ordinal + 1,
+                    observationDate,
+                    DIVIDEND_EVENT_OMITTED,
+                ),
+            StandardEquityMethodologySignalIds.DIVIDEND_PROGRAM_CEASED_INDEFINITELY to
+                hasDividendEventInCurrentReviewWindow(
+                    definition,
+                    observationDate,
+                    DIVIDEND_EVENT_CEASED_INDEFINITELY,
                 ),
         )
         return EquityMethodologyCandidate(
@@ -1484,7 +2241,12 @@ class ReferencePortfolioEngine private constructor(
     ): Map<String, SimulatedReferenceEquitySnapshot> {
         val selectedAction = latestReconstitutionSelectedInYear(methodology, date)
         return if (selectedAction != null && date.year > REFERENCE_BASE_YEAR) {
-            selectionSnapshotMapForAction(selectedAction, methodology)
+            buildMap {
+                putAll(selectionSnapshotMapForAction(selectedAction, methodology))
+                snapshotMapForYear(date.year - 1).forEach { (assetId, snapshot) ->
+                    if (assetId in spinOffChildAssetIds) put(assetId, snapshot)
+                }
+            }
         } else {
             snapshotMapForYear((date.year - 1).coerceAtLeast(REFERENCE_BASE_YEAR))
         }
@@ -1514,9 +2276,9 @@ class ReferencePortfolioEngine private constructor(
     }
 
     /**
-     * The four accounting inputs and dividend-payment history stay frozen at prior year-end.
-     * Only FMC, three-month liquidity and indicated annual dividend yield are advanced to the
-     * official February selection date.
+     * CFO, CapEx, total debt, basic EPS, BVPS and five-year regular-DPS history stay frozen at
+     * prior year-end. Only FMC, trailing three-month ADVT, the regular fixed IAD and share price
+     * are advanced to the official February selection date.
      */
     private fun selectionSnapshotMapForAction(
         action: EquityMethodologyScheduledAction,
@@ -1528,7 +2290,9 @@ class ReferencePortfolioEngine private constructor(
         require(selectionDate.year in (REFERENCE_BASE_YEAR + 1)..MAX_SCENARIO_YEAR)
         return selectionSnapshotByIdCache.getOrPut(methodology.profile to selectionDate) {
             val priorYear = selectionDate.year - 1
-            snapshotMapForYear(priorYear).mapValues { (_, priorSnapshot) ->
+            snapshotMapForYear(priorYear)
+                .filterKeys(ordinaryReferenceEquityIds::contains)
+                .mapValues { (_, priorSnapshot) ->
                 val equity = priorSnapshot.definition
                 val currentMarketCap = simulatedReferenceMarketValueAt(
                     methodology = methodology,
@@ -1540,7 +2304,7 @@ class ReferencePortfolioEngine private constructor(
                     seed,
                     "fund-selection-liquidity:${equity.assetId}:$effectiveYear",
                 )
-                val priorTurnover = priorSnapshot.averageDailyValueTraded /
+                val priorTurnover = priorSnapshot.threeMonthAverageDailyValueTraded /
                     priorSnapshot.floatMarketCap
                 val currentTurnover = (priorTurnover * exp(liquidityRandom.nextGaussian() * 0.055))
                     .coerceIn(MIN_SELECTION_DAILY_TURNOVER, MAX_SELECTION_DAILY_TURNOVER)
@@ -1557,20 +2321,30 @@ class ReferencePortfolioEngine private constructor(
                 } else {
                     exp(dividendRandom.nextGaussian() * 0.045)
                 }
-                val suspendedBySelection = (1..(selectionDate.month.ordinal + 1)).any { month ->
-                    dividendProgramSuspended(equity, effectiveYear, month)
+                val selectionMonth = selectionDate.month.ordinal + 1
+                val suspendedBySelection = (1..selectionMonth).any { month ->
+                    dividendMaintenanceEvent(equity, effectiveYear, month) ==
+                        DIVIDEND_EVENT_CEASED_INDEFINITELY &&
+                        (month < selectionMonth ||
+                            dividendEventAnnouncementDay(equity, effectiveYear, month) <=
+                            selectionDate.day)
                 }
                 if (suspendedBySelection) indicatedCashFactor *= SUSPENDED_DIVIDEND_CASH_FACTOR
-                val currentYield = (
-                    priorSnapshot.indicatedDividendYield * priorSnapshot.floatMarketCap /
-                        currentMarketCap * indicatedCashFactor
-                    ).coerceIn(MIN_INDICATED_DIVIDEND_YIELD, MAX_INDICATED_DIVIDEND_YIELD)
+                val priceFactor = currentMarketCap / priorSnapshot.floatMarketCap
+                val currentSharePrice = (priorSnapshot.sharePrice * priceFactor)
+                    .coerceIn(MIN_SHARE_PRICE, MAX_SHARE_PRICE)
+                val rawRegularFixedDividend = (
+                    priorSnapshot.regularFixedAnnualDividendPerShare * indicatedCashFactor
+                    ).coerceIn(MIN_REGULAR_DIVIDEND_PER_SHARE, MAX_REGULAR_DIVIDEND_PER_SHARE)
+                val currentYield = (rawRegularFixedDividend / currentSharePrice)
+                    .coerceIn(MIN_INDICATED_DIVIDEND_YIELD, MAX_INDICATED_DIVIDEND_YIELD)
                 priorSnapshot.copy(
                     floatMarketCap = currentMarketCap,
-                    averageDailyValueTraded = currentMarketCap * currentTurnover,
-                    indicatedDividendYield = currentYield,
+                    threeMonthAverageDailyValueTraded = currentMarketCap * currentTurnover,
+                    sharePrice = currentSharePrice,
+                    regularFixedAnnualDividendPerShare = currentSharePrice * currentYield,
                 )
-            }
+                }
         }
     }
 
@@ -1588,94 +2362,340 @@ class ReferencePortfolioEngine private constructor(
         year: Int,
     ): SimulatedReferenceEquitySnapshot {
         var marketCap = equity.baseFloatMarketCap
+        var threeMonthAverageDailyValueTraded = equity.baseThreeMonthAverageDailyValueTraded
         var dividendYears = equity.baseDividendPaymentYears
-        var dividendYield = equity.baseDividendYield
-        var fcfToDebt = equity.baseFreeCashFlowToDebt
-        var roe = equity.baseReturnOnEquity
-        var dividendGrowth = equity.baseFiveYearDividendGrowth
-        var turnover = equity.baseDailyTurnover
+        var cashFlowFromOperations = equity.baseCashFlowFromOperations
+        var capitalExpenditures = equity.baseCapitalExpenditures
+        var totalDebt = equity.baseTotalDebt
+        var basicEarningsPerShare = equity.baseBasicEarningsPerShare
+        var bookValuePerShare = equity.baseBookValuePerShare
+        var sharePrice = equity.baseSharePrice
+        var regularFixedAnnualDividendPerShare = equity.baseRegularFixedAnnualDividendPerShare
+        var annualRegularDividendPerShareNewestFirst =
+            equity.baseAnnualRegularDividendPerShareNewestFirst
         for (candidateYear in (REFERENCE_BASE_YEAR + 1)..year) {
             val random = DeterministicRandom.keyed(
                 seed,
                 "fund-reference-fundamentals:${equity.assetId}:$candidateYear",
             )
+            val priorMarketCap = marketCap
             val growth = (0.025 + equity.quality * 0.055 + random.nextGaussian() * 0.16)
                 .coerceIn(-0.45, 0.55)
             marketCap = (marketCap * exp(growth)).coerceIn(MIN_REFERENCE_MARKET_CAP, MAX_REFERENCE_MARKET_CAP)
-            val suspended = (1..12).any { month ->
-                dividendProgramSuspended(equity, candidateYear, month)
+
+            val priorTurnover = threeMonthAverageDailyValueTraded / priorMarketCap
+            val currentTurnover = (priorTurnover * exp(random.nextGaussian() * 0.08))
+                .coerceIn(MIN_SELECTION_DAILY_TURNOVER, MAX_SELECTION_DAILY_TURNOVER)
+            threeMonthAverageDailyValueTraded = marketCap * currentTurnover
+
+            val cashFlowFromOperationsRatio = cashFlowFromOperations / priorMarketCap
+            cashFlowFromOperations = marketCap * (
+                cashFlowFromOperationsRatio + random.nextGaussian() * 0.018
+                ).coerceIn(MIN_CASH_FLOW_FROM_OPERATIONS_RATIO, MAX_CASH_FLOW_FROM_OPERATIONS_RATIO)
+            val capitalExpenditureRatio = capitalExpenditures / priorMarketCap
+            capitalExpenditures = marketCap * (
+                capitalExpenditureRatio * exp(random.nextGaussian() * 0.14)
+                ).coerceIn(MIN_CAPITAL_EXPENDITURE_RATIO, MAX_CAPITAL_EXPENDITURE_RATIO)
+            totalDebt = if (totalDebt == 0.0) {
+                if (random.nextBoolean(NEW_DEBT_PROBABILITY)) {
+                    marketCap * random.nextDouble(MIN_TOTAL_DEBT_RATIO, NEW_TOTAL_DEBT_RATIO_LIMIT)
+                } else {
+                    0.0
+                }
+            } else if (random.nextBoolean(
+                    (0.010 + equity.quality * 0.018).coerceIn(0.010, 0.028),
+                )
+            ) {
+                0.0
+            } else {
+                val debtRatio = totalDebt / priorMarketCap
+                marketCap * (debtRatio * exp(random.nextGaussian() * 0.16))
+                    .coerceIn(MIN_TOTAL_DEBT_RATIO, MAX_TOTAL_DEBT_RATIO)
             }
-            dividendYears = if (suspended) 0 else dividendYears + 1
+
+            sharePrice = (sharePrice * exp(growth + random.nextGaussian() * 0.045))
+                .coerceIn(MIN_SHARE_PRICE, MAX_SHARE_PRICE)
+            val bookMagnitude = (abs(bookValuePerShare) * exp(random.nextGaussian() * 0.11))
+                .coerceIn(MIN_ABSOLUTE_BOOK_VALUE_PER_SHARE, MAX_ABSOLUTE_BOOK_VALUE_PER_SHARE)
+            val remainsNegative = if (bookValuePerShare < 0.0) {
+                !random.nextBoolean((0.12 + equity.quality * 0.20).coerceIn(0.12, 0.32))
+            } else {
+                random.nextBoolean((0.022 - equity.quality * 0.018).coerceIn(0.002, 0.021))
+            }
+            bookValuePerShare = if (remainsNegative) -bookMagnitude else bookMagnitude
+            basicEarningsPerShare = (
+                basicEarningsPerShare +
+                    sharePrice * ((equity.quality - 0.5) * 0.010 + random.nextGaussian() * 0.018)
+                ).coerceIn(MIN_BASIC_EARNINGS_PER_SHARE, MAX_BASIC_EARNINGS_PER_SHARE)
+
+            val dividendEvents = (1..12).associateWith { month ->
+                dividendMaintenanceEvent(equity, candidateYear, month)
+            }
+            val ceased = dividendEvents.values.any { it == DIVIDEND_EVENT_CEASED_INDEFINITELY }
+            val omittedPaymentCount = dividendEvents.values.count { it == DIVIDEND_EVENT_OMITTED }
+            val noRegularPaymentMade = omittedPaymentCount == equity.dividendPaymentsPerYear
+            dividendYears = if (ceased || noRegularPaymentMade) 0 else dividendYears + 1
             val dividendCut = random.nextBoolean((0.050 - equity.quality * 0.038).coerceIn(0.008, 0.045))
-            dividendYield = if (suspended) {
-                (dividendYield * random.nextDouble(0.02, 0.20)).coerceIn(0.0001, 0.20)
-            } else if (dividendCut) {
-                (dividendYield * random.nextDouble(0.55, 0.90)).coerceIn(0.0005, 0.20)
+            val regularDividendFactor = if (ceased) {
+                random.nextDouble(0.02, 0.20)
+            } else if (dividendCut || dividendEvents.values.any { it == DIVIDEND_EVENT_REDUCED }) {
+                random.nextDouble(0.55, 0.90)
             } else {
-                (dividendYield * exp(random.nextGaussian() * 0.10)).coerceIn(0.0005, 0.20)
+                exp(random.nextGaussian() * 0.10)
             }
-            fcfToDebt = (fcfToDebt * exp(random.nextGaussian() * 0.13)).coerceIn(0.01, 8.0)
-            roe = (roe + random.nextGaussian() * 0.018).coerceIn(-0.20, 0.75)
-            dividendGrowth = if (suspended || dividendCut) {
-                (dividendGrowth - random.nextDouble(0.06, 0.22)).coerceIn(-0.50, 0.45)
+            regularFixedAnnualDividendPerShare = (
+                regularFixedAnnualDividendPerShare * regularDividendFactor
+                ).coerceIn(MIN_REGULAR_DIVIDEND_PER_SHARE, MAX_REGULAR_DIVIDEND_PER_SHARE)
+            val paidFraction = if (ceased) {
+                SUSPENDED_DIVIDEND_CASH_FACTOR
             } else {
-                (dividendGrowth + random.nextGaussian() * 0.015).coerceIn(-0.30, 0.45)
+                (equity.dividendPaymentsPerYear - omittedPaymentCount).coerceAtLeast(0).toDouble() /
+                    equity.dividendPaymentsPerYear
             }
-            turnover = (turnover * exp(random.nextGaussian() * 0.08)).coerceIn(0.0002, 0.08)
+            val annualRegularDividendPerShare =
+                regularFixedAnnualDividendPerShare * paidFraction
+            annualRegularDividendPerShareNewestFirst = buildList(DIVIDEND_HISTORY_YEARS) {
+                add(annualRegularDividendPerShare)
+                addAll(
+                    annualRegularDividendPerShareNewestFirst.take(DIVIDEND_HISTORY_YEARS - 1),
+                )
+            }
         }
         return SimulatedReferenceEquitySnapshot(
             definition = equity,
             floatMarketCap = marketCap,
-            averageDailyValueTraded = marketCap * turnover,
+            threeMonthAverageDailyValueTraded = threeMonthAverageDailyValueTraded,
             dividendPaymentYears = dividendYears,
-            indicatedDividendYield = dividendYield,
-            freeCashFlowToDebt = if (equity.debtFree) DEBT_FREE_RANK_VALUE else fcfToDebt,
-            returnOnEquity = roe,
-            fiveYearDividendGrowth = dividendGrowth,
+            cashFlowFromOperations = cashFlowFromOperations,
+            capitalExpenditures = capitalExpenditures,
+            totalDebt = totalDebt,
+            basicEarningsPerShare = basicEarningsPerShare,
+            bookValuePerShare = bookValuePerShare,
+            sharePrice = sharePrice,
+            regularFixedAnnualDividendPerShare = regularFixedAnnualDividendPerShare,
+            annualRegularDividendPerShareNewestFirst =
+                annualRegularDividendPerShareNewestFirst,
         )
     }
 
-    private fun dividendProgramSuspended(
+    private fun dividendMaintenanceEvent(
         equity: SimulatedReferenceEquity,
         year: Int,
         month: Int,
-    ): Boolean {
-        val probability = (0.0009 - equity.quality * 0.00065).coerceIn(0.00015, 0.00085)
-        return DeterministicRandom.keyed(
+    ): Int {
+        if (!isScheduledDividendMonth(equity, month)) return DIVIDEND_EVENT_NONE
+        val probability = (0.0040 - equity.quality * 0.0028).coerceIn(0.0008, 0.0038)
+        val random = DeterministicRandom.keyed(
             seed,
-            "fund-dividend-program-suspension:${equity.assetId}:$year:$month",
-        ).nextBoolean(probability)
+            "fund-dividend-maintenance:${equity.assetId}:$year:$month",
+        )
+        if (!random.nextBoolean(probability)) return DIVIDEND_EVENT_NONE
+        return when (random.nextInt(100)) {
+            in 0..24 -> DIVIDEND_EVENT_CEASED_INDEFINITELY
+            in 25..54 -> DIVIDEND_EVENT_OMITTED
+            in 55..79 -> DIVIDEND_EVENT_POSTPONED_OR_DEFERRED
+            else -> DIVIDEND_EVENT_REDUCED
+        }
     }
 
-    private fun buildReferenceEquities(): List<SimulatedReferenceEquity> =
-        (1..REFERENCE_EQUITY_COUNT).map { index ->
-            val assetId = "REF:US-BROAD:${index.toString().padStart(4, '0')}"
+    private fun isScheduledDividendMonth(equity: SimulatedReferenceEquity, month: Int): Boolean {
+        require(month in 1..12)
+        val cadence = 12 / equity.dividendPaymentsPerYear
+        return (month - equity.firstDividendPaymentMonth).mod(cadence) == 0
+    }
+
+    private fun dividendEventAnnouncementDay(
+        equity: SimulatedReferenceEquity,
+        year: Int,
+        month: Int,
+    ): Int = DeterministicRandom.keyed(
+        seed,
+        "fund-dividend-announcement-day:${equity.assetId}:$year:$month",
+    ).nextInt(28) + 1
+
+    /**
+     * Approach C observes announcements after the prior cutoff through this month's cutoff.
+     * Postponements, deferrals and reductions are deliberately generated but do not set either
+     * removal signal exposed to the provider.
+     */
+    private fun hasDividendEventInCurrentReviewWindow(
+        equity: SimulatedReferenceEquity,
+        observationDate: LocalDate,
+        requiredEvent: Int,
+    ): Boolean {
+        val year = observationDate.year
+        val month = observationDate.month.ordinal + 1
+        val cutoffDay = if (month == 2) FEBRUARY_DIVIDEND_REVIEW_CUTOFF_DAY else DIVIDEND_REVIEW_CUTOFF_DAY
+        val previousMonth = if (month == 1) 12 else month - 1
+        val previousYear = if (month == 1) year - 1 else year
+        val previousCutoffDay = if (previousMonth == 2) {
+            FEBRUARY_DIVIDEND_REVIEW_CUTOFF_DAY
+        } else {
+            DIVIDEND_REVIEW_CUTOFF_DAY
+        }
+        return (
+            dividendMaintenanceEvent(equity, year, month) == requiredEvent &&
+                dividendEventAnnouncementDay(equity, year, month) <= cutoffDay
+            ) || (
+            dividendMaintenanceEvent(equity, previousYear, previousMonth) == requiredEvent &&
+                dividendEventAnnouncementDay(equity, previousYear, previousMonth) > previousCutoffDay
+            )
+    }
+
+    private fun buildReferenceEquities(): List<SimulatedReferenceEquity> {
+        val equities = (1..REFERENCE_EQUITY_COUNT).map { index ->
+            val paddedIndex = index.toString().padStart(4, '0')
+            val companyId = "SIM:US-COMPANY:$paddedIndex"
+            val assetId = "REF:US-BROAD:$paddedIndex"
             val random = DeterministicRandom.keyed(seed, "fund-reference-definition:$assetId")
             val methodologySector = REFERENCE_SECTORS[random.nextInt(REFERENCE_SECTORS.size)]
+            val gicsClassificationCode = methodologySector.simulatedGicsClassificationCode(random)
             val quality = random.nextDouble(0.05, 0.98)
             val value = random.nextDouble(0.05, 0.98)
             val logCap = ln(MIN_BASE_MARKET_CAP) +
                 random.nextDouble() * ln(MAX_BASE_MARKET_CAP / MIN_BASE_MARKET_CAP)
+            val baseFloatMarketCap = exp(logCap)
+            val baseSharePrice = random.nextDouble(MIN_BASE_SHARE_PRICE, MAX_BASE_SHARE_PRICE)
+            val baseRegularFixedAnnualDividendPerShare =
+                baseSharePrice * random.nextDouble(0.004, 0.085)
+            val baseAnnualRegularDividendPerShareNewestFirst = buildBaseRegularDividendHistory(
+                random = random,
+                currentDividendPerShare = baseRegularFixedAnnualDividendPerShare *
+                    random.nextDouble(0.92, 1.05),
+            )
+            val baseTotalDebt = if (random.nextBoolean(BASE_ZERO_TOTAL_DEBT_PROBABILITY)) {
+                0.0
+            } else {
+                baseFloatMarketCap * random.nextDouble(MIN_TOTAL_DEBT_RATIO, 1.25)
+            }
+            val negativeBookValuePerShare = random.nextBoolean(
+                (0.035 - quality * 0.025).coerceIn(0.005, 0.032),
+            )
+            val baseBookMagnitude = random.nextDouble(
+                MIN_BASE_BOOK_VALUE_PER_SHARE,
+                MAX_BASE_BOOK_VALUE_PER_SHARE,
+            )
+            val baseBookValuePerShare = if (negativeBookValuePerShare) {
+                -baseBookMagnitude
+            } else {
+                baseBookMagnitude
+            }
+            val baseReturnOnEquity = if (random.nextBoolean(BASE_NET_LOSS_PROBABILITY)) {
+                -random.nextDouble(0.01, 0.25)
+            } else {
+                random.nextDouble(0.03, 0.42)
+            }
             SimulatedReferenceEquity(
+                companyId = companyId,
                 assetId = assetId,
-                displaySymbol = "SIM${index.toString().padStart(4, '0')}",
-                displayName = "시뮬레이션 미국 기준자산 ${index.toString().padStart(4, '0')}",
+                displaySymbol = "SIM$paddedIndex",
+                displayName = "시뮬레이션 미국 기준자산 $paddedIndex",
                 sector = methodologySector.toGameSector(),
                 methodologySector = methodologySector,
-                baseFloatMarketCap = exp(logCap),
-                baseDailyTurnover = random.nextDouble(0.001, 0.025),
+                gicsClassificationCode = gicsClassificationCode,
+                baseFloatMarketCap = baseFloatMarketCap,
+                baseThreeMonthAverageDailyValueTraded =
+                    baseFloatMarketCap * random.nextDouble(0.001, 0.025),
                 baseDividendPaymentYears = random.nextInt(38) + 2,
-                baseDividendYield = random.nextDouble(0.004, 0.085),
-                baseFreeCashFlowToDebt = random.nextDouble(0.04, 1.80),
-                baseReturnOnEquity = random.nextDouble(0.03, 0.42),
-                baseFiveYearDividendGrowth = random.nextDouble(-0.02, 0.24),
+                dividendPaymentsPerYear = when (random.nextInt(10)) {
+                    0 -> 1
+                    1 -> 2
+                    else -> 4
+                },
+                firstDividendPaymentMonth = 1,
+                baseCashFlowFromOperations = baseFloatMarketCap *
+                    random.nextDouble(
+                        MIN_BASE_CASH_FLOW_FROM_OPERATIONS_RATIO,
+                        MAX_BASE_CASH_FLOW_FROM_OPERATIONS_RATIO,
+                    ),
+                baseCapitalExpenditures = baseFloatMarketCap *
+                    random.nextDouble(
+                        MIN_BASE_CAPITAL_EXPENDITURE_RATIO,
+                        MAX_BASE_CAPITAL_EXPENDITURE_RATIO,
+                    ),
+                baseTotalDebt = baseTotalDebt,
+                baseBasicEarningsPerShare = baseBookValuePerShare * baseReturnOnEquity,
+                baseBookValuePerShare = baseBookValuePerShare,
+                baseSharePrice = baseSharePrice,
+                baseRegularFixedAnnualDividendPerShare =
+                    baseRegularFixedAnnualDividendPerShare,
+                baseAnnualRegularDividendPerShareNewestFirst =
+                    baseAnnualRegularDividendPerShareNewestFirst,
                 beta = random.nextDouble(0.55, 1.45),
                 annualVolatility = random.nextDouble(0.11, 0.38),
                 quality = quality,
                 value = value,
-                debtFree = random.nextBoolean(0.08),
             )
         }
+        require(equities.map(SimulatedReferenceEquity::companyId).distinct().size == equities.size) {
+            "Each synthetic company must have exactly one reference listing."
+        }
+        require(equities.map(SimulatedReferenceEquity::assetId).distinct().size == equities.size) {
+            "Each synthetic reference listing must have a unique asset ID."
+        }
+        return equities
+    }
+
+    /**
+     * Temporary spin-off lines live outside the ordinary selection universe. Giving every
+     * possible announcement date its own identity prevents a future synthetic event from
+     * reserving an otherwise eligible company in an earlier annual review.
+     */
+    private fun buildSpinOffReferenceEquities(
+        ordinaryEquities: List<SimulatedReferenceEquity>,
+    ): List<SimulatedReferenceEquity> = buildList {
+        var date = LocalDate(REFERENCE_BASE_YEAR + 1, 1, 1)
+        while (date < GameCalendar.CAMPAIGN_END_DATE) {
+            val random = DeterministicRandom.keyed(seed, "fund-reference-spin-child-definition:$date")
+            val source = ordinaryEquities[random.nextInt(ordinaryEquities.size)]
+            val dateToken = date.toString().replace("-", "")
+            add(
+                source.copy(
+                    companyId = "SIM:US-SPIN-COMPANY:$dateToken",
+                    assetId = spinOffChildAssetId(date),
+                    displaySymbol = "SPIN$dateToken",
+                    displayName = "시뮬레이션 분사 기준자산 $date",
+                ),
+            )
+            date = date.plus(1, DateTimeUnit.DAY)
+        }
+    }
+
+    private fun spinOffChildAssetId(announcementDate: LocalDate): String =
+        "REF:US-SPIN:${announcementDate.toString().replace("-", "")}"
+
+    private fun buildBaseRegularDividendHistory(
+        random: DeterministicRandom,
+        currentDividendPerShare: Double,
+    ): List<Double> = buildList(DIVIDEND_HISTORY_YEARS) {
+        var dividendPerShare = currentDividendPerShare
+        repeat(DIVIDEND_HISTORY_YEARS) {
+            add(
+                dividendPerShare.coerceIn(
+                    MIN_REGULAR_DIVIDEND_PER_SHARE,
+                    MAX_REGULAR_DIVIDEND_PER_SHARE,
+                ),
+            )
+            val priorYearGrowth = random.nextDouble(-0.08, 0.24)
+            dividendPerShare /= 1.0 + priorYearGrowth
+        }
+    }
+
+    private fun MethodologyEquitySector.simulatedGicsClassificationCode(
+        random: DeterministicRandom,
+    ): Int = when (this) {
+        MethodologyEquitySector.COMMUNICATION_SERVICES -> 5020
+        MethodologyEquitySector.CONSUMER_DISCRETIONARY -> 2520
+        MethodologyEquitySector.CONSUMER_STAPLES -> 3020
+        MethodologyEquitySector.ENERGY -> 1010
+        MethodologyEquitySector.FINANCIALS -> if (random.nextBoolean(0.035)) 402040 else 4010
+        MethodologyEquitySector.HEALTH_CARE -> 3520
+        MethodologyEquitySector.INDUSTRIALS -> 2010
+        MethodologyEquitySector.INFORMATION_TECHNOLOGY -> 4510
+        MethodologyEquitySector.MATERIALS -> 1510
+        MethodologyEquitySector.REAL_ESTATE -> if (random.nextBoolean(0.78)) 6010 else 6020
+        MethodologyEquitySector.UTILITIES -> 5510
+    }
 
     private fun MethodologyEquitySector.toGameSector(): Sector = when (this) {
         MethodologyEquitySector.COMMUNICATION_SERVICES -> Sector.COMMUNICATION_SERVICES
@@ -1709,18 +2729,6 @@ class ReferencePortfolioEngine private constructor(
         return (beforeWeights.keys + afterWeights.keys).sumOf { assetId ->
             abs((afterWeights[assetId] ?: 0.0) - (beforeWeights[assetId] ?: 0.0))
         }.div(2.0).coerceIn(0.0, 1.0)
-    }
-
-    private fun compositionHash(positions: List<ReferencePortfolioPosition>): String {
-        var hash = 0xCBF29CE484222325uL
-        positions.sortedBy(ReferencePortfolioPosition::assetId).forEach { position ->
-            val value = "${position.assetId}:${position.targetWeight.toBits()}"
-            value.forEach { character ->
-                hash = hash xor character.code.toULong()
-                hash *= 0x100000001B3uL
-            }
-        }
-        return hash.toString(16).padStart(16, '0').takeLast(16)
     }
 
     private fun List<ReferencePortfolioPosition>.normalizeBothWeights(): List<ReferencePortfolioPosition> {
@@ -1817,12 +2825,59 @@ class ReferencePortfolioEngine private constructor(
         private const val MAX_REFERENCE_MARKET_CAP: Double = 1e20
         private const val MIN_SELECTION_DAILY_TURNOVER: Double = 0.0002
         private const val MAX_SELECTION_DAILY_TURNOVER: Double = 0.08
+        private const val MIN_BASE_CASH_FLOW_FROM_OPERATIONS_RATIO: Double = -0.02
+        private const val MAX_BASE_CASH_FLOW_FROM_OPERATIONS_RATIO: Double = 0.18
+        private const val MIN_CASH_FLOW_FROM_OPERATIONS_RATIO: Double = -0.08
+        private const val MAX_CASH_FLOW_FROM_OPERATIONS_RATIO: Double = 0.30
+        private const val MIN_BASE_CAPITAL_EXPENDITURE_RATIO: Double = 0.005
+        private const val MAX_BASE_CAPITAL_EXPENDITURE_RATIO: Double = 0.06
+        private const val MIN_CAPITAL_EXPENDITURE_RATIO: Double = 0.001
+        private const val MAX_CAPITAL_EXPENDITURE_RATIO: Double = 0.15
+        private const val BASE_ZERO_TOTAL_DEBT_PROBABILITY: Double = 0.08
+        private const val NEW_DEBT_PROBABILITY: Double = 0.025
+        private const val MIN_TOTAL_DEBT_RATIO: Double = 0.01
+        private const val NEW_TOTAL_DEBT_RATIO_LIMIT: Double = 0.20
+        private const val MAX_TOTAL_DEBT_RATIO: Double = 2.0
+        private const val MIN_BASE_SHARE_PRICE: Double = 8.0
+        private const val MAX_BASE_SHARE_PRICE: Double = 350.0
+        private const val MIN_SHARE_PRICE: Double = 1.0
+        private const val MAX_SHARE_PRICE: Double = 10_000.0
+        private const val MIN_BASE_BOOK_VALUE_PER_SHARE: Double = 5.0
+        private const val MAX_BASE_BOOK_VALUE_PER_SHARE: Double = 120.0
+        private const val MIN_ABSOLUTE_BOOK_VALUE_PER_SHARE: Double = 2.0
+        private const val MAX_ABSOLUTE_BOOK_VALUE_PER_SHARE: Double = 2_000.0
+        private const val MIN_BASIC_EARNINGS_PER_SHARE: Double = -100.0
+        private const val MAX_BASIC_EARNINGS_PER_SHARE: Double = 250.0
+        private const val BASE_NET_LOSS_PROBABILITY: Double = 0.08
+        private const val DIVIDEND_HISTORY_YEARS: Int = 5
+        private const val MIN_REGULAR_DIVIDEND_PER_SHARE: Double = 0.0001
+        private const val MAX_REGULAR_DIVIDEND_PER_SHARE: Double = 2_000.0
         private const val MIN_INDICATED_DIVIDEND_YIELD: Double = 0.0001
         private const val MAX_INDICATED_DIVIDEND_YIELD: Double = 0.20
         private const val SUSPENDED_DIVIDEND_CASH_FACTOR: Double = 0.05
-        private const val DEBT_FREE_RANK_VALUE: Double = 1_000_000.0
+        private const val DIVIDEND_REVIEW_CUTOFF_DAY: Int = 21
+        private const val FEBRUARY_DIVIDEND_REVIEW_CUTOFF_DAY: Int = 18
+        private const val DIVIDEND_EVENT_NONE: Int = 0
+        private const val DIVIDEND_EVENT_OMITTED: Int = 1
+        private const val DIVIDEND_EVENT_CEASED_INDEFINITELY: Int = 2
+        private const val DIVIDEND_EVENT_POSTPONED_OR_DEFERRED: Int = 3
+        private const val DIVIDEND_EVENT_REDUCED: Int = 4
+        private const val REFERENCE_CORPORATE_ACTION_DAILY_PROBABILITY: Double = 0.025
         private val PLAN_ORDER = compareBy<ReferencePortfolioPlan>(ReferencePortfolioPlan::effectiveDate)
+            .thenBy { plan -> plan.kind.executionPriority() }
             .thenBy(ReferencePortfolioPlan::id)
+
+        private fun ReferencePortfolioActionKind.executionPriority(): Int = when (this) {
+            ReferencePortfolioActionKind.CONSTITUENT_MERGER,
+            ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
+            ReferencePortfolioActionKind.TERMINAL_REMOVAL,
+            -> 0
+            ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL -> 1
+            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> 2
+            ReferencePortfolioActionKind.SCHEDULED_REWEIGHT -> 3
+            ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT -> 4
+            ReferencePortfolioActionKind.SPIN_OFF_ADDITION -> 5
+        }
 
         private val REFERENCE_SECTORS: List<MethodologyEquitySector> = listOf(
             MethodologyEquitySector.INFORMATION_TECHNOLOGY,
