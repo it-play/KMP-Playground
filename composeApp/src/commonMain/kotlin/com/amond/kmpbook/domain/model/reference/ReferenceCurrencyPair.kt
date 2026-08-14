@@ -11,6 +11,12 @@ data class ReferenceCurrencyPair(
         require(sourceCurrency != targetCurrency)
     }
 
-    override fun compareTo(other: ReferenceCurrencyPair): Int =
-        compareValuesBy(this, other, { it.sourceCurrency.ordinal }, { it.targetCurrency.ordinal })
+    override fun compareTo(other: ReferenceCurrencyPair): Int {
+        val sourceComparison = sourceCurrency.ordinal.compareTo(other.sourceCurrency.ordinal)
+        return if (sourceComparison != 0) {
+            sourceComparison
+        } else {
+            targetCurrency.ordinal.compareTo(other.targetCurrency.ordinal)
+        }
+    }
 }
