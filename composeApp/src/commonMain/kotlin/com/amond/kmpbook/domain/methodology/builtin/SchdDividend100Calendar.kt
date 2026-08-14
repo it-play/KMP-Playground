@@ -1,6 +1,5 @@
-package com.amond.kmpbook.domain.simulation.fund
+package com.amond.kmpbook.domain.methodology.builtin
 
-import com.amond.kmpbook.domain.model.fund.EquityMethodologyProfile
 import com.amond.kmpbook.domain.model.market.Market
 import com.amond.kmpbook.domain.time.DefaultMarketHolidays
 import com.amond.kmpbook.domain.time.GameCalendar
@@ -13,8 +12,8 @@ import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 
-/** 기준 포트폴리오 엔진과 저장 검증이 함께 사용하는 미국 방법론 일정 계산 경계다. */
-internal object ReferencePortfolioCalendar {
+/** Deterministic U.S. session and methodology-date helpers owned by the SCHD provider. */
+internal object SchdDividend100Calendar {
     fun scheduledRebalanceDate(year: Int, month: Int): LocalDate {
         require(month in 1..12)
         var effective = thirdFriday(year, month).plus(3, DateTimeUnit.DAY)
@@ -42,8 +41,8 @@ internal object ReferencePortfolioCalendar {
         return friday.plus(14, DateTimeUnit.DAY)
     }
 
-    fun isDailyCapFreezeDate(profile: EquityMethodologyProfile, date: LocalDate): Boolean {
-        if (date.month.ordinal + 1 !in profile.rebalanceMonths) return false
+    fun isDailyCapFreezeDate(rebalanceMonths: Set<Int>, date: LocalDate): Boolean {
+        if (date.month.ordinal + 1 !in rebalanceMonths) return false
         val thirdFriday = thirdFriday(date.year, date.month.ordinal + 1)
         val secondFriday = thirdFriday.minus(7, DateTimeUnit.DAY)
         val freezeStarts = secondFriday.minus(2, DateTimeUnit.DAY)
@@ -95,25 +94,6 @@ internal object ReferencePortfolioCalendar {
         return result
     }
 
-    fun nextReconstitutionDate(profile: EquityMethodologyProfile, date: LocalDate): LocalDate =
-        (date.year..(date.year + 2))
-            .map { year -> scheduledRebalanceDate(year, profile.annualReconstitutionMonth) }
-            .first { it > date }
-
-    fun nextRebalanceDate(profile: EquityMethodologyProfile, date: LocalDate): LocalDate =
-        scheduledRebalanceDates(profile, date.year, date.year + 2).first { it > date }
-
-    fun isScheduledReconstitutionDate(
-        profile: EquityMethodologyProfile,
-        date: LocalDate,
-    ): Boolean = date == scheduledRebalanceDate(date.year, profile.annualReconstitutionMonth)
-
-    fun isScheduledRebalanceDate(
-        profile: EquityMethodologyProfile,
-        date: LocalDate,
-    ): Boolean = date.month.ordinal + 1 in profile.rebalanceMonths &&
-        date == scheduledRebalanceDate(date.year, date.month.ordinal + 1)
-
     fun isUsTradingDate(date: LocalDate): Boolean {
         if (date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY) return false
         return date.year !in HOLIDAY_CALENDAR_START_YEAR..GameCalendar.CAMPAIGN_END_DATE.year ||
@@ -147,14 +127,6 @@ internal object ReferencePortfolioCalendar {
         return fromNewYork.date == toNewYork.date &&
             fromNewYork.time < US_REGULAR_CLOSE && toNewYork.time >= US_REGULAR_CLOSE
     }
-
-    private fun scheduledRebalanceDates(
-        profile: EquityMethodologyProfile,
-        fromYear: Int,
-        throughYear: Int,
-    ): List<LocalDate> = (fromYear..throughYear).flatMap { year ->
-        profile.rebalanceMonths.sorted().map { month -> scheduledRebalanceDate(year, month) }
-    }.sorted()
 
     private const val ANNUAL_WEIGHT_REFERENCE_LEAD_DAYS: Int = 12
     private const val HOLIDAY_CALENDAR_START_YEAR: Int = 2026

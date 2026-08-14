@@ -58,14 +58,13 @@ import com.amond.kmpbook.domain.model.fund.FundReferenceExposure
 import com.amond.kmpbook.domain.model.fund.FundReplicationMode
 import com.amond.kmpbook.domain.model.fund.FundReturnTransform
 import com.amond.kmpbook.domain.model.fund.FundReturnVariant
-import com.amond.kmpbook.domain.model.fund.FundSelectionModel
-import com.amond.kmpbook.domain.model.fund.FundWeightingModel
 import com.amond.kmpbook.domain.model.fund.MethodologyEquitySector
 import com.amond.kmpbook.domain.model.fund.MbsInterestOnlyModelParameterOrigin
 import com.amond.kmpbook.domain.model.fund.MbsInterestOnlyModelParameters
 import com.amond.kmpbook.domain.model.fund.MbsInterestOnlyPrepaymentModel
 import com.amond.kmpbook.domain.model.fund.MbsInterestOnlySleeveTerms
 import com.amond.kmpbook.domain.model.fund.MbsInterestOnlyTermsProvenance
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioLimits
 import com.amond.kmpbook.domain.model.fundproduct.DailyResetCalendar
 import com.amond.kmpbook.domain.model.fundproduct.DailyResetModelParameterOrigin
 import com.amond.kmpbook.domain.model.fundproduct.DailyResetModelParameters
@@ -116,6 +115,8 @@ import com.amond.kmpbook.domain.model.market.IndustrySegment
 import com.amond.kmpbook.domain.model.market.Market
 import com.amond.kmpbook.domain.model.market.ReferenceCurrency
 import com.amond.kmpbook.domain.model.market.Sector
+import com.amond.kmpbook.domain.model.methodology.EquityMethodologyParameters
+import com.amond.kmpbook.domain.model.methodology.EquityMethodologyRef
 import com.amond.kmpbook.domain.model.reference.CommodityAssetClass
 import com.amond.kmpbook.domain.model.reference.CommodityReferenceTermsProvenance
 import com.amond.kmpbook.domain.model.reference.CommoditySpotReferenceTerms
@@ -376,95 +377,161 @@ object DesktopInstrumentPackParser {
         }
 
         private fun readEquityMethodology(): EquityMethodologyProfile {
+            var methodologyRef: EquityMethodologyRef? = null
             var effectiveFrom: LocalDate? = null
             var referenceUniverse: FundReferenceUniverse? = null
-            var selectionModel: FundSelectionModel? = null
-            var weightingModel: FundWeightingModel? = null
-            var targetConstituentCount: Int? = null
-            var minDividendPaymentYears: Int? = null
-            var minFloatMarketCap: Double? = null
-            var minAverageDailyValueTraded: Double? = null
-            var eligibleYieldFraction: Double? = null
-            var incumbentRankBuffer: Int? = null
-            var individualWeightCap: Double? = null
-            var sectorWeightCap: Double? = null
-            var annualReconstitutionMonth: Int? = null
-            var rebalanceMonths: Set<Int>? = null
-            var dailyWeightThreshold: Double? = null
-            var dailyAggregateWeightLimit: Double? = null
+            var parameters: EquityMethodologyParameters? = null
 
             readObject("equityMethodology", EQUITY_METHODOLOGY_FIELDS) { field ->
                 when (field) {
+                    "methodologyRef" -> methodologyRef = readEquityMethodologyRef()
                     "effectiveFrom" -> effectiveFrom = readLocalDate("effectiveFrom")
                     "referenceUniverse" -> referenceUniverse = readEnum<FundReferenceUniverse>("referenceUniverse")
-                    "selectionModel" -> selectionModel = readEnum<FundSelectionModel>("selectionModel")
-                    "weightingModel" -> weightingModel = readEnum<FundWeightingModel>("weightingModel")
-                    "targetConstituentCount" -> targetConstituentCount = readExactIntInRange(
-                        "targetConstituentCount",
-                        1,
-                        EquityMethodologyProfile.MAX_CONSTITUENTS,
-                    )
-                    "minDividendPaymentYears" -> minDividendPaymentYears = readExactIntInRange(
-                        "minDividendPaymentYears",
-                        0,
-                        MAX_DIVIDEND_PAYMENT_YEARS,
-                    )
-                    "minFloatMarketCap" -> minFloatMarketCap = readFiniteDoubleInRange(
-                        "minFloatMarketCap",
-                        0.0,
-                        MAX_METHODOLOGY_MARKET_CAP,
-                    )
-                    "minAverageDailyValueTraded" -> minAverageDailyValueTraded = readFiniteDoubleInRange(
-                        "minAverageDailyValueTraded",
-                        0.0,
-                        MAX_AVERAGE_DAILY_VALUE_TRADED,
-                    )
-                    "eligibleYieldFraction" -> eligibleYieldFraction =
-                        readFiniteDoubleInRange("eligibleYieldFraction", MIN_POSITIVE_FRACTION, 1.0)
-                    "incumbentRankBuffer" -> incumbentRankBuffer = readExactIntInRange(
-                        "incumbentRankBuffer",
-                        0,
-                        EquityMethodologyProfile.MAX_RANK_BUFFER,
-                    )
-                    "individualWeightCap" -> individualWeightCap =
-                        readFiniteDoubleInRange("individualWeightCap", MIN_POSITIVE_FRACTION, 1.0)
-                    "sectorWeightCap" -> sectorWeightCap =
-                        readFiniteDoubleInRange("sectorWeightCap", 0.0, 1.0)
-                    "annualReconstitutionMonth" -> annualReconstitutionMonth =
-                        readExactIntInRange("annualReconstitutionMonth", 1, MONTHS_PER_YEAR)
-                    "rebalanceMonths" -> rebalanceMonths = readSortedUniqueIntSet(
-                        label = "rebalanceMonths",
-                        maxItems = MONTHS_PER_YEAR,
-                        minValue = 1,
-                        maxValue = MONTHS_PER_YEAR,
-                    )
-                    "dailyWeightThreshold" -> dailyWeightThreshold =
-                        readFiniteDoubleInRange("dailyWeightThreshold", 0.0, 1.0)
-                    "dailyAggregateWeightLimit" -> dailyAggregateWeightLimit =
-                        readFiniteDoubleInRange("dailyAggregateWeightLimit", 0.0, 1.0)
+                    "parameters" -> parameters = readEquityMethodologyParameters()
                 }
             }
             return EquityMethodologyProfile(
+                methodologyRef = methodologyRef ?: missing("methodologyRef"),
                 effectiveFrom = effectiveFrom ?: missing("effectiveFrom"),
                 referenceUniverse = referenceUniverse ?: missing("referenceUniverse"),
-                selectionModel = selectionModel ?: missing("selectionModel"),
-                weightingModel = weightingModel ?: missing("weightingModel"),
-                targetConstituentCount = targetConstituentCount ?: missing("targetConstituentCount"),
-                minDividendPaymentYears = minDividendPaymentYears ?: missing("minDividendPaymentYears"),
-                minFloatMarketCap = minFloatMarketCap ?: missing("minFloatMarketCap"),
-                minAverageDailyValueTraded = minAverageDailyValueTraded
-                    ?: missing("minAverageDailyValueTraded"),
-                eligibleYieldFraction = eligibleYieldFraction ?: missing("eligibleYieldFraction"),
-                incumbentRankBuffer = incumbentRankBuffer ?: missing("incumbentRankBuffer"),
-                individualWeightCap = individualWeightCap ?: missing("individualWeightCap"),
-                sectorWeightCap = sectorWeightCap ?: missing("sectorWeightCap"),
-                annualReconstitutionMonth = annualReconstitutionMonth
-                    ?: missing("annualReconstitutionMonth"),
-                rebalanceMonths = rebalanceMonths ?: missing("rebalanceMonths"),
-                dailyWeightThreshold = dailyWeightThreshold ?: missing("dailyWeightThreshold"),
-                dailyAggregateWeightLimit = dailyAggregateWeightLimit
-                    ?: missing("dailyAggregateWeightLimit"),
+                parameters = parameters ?: missing("parameters"),
             )
+        }
+
+        private fun readEquityMethodologyRef(): EquityMethodologyRef {
+            var ownerSourceId: String? = null
+            var methodologyId: String? = null
+            var version: Int? = null
+            readObject("methodologyRef", EQUITY_METHODOLOGY_REF_FIELDS) { field ->
+                when (field) {
+                    "ownerSourceId" -> ownerSourceId = readString(
+                        field,
+                        EquityMethodologyRef.MAX_OWNER_ID_LENGTH,
+                        allowBlank = false,
+                    )
+                    "methodologyId" -> methodologyId = readString(
+                        field,
+                        EquityMethodologyRef.MAX_METHODOLOGY_ID_LENGTH,
+                        allowBlank = false,
+                    )
+                    "version" -> version = readExactIntInRange(
+                        field,
+                        1,
+                        EquityMethodologyRef.MAX_VERSION,
+                    )
+                }
+            }
+            return EquityMethodologyRef(
+                ownerSourceId = ownerSourceId ?: missing("ownerSourceId"),
+                methodologyId = methodologyId ?: missing("methodologyId"),
+                version = version ?: missing("version"),
+            )
+        }
+
+        private fun readEquityMethodologyParameters(): EquityMethodologyParameters {
+            var integers: Map<String, Int>? = null
+            var decimals: Map<String, Double>? = null
+            var booleans: Map<String, Boolean>? = null
+            var texts: Map<String, String>? = null
+            var integerSets: Map<String, Set<Int>>? = null
+            readObject("parameters", EQUITY_METHODOLOGY_PARAMETER_FIELDS) { field ->
+                when (field) {
+                    "integers" -> integers = readSortedMethodologyParameterMap(field) { key ->
+                        readExactInt("$field.$key")
+                    }
+                    "decimals" -> decimals = readSortedMethodologyParameterMap(field) { key ->
+                        readFiniteDouble("$field.$key")
+                    }
+                    "booleans" -> booleans = readSortedMethodologyParameterMap(field) { key ->
+                        readBoolean("$field.$key")
+                    }
+                    "texts" -> texts = readSortedMethodologyParameterMap(field) { key ->
+                        readString(
+                            "$field.$key",
+                            EquityMethodologyParameters.MAX_TEXT_LENGTH,
+                            allowBlank = false,
+                        )
+                    }
+                    "integerSets" -> integerSets = readSortedMethodologyParameterMap(field) { key ->
+                        readSortedMethodologyIntegerSet("$field.$key")
+                    }
+                }
+            }
+            val resolvedIntegers = integers ?: missing("integers")
+            val resolvedDecimals = decimals ?: missing("decimals")
+            val resolvedBooleans = booleans ?: missing("booleans")
+            val resolvedTexts = texts ?: missing("texts")
+            val resolvedIntegerSets = integerSets ?: missing("integerSets")
+            val allKeys = buildList {
+                addAll(resolvedIntegers.keys)
+                addAll(resolvedDecimals.keys)
+                addAll(resolvedBooleans.keys)
+                addAll(resolvedTexts.keys)
+                addAll(resolvedIntegerSets.keys)
+            }
+            if (allKeys.size > EquityMethodologyParameters.MAX_PARAMETERS) {
+                fail("방법론 파라미터는 타입 전체에서 최대 ${EquityMethodologyParameters.MAX_PARAMETERS}개입니다.")
+            }
+            if (allKeys.distinct().size != allKeys.size) {
+                fail("방법론 파라미터 키는 타입별 객체 사이에서도 중복될 수 없습니다.")
+            }
+            return EquityMethodologyParameters(
+                integers = resolvedIntegers,
+                decimals = resolvedDecimals,
+                booleans = resolvedBooleans,
+                texts = resolvedTexts,
+                integerSets = resolvedIntegerSets,
+            )
+        }
+
+        private fun readSortedMethodologyIntegerSet(label: String): Set<Int> {
+            beginArray("$label 값")
+            val values = linkedSetOf<Int>()
+            var previous: Int? = null
+            while (reader.hasNext()) {
+                if (values.size >= EquityMethodologyParameters.MAX_SET_VALUES) {
+                    fail("$label 정수 집합은 최대 ${EquityMethodologyParameters.MAX_SET_VALUES}개 값만 허용합니다.")
+                }
+                val value = readExactInt("$label 값")
+                if (previous != null && value <= previous) {
+                    fail("$label 정수 집합은 중복 없이 오름차순이어야 합니다.")
+                }
+                values += value
+                previous = value
+            }
+            endArray()
+            return values
+        }
+
+        private fun <T> readSortedMethodologyParameterMap(
+            label: String,
+            readValue: (String) -> T,
+        ): Map<String, T> {
+            beginObject(label)
+            val values = linkedMapOf<String, T>()
+            var previousKey: String? = null
+            while (reader.hasNext()) {
+                if (values.size >= EquityMethodologyParameters.MAX_PARAMETERS) {
+                    fail("$label 객체는 최대 ${EquityMethodologyParameters.MAX_PARAMETERS}개 항목만 허용합니다.")
+                }
+                if (reader.peek() != JsonToken.NAME) fail("$label 객체의 필드 형식이 올바르지 않습니다.")
+                val key = reader.nextName()
+                countNode()
+                if (key.length > EquityMethodologyParameters.MAX_KEY_LENGTH) {
+                    fail("$label 파라미터 키는 ${EquityMethodologyParameters.MAX_KEY_LENGTH}자 이하여야 합니다.")
+                }
+                if (!METHODOLOGY_PARAMETER_KEY_PATTERN.matches(key)) {
+                    fail("$label 파라미터 키 '$key' 형식이 올바르지 않습니다.")
+                }
+                if (key in values) fail("$label 객체에 중복된 '$key' 파라미터가 있습니다.")
+                if (previousKey != null && key <= previousKey) {
+                    fail("$label 객체의 파라미터 키는 문자열 오름차순이어야 합니다.")
+                }
+                previousKey = key
+                values[key] = readValue(key)
+            }
+            endObject()
+            return values.toMap()
         }
 
         private fun readEquityReferenceProfile(): EquityReferenceProfile {
@@ -530,7 +597,7 @@ object DesktopInstrumentPackParser {
                         targetConstituentCount = readNullableExactIntInRange(
                             "targetConstituentCount",
                             1,
-                            EquityReferenceProfile.MAX_CONSTITUENTS,
+                            ReferencePortfolioLimits.MAX_CONSTITUENTS,
                         )
                     }
                     "individualWeightCap" -> {
@@ -3289,7 +3356,7 @@ object DesktopInstrumentPackParser {
         )
 
         private companion object {
-            const val SCHEMA_VERSION: Int = 2
+            const val SCHEMA_VERSION: Int = 3
             const val MAX_JSON_DEPTH: Int = 12
             const val MAX_JSON_NODES: Int = 750_000
             const val MAX_FIELD_NAME_LENGTH: Int = 64
@@ -3312,9 +3379,6 @@ object DesktopInstrumentPackParser {
             const val MAX_EVENT_RISK_TAGS: Int = 128
             const val MAX_UNDERLYING_INSTRUMENTS: Int = 128
             const val MAX_BASE_SHARES_OUTSTANDING: Long = 10_000_000_000_000L
-            const val MAX_DIVIDEND_PAYMENT_YEARS: Int = 200
-            const val MAX_METHODOLOGY_MARKET_CAP: Double = 1e20
-            const val MAX_AVERAGE_DAILY_VALUE_TRADED: Double = 1e15
             const val MIN_POSITIVE_FRACTION: Double = 1e-12
             const val MONTHS_PER_YEAR: Int = 12
             const val MAX_FUND_PRODUCT_ID_LENGTH: Int = 200
@@ -3360,23 +3424,16 @@ object DesktopInstrumentPackParser {
             )
             val BENCHMARK_REF_FIELDS: Set<String> = setOf("benchmarkId", "version")
             val EQUITY_METHODOLOGY_FIELDS: Set<String> = setOf(
+                "methodologyRef",
                 "effectiveFrom",
                 "referenceUniverse",
-                "selectionModel",
-                "weightingModel",
-                "targetConstituentCount",
-                "minDividendPaymentYears",
-                "minFloatMarketCap",
-                "minAverageDailyValueTraded",
-                "eligibleYieldFraction",
-                "incumbentRankBuffer",
-                "individualWeightCap",
-                "sectorWeightCap",
-                "annualReconstitutionMonth",
-                "rebalanceMonths",
-                "dailyWeightThreshold",
-                "dailyAggregateWeightLimit",
+                "parameters",
             )
+            val EQUITY_METHODOLOGY_REF_FIELDS: Set<String> =
+                setOf("ownerSourceId", "methodologyId", "version")
+            val EQUITY_METHODOLOGY_PARAMETER_FIELDS: Set<String> =
+                setOf("integers", "decimals", "booleans", "texts", "integerSets")
+            val METHODOLOGY_PARAMETER_KEY_PATTERN: Regex = Regex("[a-z][A-Za-z0-9]{0,63}")
             val EQUITY_REFERENCE_PROFILE_FIELDS: Set<String> = setOf(
                 "region",
                 "countryCodes",

@@ -68,7 +68,10 @@ class EquityReferenceProfile(
         themeId?.let {
             require(it.length <= MAX_THEME_ID_LENGTH && it.matches(THEME_ID_PATTERN))
         }
-        require(targetConstituentCount == null || targetConstituentCount in 1..MAX_CONSTITUENTS)
+        require(
+            targetConstituentCount == null ||
+                targetConstituentCount in 1..ReferencePortfolioLimits.MAX_CONSTITUENTS,
+        )
         require(individualWeightCap == null || individualWeightCap.isValidWeight())
         require(sectorWeightCap == null || sectorWeightCap.isValidWeight())
         if (individualWeightCap != null && sectorWeightCap != null) {
@@ -173,7 +176,6 @@ class EquityReferenceProfile(
             value.none(Char::isISOControl)
 
     companion object {
-        const val MAX_CONSTITUENTS: Int = EquityMethodologyProfile.MAX_CONSTITUENTS
         const val MAX_COUNTRY_CODES: Int = 64
         const val MAX_COUNTRY_CODE_LENGTH: Int = 2
         const val MAX_THEME_ID_LENGTH: Int = 120

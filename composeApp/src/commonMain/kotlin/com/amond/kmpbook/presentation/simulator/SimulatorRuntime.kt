@@ -183,6 +183,7 @@ import com.amond.kmpbook.domain.simulation.event.EventEngine
 import com.amond.kmpbook.domain.simulation.event.EventGenerationContext
 import com.amond.kmpbook.domain.simulation.event.EventGenerationResult
 import com.amond.kmpbook.domain.simulation.event.EventShockCalculator
+import com.amond.kmpbook.domain.simulation.fund.BenchmarkMethodologyCompiler
 import com.amond.kmpbook.domain.simulation.fund.ReferencePortfolioEngine
 import com.amond.kmpbook.domain.simulation.fundproduct.FundProductOverlayEngine
 import com.amond.kmpbook.domain.simulation.fundproduct.DailyResetAdvanceInput
@@ -740,6 +741,12 @@ internal class SimulatorRuntime(
     private val priceEngine = PriceEngine(DeterministicRandom.mixSeed(options.seed, PRICE_STREAM_ID))
     private val executableBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
         .filter { it.engineKind == BenchmarkEngineKind.EQUITY_METHODOLOGY }
+    private val compiledExecutableMethodologies = executableBenchmarkDefinitions.associate { definition ->
+        definition.ref to BenchmarkMethodologyCompiler.compile(
+            definition = definition,
+            registry = instrumentCatalog.equityMethodologyRegistry,
+        )
+    }
     private val executablePortfolioIdByBenchmarkRef = executableBenchmarkDefinitions.associate { definition ->
         definition.ref to ReferencePortfolioEngine.portfolioIdFor(definition.ref)
     }
@@ -791,7 +798,10 @@ internal class SimulatorRuntime(
             addAll(requireNotNull(definition.compositeReferenceProfile).componentBenchmarkRefs)
         }
     }
-    private val referencePortfolioEngine = ReferencePortfolioEngine.forCampaignSeed(options.seed)
+    private val referencePortfolioEngine = ReferencePortfolioEngine.forCampaignSeed(
+        campaignSeed = options.seed,
+        methodologyRegistry = instrumentCatalog.equityMethodologyRegistry,
+    )
     private val equityReferenceBookEngine = EquityReferenceBookEngine.forCampaignSeed(options.seed)
     private val fundProductOverlayEngine = FundProductOverlayEngine.forCampaignSeed(options.seed)
     private val dailyResetEngine = DailyResetEngine()
@@ -2000,7 +2010,9 @@ internal class SimulatorRuntime(
             referencePortfolioStates.putAll(
                 referencePortfolioEngine.initialBook(
                     definitions = executableBenchmarkDefinitions,
-                    atDate = marketDate(Market.NYSE, currentTime),
+                    referenceDates = compiledExecutableMethodologies.mapValues { (_, methodology) ->
+                        methodology.schedule.marketDate(currentTime)
+                    },
                     at = currentTime,
                 ).states,
             )
@@ -2573,18 +2585,19 @@ internal class SimulatorRuntime(
         val referencePortfolioAdvance = if (referencePortfolioStates.isEmpty()) {
             null
         } else {
-            val referenceDate = marketDate(Market.NYSE, from)
-            val referenceFraction = regionalTradingFraction(
-                EtfExposureRegion.UNITED_STATES,
-                from,
-                effectiveMarketFractions,
-            )
-            val references = executableBenchmarkDefinitions.map { it.ref }
             referencePortfolioEngine.advanceHour(
                 book = ReferencePortfolioBook(referencePortfolioStates.toMap()),
                 definitions = executableBenchmarkDefinitions,
-                referenceDates = references.associateWith { referenceDate },
-                referenceTradingFractions = references.associateWith { referenceFraction },
+                referenceDates = compiledExecutableMethodologies.mapValues { (_, methodology) ->
+                    methodology.schedule.marketDate(from)
+                },
+                referenceTradingFractions = compiledExecutableMethodologies.mapValues { (_, methodology) ->
+                    regionalTradingFraction(
+                        region = methodology.schedule.exposureRegion,
+                        time = from,
+                        effectiveMarketFractions = effectiveMarketFractions,
+                    )
+                },
                 from = from,
                 to = to,
                 macro = macro,

@@ -24,8 +24,8 @@ data class ReferencePortfolioRecord(
         require(PORTFOLIO_ID.matches(portfolioId))
         require(portfolioId == ReferencePortfolioState.portfolioIdFor(benchmarkRef))
         require(selectionDate <= weightReferenceDate && weightReferenceDate < effectiveDate)
-        require(addedAssetIds.size <= EquityMethodologyProfile.MAX_CONSTITUENTS)
-        require(removedAssetIds.size <= EquityMethodologyProfile.MAX_CONSTITUENTS)
+        require(addedAssetIds.size <= ReferencePortfolioLimits.MAX_CONSTITUENTS)
+        require(removedAssetIds.size <= ReferencePortfolioLimits.MAX_CONSTITUENTS)
         require(addedAssetIds == addedAssetIds.distinct().sorted())
         require(removedAssetIds == removedAssetIds.distinct().sorted())
         require(addedAssetIds.none(removedAssetIds::contains))
@@ -33,14 +33,14 @@ data class ReferencePortfolioRecord(
         require(COMPOSITION_HASH.matches(beforeCompositionHash))
         require(COMPOSITION_HASH.matches(afterCompositionHash))
         require(turnoverRate.isFinite() && turnoverRate in 0.0..1.0)
-        require(resultingConstituentCount in 1..EquityMethodologyProfile.MAX_CONSTITUENTS)
+        require(resultingConstituentCount in 1..ReferencePortfolioLimits.MAX_CONSTITUENTS)
         require(revision > 0L)
         when (kind) {
-            ReferencePortfolioActionKind.ANNUAL_RECONSTITUTION -> Unit
-            ReferencePortfolioActionKind.QUARTERLY_REBALANCE,
-            ReferencePortfolioActionKind.DAILY_CAP_REBALANCE,
+            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> Unit
+            ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
+            ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
             -> require(addedAssetIds.isEmpty() && removedAssetIds.isEmpty())
-            ReferencePortfolioActionKind.EXTRAORDINARY_DELETION -> {
+            ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL -> {
                 require(addedAssetIds.isEmpty() && removedAssetIds.isNotEmpty())
             }
         }

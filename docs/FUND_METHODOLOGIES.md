@@ -10,7 +10,7 @@ coarse 가격 경로에 남겨 두지 않고 주식 기준 정책, 금리곡선,
 ## 현재 지원 범위
 
 기본 카탈로그의 fund-like 종목은 ETF 500개, CEF 5개, ETN 3개로 모두 508개다.
-스키마 v2에서는 508개 모두가 법적 구조·기준 노출·수익률 변환을 담은 `fundProductProfile`을
+스키마 v3에서는 508개 모두가 법적 구조·기준 노출·수익률 변환을 담은 `fundProductProfile`을
 정확히 하나씩 가진다. 루트의 벤치마크 레지스트리는 501개이며 지원 수준은 다음과 같다.
 
 | 벤치마크 지원 수준 | 정의 수 | 현재 동작 |
@@ -89,6 +89,57 @@ ETN 3개는 만기·수수료·상환·쿠폰·조기상환 조건과 발행자 
 **reference portfolio**다. ETF 보수와 추적오차는 기준 포트폴리오 비중과 별도의 상품 효과이며,
 실제 펀드가 가질 수 있는 현금, 미결제 거래, 증권대여 담보와 설정·환매 바스켓은 현재 상태에 넣지 않는다.
 
+### 전용 주식 방법론 프레임워크
+
+`EQUITY_METHODOLOGY`는 더 이상 SCHD 전용 enum 조합을 공용 엔진이 해석하는 형태가 아니다.
+종목팩의 `methodologyRef = (ownerSourceId, methodologyId, version)`가 불변 등록부의 실행 provider를
+가리키고, provider가 자기 파라미터와 일정·선정·가중·특별 편출 규칙을 검증하고 실행한다. SCHD의
+`builtin:base/schd-dividend-100@v1`이 이 계약을 사용하는 첫 번째 provider다. 아직 등록된 두 번째
+실제 상품 방법론이 있다는 뜻은 아니다.
+
+패키지 경계는 다음처럼 고정한다.
+
+```text
+domain/model/methodology      # JSON에도 나타나는 ref와 bounded typed parameters
+domain/methodology            # 공개 policy·schedule·input/output·component·registry SPI
+domain/methodology/builtin    # 앱이 소유하는 SCHD 등 내장 provider 구현과 등록
+modding/api/content           # 별도로 신뢰한 실행 모드용 pre-game 등록 API
+domain/simulation/fund        # 등록된 policy를 소비하는 reference portfolio 런타임
+```
+
+공개 SPI는 다음 경계를 갖는다.
+
+- `EquityMethodologyPolicy`: 정의 검증, 후보 선정, 목표 비중, 특별 편출을 구현한다.
+- `EquityMethodologySchedule`: 방법론이 사용하는 시장, 지역, 기준일·효력일과 거래 세션을 소유한다.
+- selection·weighting·removal input과 candidate·selection은 불변 typed 값만 전달한다. 선정 input은
+  canonical scheduled action을, 비중 input은 action kind·관찰일·효력일을 함께 받아 같은 provider도
+  재구성·정기 재조정·제약 재조정별로 다른 규칙을 구현할 수 있다.
+- candidate의 공통 identity·sector와 bounded typed feature map을 분리한다. 현재 host adapter는
+  시가총액·유동성·배당·FCF/부채·ROE·배당성장·배당 프로그램 중단 feature ID를 제공하며, 새 universe adapter는
+  안정적인 feature ID를 버전 계약으로 추가할 수 있다. provider가 컴파일 시 선언한 feature만 실제
+  candidate에 노출하므로 미선언 신호에 묵시적으로 의존할 수 없다.
+- `EquityMethodologyComponentCatalog`은 동일/비례 비중, ordinal/composite rank, incumbent buffer,
+  종목·그룹 상한 배분처럼 검증 가능한 순수 결정적 부품을 재사용하게 한다.
+- provider가 돌려준 ID·순위·비중은 호스트가 다시 검증한다. 등록된 코드라는 이유만으로 캠페인
+  상태를 직접 바꿀 수는 없다.
+- 호스트는 provider 일정의 요청 kind·날짜·거래일·strict progress와 canonical round-trip을 검증하고,
+  두 정기 lane과 특별 검토를 bounded하게 2040년까지 사전 실행한다.
+
+코드 패키지는 책임별로 분리한다.
+
+- `domain.model.methodology`: 버전된 ref와 bounded typed parameter wire model
+- `domain.methodology`: 공개 policy·schedule·입출력 SPI, 재사용 컴포넌트와 불변 등록부
+- `domain.methodology.builtin`: 앱에 포함된 개별 상품/지수 provider
+- `domain.simulation.fund`: 등록 provider를 상태·계획·원장으로 실행하는 host compiler와 엔진
+- `modding.api.content`: 별도로 신뢰한 실행 모드가 캠페인 전에 쓰는 capability-scoped 공개 API
+- `domain.data`와 desktop parser: 선언형 팩, provider ref와 최종 카탈로그 결속
+
+등록부는 카탈로그를 만들기 전에 한 번 동결되며 같은 ref의 교체·중복 등록을 허용하지 않는다.
+엄격 파서, 사전검증기와 실제 런타임은 같은 등록부와 같은 provider를 사용한다. 따라서 JSON이
+알려지지 않은 ref를 선언하거나 provider 검증에 실패하면 게임을 시작하기 전에 팩 전체를 거부한다.
+`ownerSourceId`는 provider 등록 namespace이며 소비 벤치마크 팩의 source ID일 필요는 없다. 데이터
+팩도 이미 설치된 provider를 그 provider가 허용하는 프로필로 참조할 수 있다.
+
 ### 2,500개 비거래 기준주식
 
 `US_BROAD_EQUITY` 후보군은 플레이어가 거래하는 기업 종목과 분리된 2,500개의 시뮬레이션
@@ -101,8 +152,13 @@ ETN 3개는 만기·수수료·상환·쿠폰·조기상환 조건과 발행자 
   자유현금흐름/부채, ROE와 5년 배당성장률을 결정적으로 생성한다.
 - 같은 seed·방법론 버전·시간은 항상 같은 후보군, 순위, 수익률과 재구성 결과를 만든다.
 
-이 분리 덕분에 S&P 500이나 글로벌 지수처럼 게임의 거래 종목 수보다 큰 후보군을 필요로 하는 방법론도
-향후 독립적으로 구현할 수 있다. 단, 실제 상표를 붙이거나 실제 편입 이력으로 오인할 수 있는 표시를 사용하지 않는다.
+현재 실행 host v1은 `US_BROAD_EQUITY`, USD 기준, 미국 시장 schedule과 두 개의 정기 일정 lane
+(`SCHEDULED_RECONSTITUTION`, `SCHEDULED_REWEIGHT`)만 명시적으로 지원한다. 후보 adapter가 제공하는
+feature도 위에 열거한 배당·펀더멘털 집합으로 제한된다. 따라서 S&P 500, Nasdaq-100처럼 실적 이력,
+상장·본점 국가, free-float, 수시 교체 등 다른 관측치와 이벤트가 필요한 방법론은 이름만 다른
+provider로 지금 등록할 수 없다. 필요한 feature와 일정 lane을 host에 먼저 추가한 뒤 같은 등록
+구조를 사용해야 한다. 글로벌 지수는 후보 universe·통화·calendar adapter도 함께 확장해야 한다.
+실제 상표를 붙이거나 실제 편입 이력으로 오인할 수 있는 표시를 사용하지 않는다.
 
 ### 재구성과 가격 전파
 
@@ -177,15 +233,15 @@ SCHD는 Dow Jones U.S. Dividend 100 Index를 추종하는 물리적 지수 ETF�
 위 일정과 규칙은 공식 문서를 게임 시계와 합성 기준자산에 맞게 결정적으로 구현한 운용 모델이다.
 지수 산출기관의 미공개 파일, 실제 기업 데이터, 실제 주식수와 실제 설정·환매 바스켓을 복제하지는 않는다.
 
-## 스키마 v2: 벤치마크와 상품의 분리
+## 스키마 v3: 실행 provider와 벤치마크·상품의 분리
 
 종목팩 루트에는 `schemaVersion`, `benchmarks`, `instruments` 세 필드가 정확히 필요하다.
-`schemaVersion`은 `2`다. 주식·REIT·ADR도 `fundProductProfile: null`을 명시하고, ETF·ETN·CEF는
+`schemaVersion`은 `3`이다. 주식·REIT·ADR도 `fundProductProfile: null`을 명시하고, ETF·ETN·CEF는
 null이 아닌 상품 프로필을 정확히 하나 가진다. 종목 안에 방법론을 중복 저장하지 않는다.
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "benchmarks": [
     {
       "benchmarkId": "spdj-dow-jones-us-dividend-100",
@@ -200,22 +256,36 @@ null이 아닌 상품 프로필을 정확히 하나 가진다. 종목 안에 방
       "supportLevel": "VERIFIED_RULES",
       "componentBenchmarkRefs": [],
       "equityMethodology": {
+        "methodologyRef": {
+          "ownerSourceId": "builtin:base",
+          "methodologyId": "schd-dividend-100",
+          "version": 1
+        },
         "effectiveFrom": "2026-03-23",
         "referenceUniverse": "US_BROAD_EQUITY",
-        "selectionModel": "DIVIDEND_FUNDAMENTAL_COMPOSITE",
-        "weightingModel": "CAPPED_FLOAT_MARKET_CAP",
-        "targetConstituentCount": 100,
-        "minDividendPaymentYears": 10,
-        "minFloatMarketCap": 500000000.0,
-        "minAverageDailyValueTraded": 2000000.0,
-        "eligibleYieldFraction": 0.5,
-        "incumbentRankBuffer": 200,
-        "individualWeightCap": 0.04,
-        "sectorWeightCap": 0.25,
-        "annualReconstitutionMonth": 3,
-        "rebalanceMonths": [3, 6, 9, 12],
-        "dailyWeightThreshold": 0.047,
-        "dailyAggregateWeightLimit": 0.22
+        "parameters": {
+          "integers": {
+            "annualReconstitutionMonth": 3,
+            "dailyCapReweightDelayTradingDays": 2,
+            "incumbentRankBuffer": 200,
+            "minDividendPaymentYears": 10,
+            "targetConstituentCount": 100
+          },
+          "decimals": {
+            "dailyAggregateWeightLimit": 0.22,
+            "dailyWeightThreshold": 0.047,
+            "eligibleYieldFraction": 0.5,
+            "individualWeightCap": 0.04,
+            "minAverageDailyValueTraded": 2000000.0,
+            "minFloatMarketCap": 500000000.0,
+            "sectorWeightCap": 0.25
+          },
+          "booleans": {},
+          "texts": {},
+          "integerSets": {
+            "rebalanceMonths": [3, 6, 9, 12]
+          }
+        }
       },
       "equityReferenceProfile": null,
       "fixedIncomeProfile": null,
@@ -241,7 +311,7 @@ null이 아닌 상품 프로필을 정확히 하나 가진다. 종목 안에 방
 | `engineKind` | `EQUITY_METHODOLOGY`, `EQUITY_REFERENCE`, `FIXED_INCOME_CURVE`, `COMMODITY_SPOT`, `FUTURES_CURVE`, `FUND_OF_FUNDS_METHODOLOGY`, `COMPOSITE_REFERENCE`, `ALTERNATIVE_RISK_PREMIA`, `COARSE_FACTOR_PROXY` |
 | `supportLevel` | `VERIFIED_RULES`, `VERIFIED_REFERENCE`, `PROVISIONAL_PROXY` |
 | `componentBenchmarkRefs` | `(benchmarkId, version)` 객체의 정렬된 집합. 재간접·합성·대체위험 프리미엄의 실제 의존성과 정확히 같아야 한다. |
-| `equityMethodology` | 실행 가능한 주식 방법론 또는 `null`. 현재는 SCHD 정의만 non-null이다. |
+| `equityMethodology` | 등록된 실행 provider ref, 효력일·유니버스와 provider 전용 typed 파라미터 또는 `null`. 현재는 SCHD 정의만 non-null이다. |
 | `equityReferenceProfile` | 지역·국가·유니버스·섹터·스타일·선정/재가중 정책 또는 `null`. 현재 342개다. |
 | `fixedIncomeProfile` | 실행 가능한 고정수익·현금 기준 프로필 또는 `null`. 현재 124개 벤치마크가 non-null이다. |
 | `commoditySpotTerms`, `futuresReferenceTerms` | 현물 carry 또는 선물 curve·roll 기준 조건. 각각 4개와 7개다. |
@@ -504,15 +574,25 @@ CEF는 `closedEndFundTerms`와 `closedEndFundMarketModelParameters`를 둘 다 �
 
 ### 엄격 검증과 실행 가능성
 
-`equityMethodology`는 위 예제의 16개 필드를 모두 요구한다. 모든 nullable 실행 프로필 필드도
-생략할 수 없고 해당하지 않으면 명시적으로 `null`이어야 한다. 범위와 교차 규칙은 기존 SCHD v1과
-같으며 숫자는 NaN·무한대를 허용하지 않는다. 알 수 없는 필드나 enum, 중복 키·집합 값, 누락된
-필드, 비정규 날짜·HTTP URL, 정렬되지 않은 집합을 하나라도 발견하면 팩 전체를 거부한다.
+`equityMethodology`는 공통 `methodologyRef`, 효력일·유니버스와 provider 전용 `parameters`를
+정확히 요구한다. 목표 수, 상한, 일정과 조건은 공통 SCHD형 필드가 아니라 provider 파라미터다.
+`parameters`도 `integers`, `decimals`, `booleans`, `texts`, `integerSets` 다섯 객체를 빠짐없이
+가지며 임의 중첩 JSON, 클래스명이나 실행 코드는 받지 않는다. 파라미터 이름은 소문자로 시작하는
+영숫자 camel-case 식별자이고 각 객체에서 문자열 오름차순이어야 한다. 다섯 타입 사이에서도 키가
+중복될 수 없으며 전체 64개로 제한한다. `integerSets`의 각 값은 중복 없는 오름차순 정수 배열이고
+최대 64개 값만 허용한다. 실수는 유한해야 하고 문자열은 trim된 비어 있지 않은 256자 이하 값이어야
+한다. 파서는 이 wire 형식·크기·유한성을 검사하고, 등록된 provider는 필요한 키의 정확한 집합과
+각 값의 의미 범위를 다시 검사한다.
+
+모든 nullable 실행 프로필 필드도 생략할 수 없고 해당하지 않으면 명시적으로 `null`이어야 한다.
+알 수 없는 필드나 enum, 중복 키·집합 값, 누락된 필드, 비정규 날짜·HTTP URL, 정렬되지 않은
+집합을 하나라도 발견하면 팩 전체를 거부한다.
 
 엄격 파싱 뒤 `VERIFIED_RULES` 방법론은 campaign seed로 2040년까지 후보 선정과 상한 배분을
 사전 실행한다. 지원 일정과 맞지 않는 `effectiveFrom`, 부족한 적격 후보, 종목·섹터 상한 안에서
-100%를 만들 수 없는 구성이 있으면 부분 상태를 만들지 않고 새 게임 시작을 거부한다. 현재
-`EQUITY_METHODOLOGY` 엔진은 SCHD의 정확한 v1 파라미터만 받는다.
+100%를 만들 수 없는 구성이 있으면 부분 상태를 만들지 않고 새 게임 시작을 거부한다. 기본
+등록부에는 현재 SCHD v1 provider 하나만 있고, 이 provider는 위 예제의 정확한 integer/decimal
+및 integer-set 키, 비어 있는 boolean/text 키 집합과 SCHD 규칙 범위를 요구한다.
 
 팩을 합친 뒤에도 graph와 실행 비용을 다시 검증한다. benchmark ref 존재·중복·순환,
 component-first 순서, composite/alternative의 허용된 비중첩 방향, 사업회사 source, cross-currency
@@ -540,12 +620,15 @@ FOF 목표+composite sleeve+alternative driver 65,536의 카탈로그 전체 상
   참조하지만 실제 채권 CUSIP·현금흐름 원장은 아니다.
 - 2,500개 기준자산은 방법론 동작을 위한 결정적 대리 유니버스다. 실제 기업, 현재 holdings 또는
   2040년까지의 미래 편입을 나타내지 않는다.
-- SCHD 월별 `EXTRAORDINARY_DELETION`은 합성 배당 지급 중단·취소를 처리한다. 복합·대체전략의
+- SCHD 월별 `EXTRAORDINARY_REMOVAL`은 합성 배당 지급 중단·취소를 처리한다. 복합·대체전략의
   직접 사업회사 source가 청산·상장 종료 단계에 들어가면 같은 시각 `EXTRAORDINARY_SOURCE_TO_CASH`
   원장으로 영구 현금 치환한다. 직접 기초를 쓰는 일일 reset·옵션·현금담보 상품은 정책에 따라
   다음 거래소 종가의 최종 NAV로 상품 청산을 시작하고, 옵션형은 기존 package를 정산한 뒤 새
   cycle을 열지 않는다. 다만 합성 대표 유니버스 안의 개별 회사를 실제 상장기업과 연결한 인수합병,
   파산·대체편입과 실제 주식수 조정은 아직 재현하지 않는다.
+- 주식 방법론 host v1은 미국 broad-equity·USD, 두 정기 일정 lane과 편출-only 특별 조치만
+  지원한다. 다른 시장, 종목 즉시 대체·편입, 임의 corporate-action 일정과 현재 adapter에 없는
+  신호가 필요한 provider는 해당 host 계약을 먼저 버전 확장해야 한다.
 - turnover는 계산·저장하지만 종목별 체결과 리밸런싱 거래비용 원장은 아직 없다.
 - 동적 구성의 추정 연 배당률은 NAV 분배 재원 적립과 지급액 계산에 사용한다. 지급 빈도는 여전히
   카탈로그의 `distributionFrequency`를 사용하며, 실제 구성종목별 권리락·입금 시점을 합산하지 않는다.
@@ -567,10 +650,16 @@ FOF 목표+composite sleeve+alternative driver 65,536의 카탈로그 전체 상
 현재 구성, 방법론 버전, 다음 재구성·재조정일, 표류 비중, 재구성 원장을 함께 보관한다. 불러올 때 모드
 ID·버전·콘텐츠 fingerprint 또는 카탈로그 참조가 다르면 해당 저장을 거부한다. 방법론을 수정할 때는
 모드의 시맨틱 버전과 변경한 벤치마크 `version`도 함께 올리는 것을 권장한다.
+provider 실행 코드는 JSON fingerprint에 포함되지 않으므로 코드 동작을 바꾸면
+`methodologyRef.version`도 반드시 올려야 한다.
 
 복원 검증은 저장된 기준자산 ID·표시정보·섹터를 캠페인 seed의 2,500개 원본과 대조하고, 다음 일정과
 대기 계획을 같은 미국 거래일 달력으로 다시 계산한다. 구성 해시·revision 원장 계보와 향후 종목·섹터
 상한으로 100%를 다시 배분할 수 있는지도 확인하므로, 잘못된 상태를 복원한 뒤 첫 거래에서 실패시키지 않는다.
 
-모드는 기본 SCHD를 덮어쓰지 못한다. 모드에서 다른 방법론을 실험하려면 충돌하지 않는 새 `market:symbol`
-종목을 추가해야 한다.
+모드는 기본 SCHD provider나 다른 모드의 ref를 덮어쓰지 못한다. 데이터 전용 모드는 JSON만으로
+새 정책 함수를 만들 수 없지만 이미 설치된 provider를 참조할 수 있으며, 등록되지 않은
+`methodologyRef`를 선언하면 거부된다. 별도로 신뢰한 실행 모드는 캠페인 전용 콘텐츠 API와
+`game.contentRegister` 승인으로 자기 source namespace의
+provider를 등록하고, 같은 source의 새 벤치마크·종목을 추가할 수 있다. provider 코드를 바꿀 때는
+`methodologyRef.version`, 벤치마크 버전과 모드 버전을 함께 올려 기존 캠페인의 의미를 바꾸지 않는다.

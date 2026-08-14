@@ -97,9 +97,14 @@ mods/
 
 | 필드 | 설명 |
 |---|---|
-| `schemaVersion` | 현재 값 `2` |
+| `schemaVersion` | 현재 값 `3` |
 | `benchmarks` | 이 팩이 정의하는 버전된 벤치마크 배열. 주식 전용 팩은 빈 배열 가능 |
 | `instruments` | 등록할 종목 객체 배열. 모드 하나당 1~512개 |
+
+여기서 v3는 `instruments.json` 스키마이며 위 `manifest.xml`의 v2와 별개다. 종목팩 파서는 이전
+v2 wire를 자동 변환하지 않는다. 기존 팩은 `equityMethodology`가 없더라도
+루트 `schemaVersion`을 3으로 올려야 하고, 실행 주식 방법론을 선언한다면 아래 provider ref와 다섯
+typed parameter map 계약으로 직접 갱신해야 한다.
 
 각 종목 객체의 정확한 필드 구성과 중첩 객체 예시는 위 기본 카탈로그를 기준으로 한다.
 
@@ -125,7 +130,7 @@ mods/
 
 ### 벤치마크 정의와 펀드 상품 프로필
 
-스키마 v2는 세 축을 서로 바꿔 쓰지 않는다.
+스키마 v3는 세 축을 서로 바꿔 쓰지 않는다.
 
 - `FundLegalStructure`: `OPEN_END_ETF`, `EXCHANGE_TRADED_NOTE`, `CLOSED_END_FUND`
 - `FundReferenceExposure`: `EQUITY`, `FIXED_INCOME`, `CASH`, `COMMODITY`, `CRYPTO`,
@@ -195,12 +200,64 @@ mods/
 
 `supportLevel = VERIFIED_RULES`는 공식 문서뿐 아니라 현재 엔진이 규칙을 재현한다는 뜻이다.
 `VERIFIED_REFERENCE`는 상품과 기준지수 연결만 확인한 상태이며 상세 구성 엔진을 의미하지 않는다.
-현재 `EQUITY_METHODOLOGY`는 SCHD의 Dow Jones U.S. Dividend 100 v1 규칙만 지원한다.
+기본 등록부의 `EQUITY_METHODOLOGY` provider는 현재 SCHD의 Dow Jones U.S. Dividend 100 v1
+하나다. SCHD는 새 등록 계약을 사용하는 첫 provider이지, 다른 상품까지 SCHD 규칙으로 근사한다는
+뜻이 아니다.
 `EQUITY_REFERENCE`, `FIXED_INCOME_CURVE`, `COMMODITY_SPOT`, `FUTURES_CURVE`,
 `FUND_OF_FUNDS_METHODOLOGY`, `COMPOSITE_REFERENCE`, `ALTERNATIVE_RISK_PREMIA`는 각각 대응하는
 typed 프로필 하나만 요구한다. `COARSE_FACTOR_PROXY`는 모든 상세 프로필/terms가 `null`이어야 한다.
 기본 팩은 501개 벤치마크 전부 typed 경로를 가져 `COARSE_FACTOR_PROXY = 0`이지만, 488개는
 `PROVISIONAL_PROXY`이므로 미래 실제 holdings나 공식 규칙으로 해석하면 안 된다.
+
+#### 전용 주식 방법론 ref와 등록부
+
+`EQUITY_METHODOLOGY` 정의의 non-null `equityMethodology`는 다음 공통 필드를 정확히 가진다.
+
+- `methodologyRef`: `ownerSourceId`, `methodologyId`, 양의 `version`
+- `effectiveFrom`, `referenceUniverse`
+- `parameters`: `integers`, `decimals`, `booleans`, `texts` scalar map과 bounded `integerSets`
+
+목표 종목 수, 종목·그룹 상한, 일정 월, 위반 threshold와 지연일처럼 전략별 의미가 있는 값은
+공통 필드가 아니라 provider가 소유하고 검증하는 typed `parameters`에 둔다. 따라서 새 provider가
+SCHD형 연례·분기·일일 규칙의 dummy 값을 채울 필요가 없다.
+
+파라미터 키는 소문자로 시작하는 영숫자 camel-case 식별자이고 map별 문자열 오름차순이어야 한다.
+다섯 타입 사이에서도 중복될 수 없으며 총 64개 이하다. 정수 집합은 중복 없는 오름차순 정수
+배열이고 집합마다 최대 64개 값만 허용한다. 실수는 유한해야 하며 문자열은 trim된 비어 있지 않은
+256자 이하 값이어야 한다. arbitrary object, 임의 중첩 JSON, 클래스명, 스크립트와 함수 본문은
+종목팩 JSON에 넣을 수 없다.
+strict parser가 wire 타입·크기·유한성을 검사한 뒤 등록된 provider가 정확한 키 집합과 값 범위,
+일정·통화·유니버스 같은 의미 계약을 검증한다.
+
+등록부는 새 게임 카탈로그보다 먼저 만들어지고 이후 불변이다. 같은 ref를 덮어쓰거나 중복 등록할
+수 없다. `ownerSourceId`는 provider를 등록한 source namespace이며, provider 등록은 같은 source의
+종목팩과 함께 이루어져야 한다. 소비 벤치마크 팩의 source ID와 같을 필요는 없어 데이터 모드도
+이미 설치된 provider를 참조할 수 있다. 알 수 없는 ref나 provider 검증 실패는 일부 항목을
+건너뛰지 않고 카탈로그 구성을 거부한다. 파서, 2040년 사전검증과 실제 캠페인은 같은 등록부를 사용한다.
+
+일반 데이터 모드는 JSON을 제공할 뿐 실행 provider를 만들지 않는다. 새 전용 방법론은 앱에 포함된
+provider 또는 별도로 신뢰한 실행 호스트가 캠페인 시작 전에 등록해야 한다. 후자의 공개 경계는
+running-game API와 분리된 `GameContentModApi`다. 승인된 `game.contentRegister`가 있어야 자기
+source namespace의 `EquityMethodologyPolicy`를 등록할 수 있고, 호스트가 제공하는
+`equityComponents`에서 ordinal/composite rank, incumbent buffer, capped group weighting을
+비롯해 동일/비례 weighting을 재사용할 수 있다. 등록 결과는 성공 또는
+capability/입력/중복/상한 거부 코드로 돌아오며, 동결 뒤
+런타임 등록·교체는 허용되지 않는다. 이 pre-game surface의 버전은 `CONTENT_MOD_API_VERSION`으로
+확인하며 running-game `MOD_API_VERSION`과 별도로 발전한다.
+신뢰 결정을 완료한 호스트는 `GameContentModRegistrationSession`을 정확히 한 번 호출해 등록 목록을
+얻고, 선언 팩과 함께 `InstrumentCatalogSnapshot.withAdditionalContent(...)`로 원자 동결한다.
+
+현재 실행 host v1은 미국 broad-equity·USD, 재구성/재조정 두 정기 일정 lane, 편출-only 특별
+조치와 제한된 배당·펀더멘털 feature adapter만 제공한다. 등록 API가 범용이라는 이유만으로
+S&P 500·Nasdaq-100·글로벌 지수처럼 추가 신호, 수시 교체 또는 다른 시장 달력이 필요한 정책을
+dummy 파라미터로 흉내 내서는 안 된다. 그런 provider는 host feature/schedule 계약을 먼저 버전
+확장한 뒤 등록해야 한다.
+
+provider는 필요한 feature ID를 타입별로 먼저 선언해야 하며 host는 선언된 feature만 candidate에
+노출한다. 선정에는 canonical scheduled action이, 비중 계산에는 action kind·관찰일·효력일이 전달된다.
+일정 구현은 요청 kind와 날짜에 정확히 응답하고 매 호출마다 미래로 진행해야 하며, 선정일·비중
+기준일·효력일은 그 provider가 선언한 시장의 거래일이어야 한다. host는 이 계약과 두 정기 lane을
+2040년까지 bounded preflight로 다시 검증한다.
 
 #### 주식 기준 프로필
 
@@ -329,14 +386,15 @@ spread·hazard 값의 출처로 오인하면 안 된다. CEF도 법적 자본구
 중복 키·배열 값, 누락 필드, 정렬 위반, 비정규 날짜·URL, NaN·무한대·범위 이탈 숫자를 하나라도
 발견하면 팩 전체를 거부한다.
 
-`VERIFIED_RULES` 방법론은 파싱 뒤 campaign seed로 2040년까지 후보 수와 상한 배분 가능성을
-사전검증한다. 현재 SCHD 달력은 3월 연례 재구성과 3·6·9·12월 재가중만 지원한다. 초기화가
-불가능하면 부분 상태를 남기지 않고 새 게임 생성을 거부한다.
+`VERIFIED_RULES` 방법론은 파싱과 provider 검증 뒤 campaign seed로 2040년까지 후보 수와 상한
+배분 가능성을 사전검증한다. 현재 SCHD provider의 달력은 3월 연례 재구성과 3·6·9·12월
+재가중을 지원한다. 초기화가 불가능하면 부분 상태를 남기지 않고 새 게임 생성을 거부한다.
 
 로비에서 모드를 활성화하는 행위가 그 모드의 선언형 콘텐츠를 다음 새 게임에 적용하는 승인이다.
 이는 실행 코드 권한과 별개이므로 `game.contentRegister`를 요청할 필요가 없고, 그 권한을
-요청했다고 선언형 콘텐츠가 자동 적용되는 것도 아니다. `game.contentRegister`는 향후 신뢰된
-실행 모드가 런타임 API를 통해 콘텐츠를 등록할 때를 위한 예약 권한으로 계속 유지한다.
+요청했다고 선언형 콘텐츠가 자동 적용되는 것도 아니다. 별도로 신뢰한 실행 provider는
+`game.contentRegister` 승인과 pre-game `GameContentModApi`가 모두 있어야 등록할 수 있다.
+이 권한은 실행 중인 캠페인의 카탈로그를 바꾸거나 임의 코드를 자동 적재하는 권한이 아니다.
 
 새 게임을 시작할 때 활성 모드 목록과 검증된 종목팩으로 불변 카탈로그를 만든다. 이후 로비의
 활성 상태나 원본 JSON을 바꿔도 진행 중인 게임의 종목 구성은 바뀌지 않는다. 원본 JSON 바이트의
@@ -346,6 +404,8 @@ SHA-256을 소문자 64자리 `contentFingerprint`로 모드 설정과 저장 �
 포함되므로 별도 해시 파일 없이
 자동으로 fingerprint에 고정된다. 저장 게임을 불러올 때 설치된 모드의 ID·버전과 함께 이
 fingerprint가 일치해야 하며, 종목팩을 수정할 때는 모드 버전도 함께 올리는 것을 권장한다.
+실행 provider 코드는 종목팩 JSON에 포함되지 않으므로 동작을 바꿀 때는
+`methodologyRef.version`, 이를 사용하는 벤치마크 `version`과 모드 버전을 함께 올려야 한다.
 
 ## API 권한
 
@@ -355,7 +415,7 @@ fingerprint가 일치해야 하며, 종목팩을 수정할 때는 모드 버전�
 | `game.playerCommands` | 화면·종목·턴 선택, 진행, 주문·취소, 환전, 읽음·관심종목, 일시정지·재개 |
 | `game.marketControl` | 외부 시장 환경 목표 변경 |
 | `game.debugConsole` | 앱에 컴파일된 기본 제공 개발자 콘솔 호스트용 권한. 제3자 모드에는 실행 기능을 부여하지 않음 |
-| `game.contentRegister` | 향후 신뢰된 실행 모드의 런타임 콘텐츠 등록용 예약 권한. manifest의 선언형 `content`와 무관 |
+| `game.contentRegister` | 별도로 신뢰한 실행 모드가 pre-game API로 자기 namespace의 방법론 provider를 등록. manifest의 선언형 `content` 적용과 런타임 변경 권한은 아님 |
 | `storage.modState` | 향후 모드별 저장 상태용 예약 권한 |
 
 공개 API 버전은 `MOD_API_VERSION`으로 확인한다. 신뢰된 호스트는
@@ -374,13 +434,14 @@ manifest 권한은 모드의 요청 목록일 뿐 자동 승인 목록이 아니
 
 ## 실행 코드에 대한 신뢰 경계
 
-현재 모드 검색기는 manifest, 커버, 설정을 적재하며 임의의 JAR이나 스크립트를 자동 실행하지
-않는다. 같은 JVM 프로세스에 올린 제3자 코드는 파일·네트워크·프로세스·리플렉션 접근을 API
+현재 모드 검색기는 manifest, 커버, 설정과 선언형 종목팩을 적재하며 임의의 JAR이나 스크립트를
+자동 실행하지 않는다. 같은 JVM 프로세스에 올린 제3자 코드는 파일·네트워크·프로세스·리플렉션 접근을 API
 권한으로 차단할 수 없기 때문이다. API 권한은 게임 기능에 대한 논리 경계이지 JVM 샌드박스가
 아니다.
 
-기본 제공 모드나 별도로 신뢰한 실행 호스트는 위 API를 바로 사용할 수 있다. 제3자 실행 모드를
-지원할 때는 이 API 뒤에 별도 프로세스와 제한된 IPC, 서명·신뢰 확인, 시간·메모리·명령 수 제한을
+앱 기본 provider나 별도로 신뢰한 실행 호스트만 pre-game 콘텐츠 API를 구성할 수 있다. 데이터
+모드에 `methodologyRef`가 있다는 이유로 로더가 클래스나 함수를 찾거나 실행하지 않는다. 제3자
+실행 모드를 지원할 때는 이 API 뒤에 별도 프로세스와 제한된 IPC, 서명·신뢰 확인, 시간·메모리·명령 수 제한을
 추가해야 한다. 로컬 HTTP 서버나 무제한 ClassLoader 실행은 모드 형식의 일부로 간주하지 않는다.
 
 ## 기본 제공 개발자 콘솔

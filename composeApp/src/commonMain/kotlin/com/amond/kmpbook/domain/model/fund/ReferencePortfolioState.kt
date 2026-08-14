@@ -25,14 +25,14 @@ data class ReferencePortfolioState(
     val asOf: Instant,
     /** Last effective composition action, retained even when bootstrap deliberately has no ledger. */
     val lastAppliedActionKind: ReferencePortfolioActionKind =
-        ReferencePortfolioActionKind.ANNUAL_RECONSTITUTION,
+        ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION,
 ) {
     init {
         require(PORTFOLIO_ID.matches(portfolioId))
         require(portfolioId == portfolioIdFor(benchmarkRef)) {
             "Reference portfolio identity must be derived from its benchmark version."
         }
-        require(positions.isNotEmpty() && positions.size <= EquityMethodologyProfile.MAX_CONSTITUENTS)
+        require(positions.isNotEmpty() && positions.size <= ReferencePortfolioLimits.MAX_CONSTITUENTS)
         require(positions.map(ReferencePortfolioPosition::assetId).distinct().size == positions.size)
         require(positions.map(ReferencePortfolioPosition::selectionRank).distinct().size == positions.size)
         require(positions == positions.sortedBy(ReferencePortfolioPosition::assetId)) {

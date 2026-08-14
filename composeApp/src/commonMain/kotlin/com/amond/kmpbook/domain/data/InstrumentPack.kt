@@ -1,7 +1,6 @@
 package com.amond.kmpbook.domain.data
 
 import com.amond.kmpbook.domain.model.fund.BenchmarkDefinition
-import com.amond.kmpbook.domain.model.fund.BenchmarkRef
 import com.amond.kmpbook.domain.model.instrument.StockDefinition
 
 /**
@@ -15,8 +14,12 @@ class InstrumentPack(
     benchmarks: Iterable<BenchmarkDefinition>,
     definitions: Iterable<StockDefinition>,
 ) {
-    val benchmarks: List<BenchmarkDefinition> = benchmarks.toList()
-    val definitions: List<StockDefinition> = definitions.toList()
+    val benchmarks: List<BenchmarkDefinition> = buildList {
+        benchmarks.asSequence().take(MAX_BENCHMARKS + 1).forEach(::add)
+    }
+    val definitions: List<StockDefinition> = buildList {
+        definitions.asSequence().take(MAX_INSTRUMENTS + 1).forEach(::add)
+    }
     val benchmarkCount: Int get() = benchmarks.size
     val instrumentCount: Int get() = definitions.size
 

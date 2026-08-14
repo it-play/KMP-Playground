@@ -22,7 +22,7 @@ import com.amond.kmpbook.domain.model.event.ImpactDirection
 import com.amond.kmpbook.domain.model.fund.BenchmarkRef
 import com.amond.kmpbook.domain.model.fund.AlternativeRiskPremiaStrategyFamily
 import com.amond.kmpbook.domain.model.fund.CompositeSleeveDirection
-import com.amond.kmpbook.domain.model.fund.EquityMethodologyProfile
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioLimits
 import com.amond.kmpbook.domain.model.fund.EquityReferenceRegion
 import com.amond.kmpbook.domain.model.fund.FundLegalStructure
 import com.amond.kmpbook.domain.model.fund.FundOfFundsCategory
@@ -718,9 +718,9 @@ actual class GameSaveStorage actual constructor() {
 
         fun JsonObject.requireReferencePortfolioPositions(field: String, path: String) {
             val positions = requiredArray(field)
-            if (positions.size() == 0 || positions.size() > EquityMethodologyProfile.MAX_CONSTITUENTS) {
+            if (positions.size() == 0 || positions.size() > ReferencePortfolioLimits.MAX_CONSTITUENTS) {
                 throw JsonParseException(
-                    "필드 '$path'는 1~${EquityMethodologyProfile.MAX_CONSTITUENTS}개 항목이어야 합니다.",
+                    "필드 '$path'는 1~${ReferencePortfolioLimits.MAX_CONSTITUENTS}개 항목이어야 합니다.",
                 )
             }
             positions.forEachIndexed { index, positionElement ->
@@ -732,7 +732,7 @@ actual class GameSaveStorage actual constructor() {
 
         fun JsonObject.requireReferenceAssetIdArray(field: String, path: String) {
             val ids = requiredArray(field)
-            if (ids.size() > EquityMethodologyProfile.MAX_CONSTITUENTS) {
+            if (ids.size() > ReferencePortfolioLimits.MAX_CONSTITUENTS) {
                 throw JsonParseException("필드 '$path'의 항목이 너무 많습니다.")
             }
             ids.forEachIndexed { index, idElement ->
@@ -1219,7 +1219,7 @@ actual class GameSaveStorage actual constructor() {
                     throw JsonParseException("필드 '$path.turnoverRate'는 0과 1 사이여야 합니다.")
                 }
                 val count = requiredInt("resultingConstituentCount")
-                if (count !in 1..EquityMethodologyProfile.MAX_CONSTITUENTS) {
+                if (count !in 1..ReferencePortfolioLimits.MAX_CONSTITUENTS) {
                     throw JsonParseException(
                         "필드 '$path.resultingConstituentCount'가 허용 범위를 벗어났습니다.",
                     )

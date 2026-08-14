@@ -21,7 +21,7 @@ data class ReferencePortfolioPlan(
         require(PORTFOLIO_ID.matches(portfolioId))
         require(portfolioId == ReferencePortfolioState.portfolioIdFor(benchmarkRef))
         require(selectionDate <= weightReferenceDate && weightReferenceDate < effectiveDate)
-        require(positions.isNotEmpty() && positions.size <= EquityMethodologyProfile.MAX_CONSTITUENTS)
+        require(positions.isNotEmpty() && positions.size <= ReferencePortfolioLimits.MAX_CONSTITUENTS)
         require(positions == positions.sortedBy(ReferencePortfolioPosition::assetId))
         require(positions.map(ReferencePortfolioPosition::assetId).distinct().size == positions.size)
         require(positions.map(ReferencePortfolioPosition::selectionRank).distinct().size == positions.size)
@@ -36,11 +36,11 @@ data class ReferencePortfolioPlan(
         require(addedAssetIds.all(positionIds::contains))
         require(removedAssetIds.none(positionIds::contains))
         when (kind) {
-            ReferencePortfolioActionKind.ANNUAL_RECONSTITUTION -> Unit
-            ReferencePortfolioActionKind.QUARTERLY_REBALANCE,
-            ReferencePortfolioActionKind.DAILY_CAP_REBALANCE,
+            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> Unit
+            ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
+            ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
             -> require(addedAssetIds.isEmpty() && removedAssetIds.isEmpty())
-            ReferencePortfolioActionKind.EXTRAORDINARY_DELETION -> {
+            ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL -> {
                 require(addedAssetIds.isEmpty() && removedAssetIds.isNotEmpty())
             }
         }

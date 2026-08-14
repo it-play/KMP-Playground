@@ -21,6 +21,10 @@ import com.amond.kmpbook.domain.model.instrument.StockDefinition
 import com.amond.kmpbook.domain.model.market.Market
 import com.amond.kmpbook.domain.model.market.Sector
 import com.amond.kmpbook.domain.model.reference.FuturesPortfolioStyle
+import com.amond.kmpbook.domain.methodology.BuiltInEquityMethodologies
+import com.amond.kmpbook.domain.methodology.EquityMethodologyRegistration
+import com.amond.kmpbook.domain.methodology.EquityMethodologyRegistry
+import com.amond.kmpbook.domain.simulation.fund.BenchmarkMethodologyCompiler
 import com.amond.kmpbook.domain.simulation.market.MarketMicrostructure
 import kotlin.math.abs
 
@@ -33,34 +37,77 @@ import kotlin.math.abs
 class InstrumentCatalogSnapshot private constructor(
     packs: Iterable<InstrumentPack>,
     val maxInstruments: Int,
+    val equityMethodologyRegistry: EquityMethodologyRegistry,
 ) {
-    val packs: List<InstrumentPack> = packs.toList()
-    val benchmarks: List<BenchmarkDefinition> = this.packs.flatMap(InstrumentPack::benchmarks)
-    val definitions: List<StockDefinition> = this.packs.flatMap(InstrumentPack::definitions)
+    val packs: List<InstrumentPack> = buildList {
+        packs.asSequence().take(InstrumentCatalogReference.MAX_SOURCES + 1).forEach(::add)
+    }
+    val benchmarks: List<BenchmarkDefinition> = buildList {
+        outer@ for (pack in this@InstrumentCatalogSnapshot.packs) {
+            for (benchmark in pack.benchmarks) {
+                add(benchmark)
+                if (size > MAX_TOTAL_BENCHMARKS) break@outer
+            }
+        }
+    }
+    val definitions: List<StockDefinition> = buildList {
+        outer@ for (pack in this@InstrumentCatalogSnapshot.packs) {
+            for (definition in pack.definitions) {
+                add(definition)
+                if (size > MAX_TOTAL_INSTRUMENTS) break@outer
+            }
+        }
+    }
     val reference: InstrumentCatalogReference = InstrumentCatalogReference(
-        orderedSources = this.packs.map { pack ->
-            InstrumentCatalogSourceReference(
-                sourceId = pack.sourceId,
-                contentSha256 = pack.fingerprint,
-            )
+        orderedSources = buildList {
+            this@InstrumentCatalogSnapshot.packs.forEach { pack ->
+                add(
+                    InstrumentCatalogSourceReference(
+                        sourceId = pack.sourceId,
+                        contentSha256 = pack.fingerprint,
+                    ),
+                )
+            }
         },
     )
 
-    val stocks: List<StockDefinition> = definitions.filter(StockDefinition::hasCorporateEarnings)
-    val etfs: List<StockDefinition> = definitions.filter { it.instrumentType == InstrumentType.ETF }
-    val fundLike: List<StockDefinition> = definitions.filter(StockDefinition::isFundLike)
+    val stocks: List<StockDefinition> = buildList {
+        definitions.filterTo(this, StockDefinition::hasCorporateEarnings)
+    }
+    val etfs: List<StockDefinition> = buildList {
+        definitions.filterTo(this) { it.instrumentType == InstrumentType.ETF }
+    }
+    val fundLike: List<StockDefinition> = buildList {
+        definitions.filterTo(this, StockDefinition::isFundLike)
+    }
 
-    private val byId: Map<String, StockDefinition> = definitions.associateBy(StockDefinition::id)
+    private val byId: Map<String, StockDefinition> = buildMap {
+        definitions.forEach { definition -> put(definition.id, definition) }
+    }
     private val benchmarkByRef: Map<BenchmarkRef, BenchmarkDefinition> =
-        benchmarks.associateBy(BenchmarkDefinition::ref)
+        buildMap { benchmarks.forEach { benchmark -> put(benchmark.ref, benchmark) } }
     /** 구성요소가 합성 벤치마크보다 먼저 오는 안정적인 실행 순서다. */
-    val benchmarksInEvaluationOrder: List<BenchmarkDefinition> = buildBenchmarkEvaluationOrder()
+    val benchmarksInEvaluationOrder: List<BenchmarkDefinition> = buildList {
+        addAll(buildBenchmarkEvaluationOrder())
+    }
     private val byMarketAndSymbol: Map<Pair<Market, String>, StockDefinition> =
-        definitions.associateBy { definition -> definition.market to definition.symbol.normalizedSymbol() }
+        buildMap {
+            definitions.forEach { definition ->
+                put(definition.market to definition.symbol.normalizedSymbol(), definition)
+            }
+        }
     private val definitionsByMarket: Map<Market, List<StockDefinition>> =
-        Market.entries.associateWith { market -> definitions.filter { it.market == market } }
+        buildMap {
+            Market.entries.forEach { market ->
+                put(market, buildList { definitions.filterTo(this) { it.market == market } })
+            }
+        }
     private val definitionsBySector: Map<Sector, List<StockDefinition>> =
-        Sector.entries.associateWith { sector -> definitions.filter { it.sector == sector } }
+        buildMap {
+            Sector.entries.forEach { sector ->
+                put(sector, buildList { definitions.filterTo(this) { it.sector == sector } })
+            }
+        }
 
     init {
         require(maxInstruments in 1..MAX_TOTAL_INSTRUMENTS) {
@@ -69,6 +116,12 @@ class InstrumentCatalogSnapshot private constructor(
         require(this.packs.isNotEmpty()) { "종목 카탈로그에는 하나 이상의 종목팩이 필요합니다." }
         require(this.packs.distinctBy(InstrumentPack::sourceId).size == this.packs.size) {
             "종목 카탈로그에 중복된 종목팩 sourceId가 있습니다."
+        }
+        val activeSourceIds = this.packs.mapTo(hashSetOf(), InstrumentPack::sourceId)
+        require(equityMethodologyRegistry.descriptors.all { descriptor ->
+            descriptor.ref.ownerSourceId in activeSourceIds
+        }) {
+            "실행 방법론 provider는 같은 ownerSourceId의 활성 종목팩이 필요합니다."
         }
         require(definitions.isNotEmpty()) { "종목 카탈로그에는 하나 이상의 종목이 필요합니다." }
         require(benchmarks.isNotEmpty()) { "종목 카탈로그에는 하나 이상의 벤치마크가 필요합니다." }
@@ -85,6 +138,7 @@ class InstrumentCatalogSnapshot private constructor(
         require(byMarketAndSymbol.size == definitions.size) {
             "종목 카탈로그의 같은 시장에 중복된 종목 코드가 있습니다."
         }
+        validateEquityMethodologyRegistrations()
         require(
             definitions.all { definition ->
                 val tick = MarketMicrostructure.tickSize(definition, definition.initialPrice)
@@ -129,19 +183,22 @@ class InstrumentCatalogSnapshot private constructor(
     fun search(query: String): List<StockDefinition> {
         val keyword = query.trim().lowercase()
         if (keyword.isEmpty()) return definitions
-        return definitions.filter { stock ->
-            keyword in stock.symbol.lowercase() ||
-                keyword in stock.name.lowercase() ||
-                keyword in stock.englishName.lowercase() ||
-                keyword in stock.sector.displayName.lowercase() ||
-                stock.industrySegments.any { keyword in it.displayName.lowercase() } ||
-                stock.etfProfile?.let { profile ->
-                    keyword in profile.benchmark.lowercase() || keyword in profile.assetClass.displayName.lowercase()
-                } == true ||
-                stock.identityProfile?.let { identity ->
-                    identity.aliases.any { keyword in it.lowercase() } ||
-                        identity.eventRiskTags.any { keyword in it.lowercase() }
-                } == true
+        return buildList {
+            definitions.filterTo(this) { stock ->
+                keyword in stock.symbol.lowercase() ||
+                    keyword in stock.name.lowercase() ||
+                    keyword in stock.englishName.lowercase() ||
+                    keyword in stock.sector.displayName.lowercase() ||
+                    stock.industrySegments.any { keyword in it.displayName.lowercase() } ||
+                    stock.etfProfile?.let { profile ->
+                        keyword in profile.benchmark.lowercase() ||
+                            keyword in profile.assetClass.displayName.lowercase()
+                    } == true ||
+                    stock.identityProfile?.let { identity ->
+                        identity.aliases.any { keyword in it.lowercase() } ||
+                            identity.eventRiskTags.any { keyword in it.lowercase() }
+                    } == true
+            }
         }
     }
 
@@ -150,16 +207,82 @@ class InstrumentCatalogSnapshot private constructor(
         require(quantityStep in MIN_US_FRACTIONAL_QUANTITY_STEP..1.0) {
             "미국주식 수량 단위는 $MIN_US_FRACTIONAL_QUANTITY_STEP 이상 1 이하이어야 합니다."
         }
-        return definitions.map { stock ->
-            if (stock.market.isUnitedStates) stock.copy(quantityStep = quantityStep) else stock
+        return buildList {
+            definitions.forEach { stock ->
+                add(if (stock.market.isUnitedStates) stock.copy(quantityStep = quantityStep) else stock)
+            }
         }
     }
 
     /** 추가 팩을 뒤에 붙인 새 스냅샷을 만들며 현재 스냅샷과 입력 팩은 변경하지 않는다. */
     fun withAdditionalPacks(additionalPacks: Iterable<InstrumentPack>): InstrumentCatalogSnapshot {
-        val additions = additionalPacks.toList()
+        val additions = boundedAdditionalPacks(additionalPacks)
         if (additions.isEmpty()) return this
-        return fromPacks(packs + additions, maxInstruments)
+        return fromPacks(
+            packs = packs + additions,
+            maxInstruments = maxInstruments,
+            equityMethodologyRegistry = equityMethodologyRegistry,
+        )
+    }
+
+    /**
+     * Trusted pre-game content registration boundary.
+     *
+     * Executable policies and their declaring packs are frozen together. Data-only packs must use
+     * [withAdditionalPacks] and can only reference providers that are already installed.
+     */
+    fun withAdditionalContent(
+        additionalPacks: Iterable<InstrumentPack>,
+        methodologyRegistrations: Iterable<EquityMethodologyRegistration>,
+    ): InstrumentCatalogSnapshot {
+        val additions = boundedAdditionalPacks(additionalPacks)
+        val registrations = methodologyRegistrations
+            .take(EquityMethodologyRegistry.MAX_REGISTRATIONS + 1)
+            .toList()
+        require(registrations.size <= EquityMethodologyRegistry.MAX_REGISTRATIONS) {
+            "한 번에 등록할 수 있는 실행 방법론은 최대 " +
+                "${EquityMethodologyRegistry.MAX_REGISTRATIONS}개입니다."
+        }
+        require(
+            registrations.size <= EquityMethodologyRegistry.MAX_REGISTRATIONS -
+                equityMethodologyRegistry.size,
+        ) {
+            "실행 방법론 등록부의 최대 크기 " +
+                "${EquityMethodologyRegistry.MAX_REGISTRATIONS}개를 초과합니다."
+        }
+        if (additions.isEmpty() && registrations.isEmpty()) return this
+        val additionSourceIds = additions.mapTo(hashSetOf(), InstrumentPack::sourceId)
+        require(registrations.all { it.descriptor.ref.ownerSourceId in additionSourceIds }) {
+            "실행 방법론은 같은 ownerSourceId의 종목팩과 함께 등록해야 합니다."
+        }
+        return fromPacks(
+            packs = packs + additions,
+            maxInstruments = maxInstruments,
+            equityMethodologyRegistry = equityMethodologyRegistry.withRegistrations(registrations),
+        )
+    }
+
+    private fun boundedAdditionalPacks(additionalPacks: Iterable<InstrumentPack>): List<InstrumentPack> {
+        var instrumentCount = definitions.size
+        return buildList {
+            additionalPacks.forEach { pack ->
+                require(instrumentCount + pack.instrumentCount <= maxInstruments) {
+                    "추가 종목팩의 종목 수가 남은 카탈로그 용량을 초과합니다."
+                }
+                instrumentCount += pack.instrumentCount
+                add(pack)
+            }
+        }
+    }
+
+    private fun validateEquityMethodologyRegistrations() {
+        benchmarks.filter { it.engineKind == BenchmarkEngineKind.EQUITY_METHODOLOGY }
+            .forEach { benchmark ->
+                BenchmarkMethodologyCompiler.compile(
+                    definition = benchmark,
+                    registry = equityMethodologyRegistry,
+                )
+            }
     }
 
     private fun validateUnderlyingInstrumentGraph() {
@@ -630,7 +753,7 @@ class InstrumentCatalogSnapshot private constructor(
     }
 
     private fun buildBenchmarkEvaluationOrder(): List<BenchmarkDefinition> {
-        if (benchmarks.isEmpty()) return emptyList()
+        if (benchmarks.isEmpty()) return buildList { }
         require(benchmarkByRef.size == benchmarks.size) {
             "종목 카탈로그에서 같은 (benchmarkId, version) 벤치마크를 재정의할 수 없습니다."
         }
@@ -669,7 +792,7 @@ class InstrumentCatalogSnapshot private constructor(
         require(ordered.size == benchmarks.size) {
             "종목 카탈로그의 벤치마크 참조에 순환이 있습니다."
         }
-        return ordered
+        return buildList { addAll(ordered) }
     }
 
     companion object {
@@ -697,7 +820,12 @@ class InstrumentCatalogSnapshot private constructor(
         fun fromPacks(
             packs: Iterable<InstrumentPack>,
             maxInstruments: Int = MAX_TOTAL_INSTRUMENTS,
-        ): InstrumentCatalogSnapshot = InstrumentCatalogSnapshot(packs, maxInstruments)
+            equityMethodologyRegistry: EquityMethodologyRegistry = BuiltInEquityMethodologies.registry,
+        ): InstrumentCatalogSnapshot = InstrumentCatalogSnapshot(
+            packs = packs,
+            maxInstruments = maxInstruments,
+            equityMethodologyRegistry = equityMethodologyRegistry,
+        )
     }
 }
 

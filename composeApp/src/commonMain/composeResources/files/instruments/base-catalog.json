@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "benchmarks": [
     {
       "benchmarkId": "alternative.ialt-credit-relative-value",
@@ -25438,27 +25438,41 @@
       "supportLevel": "VERIFIED_RULES",
       "componentBenchmarkRefs": [],
       "equityMethodology": {
+        "methodologyRef": {
+          "ownerSourceId": "builtin:base",
+          "methodologyId": "schd-dividend-100",
+          "version": 1
+        },
         "effectiveFrom": "2026-03-23",
         "referenceUniverse": "US_BROAD_EQUITY",
-        "selectionModel": "DIVIDEND_FUNDAMENTAL_COMPOSITE",
-        "weightingModel": "CAPPED_FLOAT_MARKET_CAP",
-        "targetConstituentCount": 100,
-        "minDividendPaymentYears": 10,
-        "minFloatMarketCap": 500000000,
-        "minAverageDailyValueTraded": 2000000,
-        "eligibleYieldFraction": 0.5,
-        "incumbentRankBuffer": 200,
-        "individualWeightCap": 0.04,
-        "sectorWeightCap": 0.25,
-        "annualReconstitutionMonth": 3,
-        "rebalanceMonths": [
-          3,
-          6,
-          9,
-          12
-        ],
-        "dailyWeightThreshold": 0.047,
-        "dailyAggregateWeightLimit": 0.22
+        "parameters": {
+          "integers": {
+            "annualReconstitutionMonth": 3,
+            "dailyCapReweightDelayTradingDays": 2,
+            "incumbentRankBuffer": 200,
+            "minDividendPaymentYears": 10,
+            "targetConstituentCount": 100
+          },
+          "decimals": {
+            "dailyAggregateWeightLimit": 0.22,
+            "dailyWeightThreshold": 0.047,
+            "eligibleYieldFraction": 0.5,
+            "individualWeightCap": 0.04,
+            "minAverageDailyValueTraded": 2000000.0,
+            "minFloatMarketCap": 500000000.0,
+            "sectorWeightCap": 0.25
+          },
+          "booleans": {},
+          "texts": {},
+          "integerSets": {
+            "rebalanceMonths": [
+              3,
+              6,
+              9,
+              12
+            ]
+          }
+        }
       },
       "equityReferenceProfile": null,
       "fixedIncomeProfile": null,

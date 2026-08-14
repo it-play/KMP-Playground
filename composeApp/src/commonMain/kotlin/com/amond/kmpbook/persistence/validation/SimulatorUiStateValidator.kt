@@ -3,6 +3,11 @@ package com.amond.kmpbook.persistence.validation
 import com.amond.kmpbook.domain.data.InstrumentCatalogReference
 import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.data.InstrumentCatalogSourceReference
+import com.amond.kmpbook.domain.methodology.BuiltInEquityMethodologies
+import com.amond.kmpbook.domain.methodology.EquityMethodologyPolicy
+import com.amond.kmpbook.domain.methodology.EquityMethodologyPortfolioConstraints
+import com.amond.kmpbook.domain.methodology.EquityMethodologyRegistry
+import com.amond.kmpbook.domain.methodology.EquityMethodologySchedule
 import com.amond.kmpbook.domain.model.causal.CausalEconomicFactor
 import com.amond.kmpbook.domain.model.causal.CausalMarketRegimeSnapshot
 import com.amond.kmpbook.domain.model.causal.CausalSignalDirection
@@ -38,6 +43,7 @@ import com.amond.kmpbook.domain.model.fund.ReferencePortfolioActionKind
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioPlan
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioPosition
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioRecord
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioLimits
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioState
 import com.amond.kmpbook.domain.model.fundproduct.DailyResetCalendar
 import com.amond.kmpbook.domain.model.fundproduct.CashCollateralizedPutSpreadLifecycle
@@ -148,7 +154,6 @@ import com.amond.kmpbook.domain.model.trading.TradeSettlementKind
 import com.amond.kmpbook.domain.simulation.event.DefaultEventTemplates
 import com.amond.kmpbook.domain.simulation.event.EventEngine
 import com.amond.kmpbook.domain.simulation.fund.BenchmarkMethodologyCompiler
-import com.amond.kmpbook.domain.simulation.fund.ReferencePortfolioCalendar
 import com.amond.kmpbook.domain.simulation.fund.ReferencePortfolioEngine
 import com.amond.kmpbook.domain.simulation.reference.EquityReferenceBookEngine
 import com.amond.kmpbook.domain.simulation.reference.FundOfFundsBookEngine
@@ -1634,7 +1639,10 @@ private fun validateInstrumentFinancialStates(
     ) {
         return "미소비 상장상품 설정·환매 충격의 종목·비율이 유효하지 않습니다."
     }
-    validateReferencePortfolioPersistenceState(state, catalog)?.let { violation -> return violation }
+    val methodologyRegistry = catalog?.equityMethodologyRegistry ?: BuiltInEquityMethodologies.registry
+    validateReferencePortfolioPersistenceState(state, catalog, methodologyRegistry)?.let { violation ->
+        return violation
+    }
     validateDailyResetPersistenceState(state, stocksById, catalog)?.let { violation -> return violation }
     validateOptionStrategyPersistenceState(state, stocksById, catalog)?.let { violation ->
         return violation
@@ -1773,8 +1781,9 @@ private fun validateDistributionEvaluationPersistenceState(
 private fun validateReferencePortfolioPersistenceState(
     state: SimulatorUiState,
     catalog: InstrumentCatalogSnapshot?,
+    methodologyRegistry: EquityMethodologyRegistry,
 ): String? {
-    val engine = ReferencePortfolioEngine.forCampaignSeed(state.options.seed)
+    val engine = ReferencePortfolioEngine.forCampaignSeed(state.options.seed, methodologyRegistry)
     val definitionsByPortfolioId: Map<String, BenchmarkDefinition>? = catalog
         ?.benchmarksInEvaluationOrder
         ?.filter { definition -> definition.engineKind == BenchmarkEngineKind.EQUITY_METHODOLOGY }
@@ -1790,6 +1799,20 @@ private fun validateReferencePortfolioPersistenceState(
     ) {
         return "하나의 벤치마크 버전에 둘 이상의 기준 포트폴리오 상태가 있습니다."
     }
+    val compiledByPortfolioId = definitionsByPortfolioId?.mapValues { (_, definition) ->
+        runCatching {
+            BenchmarkMethodologyCompiler.compile(definition, methodologyRegistry)
+        }.getOrNull()
+    }
+    if (compiledByPortfolioId?.values?.any { compiled -> compiled == null } == true) {
+        return "기준 포트폴리오의 주식 방법론을 컴파일할 수 없습니다."
+    }
+    val constraintsByPortfolioId = compiledByPortfolioId?.mapValues { (_, compiled) ->
+        compiled?.constraints
+    }
+    if (constraintsByPortfolioId?.values?.any { constraints -> constraints == null } == true) {
+        return "기준 포트폴리오의 provider 제약을 복원할 수 없습니다."
+    }
 
     fun reconstructPosition(position: ReferencePortfolioPosition): ReferencePortfolioPosition =
         ReferencePortfolioPosition(
@@ -1803,15 +1826,16 @@ private fun validateReferencePortfolioPersistenceState(
 
     fun validatePositions(
         positions: List<ReferencePortfolioPosition>,
-        methodology: EquityMethodologyProfile?,
+        constraints: EquityMethodologyPortfolioConstraints?,
         enteredNoLaterThan: kotlinx.datetime.LocalDate,
         label: String,
         enforceTargetCaps: Boolean,
     ): String? {
-        val maximumCount = methodology?.targetConstituentCount
-            ?: EquityMethodologyProfile.MAX_CONSTITUENTS
-        if (positions.size !in 1..maximumCount) {
-            return "$label 구성종목 수가 방법론 목표 범위를 벗어났습니다."
+        val minimumCount = constraints?.minimumConstituentCount ?: 1
+        val maximumCount = constraints?.maximumConstituentCount
+            ?: ReferencePortfolioLimits.MAX_CONSTITUENTS
+        if (positions.size !in minimumCount..maximumCount) {
+            return "$label 구성종목 수가 방법론의 provider 제약 범위를 벗어났습니다."
         }
         val reconstructed = runCatching { positions.map(::reconstructPosition) }.getOrNull()
         if (reconstructed != positions) {
@@ -1823,7 +1847,9 @@ private fun validateReferencePortfolioPersistenceState(
         if (positions.any { position -> !engine.hasCanonicalReferenceIdentity(position) }) {
             return "$label 구성종목이 캠페인 기준자산 원본에 없습니다."
         }
-        if (methodology != null) {
+        if (constraints != null) {
+            val individualCap = constraints.individualWeightCap ?: 1.0
+            val sectorCap = constraints.sectorWeightCap ?: 1.0
             val recappingCapacity = positions
                 .groupBy { position ->
                     checkNotNull(engine.referenceAssetIdentity(position.assetId)).methodologySector
@@ -1831,8 +1857,8 @@ private fun validateReferencePortfolioPersistenceState(
                 .values
                 .sumOf { sectorPositions ->
                     minOf(
-                        methodology.sectorWeightCap,
-                        sectorPositions.size * methodology.individualWeightCap,
+                        sectorCap,
+                        sectorPositions.size * individualCap,
                     )
                 }
             if (recappingCapacity < 1.0 - REFERENCE_WEIGHT_ALLOCATION_EPSILON) {
@@ -1840,9 +1866,9 @@ private fun validateReferencePortfolioPersistenceState(
             }
             if (enforceTargetCaps) {
                 val epsilon = ReferencePortfolioState.WEIGHT_EPSILON
-                if (positions.any { position ->
-                        position.targetWeight > methodology.individualWeightCap + epsilon
-                    }
+                if (constraints.individualWeightCap?.let { cap ->
+                        positions.any { position -> position.targetWeight > cap + epsilon }
+                    } == true
                 ) {
                     return "$label 목표 비중이 방법론의 개별 종목 상한을 초과했습니다."
                 }
@@ -1851,7 +1877,10 @@ private fun validateReferencePortfolioPersistenceState(
                 }.values.map { sectorPositions ->
                     sectorPositions.sumOf(ReferencePortfolioPosition::targetWeight)
                 }
-                if (sectorTargets.any { target -> target > methodology.sectorWeightCap + epsilon }) {
+                if (constraints.sectorWeightCap?.let { cap ->
+                        sectorTargets.any { target -> target > cap + epsilon }
+                    } == true
+                ) {
                     return "$label 목표 비중이 방법론의 섹터 상한을 초과했습니다."
                 }
             }
@@ -1859,17 +1888,21 @@ private fun validateReferencePortfolioPersistenceState(
         return null
     }
 
-    val currentNewYorkDate = GameCalendar.marketLocalDateTime(Market.NYSE, state.currentTime).date
+    // Intrinsic validation has no benchmark definitions to resolve. Built-ins are currently U.S.-scheduled;
+    // full validation below always replaces this structural-only date with the registered schedule's market date.
+    val intrinsicCurrentDate = GameCalendar.marketLocalDateTime(Market.NYSE, state.currentTime).date
     val recordsByPortfolio = state.referencePortfolioLedger.groupBy(ReferencePortfolioRecord::portfolioId)
     for ((portfolioId, portfolio) in state.referencePortfolioStates) {
         val definition = definitionsByPortfolioId?.get(portfolioId)
         if (definitionsByPortfolioId != null && definition == null) {
             return "기준 포트폴리오 상태에 현재 카탈로그가 알 수 없는 ID가 있습니다."
         }
-        val methodology = definition?.let { benchmark ->
-            runCatching { BenchmarkMethodologyCompiler.compileSchd(benchmark) }.getOrNull()
-                ?: return "기준 포트폴리오의 주식 방법론을 컴파일할 수 없습니다."
-        }
+        val compiled = compiledByPortfolioId?.get(portfolioId)
+        val methodology = compiled?.profile
+        val policy = compiled?.policy
+        val schedule = compiled?.schedule
+        val constraints = constraintsByPortfolioId?.get(portfolioId)
+        val currentDate = schedule?.marketDate(state.currentTime) ?: intrinsicCurrentDate
         if (portfolio.portfolioId != portfolioId ||
             portfolioId != ReferencePortfolioEngine.portfolioIdFor(portfolio.benchmarkRef) ||
             definition?.ref?.let { ref -> ref != portfolio.benchmarkRef } == true ||
@@ -1877,25 +1910,59 @@ private fun validateReferencePortfolioPersistenceState(
         ) {
             return "기준 포트폴리오의 ID·벤치마크·기준 시각이 일치하지 않습니다."
         }
-        if (methodology != null) {
-            if (portfolio.lastReconstitutionDate !in methodology.effectiveFrom..currentNewYorkDate ||
-                portfolio.lastRebalanceDate !in methodology.effectiveFrom..currentNewYorkDate ||
-                portfolio.nextReconstitutionDate < currentNewYorkDate ||
-                portfolio.nextRebalanceDate < currentNewYorkDate ||
-                !ReferencePortfolioCalendar.isScheduledReconstitutionDate(
-                    methodology,
-                    portfolio.lastReconstitutionDate,
-                ) ||
-                portfolio.nextReconstitutionDate != ReferencePortfolioCalendar.nextReconstitutionDate(
-                    methodology,
-                    portfolio.lastReconstitutionDate,
-                ) ||
-                portfolio.nextRebalanceDate != ReferencePortfolioCalendar.nextRebalanceDate(
-                    methodology,
-                    portfolio.lastRebalanceDate,
+        val initialAction = if (methodology != null && schedule != null) {
+            runCatching { schedule.initialScheduledAction(methodology) }.getOrNull()
+                ?: return "기준 포트폴리오의 최초 정기 행동을 복원할 수 없습니다."
+        } else {
+            null
+        }
+        val nextReconstitutionAction = if (methodology != null && schedule != null) {
+            runCatching {
+                schedule.nextScheduledAction(
+                    profile = methodology,
+                    afterExclusive = portfolio.lastReconstitutionDate,
+                    kind = ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION,
                 )
+            }.getOrNull() ?: return "기준 포트폴리오의 다음 정기 재구성을 복원할 수 없습니다."
+        } else {
+            null
+        }
+        val nextScheduledAction = if (methodology != null && schedule != null) {
+            runCatching {
+                schedule.nextScheduledAction(
+                    profile = methodology,
+                    afterExclusive = portfolio.lastRebalanceDate,
+                )
+            }.getOrNull() ?: return "기준 포트폴리오의 다음 정기 행동을 복원할 수 없습니다."
+        } else {
+            null
+        }
+        if (methodology != null && schedule != null && initialAction != null &&
+            nextReconstitutionAction != null && nextScheduledAction != null
+        ) {
+            val lastReconstitutionAction = runCatching {
+                schedule.scheduledActionOn(methodology, portfolio.lastReconstitutionDate)
+            }.getOrNull()
+            val storedNextReconstitutionAction = runCatching {
+                schedule.scheduledActionOn(methodology, portfolio.nextReconstitutionDate)
+            }.getOrNull()
+            val storedNextScheduledAction = runCatching {
+                schedule.scheduledActionOn(methodology, portfolio.nextRebalanceDate)
+            }.getOrNull()
+            if (initialAction.kind != ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION ||
+                initialAction.effectiveDate != methodology.effectiveFrom ||
+                nextReconstitutionAction.kind != ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION ||
+                storedNextReconstitutionAction != nextReconstitutionAction ||
+                storedNextScheduledAction != nextScheduledAction ||
+                portfolio.lastReconstitutionDate !in initialAction.effectiveDate..currentDate ||
+                portfolio.lastRebalanceDate !in initialAction.effectiveDate..currentDate ||
+                portfolio.nextReconstitutionDate < currentDate ||
+                portfolio.nextRebalanceDate < currentDate ||
+                lastReconstitutionAction?.kind != ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION ||
+                portfolio.nextReconstitutionDate != nextReconstitutionAction.effectiveDate ||
+                portfolio.nextRebalanceDate != nextScheduledAction.effectiveDate
             ) {
-                return "기준 포트폴리오의 이전·다음 재구성 일정이 방법론 달력과 일치하지 않습니다."
+                return "기준 포트폴리오의 이전·다음 정기 행동이 provider 일정과 일치하지 않습니다."
             }
             if (portfolio.revision == 0L) {
                 val campaignStart = GameCalendar.startInstant
@@ -1903,7 +1970,7 @@ private fun validateReferencePortfolioPersistenceState(
                     engine.initialState(
                         portfolioId = portfolioId,
                         definition = checkNotNull(definition),
-                        atDate = GameCalendar.marketLocalDateTime(Market.NYSE, campaignStart).date,
+                        atDate = schedule.marketDate(campaignStart),
                         at = campaignStart,
                     )
                 }.getOrNull() ?: return "기준 포트폴리오의 캠페인 시작 구성을 재구축할 수 없습니다."
@@ -1916,13 +1983,12 @@ private fun validateReferencePortfolioPersistenceState(
             }
         }
 
-        val records = recordsByPortfolio[portfolioId].orEmpty()
         val currentCapsApply = portfolio.lastAppliedActionKind !=
-            ReferencePortfolioActionKind.EXTRAORDINARY_DELETION
+            ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL
         validatePositions(
             positions = portfolio.positions,
-            methodology = methodology,
-            enteredNoLaterThan = currentNewYorkDate,
+            constraints = constraints,
+            enteredNoLaterThan = currentDate,
             label = "현재 기준 포트폴리오",
             enforceTargetCaps = currentCapsApply,
         )?.let { violation -> return violation }
@@ -1933,65 +1999,61 @@ private fun validateReferencePortfolioPersistenceState(
         ) {
             return "같은 종류의 기준 포트폴리오 계획을 둘 이상 대기시킬 수 없습니다."
         }
-        if (methodology != null) {
-            val pendingAnnual = portfolio.pendingPlans.singleOrNull { plan ->
-                plan.kind == ReferencePortfolioActionKind.ANNUAL_RECONSTITUTION
+        if (methodology != null && schedule != null && nextReconstitutionAction != null &&
+            nextScheduledAction != null
+        ) {
+            val pendingReconstitution = portfolio.pendingPlans.singleOrNull { plan ->
+                plan.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION
             }
-            val annualReferenceDate = ReferencePortfolioCalendar.annualWeightReferenceDate(
-                portfolio.nextReconstitutionDate,
-            )
-            val annualShouldBePending = ReferencePortfolioCalendar.hasReachedUsRegularClose(
-                annualReferenceDate,
+            val reconstitutionShouldBePending = schedule.hasReachedRegularClose(
+                nextReconstitutionAction.weightReferenceDate,
                 state.currentTime,
             )
-            if (ReferencePortfolioCalendar.hasPassedUsRegularOpen(
-                    portfolio.nextReconstitutionDate,
+            if (schedule.hasPassedRegularOpen(
+                    nextReconstitutionAction.effectiveDate,
                     state.currentTime,
-                ) || (pendingAnnual != null) != annualShouldBePending
+                ) || (pendingReconstitution != null) != reconstitutionShouldBePending
             ) {
-                return "연례 기준 포트폴리오 계획의 생성·적용 단계가 현재 시각과 다릅니다."
+                return "정기 재구성 계획의 생성·적용 단계가 현재 시각과 다릅니다."
             }
-            val nextScheduledMonth = portfolio.nextRebalanceDate.month.ordinal + 1
-            if (nextScheduledMonth != methodology.annualReconstitutionMonth) {
-                val pendingQuarterly = portfolio.pendingPlans.singleOrNull { plan ->
-                    plan.kind == ReferencePortfolioActionKind.QUARTERLY_REBALANCE
+            if (nextScheduledAction.kind == ReferencePortfolioActionKind.SCHEDULED_REWEIGHT) {
+                val pendingReweight = portfolio.pendingPlans.singleOrNull { plan ->
+                    plan.kind == ReferencePortfolioActionKind.SCHEDULED_REWEIGHT
                 }
-                val quarterlyReferenceDate = ReferencePortfolioCalendar.quarterlyWeightReferenceDate(
-                    portfolio.nextRebalanceDate,
-                )
-                val quarterlyShouldBePending = ReferencePortfolioCalendar.hasReachedUsRegularClose(
-                    quarterlyReferenceDate,
+                val reweightShouldBePending = schedule.hasReachedRegularClose(
+                    nextScheduledAction.weightReferenceDate,
                     state.currentTime,
                 )
-                if (ReferencePortfolioCalendar.hasPassedUsRegularOpen(
-                        portfolio.nextRebalanceDate,
+                if (schedule.hasPassedRegularOpen(
+                        nextScheduledAction.effectiveDate,
                         state.currentTime,
-                    ) || (pendingQuarterly != null) != quarterlyShouldBePending
+                    ) || (pendingReweight != null) != reweightShouldBePending
                 ) {
-                    return "분기 기준 포트폴리오 계획의 생성·적용 단계가 현재 시각과 다릅니다."
+                    return "정기 비중조정 계획의 생성·적용 단계가 현재 시각과 다릅니다."
                 }
             }
         }
 
         for (plan in portfolio.pendingPlans) {
-            if (!ReferencePortfolioCalendar.hasReachedUsRegularClose(
-                    plan.weightReferenceDate,
-                    state.currentTime,
-                ) || ReferencePortfolioCalendar.hasPassedUsRegularOpen(
-                    plan.effectiveDate,
-                    state.currentTime,
-                )
-            ) {
+            val violatesPlanWindow = if (schedule != null) {
+                !schedule.hasReachedRegularClose(plan.weightReferenceDate, state.currentTime) ||
+                    schedule.hasPassedRegularOpen(plan.effectiveDate, state.currentTime)
+            } else {
+                plan.weightReferenceDate > currentDate || plan.effectiveDate < currentDate
+            }
+            if (violatesPlanWindow) {
                 return "대기 중 기준 포트폴리오 계획이 기준일 종가·효력일 개장 시각과 다릅니다."
             }
-            if (methodology != null) {
-                validateReferencePortfolioSchedule(
+            if (methodology != null && schedule != null) {
+                validateReferencePortfolioActionDates(
                     methodology = methodology,
+                    policy = checkNotNull(policy),
+                    schedule = schedule,
                     kind = plan.kind,
                     selectionDate = plan.selectionDate,
                     weightReferenceDate = plan.weightReferenceDate,
                     effectiveDate = plan.effectiveDate,
-                    currentDate = currentNewYorkDate,
+                    currentDate = currentDate,
                     pending = true,
                 )?.let { violation -> return violation }
             }
@@ -1999,25 +2061,26 @@ private fun validateReferencePortfolioPersistenceState(
                 "${plan.weightReferenceDate}:${plan.effectiveDate}" ||
                 plan.portfolioId != portfolioId ||
                 plan.benchmarkRef != portfolio.benchmarkRef ||
-                plan.kind == ReferencePortfolioActionKind.ANNUAL_RECONSTITUTION &&
+                plan.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION &&
                 plan.effectiveDate != portfolio.nextReconstitutionDate ||
-                plan.kind == ReferencePortfolioActionKind.QUARTERLY_REBALANCE &&
+                plan.kind == ReferencePortfolioActionKind.SCHEDULED_REWEIGHT &&
                 plan.effectiveDate != portfolio.nextRebalanceDate
             ) {
                 return "대기 중 기준 포트폴리오 계획의 ID·벤치마크·다음 일정 계보가 다릅니다."
             }
-            if (methodology != null &&
-                plan.kind == ReferencePortfolioActionKind.ANNUAL_RECONSTITUTION &&
-                plan.positions.size != methodology.targetConstituentCount
+            if (constraints?.scheduledSelectionCount?.let { expectedCount ->
+                    plan.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION &&
+                        plan.positions.size != expectedCount
+                } == true
             ) {
-                return "연례 재구성 계획은 방법론 목표 종목 수를 정확히 복원해야 합니다."
+                return "정기 재구성 계획은 방법론 목표 종목 수를 정확히 복원해야 합니다."
             }
             validatePositions(
                 positions = plan.positions,
-                methodology = methodology,
+                constraints = constraints,
                 enteredNoLaterThan = plan.effectiveDate,
                 label = "대기 중 기준 포트폴리오 계획",
-                enforceTargetCaps = plan.kind != ReferencePortfolioActionKind.EXTRAORDINARY_DELETION,
+                enforceTargetCaps = plan.kind != ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL,
             )?.let { violation -> return violation }
             val reconstructedPlan = runCatching {
                 ReferencePortfolioPlan(
@@ -2043,17 +2106,17 @@ private fun validateReferencePortfolioPersistenceState(
                 return "대기 중 기준 포트폴리오 계획의 편입·편출 목록이 현재 구성과 다릅니다."
             }
             when (plan.kind) {
-                ReferencePortfolioActionKind.ANNUAL_RECONSTITUTION -> Unit
-                ReferencePortfolioActionKind.QUARTERLY_REBALANCE,
-                ReferencePortfolioActionKind.DAILY_CAP_REBALANCE,
+                ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> Unit
+                ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
+                ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
                 -> if (plannedIds != currentIds) {
-                    return "비중 재조정 계획은 현재 구성종목을 바꿀 수 없습니다."
+                    return "비중조정 계획은 현재 구성종목을 바꿀 수 없습니다."
                 }
-                ReferencePortfolioActionKind.EXTRAORDINARY_DELETION -> if (
+                ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL -> if (
                     plan.addedAssetIds.isNotEmpty() || plan.removedAssetIds.isEmpty() ||
                     plannedIds != currentIds - plan.removedAssetIds.toSet()
                 ) {
-                    return "특별삭제 계획은 대체 편입 없이 현재 구성종목만 제거해야 합니다."
+                    return "특별 제거 계획은 대체 편입 없이 현재 구성종목만 제거해야 합니다."
                 }
             }
         }
@@ -2091,8 +2154,12 @@ private fun validateReferencePortfolioPersistenceState(
         return "기준 포트폴리오 원장에 현재 상태가 없는 포트폴리오가 있습니다."
     }
     for ((portfolioId, portfolio) in state.referencePortfolioStates) {
-        val definition = definitionsByPortfolioId?.get(portfolioId)
-        val methodology = definition?.let { BenchmarkMethodologyCompiler.compileSchd(it) }
+        val compiled = compiledByPortfolioId?.get(portfolioId)
+        val methodology = compiled?.profile
+        val policy = compiled?.policy
+        val schedule = compiled?.schedule
+        val constraints = constraintsByPortfolioId?.get(portfolioId)
+        val currentDate = schedule?.marketDate(state.currentTime) ?: intrinsicCurrentDate
         val records = recordsByPortfolio[portfolioId].orEmpty()
         if (records.size.toLong() != portfolio.revision ||
             records.withIndex().any { (index, record) -> record.revision != index + 1L } ||
@@ -2109,21 +2176,32 @@ private fun validateReferencePortfolioPersistenceState(
         if (constituentCount <= 0) {
             return "기준 포트폴리오 원장의 최초 구성종목 수 계보가 유효하지 않습니다."
         }
+        if (constraints?.let { providerConstraints ->
+                constituentCount !in providerConstraints.minimumConstituentCount..
+                    providerConstraints.maximumConstituentCount
+            } == true
+        ) {
+            return "기준 포트폴리오 원장의 최초 구성종목 수가 provider 제약을 벗어났습니다."
+        }
         for (record in records) {
+            val recordIsEffective = schedule?.hasPassedRegularOpen(record.effectiveDate, portfolio.asOf)
+                ?: (record.effectiveDate <= currentDate)
             if (record.portfolioId != portfolioId ||
                 record.benchmarkRef != portfolio.benchmarkRef ||
-                !ReferencePortfolioCalendar.hasPassedUsRegularOpen(record.effectiveDate, portfolio.asOf)
+                !recordIsEffective
             ) {
                 return "기준 포트폴리오 원장의 포트폴리오·벤치마크·시점이 유효하지 않습니다."
             }
-            if (methodology != null) {
-                validateReferencePortfolioSchedule(
+            if (methodology != null && schedule != null) {
+                validateReferencePortfolioActionDates(
                     methodology = methodology,
+                    policy = checkNotNull(policy),
+                    schedule = schedule,
                     kind = record.kind,
                     selectionDate = record.selectionDate,
                     weightReferenceDate = record.weightReferenceDate,
                     effectiveDate = record.effectiveDate,
-                    currentDate = currentNewYorkDate,
+                    currentDate = currentDate,
                     pending = false,
                 )?.let { violation -> return violation }
             }
@@ -2164,36 +2242,47 @@ private fun validateReferencePortfolioPersistenceState(
             if (record.resultingConstituentCount != expectedCount) {
                 return "기준 포트폴리오 원장의 구성종목 수가 편입·편출 계보와 다릅니다."
             }
-            if (methodology != null &&
-                record.kind == ReferencePortfolioActionKind.ANNUAL_RECONSTITUTION &&
-                record.resultingConstituentCount != methodology.targetConstituentCount
+            if (constraints?.let { providerConstraints ->
+                    record.resultingConstituentCount !in providerConstraints.minimumConstituentCount..
+                        providerConstraints.maximumConstituentCount
+                } == true
             ) {
-                return "연례 재구성 원장의 결과 종목 수가 방법론 목표와 다릅니다."
+                return "기준 포트폴리오 원장의 결과 종목 수가 provider 제약을 벗어났습니다."
+            }
+            if (constraints?.scheduledSelectionCount?.let { expectedCount ->
+                    record.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION &&
+                        record.resultingConstituentCount != expectedCount
+                } == true
+            ) {
+                return "정기 재구성 원장의 결과 종목 수가 방법론 목표와 다릅니다."
             }
             when (record.kind) {
-                ReferencePortfolioActionKind.ANNUAL_RECONSTITUTION -> Unit
-                ReferencePortfolioActionKind.QUARTERLY_REBALANCE,
-                ReferencePortfolioActionKind.DAILY_CAP_REBALANCE,
+                ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> Unit
+                ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
+                ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
                 -> if (record.addedAssetIds.isNotEmpty() || record.removedAssetIds.isNotEmpty()) {
-                    return "비중 재조정 원장은 구성종목을 바꿀 수 없습니다."
+                    return "비중조정 원장은 구성종목을 바꿀 수 없습니다."
                 }
-                ReferencePortfolioActionKind.EXTRAORDINARY_DELETION -> if (
+                ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL -> if (
                     record.addedAssetIds.isNotEmpty() || record.removedAssetIds.isEmpty()
                 ) {
-                    return "특별삭제 원장은 대체 편입 없이 기존 구성종목을 줄여야 합니다."
+                    return "특별 제거 원장은 대체 편입 없이 기존 구성종목을 줄여야 합니다."
                 }
             }
             constituentCount = record.resultingConstituentCount
         }
-        if (methodology != null) {
+        if (methodology != null && schedule != null) {
+            val initialEffectiveDate = runCatching {
+                schedule.initialScheduledAction(methodology).effectiveDate
+            }.getOrNull() ?: return "기준 포트폴리오의 최초 정기 행동을 복원할 수 없습니다."
             val lastRecordedReconstitution = records
                 .lastOrNull { record ->
-                    record.kind == ReferencePortfolioActionKind.ANNUAL_RECONSTITUTION
+                    record.kind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION
                 }
                 ?.effectiveDate
-                ?: methodology.effectiveFrom
+                ?: initialEffectiveDate
             if (portfolio.lastReconstitutionDate != lastRecordedReconstitution) {
-                return "마지막 연례 재구성일이 기준 포트폴리오 원장 계보와 다릅니다."
+                return "마지막 정기 재구성일이 기준 포트폴리오 원장 계보와 다릅니다."
             }
         }
         records.lastOrNull()?.let { latest ->
@@ -2211,8 +2300,10 @@ private fun validateReferencePortfolioPersistenceState(
     return null
 }
 
-private fun validateReferencePortfolioSchedule(
+private fun validateReferencePortfolioActionDates(
     methodology: EquityMethodologyProfile,
+    policy: EquityMethodologyPolicy,
+    schedule: EquityMethodologySchedule,
     kind: ReferencePortfolioActionKind,
     selectionDate: kotlinx.datetime.LocalDate,
     weightReferenceDate: kotlinx.datetime.LocalDate,
@@ -2226,36 +2317,37 @@ private fun validateReferencePortfolioSchedule(
         return "기준 포트폴리오 계획·원장의 선정·효력일이 현재 시점과 양립하지 않습니다."
     }
     val valid = when (kind) {
-        ReferencePortfolioActionKind.ANNUAL_RECONSTITUTION ->
-            ReferencePortfolioCalendar.isScheduledReconstitutionDate(methodology, effectiveDate) &&
-                selectionDate == ReferencePortfolioCalendar.thirdFriday(effectiveDate.year, 2) &&
-                weightReferenceDate ==
-                ReferencePortfolioCalendar.annualWeightReferenceDate(effectiveDate)
+        ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION,
+        ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
+        -> runCatching {
+            schedule.scheduledActionOn(methodology, effectiveDate)
+        }.getOrNull()?.let { canonical ->
+            canonical.kind == kind &&
+                canonical.selectionDate == selectionDate &&
+                canonical.weightReferenceDate == weightReferenceDate &&
+                canonical.effectiveDate == effectiveDate
+        } == true
 
-        ReferencePortfolioActionKind.QUARTERLY_REBALANCE ->
-            effectiveDate.month.ordinal + 1 != methodology.annualReconstitutionMonth &&
-                ReferencePortfolioCalendar.isScheduledRebalanceDate(methodology, effectiveDate) &&
-                selectionDate == weightReferenceDate &&
-                weightReferenceDate ==
-                ReferencePortfolioCalendar.quarterlyWeightReferenceDate(effectiveDate)
-
-        ReferencePortfolioActionKind.DAILY_CAP_REBALANCE ->
+        // Event-trigger inputs are not persisted, so the validator must not synthesize historical
+        // weights or candidate signals. Their exact decision truth is enforced when the engine
+        // creates the action; persisted state can independently rebind only structural dates and
+        // the provider-owned extraordinary-review cadence.
+        ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT ->
             selectionDate == weightReferenceDate &&
-                ReferencePortfolioCalendar.isUsTradingDate(weightReferenceDate) &&
-                effectiveDate == ReferencePortfolioCalendar.addUsTradingDays(weightReferenceDate, 2) &&
-                !ReferencePortfolioCalendar.isDailyCapFreezeDate(methodology, weightReferenceDate) &&
-                !ReferencePortfolioCalendar.isDailyCapFreezeDate(methodology, effectiveDate)
+                schedule.isTradingDate(weightReferenceDate) &&
+                schedule.isTradingDate(effectiveDate)
 
-        ReferencePortfolioActionKind.EXTRAORDINARY_DELETION -> {
-            val referenceMonth = weightReferenceDate.month.ordinal + 1
-            selectionDate == weightReferenceDate &&
-                weightReferenceDate == ReferencePortfolioCalendar.lastUsTradingDateOfMonth(
-                    weightReferenceDate.year,
-                    referenceMonth,
-                ) &&
-                effectiveDate == ReferencePortfolioCalendar.firstUsTradingDateOfNextMonth(
-                    weightReferenceDate,
+        ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL -> {
+            val canonicalReviewDate = runCatching {
+                policy.nextExtraordinaryRemovalReviewDate(
+                    profile = methodology,
+                    afterExclusive = weightReferenceDate.minus(1, DateTimeUnit.DAY),
                 )
+            }.getOrNull()
+            selectionDate == weightReferenceDate &&
+                canonicalReviewDate == weightReferenceDate &&
+                schedule.isTradingDate(weightReferenceDate) &&
+                schedule.isTradingDate(effectiveDate)
         }
     }
     return if (valid) null else {
@@ -4548,10 +4640,6 @@ private fun validateStructuredReferencePersistenceState(
             val definitions = catalog.benchmarksInEvaluationOrder
             val campaignStart = GameCalendar.startInstant
             val campaignStartDate = GameCalendar.campaignDate(campaignStart)
-            val campaignStartNewYorkDate = GameCalendar.marketLocalDateTime(
-                Market.NYSE,
-                campaignStart,
-            ).date
             val initialDynamics = MarketDynamicsEngine(
                 seed = DeterministicRandom.mixSeed(
                     state.options.seed,
@@ -4582,11 +4670,21 @@ private fun validateStructuredReferencePersistenceState(
                 definition.engineKind == BenchmarkEngineKind.EQUITY_METHODOLOGY
             }
             if (methodologyDefinitions.isNotEmpty()) {
-                ReferencePortfolioEngine.forCampaignSeed(state.options.seed).initialBook(
-                    definitions = methodologyDefinitions,
-                    atDate = campaignStartNewYorkDate,
-                    at = campaignStart,
-                ).states.values.forEach { initial ->
+                val methodologyEngine = ReferencePortfolioEngine.forCampaignSeed(
+                    state.options.seed,
+                    catalog.equityMethodologyRegistry,
+                )
+                methodologyDefinitions.forEach { definition ->
+                    val compiled = BenchmarkMethodologyCompiler.compile(
+                        definition,
+                        catalog.equityMethodologyRegistry,
+                    )
+                    val initial = methodologyEngine.initialState(
+                        portfolioId = ReferencePortfolioEngine.portfolioIdFor(definition.ref),
+                        definition = definition,
+                        atDate = compiled.schedule.marketDate(campaignStart),
+                        at = campaignStart,
+                    )
                     initialIncomeYields[initial.benchmarkRef] = initial.estimatedAnnualIncomeYield
                 }
             }
@@ -4631,7 +4729,7 @@ private fun validateStructuredReferencePersistenceState(
                     profiles = fundOfFundsDefinitions.associate { definition ->
                         definition.ref to requireNotNull(definition.fundOfFundsMethodologyProfile)
                     },
-                    atDate = campaignStartNewYorkDate,
+                    atDate = GameCalendar.marketLocalDateTime(Market.NYSE, campaignStart).date,
                     at = campaignStart,
                 ).states.forEach { (ref, initial) ->
                     initialIncomeYields[ref] = initial.estimatedAnnualIncomeYield
