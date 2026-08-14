@@ -20,9 +20,9 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.window.Window
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
-import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.amond.kmpbook.domain.data.DesktopInstrumentPackParser
 import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
@@ -30,7 +30,9 @@ import com.amond.kmpbook.domain.data.InstrumentPack
 import com.amond.kmpbook.ui.theme.MarketDesignSystem
 import com.amond.kmpbook.ui.theme.MarketLayout
 import com.amond.kmpbook.ui.theme.MarketSimulatorTheme
-import java.awt.Dimension
+import dev.nucleusframework.application.DecoratedWindow
+import dev.nucleusframework.application.NucleusBackend
+import dev.nucleusframework.application.nucleusApplication
 import kmpbook.composeapp.generated.resources.Res
 import kmpbook.composeapp.generated.resources.market_ledger_icon
 import kotlinx.coroutines.runBlocking
@@ -51,7 +53,7 @@ private fun loadBaseInstrumentCatalog(): Result<InstrumentCatalogSnapshot> = run
 
 fun main() {
     val baseCatalogResult = loadBaseInstrumentCatalog()
-    application {
+    nucleusApplication(backend = NucleusBackend.Tao) {
         var escapeRequest by remember { mutableIntStateOf(0) }
         var debugConsoleToggleRequest by remember { mutableIntStateOf(0) }
         var isDebugConsoleAvailable by remember { mutableStateOf(false) }
@@ -63,11 +65,16 @@ fun main() {
             height = MarketLayout.defaultWindowHeight,
             position = WindowPosition(Alignment.Center),
         )
-        Window(
+        DecoratedWindow(
             onCloseRequest = { if (!isExitBlocked) exitApplication() },
             title = "${MarketDesignSystem.NAME} · Stock Simulator",
             icon = painterResource(Res.drawable.market_ledger_icon),
             state = windowState,
+            minimumSize = DpSize(
+                MarketLayout.minimumWindowWidthPx.dp,
+                MarketLayout.minimumWindowHeightPx.dp,
+            ),
+            nativePopupLayers = true,
             onPreviewKeyEvent = { event ->
                 val isUnmodifiedGrave = event.key == Key.Grave &&
                     !event.isAltPressed &&
@@ -101,10 +108,6 @@ fun main() {
                 }
             },
         ) {
-            window.minimumSize = Dimension(
-                MarketLayout.minimumWindowWidthPx,
-                MarketLayout.minimumWindowHeightPx,
-            )
             val baseCatalog = baseCatalogResult.getOrNull()
             if (baseCatalog == null) {
                 MarketSimulatorTheme {

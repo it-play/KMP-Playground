@@ -1,4 +1,4 @@
-import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.dsl.TargetFormat
 
 val appVersion = providers.gradleProperty("appVersion").get()
 val appVersionMatch = Regex("""^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$""").matchEntire(appVersion)
@@ -12,6 +12,8 @@ plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.kotlinSerialization)
+    alias(libs.plugins.nucleus)
 }
 
 version = appVersion
@@ -34,11 +36,13 @@ kotlin {
             implementation(libs.compose.material3)
             implementation(libs.compose.ui)
             implementation(libs.compose.components.resources)
+            implementation(libs.compose.webview)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.datetime)
+            implementation(libs.kotlinx.serialization.json)
             implementation(libs.lucide.icons)
         }
         val desktopMain by getting
@@ -46,30 +50,33 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.gson)
             implementation(libs.kotlinx.coroutines.swing)
+            implementation(libs.nucleus.application)
+            implementation(libs.nucleus.core.runtime)
+            implementation(libs.nucleus.decorated.window.tao)
         }
     }
 }
 
-compose.desktop {
-    application {
-        mainClass = "com.amond.kmpbook.MainKt"
+nucleus.application {
+    mainClass = "com.amond.kmpbook.MainKt"
 
-        nativeDistributions {
-            targetFormats(TargetFormat.Msi)
-            modules("java.net.http")
-            packageName = "MarketLedger2040"
-            vendor = "Market Ledger 2040"
-            description = "Turn-based Korean and U.S. stock market simulator"
+    nativeDistributions {
+        artifactName = "MarketLedger2040-\${version}.\${ext}"
+        targetFormats(TargetFormat.Msi)
+        modules("java.instrument", "java.prefs", "java.sql", "jdk.unsupported")
+        cleanupNativeLibs = true
+        appName = "Market Ledger 2040"
+        packageName = "MarketLedger2040"
+        packageVersion = appVersion
+        vendor = "Market Ledger 2040"
+        description = "Turn-based Korean and U.S. stock market simulator"
 
-            windows {
-                iconFile.set(project.file("src/desktopMain/resources/icons/market-ledger.ico"))
-                console = false
-                dirChooser = true
-                perUserInstall = true
-                shortcut = true
-                menu = true
-                menuGroup = "Market Ledger 2040"
-                upgradeUuid = "9D509036-9E61-4F1B-9D02-86F71FC2C184"
+        windows {
+            iconFile.set(project.file("src/desktopMain/resources/icons/market-ledger.ico"))
+            console = false
+            upgradeUuid = "9D509036-9E61-4F1B-9D02-86F71FC2C184"
+            msi {
+                perMachine = false
             }
         }
     }
