@@ -65,6 +65,9 @@ import com.amond.kmpbook.domain.model.trading.OrderBook
 import com.amond.kmpbook.domain.model.trading.OrderSide
 import com.amond.kmpbook.domain.model.trading.OrderType
 import com.amond.kmpbook.domain.model.trading.TimeInForce
+import com.amond.kmpbook.domain.model.trading.Trade
+import com.amond.kmpbook.domain.simulation.market.MarketMicrostructure
+import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.presentation.metrics.CorporateMetricsSnapshot
 import com.amond.kmpbook.presentation.metrics.FundMetricsSnapshot
 import com.amond.kmpbook.presentation.metrics.InstrumentMetricsSnapshot
@@ -75,7 +78,7 @@ import com.amond.kmpbook.presentation.news.NewsStoryUi
 import com.amond.kmpbook.presentation.news.activityPriority
 import com.amond.kmpbook.presentation.protection.ProtectionDetailUi
 import com.amond.kmpbook.presentation.protection.ProtectionStatusBadgeUi
-import com.amond.kmpbook.ui.charts.CandlestickVolumeChart
+import com.amond.kmpbook.ui.charts.trading.TradingViewMarketChart
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
 import com.amond.kmpbook.ui.components.MarketButton
@@ -104,7 +107,9 @@ import com.amond.kmpbook.ui.theme.MarketType
 fun MarketTradingScreen(
     stocks: List<StockDefinition>,
     quotes: Map<String, Quote>,
+    hourlyPriceHistory: Map<String, List<PriceBar>>,
     chartPriceHistory: Map<String, Map<PriceBarInterval, List<PriceBar>>>,
+    trades: List<Trade>,
     selectedStockId: String?,
     holding: Holding?,
     orderBook: OrderBook?,
@@ -135,6 +140,7 @@ fun MarketTradingScreen(
 ) {
     val selectedStock = stocks.firstOrNull { it.id == selectedStockId } ?: stocks.firstOrNull()
     val quote = selectedStock?.let { quotes[it.id] }
+    val hourlyBars = selectedStock?.let { hourlyPriceHistory[it.id].orEmpty() }.orEmpty()
     val chartBars = selectedStock?.let { chartPriceHistory[it.id].orEmpty() }.orEmpty()
     var showSelectedProtectionDetail by remember(selectedStock?.id) { mutableStateOf(false) }
     var orderSide by remember(selectedStock?.id) { mutableStateOf(OrderSide.BUY) }
@@ -167,10 +173,15 @@ fun MarketTradingScreen(
                     story.relatedStocks.any { it.stockId == selectedStock.id }
                 }
             }
+            val selectedTrades = remember(trades, selectedStock.id) {
+                trades.filter { trade -> trade.stockId == selectedStock.id }
+            }
             StockChartPanel(
                 stock = selectedStock,
                 quote = quote,
+                hourlyBars = hourlyBars,
                 chartBars = chartBars,
+                trades = selectedTrades,
                 holding = holding,
                 relatedNews = selectedNews,
                 readRelatedNewsEventIds = readStockNewsEventIds[selectedStock.id].orEmpty(),
@@ -628,20 +639,34 @@ private fun FilterGroupLabel(text: String) {
 }
 
 @Composable
-private fun FilterCell(text: String, selected: Boolean, onClick: () -> Unit) {
+private fun FilterCell(
+    text: String,
+    selected: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
     Box(
         Modifier
             .clip(RoundedCornerShape(MarketRadii.pill))
             .background(if (selected) MarketColors.Navy else MarketColors.PaperMuted)
             .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
-            .selectable(selected = selected, role = Role.Button, onClick = onClick)
+            .selectable(
+                selected = selected,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            )
             .padding(horizontal = 7.dp, vertical = 5.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             if (selected) "✓ $text" else text,
             style = MarketType.caption,
-            color = if (selected) Color.White else MarketColors.InkMuted,
+            color = when {
+                selected -> Color.White
+                enabled -> MarketColors.InkMuted
+                else -> MarketColors.InkMuted.copy(alpha = 0.35f)
+            },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -725,7 +750,9 @@ private fun WatchlistRow(
 private fun StockChartPanel(
     stock: StockDefinition,
     quote: Quote,
+    hourlyBars: List<PriceBar>,
     chartBars: Map<PriceBarInterval, List<PriceBar>>,
+    trades: List<Trade>,
     holding: Holding?,
     relatedNews: List<NewsStoryUi>,
     readRelatedNewsEventIds: Set<String>,
@@ -738,6 +765,7 @@ private fun StockChartPanel(
     modifier: Modifier,
 ) {
     var candleInterval by remember { mutableStateOf(MarketCandleInterval.ONE_DAY) }
+    var chartRange by remember { mutableStateOf(MarketChartRange.THREE_MONTHS) }
     var selectedIntelligenceTab by remember { mutableStateOf(IntelligenceTab.IMPACT) }
     var isIntelligenceDeckExpanded by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
@@ -783,8 +811,34 @@ private fun StockChartPanel(
             onRelatedNewsListViewed(relatedNewsEventIds)
         }
     }
-    val displayedBars = remember(chartBars, candleInterval) {
-        chartBars[candleInterval.priceBarInterval].orEmpty()
+    val displayedBars = remember(hourlyBars, chartBars, candleInterval) {
+        when (candleInterval.priceBarInterval) {
+            PriceBarInterval.ONE_HOUR -> hourlyBars
+            else -> chartBars[candleInterval.priceBarInterval].orEmpty()
+        }
+    }
+    val availableChartRanges = remember(candleInterval, displayedBars) {
+        MarketChartRange.entries.filter { range ->
+            range.isAvailableFor(candleInterval, displayedBars)
+        }
+    }
+    val activeChartRange = remember(chartRange, availableChartRanges) {
+        resolveAvailableChartRange(chartRange, availableChartRanges)
+    }
+    LaunchedEffect(activeChartRange) {
+        if (chartRange != activeChartRange) chartRange = activeChartRange
+    }
+    val sessionVolume = chartBars[PriceBarInterval.ONE_DAY]
+        ?.lastOrNull()
+        ?.takeIf { bar ->
+            GameCalendar.marketLocalDateTime(stock.market, bar.startTime).date ==
+                GameCalendar.marketLocalDateTime(stock.market, quote.timestamp).date
+        }
+        ?.volume
+        ?: quote.volume
+    val chartPriceMinMove = remember(stock, displayedBars, quote.price) {
+        displayedBars.minOfOrNull { bar -> MarketMicrostructure.tickSize(stock, bar.low) }
+            ?: MarketMicrostructure.tickSize(stock, quote.price)
     }
     LedgerPanel(modifier, padding = 0.dp) {
         Box(Modifier.fillMaxSize()) {
@@ -901,7 +955,7 @@ private fun StockChartPanel(
                     Metric("시가", formatPrice(quote.open, stock.currency), Modifier.weight(1f))
                     Metric("고가", formatPrice(quote.high, stock.currency), Modifier.weight(1f), MarketColors.Rise)
                     Metric("저가", formatPrice(quote.low, stock.currency), Modifier.weight(1f), MarketColors.Fall)
-                    Metric("거래량", formatQuantity(quote.volume.toDouble()), Modifier.weight(1f))
+                    Metric("일 거래량", formatQuantity(sessionVolume.toDouble()), Modifier.weight(1f))
                     Metric("연 변동성", formatPercent(stock.volatility, withSign = false), Modifier.weight(1f))
                 }
             }
@@ -925,17 +979,57 @@ private fun StockChartPanel(
                         ChartLegendItem("MA5", MarketColors.Amber, line = true)
                         ChartLegendItem("MA20", MarketColors.Primary, line = true)
                     }
+                    Text(
+                        "${displayedBars.size}봉 · 저장된 데이터 기준",
+                        style = MarketType.caption,
+                        color = MarketColors.InkMuted,
+                    )
                 }
                 Spacer(Modifier.width(8.dp))
-                MarketCandleInterval.entries.forEach { item ->
-                    FilterCell(item.displayName, item == candleInterval) { candleInterval = item }
-                    Spacer(Modifier.width(3.dp))
+                Column(horizontalAlignment = Alignment.End) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilterGroupLabel("봉")
+                        Spacer(Modifier.width(5.dp))
+                        MarketCandleInterval.entries.forEach { item ->
+                            FilterCell(item.displayName, item == candleInterval) { candleInterval = item }
+                            Spacer(Modifier.width(3.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(3.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilterGroupLabel("범위")
+                        Spacer(Modifier.width(5.dp))
+                        MarketChartRange.entries.forEach { item ->
+                            FilterCell(
+                                text = item.displayName,
+                                selected = item == activeChartRange,
+                                enabled = item in availableChartRanges,
+                            ) {
+                                chartRange = item
+                            }
+                            Spacer(Modifier.width(3.dp))
+                        }
+                    }
+                    Text(
+                        "더블클릭: 전체 보기",
+                        style = MarketType.caption,
+                        color = MarketColors.InkMuted,
+                    )
                 }
             }
-            CandlestickVolumeChart(
-                bars = displayedBars,
+            TradingViewMarketChart(
+                symbol = stock.symbol,
+                resolution = candleInterval.displayName,
                 market = stock.market,
-                priceFormatter = { value -> formatPrice(value, stock.currency) },
+                priceMinMove = chartPriceMinMove,
+                rangeKey = activeChartRange.name,
+                bars = displayedBars,
+                visibleDurationSeconds = activeChartRange.durationSeconds,
+                averagePrice = holding?.averagePrice,
+                trades = trades,
+                relatedNews = relatedNews,
+                onOpenEvent = onOpenEvent,
+                onShowAll = { chartRange = MarketChartRange.ALL },
                 modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp),
             )
             LedgerDivider()
@@ -963,6 +1057,17 @@ private fun StockChartPanel(
             }
         }
     }
+}
+
+private fun resolveAvailableChartRange(
+    requested: MarketChartRange,
+    available: List<MarketChartRange>,
+): MarketChartRange {
+    if (requested in available) return requested
+    val requestedDuration = requested.durationSeconds ?: Long.MAX_VALUE
+    return available.firstOrNull { range ->
+        (range.durationSeconds ?: Long.MAX_VALUE) >= requestedDuration
+    } ?: MarketChartRange.ALL
 }
 
 @Composable

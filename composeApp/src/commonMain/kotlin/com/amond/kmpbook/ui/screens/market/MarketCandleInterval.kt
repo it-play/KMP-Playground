@@ -6,8 +6,9 @@ internal enum class MarketCandleInterval(
     val displayName: String,
     val priceBarInterval: PriceBarInterval,
 ) {
-    ONE_DAY("1일", PriceBarInterval.ONE_DAY),
-    ONE_WEEK("1주", PriceBarInterval.ONE_WEEK),
-    ONE_MONTH("1개월", PriceBarInterval.ONE_MONTH),
-    THREE_MONTHS("3개월", PriceBarInterval.THREE_MONTHS),
+    ONE_HOUR("1H", PriceBarInterval.ONE_HOUR),
+    ONE_DAY("1D", PriceBarInterval.ONE_DAY),
+    ONE_WEEK("1W", PriceBarInterval.ONE_WEEK),
+    ONE_MONTH("1M", PriceBarInterval.ONE_MONTH),
+    THREE_MONTHS("3M", PriceBarInterval.THREE_MONTHS),
 }

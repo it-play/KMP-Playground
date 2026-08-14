@@ -40,7 +40,7 @@ import com.amond.kmpbook.presentation.news.NewsEffectState
 import com.amond.kmpbook.presentation.news.NewsStoryUi
 import com.amond.kmpbook.presentation.news.NewsUiProjection
 import com.amond.kmpbook.ui.charts.AllocationDonut
-import com.amond.kmpbook.ui.charts.LineAreaChart
+import com.amond.kmpbook.ui.charts.SparklineChart
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
 import com.amond.kmpbook.ui.components.Metric
@@ -260,9 +260,8 @@ private fun EquityCurvePanel(
                 StatusLabel("최대낙폭 ${formatPercent(maxDrawdown, false)}", MarketColors.Amber)
             }
             Spacer(Modifier.height(12.dp))
-            LineAreaChart(
+            SparklineChart(
                 values = history.map { it.totalAssetValueKrw }.ifEmpty { listOf(currentAssets, currentAssets) },
-                baseline = history.firstOrNull()?.initialCapitalKrw,
                 modifier = Modifier.fillMaxWidth().weight(1f),
             )
             Spacer(Modifier.height(8.dp))

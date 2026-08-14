@@ -1,6 +1,5 @@
 package com.amond.kmpbook.ui.screens.game
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,17 +18,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amond.kmpbook.domain.model.market.Currency
 import com.amond.kmpbook.presentation.market.MarketIndexDataSource
 import com.amond.kmpbook.presentation.market.MarketIndexPoint
 import com.amond.kmpbook.presentation.market.MarketIndexSeries
+import com.amond.kmpbook.ui.charts.SparklineChart
 import com.amond.kmpbook.ui.components.LedgerPanel
 import com.amond.kmpbook.ui.format.formatPercent
 import com.amond.kmpbook.ui.format.formatPrice
@@ -117,8 +112,8 @@ private fun IndexSeriesPanel(
             }
             Spacer(Modifier.height(26.dp))
             if (series.points.size >= 2) {
-                IndexLineChart(
-                    points = series.points,
+                SparklineChart(
+                    values = series.points.map(MarketIndexPoint::close),
                     color = trendColor,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
@@ -138,59 +133,6 @@ private fun IndexSeriesPanel(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun IndexLineChart(
-    points: List<MarketIndexPoint>,
-    color: Color,
-    modifier: Modifier = Modifier,
-) {
-    Canvas(modifier) {
-        val values = points.map(MarketIndexPoint::close)
-        val minimum = values.minOrNull() ?: return@Canvas
-        val maximum = values.maxOrNull() ?: return@Canvas
-        val range = (maximum - minimum).takeIf { it > 0.0 } ?: 1.0
-        val topPadding = size.height * 0.08f
-        val bottom = size.height * 0.92f
-        val chartHeight = bottom - topPadding
-
-        repeat(5) { index ->
-            val y = topPadding + chartHeight * index / 4f
-            drawLine(MarketColors.Line.copy(alpha = 0.72f), Offset(0f, y), Offset(size.width, y), 1f)
-        }
-        repeat(4) { index ->
-            val x = size.width * index / 3f
-            drawLine(MarketColors.Line.copy(alpha = 0.4f), Offset(x, topPadding), Offset(x, bottom), 1f)
-        }
-
-        val plotted = points.mapIndexed { index, point ->
-            val x = if (points.size == 1) 0f else size.width * index / (points.size - 1).toFloat()
-            val y = bottom - ((point.close - minimum) / range).toFloat() * chartHeight
-            Offset(x, y)
-        }
-        val area = Path().apply {
-            moveTo(plotted.first().x, bottom)
-            lineTo(plotted.first().x, plotted.first().y)
-            plotted.drop(1).forEach { lineTo(it.x, it.y) }
-            lineTo(plotted.last().x, bottom)
-            close()
-        }
-        drawPath(
-            area,
-            brush = Brush.verticalGradient(
-                colors = listOf(color.copy(alpha = 0.22f), Color.Transparent),
-                startY = topPadding,
-                endY = bottom,
-            ),
-        )
-        val line = Path().apply {
-            moveTo(plotted.first().x, plotted.first().y)
-            plotted.drop(1).forEach { lineTo(it.x, it.y) }
-        }
-        drawPath(line, color, style = Stroke(width = 3f))
-        drawCircle(color, radius = 5f, center = plotted.last())
     }
 }
 
