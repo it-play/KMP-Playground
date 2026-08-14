@@ -26,12 +26,31 @@ object DefaultMarketHolidays {
         return CLOSED_DATES_BY_YEAR.getValue(year)
     }
 
+    /**
+     * 한국 금융업무 공휴일이다. KRX만 쉬는 연말 최종 거래일은 포함하지 않으므로
+     * 결제·지표금리처럼 거래소와 다른 업무 시계를 가진 엔진에서 사용한다.
+     */
+    fun koreanFinancialClosedDates(year: Int): Set<LocalDate> {
+        require(year in SUPPORTED_YEARS) { "기본 한국 금융업무 휴일 팩은 2026~2040년을 지원합니다." }
+        return KOREAN_FINANCIAL_CLOSED_DATES_BY_YEAR.getValue(year)
+    }
+
     private fun krx(year: Int): Set<LocalDate> {
+        val holidays = koreanFinancialHolidays(year).toMutableSet()
+
+        // KRX만 마지막 평일에 폐장한다. KOFR는 이 날에도 산출될 수 있다.
+        holidays += lastWeekdayOfYear(year)
+        return holidays
+    }
+
+    private fun koreanFinancialHolidays(year: Int): Set<LocalDate> {
         val holidays = mutableSetOf<LocalDate>()
 
         // Fixed public holidays. New Year's Day and Memorial Day currently do
         // not receive a substitute day under the frozen scenario.
         holidays += LocalDate(year, 1, 1)
+        // Korean financial institutions and KOFR input markets close on Labor Day.
+        holidays += LocalDate(year, 5, 1)
         holidays += LocalDate(year, 6, 6)
         val substituteEligible = listOf(
             LocalDate(year, 3, 1),
@@ -52,8 +71,6 @@ object DefaultMarketHolidays {
         addGroupSubstitute(holidays, chuseok)
         addWithKoreanSubstitute(holidays, lunar.buddhasBirthday)
 
-        // KRX closes the last business day of the calendar year.
-        holidays += lastWeekdayOfYear(year)
         return holidays.filterTo(mutableSetOf()) { it.year == year }
     }
 
@@ -209,6 +226,10 @@ object DefaultMarketHolidays {
         override fun hashCode(): Int = (key?.hashCode() ?: 0) xor (value?.hashCode() ?: 0)
         override fun toString(): String = "$key=$value"
     }
+
+    private val KOREAN_FINANCIAL_CLOSED_DATES_BY_YEAR: Map<Int, Set<LocalDate>> = CachedMap(
+        SUPPORTED_YEARS.associateWith { year -> CachedSet(koreanFinancialHolidays(year)) },
+    )
 
     private val CLOSED_DATES_BY_YEAR: Map<Int, Map<Market, Set<LocalDate>>> = CachedMap(
         SUPPORTED_YEARS.associateWith { year ->

@@ -12,9 +12,9 @@ import kotlin.time.Instant
 /**
  * 게임의 거시 상태를 채권 엔진이 소비하는 곡선 수준으로 변환한다.
  *
- * 현재 거시 모델이 중앙은행별 금리를 따로 보관하지 않으므로 통화별 평행 오프셋은 명시적인
- * 게임 보정값이다. 상품 파일의 듀레이션 출처와 마찬가지로 공식 곡선으로 가장하지 않으며,
- * 정책 결정·물가·성장·유동성 변화가 만기와 신용등급별로 다르게 전달되게 하는 경계다.
+ * KRW는 한국 정책금리를 직접 기준점으로 쓰고, 아직 별도 정책금리 상태가 없는 다른 통화만
+ * USD 정책금리에 명시적인 게임 보정값을 더한다. 공식 곡선으로 가장하지 않으며 정책 결정·
+ * 물가·성장·유동성 변화가 만기와 신용등급별로 다르게 전달되게 하는 경계다.
  */
 class FixedIncomeMarketModel {
     fun frame(
@@ -63,7 +63,12 @@ class FixedIncomeMarketModel {
             (tenor.years / 10.0).coerceIn(0.0, 1.0) * INFLATION_TERM_LOADING
         val growthSlope = macro.growthRate *
             (tenor.years / 30.0).coerceIn(0.0, 1.0) * GROWTH_TERM_LOADING
-        return (macro.policyRate + currencyOffset + termPremium + inflationSlope + growthSlope)
+        val policyAnchor = if (currency == ReferenceCurrency.KRW) {
+            macro.koreanPolicyRate
+        } else {
+            macro.policyRate
+        }
+        return (policyAnchor + currencyOffset + termPremium + inflationSlope + growthSlope)
             .coerceIn(MIN_RATE, MAX_RATE)
     }
 
@@ -110,7 +115,7 @@ class FixedIncomeMarketModel {
 
         private val CURRENCY_POLICY_OFFSETS = ReferenceCurrency.entries.associateWith { currency ->
             when (currency) {
-                ReferenceCurrency.KRW -> -0.0040
+                ReferenceCurrency.KRW -> 0.0
                 ReferenceCurrency.USD -> 0.0
                 ReferenceCurrency.EUR -> -0.0100
                 ReferenceCurrency.JPY -> -0.0200

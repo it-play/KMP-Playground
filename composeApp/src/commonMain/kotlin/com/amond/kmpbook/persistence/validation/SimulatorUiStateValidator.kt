@@ -139,6 +139,8 @@ import com.amond.kmpbook.domain.model.reference.FundOfFundsActionKind
 import com.amond.kmpbook.domain.model.reference.FundOfFundsPosition
 import com.amond.kmpbook.domain.model.reference.FundOfFundsRebalanceRecord
 import com.amond.kmpbook.domain.model.reference.FundOfFundsState
+import com.amond.kmpbook.domain.model.reference.KofrIndexBook
+import com.amond.kmpbook.domain.model.reference.KofrIndexState
 import com.amond.kmpbook.domain.model.reference.YieldCurveSnapshot
 import com.amond.kmpbook.domain.model.reference.ReferenceSourceCatalog
 import com.amond.kmpbook.domain.model.reference.ReferenceSourceSnapshot
@@ -177,12 +179,14 @@ import com.amond.kmpbook.domain.tax.dividend.DividendTaxClass
 import com.amond.kmpbook.domain.tax.dividend.DividendTaxRequest
 import com.amond.kmpbook.domain.time.DefaultMarketHolidays
 import com.amond.kmpbook.domain.time.GameCalendar
+import com.amond.kmpbook.domain.time.KofrBusinessCalendar
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.presentation.simulator.SimulatorRuntime
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
 import kotlin.math.exp
 import kotlin.math.abs
 import kotlin.math.round
+import kotlin.math.pow
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.nanoseconds
 import kotlinx.datetime.DateTimeUnit
@@ -193,6 +197,7 @@ import kotlinx.datetime.minus
 import kotlinx.datetime.number
 import kotlinx.datetime.plus
 import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 
 private val TERMINAL_LISTING_STATUSES: Set<ListingLifecycleStatus> = setOf(
     ListingLifecycleStatus.DELISTED,
@@ -438,11 +443,13 @@ private fun validateSimulatorUiStateInternal(
     ) {
         return "시세 맵의 ID·시각·유한 양수 가격·OHLC 포함관계·호가·거래소 tick이 유효하지 않습니다."
     }
-    if (state.priceHistory.any { (id, bars) ->
-            bars.any { it.stockId != id || it.step != PriceBarInterval.ONE_HOUR }
+    if (state.priceHistory.keys != stockIds || state.priceHistory.any { (id, bars) ->
+            bars.isEmpty() ||
+                bars.any { it.stockId != id || it.step != PriceBarInterval.ONE_HOUR } ||
+                bars.zipWithNext().any { (previous, next) -> previous.startTime >= next.startTime }
         }
     ) {
-        return "시간봉 가격 히스토리의 종목·주기가 올바르지 않습니다."
+        return "시간봉 가격 히스토리의 종목·주기·시간 순서가 올바르지 않습니다."
     }
     val chartIntervals = setOf(
         PriceBarInterval.ONE_DAY,
@@ -1663,6 +1670,7 @@ private fun validateInstrumentFinancialStates(
         return violation
     }
     validateFixedIncomeReferencePersistenceState(state, catalog)?.let { violation -> return violation }
+    validateKofrIndexPersistenceState(state, catalog)?.let { violation -> return violation }
     validateCommodityReferencePersistenceState(state, catalog)?.let { violation -> return violation }
     validateEquityReferencePersistenceState(state, catalog)?.let { violation -> return violation }
     validateFundOfFundsPersistenceState(state, catalog)?.let { violation -> return violation }
@@ -1723,7 +1731,11 @@ private fun validateDistributionEvaluationPersistenceState(
                 boundary < close
             } != false
             if (boundary > GameCalendar.startInstant && boundary <= state.currentTime &&
-                beforeBlockedClose && DistributionSchedule.isDistributionDate(candidate, frequency)
+                beforeBlockedClose && DistributionSchedule.isDistributionDate(
+                    date = candidate,
+                    frequency = frequency,
+                    calendar = stock.behavior.distributionCalendar,
+                )
             ) {
                 expected[stockId] = candidate
                 break
@@ -1741,7 +1753,11 @@ private fun validateDistributionEvaluationPersistenceState(
         val local = GameCalendar.marketLocalDateTime(stock.market, at)
         return at > GameCalendar.startInstant && at <= state.currentTime &&
             local.time == LocalTime(0, 0) &&
-            DistributionSchedule.isDistributionDate(local.date, stock.behavior.distributionFrequency) &&
+            DistributionSchedule.isDistributionDate(
+                date = local.date,
+                frequency = stock.behavior.distributionFrequency,
+                calendar = stock.behavior.distributionCalendar,
+            ) &&
             state.lastEvaluatedDistributionDateByStock[stockId]?.let { local.date <= it } == true
     }
 
@@ -3679,9 +3695,13 @@ private fun validateCashCollateralizedPutSpreadPersistenceState(
         if (catalog != null) {
             val cashDefinition = catalog.findBenchmark(terms.cashBenchmarkRef)
                 ?: return "현금담보 풋스프레드의 현금 benchmark가 카탈로그에 없습니다."
-            if (cashDefinition.engineKind != BenchmarkEngineKind.FIXED_INCOME_CURVE ||
-                cashDefinition.fixedIncomeProfile?.assetType != FixedIncomeAssetType.MONEY_MARKET
-            ) {
+            val isMoneyMarketCurve =
+                cashDefinition.engineKind == BenchmarkEngineKind.FIXED_INCOME_CURVE &&
+                    cashDefinition.fixedIncomeProfile?.assetType == FixedIncomeAssetType.MONEY_MARKET
+            val isOvernightRateIndex =
+                cashDefinition.engineKind == BenchmarkEngineKind.OVERNIGHT_RATE_INDEX &&
+                    cashDefinition.kofrIndexProfile != null
+            if (!isMoneyMarketCurve && !isOvernightRateIndex) {
                 return "현금담보 풋스프레드의 현금 benchmark가 실행 가능한 머니마켓 기준이 아닙니다."
             }
         }
@@ -4299,6 +4319,113 @@ private fun validateClosedEndFundPersistenceState(
             !close(replayedPreferred, cefState.preferredShareLiability)
         ) {
             return "CEF 원장 재생 결과와 현재 주식수·부채·우선주 잔액이 다릅니다."
+        }
+    }
+    return null
+}
+
+/** 저장 생성자를 우회한 KOFR fixing·공표·지수 상태를 공식 영업일 시계에 결속한다. */
+private fun validateKofrIndexPersistenceState(
+    state: SimulatorUiState,
+    catalog: InstrumentCatalogSnapshot?,
+): String? {
+    val definitionsByRef = catalog
+        ?.benchmarksInEvaluationOrder
+        ?.filter { definition -> definition.engineKind == BenchmarkEngineKind.OVERNIGHT_RATE_INDEX }
+        ?.associateBy(BenchmarkDefinition::ref)
+    if (definitionsByRef != null && state.kofrIndexStates.keys != definitionsByRef.keys) {
+        return "KOFR 지수 상태는 실행 가능한 익일물 금리 벤치마크마다 정확히 하나씩 필요합니다."
+    }
+    if (state.kofrIndexStates.size > KofrIndexBook.MAX_REFERENCES) {
+        return "KOFR 지수 상태 수가 저장 한도를 초과합니다."
+    }
+    if (state.kofrIndexStates.keys.any { ref ->
+            state.fixedIncomeReferenceStates.values.any { it.benchmarkRef == ref } ||
+                ref in state.equityReferenceStates || ref in state.commoditySpotReferenceStates ||
+                ref in state.futuresReferenceStates || ref in state.fundOfFundsStates ||
+                ref in state.alternativeRiskPremiaStates || ref in state.compositeReferenceStates
+        }
+    ) {
+        return "하나의 벤치마크 버전을 KOFR와 다른 기준 엔진이 동시에 소유할 수 없습니다."
+    }
+
+    for ((ref, saved) in state.kofrIndexStates) {
+        if (saved.benchmarkRef != ref || saved.asOf != state.currentTime) {
+            return "KOFR 지수 상태의 벤치마크 키 또는 기준 시각이 현재 캠페인과 다릅니다."
+        }
+        val reconstructed = runCatching {
+            KofrIndexState(
+                benchmarkRef = saved.benchmarkRef,
+                publishedRateAnnual = saved.publishedRateAnnual,
+                publishedRateObservationDate = saved.publishedRateObservationDate,
+                indexLevel = saved.indexLevel,
+                indexPublicationDate = saved.indexPublicationDate,
+                pendingRateAnnual = saved.pendingRateAnnual,
+                pendingRateObservationDate = saved.pendingRateObservationDate,
+                revision = saved.revision,
+                asOf = saved.asOf,
+            )
+        }.getOrNull()
+        if (reconstructed != saved) {
+            return "KOFR 지수 상태의 금리·지수·대기 fixing 불변식이 유효하지 않습니다."
+        }
+        val definition = definitionsByRef?.get(ref) ?: continue
+        val profile = definition.kofrIndexProfile
+            ?: return "KOFR 지수 벤치마크에 실행 프로필이 없습니다."
+        val local = state.currentTime.toLocalDateTime(GameCalendar.KOREA_TIME_ZONE)
+        val publicationTime = LocalTime(profile.publicationHourKst, profile.publicationMinuteKst)
+        var expectedPublicationDate = local.date
+        if (!KofrBusinessCalendar.isBusinessDate(expectedPublicationDate) || local.time < publicationTime) {
+            expectedPublicationDate = expectedPublicationDate.minus(1, DateTimeUnit.DAY)
+        }
+        expectedPublicationDate = KofrBusinessCalendar.latestBusinessDateOnOrBefore(expectedPublicationDate)
+        val expectedPublishedObservationDate =
+            KofrBusinessCalendar.previousBusinessDate(expectedPublicationDate)
+        var latestCapturedDate = local.date
+        if (!KofrBusinessCalendar.isBusinessDate(latestCapturedDate) ||
+            local.time < LocalTime(profile.observationCaptureHourKst, 0)
+        ) {
+            latestCapturedDate = latestCapturedDate.minus(1, DateTimeUnit.DAY)
+        }
+        latestCapturedDate = KofrBusinessCalendar.latestBusinessDateOnOrBefore(latestCapturedDate)
+        val expectedPendingDate = latestCapturedDate.takeIf {
+            it > expectedPublishedObservationDate
+        }
+        if (saved.indexPublicationDate != expectedPublicationDate ||
+            saved.publishedRateObservationDate != expectedPublishedObservationDate ||
+            saved.pendingRateObservationDate != expectedPendingDate ||
+            (saved.pendingRateAnnual == null) != (expectedPendingDate == null)
+        ) {
+            return "KOFR 지수 상태의 공표일·관측일·대기 fixing이 공식 영업일 시계와 다릅니다."
+        }
+        var expectedRevision = 0L
+        var date = GameCalendar.startInstant.toLocalDateTime(GameCalendar.KOREA_TIME_ZONE).date
+        while (date <= local.date) {
+            if (KofrBusinessCalendar.isBusinessDate(date)) {
+                val publicationAt = LocalDateTime(date, publicationTime)
+                    .toInstant(GameCalendar.KOREA_TIME_ZONE)
+                if (publicationAt > GameCalendar.startInstant && publicationAt <= state.currentTime) {
+                    expectedRevision += 1L
+                }
+            }
+            date = date.plus(1, DateTimeUnit.DAY)
+        }
+        if (saved.revision != expectedRevision) {
+            return "KOFR 지수 revision이 캠페인 공표 횟수와 일치하지 않습니다."
+        }
+        val scale = 10.0.pow(profile.indexDecimalPlaces)
+        if (abs(saved.indexLevel * scale - round(saved.indexLevel * scale)) > 1e-6) {
+            return "KOFR 지수 수준이 공식 소수점 자릿수로 반올림되지 않았습니다."
+        }
+        if (state.currentTime == GameCalendar.startInstant &&
+            (saved.publishedRateAnnual != profile.initialPublishedRateAnnual ||
+                saved.publishedRateObservationDate != profile.initialPublishedRateObservationDate ||
+                saved.indexLevel != profile.initialIndexLevel ||
+                saved.indexPublicationDate != profile.initialIndexPublicationDate ||
+                saved.pendingRateAnnual != profile.initialPendingRateAnnual ||
+                saved.pendingRateObservationDate != profile.initialPendingRateObservationDate)
+        ) {
+            return "KOFR 초기 공식 공표 snapshot이 카탈로그 anchor와 다릅니다."
         }
     }
     return null
@@ -5312,6 +5439,8 @@ private fun validateStructuredReferencePersistenceState(
             ).snapshot()
             val initialFxRates = SimulatorRuntime.initialFxRates(state.options.initialUsdKrw)
             val initialMacro = MacroEnvironment(
+                koreanPolicyRate = SimulatorRuntime.INITIAL_KOREAN_POLICY_RATE,
+                koreanPolicyRateChange = 0.0,
                 usdKrw = state.options.initialUsdKrw,
                 fxRatesToKrw = initialFxRates,
                 previousFxRatesToKrw = initialFxRates,
@@ -5504,6 +5633,7 @@ private fun validateStructuredReferencePersistenceState(
         state.fixedIncomeReferenceStates.values.forEach { value ->
             put(value.benchmarkRef, value.estimatedAnnualIncomeYield)
         }
+        state.kofrIndexStates.keys.forEach { ref -> put(ref, 0.0) }
         state.commoditySpotReferenceStates.keys.forEach { ref -> put(ref, 0.0) }
         state.futuresReferenceStates.keys.forEach { ref -> put(ref, 0.0) }
         state.fundOfFundsStates.forEach { (ref, value) -> put(ref, value.estimatedAnnualIncomeYield) }
@@ -5520,6 +5650,7 @@ private fun validateStructuredReferencePersistenceState(
                 },
             )
         }
+        state.kofrIndexStates.keys.forEach { ref -> put(ref, 0.0) }
         state.alternativeRiskPremiaStates.forEach { (ref, value) ->
             put(ref, value.effectiveDurationYears)
         }

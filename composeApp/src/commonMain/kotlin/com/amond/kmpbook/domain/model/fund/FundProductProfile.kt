@@ -34,6 +34,7 @@ class FundProductProfile(
     val closedEndFundMarketModelParameters: ClosedEndFundMarketModelParameters?,
     val optionStrategyTerms: OptionStrategyTerms?,
     val cashCollateralizedPutSpreadTerms: CashCollateralizedPutSpreadTerms?,
+    val operationProfile: FundOperationProfile? = null,
 ) {
     val returnTransforms: Set<FundReturnTransform> = returnTransforms
         .sortedBy(FundReturnTransform::ordinal)
@@ -100,6 +101,23 @@ class FundProductProfile(
                 }
             }
         }
+        operationProfile?.let { operation ->
+            require(
+                (replicationMode == FundReplicationMode.DERIVATIVE_SYNTHETIC) ==
+                    (operation.syntheticSwapFunding != null),
+            ) {
+                "파생 합성 복제 방식과 합성 스왑 funding 조건 존재 여부가 일치해야 합니다."
+            }
+            require(
+                operation.syntheticSwapFunding == null ||
+                    legalStructure == FundLegalStructure.OPEN_END_ETF,
+            ) { "합성 스왑 funding 조건은 개방형 ETF에만 지정할 수 있습니다." }
+            if (replicationMode == FundReplicationMode.ACTIVE_MANAGEMENT) {
+                require(operation.managementStyle == FundManagementStyle.ACTIVE) {
+                    "액티브 운용 복제 방식에는 ACTIVE 운용 방침이 필요합니다."
+                }
+            }
+        }
 
         when (legalStructure) {
             FundLegalStructure.OPEN_END_ETF -> {
@@ -156,7 +174,8 @@ class FundProductProfile(
             closedEndFundTerms == other.closedEndFundTerms &&
             closedEndFundMarketModelParameters == other.closedEndFundMarketModelParameters &&
             optionStrategyTerms == other.optionStrategyTerms &&
-            cashCollateralizedPutSpreadTerms == other.cashCollateralizedPutSpreadTerms
+            cashCollateralizedPutSpreadTerms == other.cashCollateralizedPutSpreadTerms &&
+            operationProfile == other.operationProfile
 
     override fun hashCode(): Int {
         var result = benchmarkRef.hashCode()
@@ -173,6 +192,7 @@ class FundProductProfile(
         result = 31 * result + (closedEndFundMarketModelParameters?.hashCode() ?: 0)
         result = 31 * result + (optionStrategyTerms?.hashCode() ?: 0)
         result = 31 * result + (cashCollateralizedPutSpreadTerms?.hashCode() ?: 0)
+        result = 31 * result + (operationProfile?.hashCode() ?: 0)
         return result
     }
 
@@ -186,7 +206,8 @@ class FundProductProfile(
             "closedEndFundTerms=$closedEndFundTerms, " +
             "closedEndFundMarketModelParameters=$closedEndFundMarketModelParameters, " +
             "optionStrategyTerms=$optionStrategyTerms, " +
-            "cashCollateralizedPutSpreadTerms=$cashCollateralizedPutSpreadTerms)"
+            "cashCollateralizedPutSpreadTerms=$cashCollateralizedPutSpreadTerms, " +
+            "operationProfile=$operationProfile)"
 
     companion object {
         const val MAX_TRACKING_ERROR: Double = 1.0

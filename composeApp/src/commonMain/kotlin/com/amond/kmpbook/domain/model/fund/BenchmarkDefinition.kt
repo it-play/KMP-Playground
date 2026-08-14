@@ -22,6 +22,7 @@ class BenchmarkDefinition(
     val equityMethodology: EquityMethodologyProfile? = null,
     val equityReferenceProfile: EquityReferenceProfile? = null,
     val fixedIncomeProfile: FixedIncomeReferenceProfile? = null,
+    val kofrIndexProfile: KofrIndexProfile? = null,
     val commoditySpotTerms: CommoditySpotReferenceTerms? = null,
     val futuresReferenceTerms: FuturesReferenceTerms? = null,
     val fundOfFundsMethodologyProfile: FundOfFundsMethodologyProfile? = null,
@@ -47,6 +48,7 @@ class BenchmarkDefinition(
                 equityMethodology,
                 equityReferenceProfile,
                 fixedIncomeProfile,
+                kofrIndexProfile,
                 commoditySpotTerms,
                 futuresReferenceTerms,
                 fundOfFundsMethodologyProfile,
@@ -99,6 +101,7 @@ class BenchmarkDefinition(
                 requireNotNull(equityMethodology) { "주식 방법론 엔진에는 상세 방법론이 필요합니다." }
                 require(equityReferenceProfile == null)
                 require(fixedIncomeProfile == null)
+                require(kofrIndexProfile == null)
                 require(
                     commoditySpotTerms == null && futuresReferenceTerms == null &&
                         fundOfFundsMethodologyProfile == null && compositeReferenceProfile == null &&
@@ -114,6 +117,7 @@ class BenchmarkDefinition(
                     "주식 기준 프로필과 벤치마크 지원 수준이 일치해야 합니다."
                 }
                 require(fixedIncomeProfile == null)
+                require(kofrIndexProfile == null)
                 require(
                     commoditySpotTerms == null && futuresReferenceTerms == null &&
                         fundOfFundsMethodologyProfile == null && compositeReferenceProfile == null &&
@@ -125,16 +129,32 @@ class BenchmarkDefinition(
                 requireNotNull(fixedIncomeProfile) {
                     "고정수익 곡선 엔진에는 실행 가능한 기준 프로필이 필요합니다."
                 }
+                require(kofrIndexProfile == null)
                 require(
                     commoditySpotTerms == null && futuresReferenceTerms == null &&
                         fundOfFundsMethodologyProfile == null && compositeReferenceProfile == null &&
                         alternativeRiskPremiaProfile == null,
                 )
             }
+            BenchmarkEngineKind.OVERNIGHT_RATE_INDEX -> {
+                require(
+                    equityMethodology == null && equityReferenceProfile == null &&
+                        fixedIncomeProfile == null && commoditySpotTerms == null &&
+                        futuresReferenceTerms == null && fundOfFundsMethodologyProfile == null &&
+                        compositeReferenceProfile == null && alternativeRiskPremiaProfile == null,
+                )
+                val profile = requireNotNull(kofrIndexProfile) {
+                    "익일물 금리 지수 엔진에는 KOFR 실행 프로필이 필요합니다."
+                }
+                require(profile.supportLevel == supportLevel) {
+                    "KOFR 프로필과 벤치마크 지원 수준이 일치해야 합니다."
+                }
+                require(profile.currency == baseCurrency)
+            }
             BenchmarkEngineKind.COMMODITY_SPOT -> {
                 require(
                     equityMethodology == null && equityReferenceProfile == null &&
-                        fixedIncomeProfile == null && futuresReferenceTerms == null &&
+                        fixedIncomeProfile == null && kofrIndexProfile == null && futuresReferenceTerms == null &&
                         fundOfFundsMethodologyProfile == null && compositeReferenceProfile == null &&
                         alternativeRiskPremiaProfile == null,
                 )
@@ -145,7 +165,7 @@ class BenchmarkDefinition(
             BenchmarkEngineKind.FUTURES_CURVE -> {
                 require(
                     equityMethodology == null && equityReferenceProfile == null &&
-                        fixedIncomeProfile == null && commoditySpotTerms == null &&
+                        fixedIncomeProfile == null && kofrIndexProfile == null && commoditySpotTerms == null &&
                         fundOfFundsMethodologyProfile == null && compositeReferenceProfile == null &&
                         alternativeRiskPremiaProfile == null,
                 )
@@ -156,7 +176,7 @@ class BenchmarkDefinition(
             BenchmarkEngineKind.FUND_OF_FUNDS_METHODOLOGY -> {
                 require(
                     equityMethodology == null && equityReferenceProfile == null &&
-                        fixedIncomeProfile == null && commoditySpotTerms == null &&
+                        fixedIncomeProfile == null && kofrIndexProfile == null && commoditySpotTerms == null &&
                         futuresReferenceTerms == null && compositeReferenceProfile == null &&
                         alternativeRiskPremiaProfile == null,
                 )
@@ -170,7 +190,7 @@ class BenchmarkDefinition(
             BenchmarkEngineKind.COMPOSITE_REFERENCE -> {
                 require(
                     equityMethodology == null && equityReferenceProfile == null &&
-                        fixedIncomeProfile == null && commoditySpotTerms == null &&
+                        fixedIncomeProfile == null && kofrIndexProfile == null && commoditySpotTerms == null &&
                         futuresReferenceTerms == null && fundOfFundsMethodologyProfile == null &&
                         alternativeRiskPremiaProfile == null,
                 )
@@ -184,7 +204,7 @@ class BenchmarkDefinition(
             BenchmarkEngineKind.ALTERNATIVE_RISK_PREMIA -> {
                 require(
                     equityMethodology == null && equityReferenceProfile == null &&
-                        fixedIncomeProfile == null && commoditySpotTerms == null &&
+                        fixedIncomeProfile == null && kofrIndexProfile == null && commoditySpotTerms == null &&
                         futuresReferenceTerms == null && fundOfFundsMethodologyProfile == null &&
                         compositeReferenceProfile == null,
                 )
@@ -197,7 +217,7 @@ class BenchmarkDefinition(
             }
             BenchmarkEngineKind.COARSE_FACTOR_PROXY -> require(
                 equityMethodology == null && equityReferenceProfile == null && fixedIncomeProfile == null &&
-                    commoditySpotTerms == null && futuresReferenceTerms == null &&
+                    kofrIndexProfile == null && commoditySpotTerms == null && futuresReferenceTerms == null &&
                     fundOfFundsMethodologyProfile == null && compositeReferenceProfile == null &&
                     alternativeRiskPremiaProfile == null,
             ) {
@@ -220,6 +240,7 @@ class BenchmarkDefinition(
             equityMethodology == other.equityMethodology &&
             equityReferenceProfile == other.equityReferenceProfile &&
             fixedIncomeProfile == other.fixedIncomeProfile &&
+            kofrIndexProfile == other.kofrIndexProfile &&
             commoditySpotTerms == other.commoditySpotTerms &&
             futuresReferenceTerms == other.futuresReferenceTerms &&
             fundOfFundsMethodologyProfile == other.fundOfFundsMethodologyProfile &&
@@ -238,6 +259,7 @@ class BenchmarkDefinition(
         result = 31 * result + (equityMethodology?.hashCode() ?: 0)
         result = 31 * result + (equityReferenceProfile?.hashCode() ?: 0)
         result = 31 * result + (fixedIncomeProfile?.hashCode() ?: 0)
+        result = 31 * result + (kofrIndexProfile?.hashCode() ?: 0)
         result = 31 * result + (commoditySpotTerms?.hashCode() ?: 0)
         result = 31 * result + (futuresReferenceTerms?.hashCode() ?: 0)
         result = 31 * result + (fundOfFundsMethodologyProfile?.hashCode() ?: 0)

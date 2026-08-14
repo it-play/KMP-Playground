@@ -25,17 +25,22 @@ import com.amond.kmpbook.domain.model.fund.CompositeSleeveDirection
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioLimits
 import com.amond.kmpbook.domain.model.fund.EquityReferenceRegion
 import com.amond.kmpbook.domain.model.fund.FundLegalStructure
+import com.amond.kmpbook.domain.model.fund.FundManagementStyle
+import com.amond.kmpbook.domain.model.fund.FundOperationProfile
+import com.amond.kmpbook.domain.model.fund.FundOperationProvenance
 import com.amond.kmpbook.domain.model.fund.FundOfFundsCategory
 import com.amond.kmpbook.domain.model.fund.FundOfFundsUniverse
 import com.amond.kmpbook.domain.model.fund.FundReferenceExposure
 import com.amond.kmpbook.domain.model.fund.FundReplicationMode
 import com.amond.kmpbook.domain.model.fund.FundReturnTransform
 import com.amond.kmpbook.domain.model.fund.FundReturnVariant
+import com.amond.kmpbook.domain.model.fund.ActiveReturnModelSupport
 import com.amond.kmpbook.domain.model.fund.MethodologyEquitySector
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioActionKind
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioCorporateActionConsiderationKind
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioCorporateActionKind
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioState
+import com.amond.kmpbook.domain.model.fund.SyntheticSwapFunding
 import com.amond.kmpbook.domain.model.fundproduct.DailyResetCalendar
 import com.amond.kmpbook.domain.model.fundproduct.DailyResetLifecycle
 import com.amond.kmpbook.domain.model.fundproduct.DailyResetModelParameterOrigin
@@ -97,6 +102,8 @@ import com.amond.kmpbook.domain.model.reference.FuturesReferenceState
 import com.amond.kmpbook.domain.model.reference.FuturesRollCalendar
 import com.amond.kmpbook.domain.model.reference.FundOfFundsActionKind
 import com.amond.kmpbook.domain.model.reference.FundOfFundsState
+import com.amond.kmpbook.domain.model.reference.KofrIndexBook
+import com.amond.kmpbook.domain.model.reference.KofrIndexState
 import com.amond.kmpbook.domain.model.reference.YieldCurveTenor
 import com.amond.kmpbook.domain.model.marketaction.MarketActionKind
 import com.amond.kmpbook.domain.model.marketaction.MarketActionTransition
@@ -2036,6 +2043,73 @@ actual class GameSaveStorage actual constructor() {
                 requiredInstant("asOf", "$path.asOf")
             }
         }
+        val kofrIndexKeys = linkedSetOf<BenchmarkRef>()
+        val kofrIndexEntries = state.requiredArray("kofrIndexStates")
+        if (kofrIndexEntries.size() > KofrIndexBook.MAX_REFERENCES) {
+            throw JsonParseException("필드 'state.kofrIndexStates'의 항목 수가 너무 많습니다.")
+        }
+        kofrIndexEntries.forEachIndexed { index, entryElement ->
+            val entryPath = "state.kofrIndexStates[$index]"
+            val entry = entryElement.takeIf(JsonElement::isJsonArray)?.asJsonArray
+                ?: throw JsonParseException("필드 '$entryPath'은 [benchmarkRef, state] 쌍이어야 합니다.")
+            if (entry.size() != 2) {
+                throw JsonParseException("필드 '$entryPath'은 정확히 두 항목이어야 합니다.")
+            }
+            val key = entry[0].requireObject("$entryPath[0]").requireBenchmarkRef("$entryPath[0]")
+            if (!kofrIndexKeys.add(key)) {
+                throw JsonParseException("필드 '$entryPath'의 benchmarkRef 키가 중복되었습니다.")
+            }
+            val valuePath = "$entryPath[1]"
+            entry[1].requireObject(valuePath).apply {
+                requireExactFields(KOFR_INDEX_STATE_FIELDS, valuePath)
+                if (requiredObject("benchmarkRef").requireBenchmarkRef("$valuePath.benchmarkRef") != key) {
+                    throw JsonParseException("필드 '$valuePath.benchmarkRef'가 map 키와 다릅니다.")
+                }
+                val publishedRate = requiredFiniteDouble(
+                    "publishedRateAnnual",
+                    "$valuePath.publishedRateAnnual",
+                )
+                if (publishedRate !in KofrIndexState.MIN_RATE..KofrIndexState.MAX_RATE) {
+                    throw JsonParseException("필드 '$valuePath.publishedRateAnnual'가 허용 범위를 벗어났습니다.")
+                }
+                val publishedObservationDate = requiredLocalDate(
+                    "publishedRateObservationDate",
+                    "$valuePath.publishedRateObservationDate",
+                )
+                val indexLevel = requiredFiniteDouble("indexLevel", "$valuePath.indexLevel")
+                if (indexLevel !in MIN_FUND_STRUCTURE_VALUE..MAX_FUND_STRUCTURE_VALUE) {
+                    throw JsonParseException("필드 '$valuePath.indexLevel'가 허용 양수 범위를 벗어났습니다.")
+                }
+                val indexPublicationDate = requiredLocalDate(
+                    "indexPublicationDate",
+                    "$valuePath.indexPublicationDate",
+                )
+                if (publishedObservationDate >= indexPublicationDate) {
+                    throw JsonParseException("필드 '$valuePath'의 공표 관측일은 지수 공표일보다 앞서야 합니다.")
+                }
+                val pendingRate = nullableFiniteDouble(
+                    "pendingRateAnnual",
+                    "$valuePath.pendingRateAnnual",
+                )
+                val pendingObservationDate = nullableLocalDate(
+                    "pendingRateObservationDate",
+                    "$valuePath.pendingRateObservationDate",
+                )
+                if ((pendingRate == null) != (pendingObservationDate == null)) {
+                    throw JsonParseException("필드 '$valuePath'의 대기 금리·관측일은 함께 존재하거나 null이어야 합니다.")
+                }
+                if (pendingRate != null && pendingRate !in KofrIndexState.MIN_RATE..KofrIndexState.MAX_RATE) {
+                    throw JsonParseException("필드 '$valuePath.pendingRateAnnual'가 허용 범위를 벗어났습니다.")
+                }
+                if (pendingObservationDate != null && pendingObservationDate <= publishedObservationDate) {
+                    throw JsonParseException("필드 '$valuePath.pendingRateObservationDate'는 공표 관측일보다 늦어야 합니다.")
+                }
+                if (requiredLong("revision", "$valuePath.revision") < 0L) {
+                    throw JsonParseException("필드 '$valuePath.revision'은 0 이상이어야 합니다.")
+                }
+                requiredInstant("asOf", "$valuePath.asOf")
+            }
+        }
         state.requiredArray("fixedIncomeRollLedger").forEachIndexed { index, element ->
             val path = "state.fixedIncomeRollLedger[$index]"
             element.requireObject(path).apply {
@@ -2799,6 +2873,8 @@ actual class GameSaveStorage actual constructor() {
             listOf(
                 "policyRate",
                 "policyRateChange",
+                "koreanPolicyRate",
+                "koreanPolicyRateChange",
                 "inflationRate",
                 "inflationSurprise",
                 "growthRate",
@@ -3256,6 +3332,62 @@ actual class GameSaveStorage actual constructor() {
                 throw JsonParseException(
                     "필드 '$path.trackingErrorAnnualVolatility'는 0과 1 사이여야 합니다.",
                 )
+            }
+        }
+        requireMember("operationProfile")
+        get("operationProfile").takeUnless(JsonElement::isJsonNull)?.let { element ->
+            val operationPath = "$path.operationProfile"
+            element.requireObject(operationPath).apply {
+                requireExactFields(FUND_OPERATION_PROFILE_FIELDS, operationPath)
+                val managementStyle = requiredEnum<FundManagementStyle>(
+                    "managementStyle",
+                    "$operationPath.managementStyle",
+                )
+                val syntheticSwapFunding = nullableEnum<SyntheticSwapFunding>(
+                    "syntheticSwapFunding",
+                    "$operationPath.syntheticSwapFunding",
+                )
+                val activeReturnSupport = requiredEnum<ActiveReturnModelSupport>(
+                    "activeReturnModelSupport",
+                    "$operationPath.activeReturnModelSupport",
+                )
+                val provenance = requiredEnum<FundOperationProvenance>(
+                    "provenance",
+                    "$operationPath.provenance",
+                )
+                val sourceElements = requiredArray("officialSourceUrls")
+                if (sourceElements.size() > FundOperationProfile.MAX_OFFICIAL_SOURCE_URLS) {
+                    throw JsonParseException("필드 '$operationPath.officialSourceUrls'의 항목이 너무 많습니다.")
+                }
+                val sourceUrls = sourceElements.mapIndexed { index, sourceElement ->
+                    sourceElement.requireStrictString("$operationPath.officialSourceUrls[$index]").also { url ->
+                        requireSaveHttpsUrl(url, "$operationPath.officialSourceUrls[$index]")
+                    }
+                }
+                if (sourceUrls != sourceUrls.sorted() || sourceUrls.distinct().size != sourceUrls.size) {
+                    throw JsonParseException(
+                        "필드 '$operationPath.officialSourceUrls'는 정렬된 중복 없는 URL이어야 합니다.",
+                    )
+                }
+                val managementValid = when (managementStyle) {
+                    FundManagementStyle.PASSIVE ->
+                        activeReturnSupport == ActiveReturnModelSupport.NOT_APPLICABLE
+                    FundManagementStyle.ACTIVE ->
+                        activeReturnSupport == ActiveReturnModelSupport.UNMODELED
+                }
+                val provenanceValid = when (provenance) {
+                    FundOperationProvenance.VERIFIED_PRODUCT_DISCLOSURE -> sourceUrls.isNotEmpty()
+                    FundOperationProvenance.UNVERIFIED -> sourceUrls.isEmpty()
+                }
+                val structureValid =
+                    (replicationMode == FundReplicationMode.DERIVATIVE_SYNTHETIC) ==
+                    (syntheticSwapFunding != null) &&
+                    (syntheticSwapFunding == null || legalStructure == FundLegalStructure.OPEN_END_ETF) &&
+                    (replicationMode != FundReplicationMode.ACTIVE_MANAGEMENT ||
+                        managementStyle == FundManagementStyle.ACTIVE)
+                if (!managementValid || !provenanceValid || !structureValid) {
+                    throw JsonParseException("필드 '$operationPath'의 운용·합성 스왑 구조가 유효하지 않습니다.")
+                }
             }
         }
         requireMember("dailyResetTerms")
@@ -4384,6 +4516,7 @@ actual class GameSaveStorage actual constructor() {
             "closedEndFundStates",
             "closedEndFundLedger",
             "fixedIncomeReferenceStates",
+            "kofrIndexStates",
             "fixedIncomeRollLedger",
             "commoditySpotReferenceStates",
             "futuresReferenceStates",
@@ -4568,6 +4701,15 @@ actual class GameSaveStorage actual constructor() {
             "closedEndFundMarketModelParameters",
             "optionStrategyTerms",
             "cashCollateralizedPutSpreadTerms",
+            "operationProfile",
+        )
+
+        val FUND_OPERATION_PROFILE_FIELDS: Set<String> = setOf(
+            "managementStyle",
+            "syntheticSwapFunding",
+            "activeReturnModelSupport",
+            "provenance",
+            "officialSourceUrls",
         )
 
         val DAILY_RESET_TERMS_FIELDS: Set<String> = setOf(
@@ -4802,6 +4944,8 @@ actual class GameSaveStorage actual constructor() {
         val MACRO_ENVIRONMENT_FIELDS: Set<String> = setOf(
             "policyRate",
             "policyRateChange",
+            "koreanPolicyRate",
+            "koreanPolicyRateChange",
             "inflationRate",
             "inflationSurprise",
             "growthRate",
@@ -5182,6 +5326,18 @@ actual class GameSaveStorage actual constructor() {
             "addedAssetIds",
             "effectiveAt",
             "revision",
+        )
+
+        val KOFR_INDEX_STATE_FIELDS: Set<String> = setOf(
+            "benchmarkRef",
+            "publishedRateAnnual",
+            "publishedRateObservationDate",
+            "indexLevel",
+            "indexPublicationDate",
+            "pendingRateAnnual",
+            "pendingRateObservationDate",
+            "revision",
+            "asOf",
         )
 
         val COMMODITY_SPOT_REFERENCE_STATE_FIELDS: Set<String> = setOf(

@@ -52,18 +52,24 @@ import com.amond.kmpbook.domain.model.fund.FundOfFundsSelectionModel
 import com.amond.kmpbook.domain.model.fund.FundOfFundsUniverse
 import com.amond.kmpbook.domain.model.fund.FundOfFundsWeightingModel
 import com.amond.kmpbook.domain.model.fund.FundLegalStructure
+import com.amond.kmpbook.domain.model.fund.FundManagementStyle
+import com.amond.kmpbook.domain.model.fund.FundOperationProfile
+import com.amond.kmpbook.domain.model.fund.FundOperationProvenance
 import com.amond.kmpbook.domain.model.fund.FundProductProfile
 import com.amond.kmpbook.domain.model.fund.FundReferenceUniverse
 import com.amond.kmpbook.domain.model.fund.FundReferenceExposure
 import com.amond.kmpbook.domain.model.fund.FundReplicationMode
 import com.amond.kmpbook.domain.model.fund.FundReturnTransform
 import com.amond.kmpbook.domain.model.fund.FundReturnVariant
+import com.amond.kmpbook.domain.model.fund.ActiveReturnModelSupport
 import com.amond.kmpbook.domain.model.fund.MethodologyEquitySector
+import com.amond.kmpbook.domain.model.fund.KofrIndexProfile
 import com.amond.kmpbook.domain.model.fund.MbsInterestOnlyModelParameterOrigin
 import com.amond.kmpbook.domain.model.fund.MbsInterestOnlyModelParameters
 import com.amond.kmpbook.domain.model.fund.MbsInterestOnlyPrepaymentModel
 import com.amond.kmpbook.domain.model.fund.MbsInterestOnlySleeveTerms
 import com.amond.kmpbook.domain.model.fund.MbsInterestOnlyTermsProvenance
+import com.amond.kmpbook.domain.model.fund.SyntheticSwapFunding
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioLimits
 import com.amond.kmpbook.domain.model.fundproduct.DailyResetCalendar
 import com.amond.kmpbook.domain.model.fundproduct.DailyResetModelParameterOrigin
@@ -100,6 +106,7 @@ import com.amond.kmpbook.domain.model.fundstructure.FundStructureModelParameterO
 import com.amond.kmpbook.domain.model.fundstructure.FundStructureTermsProvenance
 import com.amond.kmpbook.domain.model.instrument.CurrencyExposureLeg
 import com.amond.kmpbook.domain.model.instrument.DistributionFrequency
+import com.amond.kmpbook.domain.model.instrument.DistributionCalendar
 import com.amond.kmpbook.domain.model.instrument.EtfAssetClass
 import com.amond.kmpbook.domain.model.instrument.EtfExposureRegion
 import com.amond.kmpbook.domain.model.instrument.EtfFxProfile
@@ -284,13 +291,14 @@ object DesktopInstrumentPackParser {
             var equityMethodology: EquityMethodologyProfile? = null
             var equityReferenceProfile: EquityReferenceProfile? = null
             var fixedIncomeProfile: FixedIncomeReferenceProfile? = null
+            var kofrIndexProfile: KofrIndexProfile? = null
             var commoditySpotTerms: CommoditySpotReferenceTerms? = null
             var futuresReferenceTerms: FuturesReferenceTerms? = null
             var fundOfFundsMethodologyProfile: FundOfFundsMethodologyProfile? = null
             var compositeReferenceProfile: CompositeReferenceProfile? = null
             var alternativeRiskPremiaProfile: AlternativeRiskPremiaProfile? = null
 
-            readObject("벤치마크", BENCHMARK_FIELDS) { field ->
+            readObject("벤치마크", BENCHMARK_FIELDS, BENCHMARK_REQUIRED_FIELDS) { field ->
                 when (field) {
                     "benchmarkId" -> benchmarkId =
                         readString("benchmarkId", BenchmarkRef.MAX_ID_LENGTH, allowBlank = false)
@@ -319,6 +327,8 @@ object DesktopInstrumentPackParser {
                         readNullableObject("equityReferenceProfile", ::readEquityReferenceProfile)
                     "fixedIncomeProfile" -> fixedIncomeProfile =
                         readNullableObject("fixedIncomeProfile", ::readFixedIncomeReferenceProfile)
+                    "kofrIndexProfile" -> kofrIndexProfile =
+                        readNullableObject("kofrIndexProfile", ::readKofrIndexProfile)
                     "commoditySpotTerms" -> commoditySpotTerms =
                         readNullableObject("commoditySpotTerms", ::readCommoditySpotReferenceTerms)
                     "futuresReferenceTerms" -> futuresReferenceTerms =
@@ -347,6 +357,7 @@ object DesktopInstrumentPackParser {
                 equityMethodology = equityMethodology,
                 equityReferenceProfile = equityReferenceProfile,
                 fixedIncomeProfile = fixedIncomeProfile,
+                kofrIndexProfile = kofrIndexProfile,
                 commoditySpotTerms = commoditySpotTerms,
                 futuresReferenceTerms = futuresReferenceTerms,
                 fundOfFundsMethodologyProfile = fundOfFundsMethodologyProfile,
@@ -746,6 +757,108 @@ object DesktopInstrumentPackParser {
                 realRateLinked = realRateLinked ?: missing("realRateLinked"),
                 supportLevel = supportLevel ?: missing("supportLevel"),
                 durationProvenance = durationProvenance ?: missing("durationProvenance"),
+                officialSourceUrls = officialSourceUrls ?: missing("officialSourceUrls"),
+            )
+        }
+
+        private fun readKofrIndexProfile(): KofrIndexProfile {
+            var currency: ReferenceCurrency? = null
+            var dayCountBasis: Int? = null
+            var volumeTrimFractionPerTail: Double? = null
+            var calculationRatePercentDecimalPlaces: Int? = null
+            var publicationRatePercentDecimalPlaces: Int? = null
+            var publicationHourKst: Int? = null
+            var publicationMinuteKst: Int? = null
+            var observationCaptureHourKst: Int? = null
+            var indexBaseDate: LocalDate? = null
+            var indexBaseValue: Double? = null
+            var indexDecimalPlaces: Int? = null
+            var initialPublishedRateAnnual: Double? = null
+            var initialPublishedRateObservationDate: LocalDate? = null
+            var initialIndexLevel: Double? = null
+            var initialIndexPublicationDate: LocalDate? = null
+            var initialPendingRateAnnual: Double? = null
+            var initialPendingRateObservationDate: LocalDate? = null
+            var supportLevel: BenchmarkSupportLevel? = null
+            var modelAssumptionId: String? = null
+            var officialSourceUrls: Set<String>? = null
+
+            readObject("kofrIndexProfile", KOFR_INDEX_PROFILE_FIELDS) { field ->
+                when (field) {
+                    "currency" -> currency = readEnum<ReferenceCurrency>(field)
+                    "dayCountBasis" -> dayCountBasis = readExactIntInRange(field, 1, 1_000)
+                    "volumeTrimFractionPerTail" -> volumeTrimFractionPerTail =
+                        readFiniteDoubleInRange(field, 0.0, 0.499999999999)
+                    "calculationRatePercentDecimalPlaces" ->
+                        calculationRatePercentDecimalPlaces = readExactIntInRange(field, 0, 12)
+                    "publicationRatePercentDecimalPlaces" ->
+                        publicationRatePercentDecimalPlaces = readExactIntInRange(field, 0, 12)
+                    "publicationHourKst" -> publicationHourKst = readExactIntInRange(field, 0, 23)
+                    "publicationMinuteKst" -> publicationMinuteKst = readExactIntInRange(field, 0, 59)
+                    "observationCaptureHourKst" ->
+                        observationCaptureHourKst = readExactIntInRange(field, 0, 23)
+                    "indexBaseDate" -> indexBaseDate = readLocalDate(field)
+                    "indexBaseValue" -> indexBaseValue = readFiniteDoubleInRange(
+                        field,
+                        MIN_POSITIVE_FUND_STRUCTURE_VALUE,
+                        MAX_FUND_STRUCTURE_VALUE,
+                    )
+                    "indexDecimalPlaces" -> indexDecimalPlaces = readExactIntInRange(field, 0, 12)
+                    "initialPublishedRateAnnual" ->
+                        initialPublishedRateAnnual = readFiniteDoubleInRange(field, -0.05, 1.0)
+                    "initialPublishedRateObservationDate" ->
+                        initialPublishedRateObservationDate = readLocalDate(field)
+                    "initialIndexLevel" -> initialIndexLevel = readFiniteDoubleInRange(
+                        field,
+                        MIN_POSITIVE_FUND_STRUCTURE_VALUE,
+                        MAX_FUND_STRUCTURE_VALUE,
+                    )
+                    "initialIndexPublicationDate" -> initialIndexPublicationDate = readLocalDate(field)
+                    "initialPendingRateAnnual" ->
+                        initialPendingRateAnnual = readFiniteDoubleInRange(field, -0.05, 1.0)
+                    "initialPendingRateObservationDate" ->
+                        initialPendingRateObservationDate = readLocalDate(field)
+                    "supportLevel" -> supportLevel = readEnum<BenchmarkSupportLevel>(field)
+                    "modelAssumptionId" -> modelAssumptionId = readString(
+                        field,
+                        KofrIndexProfile.MAX_ASSUMPTION_ID_LENGTH,
+                        allowBlank = false,
+                    )
+                    "officialSourceUrls" -> officialSourceUrls = readSortedUniqueHttpsUrlSet(
+                        field,
+                        KofrIndexProfile.MAX_OFFICIAL_SOURCE_URLS,
+                    )
+                }
+            }
+            return KofrIndexProfile(
+                currency = currency ?: missing("currency"),
+                dayCountBasis = dayCountBasis ?: missing("dayCountBasis"),
+                volumeTrimFractionPerTail = volumeTrimFractionPerTail
+                    ?: missing("volumeTrimFractionPerTail"),
+                calculationRatePercentDecimalPlaces = calculationRatePercentDecimalPlaces
+                    ?: missing("calculationRatePercentDecimalPlaces"),
+                publicationRatePercentDecimalPlaces = publicationRatePercentDecimalPlaces
+                    ?: missing("publicationRatePercentDecimalPlaces"),
+                publicationHourKst = publicationHourKst ?: missing("publicationHourKst"),
+                publicationMinuteKst = publicationMinuteKst ?: missing("publicationMinuteKst"),
+                observationCaptureHourKst = observationCaptureHourKst
+                    ?: missing("observationCaptureHourKst"),
+                indexBaseDate = indexBaseDate ?: missing("indexBaseDate"),
+                indexBaseValue = indexBaseValue ?: missing("indexBaseValue"),
+                indexDecimalPlaces = indexDecimalPlaces ?: missing("indexDecimalPlaces"),
+                initialPublishedRateAnnual = initialPublishedRateAnnual
+                    ?: missing("initialPublishedRateAnnual"),
+                initialPublishedRateObservationDate = initialPublishedRateObservationDate
+                    ?: missing("initialPublishedRateObservationDate"),
+                initialIndexLevel = initialIndexLevel ?: missing("initialIndexLevel"),
+                initialIndexPublicationDate = initialIndexPublicationDate
+                    ?: missing("initialIndexPublicationDate"),
+                initialPendingRateAnnual = initialPendingRateAnnual
+                    ?: missing("initialPendingRateAnnual"),
+                initialPendingRateObservationDate = initialPendingRateObservationDate
+                    ?: missing("initialPendingRateObservationDate"),
+                supportLevel = supportLevel ?: missing("supportLevel"),
+                modelAssumptionId = modelAssumptionId ?: missing("modelAssumptionId"),
                 officialSourceUrls = officialSourceUrls ?: missing("officialSourceUrls"),
             )
         }
@@ -1810,9 +1923,14 @@ object DesktopInstrumentPackParser {
             var closedEndFundMarketModelParameters: ClosedEndFundMarketModelParameters? = null
             var optionStrategyTerms: OptionStrategyTerms? = null
             var cashCollateralizedPutSpreadTerms: CashCollateralizedPutSpreadTerms? = null
+            var operationProfile: FundOperationProfile? = null
             var trackingErrorSeen = false
 
-            readObject("fundProductProfile", FUND_PRODUCT_PROFILE_FIELDS) { field ->
+            readObject(
+                "fundProductProfile",
+                FUND_PRODUCT_PROFILE_FIELDS,
+                FUND_PRODUCT_PROFILE_REQUIRED_FIELDS,
+            ) { field ->
                 when (field) {
                     "benchmarkRef" -> benchmarkRef = readBenchmarkRef("benchmarkRef")
                     "replicationMode" -> replicationMode = readEnum<FundReplicationMode>("replicationMode")
@@ -1855,6 +1973,8 @@ object DesktopInstrumentPackParser {
                             "cashCollateralizedPutSpreadTerms",
                             ::readCashCollateralizedPutSpreadTerms,
                         )
+                    "operationProfile" -> operationProfile =
+                        readNullableObject("operationProfile", ::readFundOperationProfile)
                 }
             }
             if (!trackingErrorSeen) missing("trackingErrorAnnualVolatility")
@@ -1873,6 +1993,41 @@ object DesktopInstrumentPackParser {
                 closedEndFundMarketModelParameters = closedEndFundMarketModelParameters,
                 optionStrategyTerms = optionStrategyTerms,
                 cashCollateralizedPutSpreadTerms = cashCollateralizedPutSpreadTerms,
+                operationProfile = operationProfile,
+            )
+        }
+
+        private fun readFundOperationProfile(): FundOperationProfile {
+            var managementStyle: FundManagementStyle? = null
+            var syntheticSwapFunding: SyntheticSwapFunding? = null
+            var activeReturnModelSupport: ActiveReturnModelSupport? = null
+            var provenance: FundOperationProvenance? = null
+            var officialSourceUrls: Set<String>? = null
+            var syntheticSwapFundingSeen = false
+            readObject("operationProfile", FUND_OPERATION_PROFILE_FIELDS) { field ->
+                when (field) {
+                    "managementStyle" -> managementStyle = readEnum<FundManagementStyle>(field)
+                    "syntheticSwapFunding" -> {
+                        syntheticSwapFundingSeen = true
+                        syntheticSwapFunding = readNullableEnum<SyntheticSwapFunding>(field)
+                    }
+                    "activeReturnModelSupport" -> activeReturnModelSupport =
+                        readEnum<ActiveReturnModelSupport>(field)
+                    "provenance" -> provenance = readEnum<FundOperationProvenance>(field)
+                    "officialSourceUrls" -> officialSourceUrls = readSortedUniqueHttpsUrlSet(
+                        field,
+                        FundOperationProfile.MAX_OFFICIAL_SOURCE_URLS,
+                    )
+                }
+            }
+            if (!syntheticSwapFundingSeen) missing("syntheticSwapFunding")
+            return FundOperationProfile(
+                managementStyle = managementStyle ?: missing("managementStyle"),
+                syntheticSwapFunding = syntheticSwapFunding,
+                activeReturnModelSupport = activeReturnModelSupport
+                    ?: missing("activeReturnModelSupport"),
+                provenance = provenance ?: missing("provenance"),
+                officialSourceUrls = officialSourceUrls ?: missing("officialSourceUrls"),
             )
         }
 
@@ -2836,6 +2991,7 @@ object DesktopInstrumentPackParser {
         private fun readBehaviorProfile(): InstrumentBehaviorProfile {
             var strategy: InstrumentStrategy? = null
             var distributionFrequency: DistributionFrequency? = null
+            var distributionCalendar: DistributionCalendar = DistributionCalendar.FIXED_DAY_15
             var upsideParticipation: Double? = null
             var downsideParticipation: Double? = null
             var durationYears: Double? = null
@@ -2849,11 +3005,13 @@ object DesktopInstrumentPackParser {
             var commodityFactorSensitivity: Double? = null
             var cryptoFactorSensitivity: Double? = null
             var principalRisk: PrincipalRisk? = null
-            readObject("behaviorProfile", BEHAVIOR_PROFILE_FIELDS) { field ->
+            readObject("behaviorProfile", BEHAVIOR_PROFILE_FIELDS, BEHAVIOR_PROFILE_REQUIRED_FIELDS) { field ->
                 when (field) {
                     "strategy" -> strategy = readEnum<InstrumentStrategy>("strategy")
                     "distributionFrequency" -> distributionFrequency =
                         readEnum<DistributionFrequency>("distributionFrequency")
+                    "distributionCalendar" -> distributionCalendar =
+                        readEnum<DistributionCalendar>("distributionCalendar")
                     "upsideParticipation" -> upsideParticipation = readFiniteDouble("upsideParticipation")
                     "downsideParticipation" -> downsideParticipation = readFiniteDouble("downsideParticipation")
                     "durationYears" -> durationYears = readFiniteDouble("durationYears")
@@ -2878,6 +3036,7 @@ object DesktopInstrumentPackParser {
             return InstrumentBehaviorProfile(
                 strategy = strategy ?: missing("strategy"),
                 distributionFrequency = distributionFrequency ?: missing("distributionFrequency"),
+                distributionCalendar = distributionCalendar,
                 upsideParticipation = upsideParticipation ?: missing("upsideParticipation"),
                 downsideParticipation = downsideParticipation ?: missing("downsideParticipation"),
                 durationYears = durationYears ?: missing("durationYears"),
@@ -3370,7 +3529,7 @@ object DesktopInstrumentPackParser {
         )
 
         private companion object {
-            const val SCHEMA_VERSION: Int = 3
+            const val SCHEMA_VERSION: Int = 4
             const val MAX_JSON_DEPTH: Int = 12
             const val MAX_JSON_NODES: Int = 750_000
             const val MAX_FIELD_NAME_LENGTH: Int = 64
@@ -3430,12 +3589,14 @@ object DesktopInstrumentPackParser {
                 "equityMethodology",
                 "equityReferenceProfile",
                 "fixedIncomeProfile",
+                "kofrIndexProfile",
                 "commoditySpotTerms",
                 "futuresReferenceTerms",
                 "fundOfFundsMethodologyProfile",
                 "compositeReferenceProfile",
                 "alternativeRiskPremiaProfile",
             )
+            val BENCHMARK_REQUIRED_FIELDS: Set<String> = BENCHMARK_FIELDS - "kofrIndexProfile"
             val BENCHMARK_REF_FIELDS: Set<String> = setOf("benchmarkId", "version")
             val EQUITY_METHODOLOGY_FIELDS: Set<String> = setOf(
                 "methodologyRef",
@@ -3481,6 +3642,28 @@ object DesktopInstrumentPackParser {
                 "realRateLinked",
                 "supportLevel",
                 "durationProvenance",
+                "officialSourceUrls",
+            )
+            val KOFR_INDEX_PROFILE_FIELDS: Set<String> = setOf(
+                "currency",
+                "dayCountBasis",
+                "volumeTrimFractionPerTail",
+                "calculationRatePercentDecimalPlaces",
+                "publicationRatePercentDecimalPlaces",
+                "publicationHourKst",
+                "publicationMinuteKst",
+                "observationCaptureHourKst",
+                "indexBaseDate",
+                "indexBaseValue",
+                "indexDecimalPlaces",
+                "initialPublishedRateAnnual",
+                "initialPublishedRateObservationDate",
+                "initialIndexLevel",
+                "initialIndexPublicationDate",
+                "initialPendingRateAnnual",
+                "initialPendingRateObservationDate",
+                "supportLevel",
+                "modelAssumptionId",
                 "officialSourceUrls",
             )
             val FUND_OF_FUNDS_METHODOLOGY_PROFILE_FIELDS: Set<String> = setOf(
@@ -3705,6 +3888,16 @@ object DesktopInstrumentPackParser {
                 "closedEndFundMarketModelParameters",
                 "optionStrategyTerms",
                 "cashCollateralizedPutSpreadTerms",
+                "operationProfile",
+            )
+            val FUND_PRODUCT_PROFILE_REQUIRED_FIELDS: Set<String> =
+                FUND_PRODUCT_PROFILE_FIELDS - "operationProfile"
+            val FUND_OPERATION_PROFILE_FIELDS: Set<String> = setOf(
+                "managementStyle",
+                "syntheticSwapFunding",
+                "activeReturnModelSupport",
+                "provenance",
+                "officialSourceUrls",
             )
             val CASH_COLLATERALIZED_PUT_SPREAD_TERMS_FIELDS: Set<String> = setOf(
                 "productId",
@@ -3905,6 +4098,7 @@ object DesktopInstrumentPackParser {
             val BEHAVIOR_PROFILE_FIELDS: Set<String> = setOf(
                 "strategy",
                 "distributionFrequency",
+                "distributionCalendar",
                 "upsideParticipation",
                 "downsideParticipation",
                 "durationYears",
@@ -3919,6 +4113,8 @@ object DesktopInstrumentPackParser {
                 "cryptoFactorSensitivity",
                 "principalRisk",
             )
+            val BEHAVIOR_PROFILE_REQUIRED_FIELDS: Set<String> =
+                BEHAVIOR_PROFILE_FIELDS - "distributionCalendar"
             val IDENTITY_PROFILE_FIELDS: Set<String> = setOf(
                 "aliases",
                 "issuerOrManager",

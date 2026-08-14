@@ -50,6 +50,9 @@ import com.amond.kmpbook.domain.model.reference.FixedIncomeReferenceBook
 import com.amond.kmpbook.domain.model.reference.FixedIncomeReferenceBookAdvance
 import com.amond.kmpbook.domain.model.reference.FixedIncomeReferenceState
 import com.amond.kmpbook.domain.model.reference.FixedIncomeRollRecord
+import com.amond.kmpbook.domain.model.reference.KofrIndexBook
+import com.amond.kmpbook.domain.model.reference.KofrIndexBookAdvance
+import com.amond.kmpbook.domain.model.reference.KofrIndexState
 import com.amond.kmpbook.domain.model.reference.AlternativeRiskPremiaBook
 import com.amond.kmpbook.domain.model.reference.AlternativeRiskPremiaAdvanceInput
 import com.amond.kmpbook.domain.model.reference.AlternativeRiskPremiaActionKind
@@ -204,6 +207,8 @@ import com.amond.kmpbook.domain.simulation.reference.CommodityReferenceBookEngin
 import com.amond.kmpbook.domain.simulation.reference.CompositeReferenceBookEngine
 import com.amond.kmpbook.domain.simulation.reference.EquityReferenceBookEngine
 import com.amond.kmpbook.domain.simulation.reference.FundOfFundsBookEngine
+import com.amond.kmpbook.domain.simulation.reference.KofrIndexBookEngine
+import com.amond.kmpbook.domain.simulation.reference.KofrRateModel
 import com.amond.kmpbook.domain.simulation.listing.ListingLifecycleEngine
 import com.amond.kmpbook.domain.simulation.listing.ListingRemediationDecisionStatus
 import com.amond.kmpbook.domain.simulation.listing.ListingRemediationPolicy
@@ -702,6 +707,7 @@ internal class SimulatorRuntime(
     private val closedEndFundLedger = mutableListOf<ClosedEndFundLedgerEntry>()
     private val fixedIncomeReferenceStates = linkedMapOf<String, FixedIncomeReferenceState>()
     private val fixedIncomeRollLedger = mutableListOf<FixedIncomeRollRecord>()
+    private val kofrIndexStates = linkedMapOf<BenchmarkRef, KofrIndexState>()
     private val commoditySpotReferenceStates =
         linkedMapOf<BenchmarkRef, CommoditySpotReferenceState>()
     private val futuresReferenceStates = linkedMapOf<BenchmarkRef, FuturesReferenceState>()
@@ -742,6 +748,8 @@ internal class SimulatorRuntime(
     private val taxPaymentNotices = mutableListOf<TaxPaymentNotice>()
 
     private var macro = MacroEnvironment(
+        koreanPolicyRate = INITIAL_KOREAN_POLICY_RATE,
+        koreanPolicyRateChange = 0.0,
         usdKrw = options.initialUsdKrw,
         fxRatesToKrw = initialFxRates(options.initialUsdKrw),
         previousFxRatesToKrw = initialFxRates(options.initialUsdKrw),
@@ -779,6 +787,8 @@ internal class SimulatorRuntime(
         .filter { it.engineKind == BenchmarkEngineKind.EQUITY_REFERENCE }
     private val fixedIncomeBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
         .filter { it.engineKind == BenchmarkEngineKind.FIXED_INCOME_CURVE }
+    private val kofrIndexBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
+        .filter { it.engineKind == BenchmarkEngineKind.OVERNIGHT_RATE_INDEX }
     private val commoditySpotBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
         .filter { it.engineKind == BenchmarkEngineKind.COMMODITY_SPOT }
     private val futuresBenchmarkDefinitions = instrumentCatalog.benchmarksInEvaluationOrder
@@ -853,6 +863,9 @@ internal class SimulatorRuntime(
     private val optionStrategyEngine = OptionStrategyEngine()
     private val cashCollateralizedPutSpreadEngine = CashCollateralizedPutSpreadEngine()
     private val fixedIncomeReferenceBookEngine = FixedIncomeReferenceBookEngine()
+    private val kofrIndexBookEngine = KofrIndexBookEngine(
+        KofrRateModel(DeterministicRandom.mixSeed(options.seed, KOFR_STREAM_ID)),
+    )
     private val commodityMarketModel = CommodityMarketModel.forCampaignSeed(options.seed)
     private val commodityReferenceBookEngine = CommodityReferenceBookEngine()
     private val fundOfFundsBookEngine = FundOfFundsBookEngine.forCampaignSeed(options.seed)
@@ -1458,6 +1471,7 @@ internal class SimulatorRuntime(
             closedEndFundLedger = closedEndFundLedger.toList(),
             fixedIncomeReferenceStates = fixedIncomeReferenceStates.toMap(),
             fixedIncomeRollLedger = fixedIncomeRollLedger.toList(),
+            kofrIndexStates = kofrIndexStates.toMap(),
             commoditySpotReferenceStates = commoditySpotReferenceStates.toMap(),
             futuresReferenceStates = futuresReferenceStates.toMap(),
             futuresRollLedger = futuresRollLedger.toList(),
@@ -1568,6 +1582,8 @@ internal class SimulatorRuntime(
             }
         val expectedFixedIncomeRefs = fixedIncomeBenchmarkDefinitions
             .mapTo(linkedSetOf()) { it.ref }
+        val expectedKofrIndexRefs = kofrIndexBenchmarkDefinitions
+            .mapTo(linkedSetOf()) { it.ref }
         val expectedCommoditySpotRefs = commoditySpotBenchmarkDefinitions
             .mapTo(linkedSetOf()) { it.ref }
         val expectedFuturesRefs = futuresBenchmarkDefinitions
@@ -1633,6 +1649,10 @@ internal class SimulatorRuntime(
             state.fixedIncomeReferenceStates.keys == expectedFixedIncomeReferenceIds &&
                 state.fixedIncomeRollLedger.all { it.benchmarkRef in expectedFixedIncomeRefs },
         ) { "저장된 고정수익 benchmark 상태·만기 교체 원장이 현재 카탈로그와 일치하지 않습니다." }
+        require(
+            state.kofrIndexStates.keys == expectedKofrIndexRefs &&
+                state.kofrIndexStates.all { (ref, value) -> value.benchmarkRef == ref },
+        ) { "저장된 KOFR 지수 상태가 현재 카탈로그와 일치하지 않습니다." }
         require(
             state.commoditySpotReferenceStates.keys == expectedCommoditySpotRefs &&
                 state.commoditySpotReferenceStates.all { (ref, value) ->
@@ -1872,6 +1892,8 @@ internal class SimulatorRuntime(
         fixedIncomeReferenceStates.putAll(state.fixedIncomeReferenceStates)
         fixedIncomeRollLedger.clear()
         fixedIncomeRollLedger += state.fixedIncomeRollLedger
+        kofrIndexStates.clear()
+        kofrIndexStates.putAll(state.kofrIndexStates)
         commoditySpotReferenceStates.clear()
         commoditySpotReferenceStates.putAll(state.commoditySpotReferenceStates)
         futuresReferenceStates.clear()
@@ -1979,6 +2001,7 @@ internal class SimulatorRuntime(
         closedEndFundLedger.clear()
         fixedIncomeReferenceStates.clear()
         fixedIncomeRollLedger.clear()
+        kofrIndexStates.clear()
         commoditySpotReferenceStates.clear()
         futuresReferenceStates.clear()
         futuresRollLedger.clear()
@@ -2074,6 +2097,14 @@ internal class SimulatorRuntime(
                 fixedIncomeReferenceStates[state.referenceId] = state
             }
         }
+        if (kofrIndexBenchmarkDefinitions.isNotEmpty()) {
+            kofrIndexStates.putAll(
+                kofrIndexBookEngine.initialBook(
+                    definitions = kofrIndexBenchmarkDefinitions,
+                    at = currentTime,
+                ).states,
+            )
+        }
         if (commoditySpotBenchmarkDefinitions.isNotEmpty() || futuresBenchmarkDefinitions.isNotEmpty()) {
             val frame = commodityMarketModel.initialFrame(
                 spotTerms = commoditySpotBenchmarkDefinitions.map { definition ->
@@ -2126,6 +2157,7 @@ internal class SimulatorRuntime(
         fixedIncomeReferenceStates.values.forEach { state ->
             benchmarkIncome[state.benchmarkRef] = state.estimatedAnnualIncomeYield
         }
+        kofrIndexStates.keys.forEach { ref -> benchmarkIncome[ref] = 0.0 }
         commoditySpotReferenceStates.keys.forEach { ref -> benchmarkIncome[ref] = 0.0 }
         futuresReferenceStates.keys.forEach { ref -> benchmarkIncome[ref] = 0.0 }
         fundOfFundsStates.forEach { (ref, state) ->
@@ -2140,6 +2172,7 @@ internal class SimulatorRuntime(
                 position.currentWeight * position.modifiedDurationYears
             }
         }.toMutableMap()
+        kofrIndexStates.keys.forEach { ref -> benchmarkDurations[ref] = 0.0 }
         alternativeRiskPremiaStates.forEach { (ref, state) ->
             benchmarkDurations[ref] = state.effectiveDurationYears
         }
@@ -2677,11 +2710,13 @@ internal class SimulatorRuntime(
         val referencePortfolioAdvance = baseReferenceAdvances.referencePortfolio
         val equityReferenceAdvance = baseReferenceAdvances.equity
         val fixedIncomeReferenceAdvance = baseReferenceAdvances.fixedIncome
+        val kofrIndexAdvance = baseReferenceAdvances.kofrIndex
         val commodityReferenceAdvance = baseReferenceAdvances.commodity
         fun baseBenchmarkGrossLogReturn(ref: BenchmarkRef): Double? =
             referencePortfolioAdvance?.grossReferenceLogReturns?.get(ref)
                 ?: equityReferenceAdvance?.grossReferenceLogReturns?.get(ref)
                 ?: fixedIncomeReferenceAdvance?.grossReferenceLogReturns?.get(ref)
+                ?: kofrIndexAdvance?.grossReferenceLogReturns?.get(ref)
                 ?: commodityReferenceAdvance?.grossReferenceLogReturns?.get(ref)
 
         fun baseBenchmarkAnnualIncomeYield(ref: BenchmarkRef): Double? {
@@ -2690,6 +2725,7 @@ internal class SimulatorRuntime(
                 ?.estimatedAnnualIncomeYield
                 ?: equityReferenceAdvance?.estimatedAnnualIncomeYields?.get(ref)
                 ?: fixedIncomeReferenceAdvance?.annualIncomeYields?.get(ref)
+                ?: 0.0.takeIf { kofrIndexAdvance?.grossReferenceLogReturns?.containsKey(ref) == true }
                 ?: 0.0.takeIf {
                     commodityReferenceAdvance?.grossReferenceLogReturns?.containsKey(ref) == true
                 }
@@ -2731,7 +2767,7 @@ internal class SimulatorRuntime(
         fun preStructuredBenchmarkDurationYears(ref: BenchmarkRef): Double? =
             fixedIncomeReferenceAdvance?.book?.states?.get(ref)?.positions?.sumOf { position ->
                 position.currentWeight * position.modifiedDurationYears
-            }
+            } ?: 0.0.takeIf { kofrIndexAdvance?.book?.states?.containsKey(ref) == true }
 
         var alternativeRiskPremiaAdvance: AlternativeRiskPremiaBookAdvance? = null
         var compositeReferenceAdvance: CompositeReferenceBookAdvance? = null
@@ -3600,6 +3636,9 @@ internal class SimulatorRuntime(
         if (commit && fixedIncomeReferenceAdvance != null) {
             commitFixedIncomeReferenceAdvance(fixedIncomeReferenceAdvance)
         }
+        if (commit && kofrIndexAdvance != null) {
+            commitKofrIndexAdvance(kofrIndexAdvance)
+        }
         if (commit && commodityReferenceAdvance != null) {
             commitCommodityReferenceAdvance(commodityReferenceAdvance)
         }
@@ -3704,6 +3743,10 @@ internal class SimulatorRuntime(
             ?.values
             ?.associateBy(FixedIncomeReferenceState::benchmarkRef)
             ?.let(::FixedIncomeReferenceBook)
+        val kofrIndexBook = kofrIndexStates
+            .takeUnless(Map<*, *>::isEmpty)
+            ?.toMap()
+            ?.let(::KofrIndexBook)
         val fixedIncomeFractions = fixedIncomeBenchmarkDefinitions.associate { definition ->
             val profile = requireNotNull(definition.fixedIncomeProfile)
             val region = when (profile.geography) {
@@ -3771,6 +3814,17 @@ internal class SimulatorRuntime(
                 )
             }
         }
+        val kofrIndex = async(Dispatchers.Default) {
+            kofrIndexBook?.let { book ->
+                kofrIndexBookEngine.advance(
+                    book = book,
+                    definitions = kofrIndexBenchmarkDefinitions,
+                    macro = macroSnapshot,
+                    from = from,
+                    to = to,
+                )
+            }
+        }
         val commodity = async(Dispatchers.Default) {
             commodityBook?.let { book ->
                 val frame = commodityMarketModel.advanceFrame(
@@ -3788,6 +3842,7 @@ internal class SimulatorRuntime(
             referencePortfolio = referencePortfolio.await(),
             equity = equity.await(),
             fixedIncome = fixedIncome.await(),
+            kofrIndex = kofrIndex.await(),
             commodity = commodity.await(),
         )
     }
@@ -4149,6 +4204,30 @@ internal class SimulatorRuntime(
             fixedIncomeReferenceStates[next.referenceId] = next
         }
         fixedIncomeRollLedger += advance.rollRecords
+    }
+
+    private fun commitKofrIndexAdvance(advance: KofrIndexBookAdvance) {
+        require(advance.book.states.keys == kofrIndexStates.keys)
+        advance.book.states.forEach { (ref, next) ->
+            val previous = kofrIndexStates.getValue(ref)
+            require(next.asOf > previous.asOf) { "KOFR 지수 시각은 매 tick 앞으로 이동해야 합니다." }
+            if (next.indexPublicationDate == previous.indexPublicationDate) {
+                require(
+                    next.revision == previous.revision &&
+                        next.indexLevel == previous.indexLevel &&
+                        next.publishedRateAnnual == previous.publishedRateAnnual &&
+                        next.publishedRateObservationDate == previous.publishedRateObservationDate,
+                ) { "공표 이벤트 없이 KOFR 공개 상태를 변경할 수 없습니다." }
+            } else {
+                require(
+                    next.indexPublicationDate > previous.indexPublicationDate &&
+                        next.publishedRateObservationDate > previous.publishedRateObservationDate &&
+                        next.revision == previous.revision + 1L,
+                ) { "KOFR 공표 revision과 지수 날짜가 연속되지 않습니다." }
+            }
+        }
+        kofrIndexStates.clear()
+        kofrIndexStates.putAll(advance.book.states)
     }
 
     private fun commitCommodityReferenceAdvance(advance: CommodityReferenceBookAdvance) {
@@ -6659,6 +6738,8 @@ internal class SimulatorRuntime(
         macro = MacroEnvironment(
             policyRate = policyRate,
             policyRateChange = policyChange,
+            koreanPolicyRate = macro.koreanPolicyRate,
+            koreanPolicyRateChange = 0.0,
             inflationRate = inflation,
             inflationSurprise = macro.inflationSurprise * MACRO_SURPRISE_DECAY,
             growthRate = growth,
@@ -6977,13 +7058,19 @@ internal class SimulatorRuntime(
                     )
                 }
 
-                ScheduledEventKind.US_FOMC,
-                ScheduledEventKind.KR_BOK,
-                -> {
+                ScheduledEventKind.US_FOMC -> {
                     val nextRate = actual / 100.0
                     macro.copy(
                         policyRate = nextRate,
                         policyRateChange = nextRate - macro.policyRate,
+                    )
+                }
+
+                ScheduledEventKind.KR_BOK -> {
+                    val nextRate = actual / 100.0
+                    macro.copy(
+                        koreanPolicyRate = nextRate,
+                        koreanPolicyRateChange = nextRate - macro.koreanPolicyRate,
                     )
                 }
 
@@ -7463,7 +7550,11 @@ internal class SimulatorRuntime(
             val frequency = stock.behavior.distributionFrequency
             if (
                 payDate == fromDate ||
-                !DistributionSchedule.isDistributionDate(payDate, frequency)
+                !DistributionSchedule.isDistributionDate(
+                    payDate,
+                    frequency,
+                    stock.behavior.distributionCalendar,
+                )
             ) continue
             val lastEvaluatedDate = lastEvaluatedDistributionDateByStock[stock.id]
             require(lastEvaluatedDate == null || lastEvaluatedDate <= payDate) {
@@ -7752,6 +7843,7 @@ internal class SimulatorRuntime(
             ?: fixedIncomeReferenceStates[
                 FixedIncomeReferenceState.referenceIdFor(benchmarkRef)
             ]?.estimatedAnnualIncomeYield
+            ?: kofrIndexStates[benchmarkRef]?.publishedRateAnnual
             ?: 0.0.takeIf {
                 benchmarkRef in commoditySpotReferenceStates ||
                     benchmarkRef in futuresReferenceStates
@@ -10003,6 +10095,7 @@ internal class SimulatorRuntime(
         const val DAILY_RESET_STRESS_BORROW_SPREAD = 0.04
         /** 미국 10년 명목곡선 위 게임용 주택담보대출 스프레드 가정이다. */
         const val MODEL_MORTGAGE_SPREAD_ANNUAL = 0.0175
+        const val INITIAL_KOREAN_POLICY_RATE = 0.0275
         const val BUY_RESERVE_MULTIPLIER = 1.003
         const val FX_SPREAD_RATE = 0.001
         const val FX_MEAN_REVERSION = 0.00025
@@ -10075,6 +10168,7 @@ internal class SimulatorRuntime(
         const val MACRO_STREAM_ID = 0x4D4143524FL
         const val DYNAMICS_STREAM_ID = 0x44594E414D494353L
         const val PRICE_STREAM_ID = 0x5052494345L
+        const val KOFR_STREAM_ID = 0x4B4F4652L
         const val BOOK_STREAM_ID = 0x424F4F4BL
         const val EVENT_STREAM_ID = 0x4556454E54L
         val WEEKEND = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)

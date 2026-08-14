@@ -16,6 +16,7 @@ import com.amond.kmpbook.domain.model.fundstructure.EtnLedgerEntry
 import com.amond.kmpbook.domain.model.fundstructure.EtnState
 import com.amond.kmpbook.domain.model.reference.FixedIncomeReferenceState
 import com.amond.kmpbook.domain.model.reference.FixedIncomeRollRecord
+import com.amond.kmpbook.domain.model.reference.KofrIndexState
 import com.amond.kmpbook.domain.model.reference.CommoditySpotReferenceState
 import com.amond.kmpbook.domain.model.reference.EquityReferenceRebalanceRecord
 import com.amond.kmpbook.domain.model.reference.EquityReferenceState
@@ -110,6 +111,8 @@ data class SimulatorUiState(
     val closedEndFundLedger: List<ClosedEndFundLedgerEntry>,
     /** 채권·현금 benchmark의 금리곡선, 신용스프레드, 만기 ladder 상태다. */
     val fixedIncomeReferenceStates: Map<String, FixedIncomeReferenceState>,
+    /** 전일 fixing, 다음 공표 대기값과 ACT/365 일복리 KOFR 지수 상태다. */
+    val kofrIndexStates: Map<BenchmarkRef, KofrIndexState>,
     /** 만기 도래 sleeve의 편출·신규 만기군 편입 원장이다. */
     val fixedIncomeRollLedger: List<FixedIncomeRollRecord>,
     /** 실물·현물형 원자재 benchmark의 현물·담보·순 carry 상태다. */

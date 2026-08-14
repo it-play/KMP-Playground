@@ -21,6 +21,7 @@ import com.amond.kmpbook.domain.model.instrument.StockDefinition
 import com.amond.kmpbook.domain.model.market.Market
 import com.amond.kmpbook.domain.model.market.Sector
 import com.amond.kmpbook.domain.model.reference.FuturesPortfolioStyle
+import com.amond.kmpbook.domain.model.reference.KofrIndexBook
 import com.amond.kmpbook.domain.methodology.BuiltInEquityMethodologies
 import com.amond.kmpbook.domain.methodology.EquityMethodologyRegistration
 import com.amond.kmpbook.domain.methodology.EquityMethodologyRegistry
@@ -127,6 +128,12 @@ class InstrumentCatalogSnapshot private constructor(
         require(benchmarks.isNotEmpty()) { "종목 카탈로그에는 하나 이상의 벤치마크가 필요합니다." }
         require(benchmarks.size <= MAX_TOTAL_BENCHMARKS) {
             "종목 카탈로그는 최대 $MAX_TOTAL_BENCHMARKS 개 벤치마크만 포함할 수 있습니다."
+        }
+        require(
+            benchmarks.count { it.engineKind == BenchmarkEngineKind.OVERNIGHT_RATE_INDEX } <=
+                KofrIndexBook.MAX_REFERENCES,
+        ) {
+            "KOFR benchmark는 최대 ${KofrIndexBook.MAX_REFERENCES}개만 포함할 수 있습니다."
         }
         require(benchmarkByRef.size == benchmarks.size) {
             "종목 카탈로그에서 같은 (benchmarkId, version) 벤치마크를 재정의할 수 없습니다."
@@ -374,10 +381,20 @@ class InstrumentCatalogSnapshot private constructor(
             }
             if (products.isNotEmpty()) {
                 require(
-                    (benchmark.fixedIncomeProfile != null) ==
+                    (benchmark.fixedIncomeProfile != null || benchmark.kofrIndexProfile != null) ==
                         (requiresFixedIncomeProfile || isCashCollateralForPutSpread),
                 ) {
                     "벤치마크 '${benchmark.ref}'의 고정수익 프로필과 상품 기준 노출이 일치하지 않습니다."
+                }
+            }
+            benchmark.kofrIndexProfile?.let {
+                require(productExposures.isEmpty() || productExposures == setOf(FundReferenceExposure.CASH)) {
+                    "KOFR 벤치마크 '${benchmark.ref}'는 CASH 기초 노출 상품만 참조할 수 있습니다."
+                }
+                products.forEach { definition ->
+                    require(requireNotNull(definition.etfProfile).exposureRegion == EtfExposureRegion.KOREA) {
+                        "KOFR 종목 '${definition.id}'의 노출 지역은 한국이어야 합니다."
+                    }
                 }
             }
             benchmark.commoditySpotTerms?.let {
@@ -619,10 +636,13 @@ class InstrumentCatalogSnapshot private constructor(
                         "현금담보 풋스프레드 종목 '${definition.id}'의 현금 기준 " +
                             "'${terms.cashBenchmarkRef}'가 카탈로그에 없습니다."
                     }
-                    require(
+                    val isOvernightRateIndex =
+                        cashBenchmark.engineKind == BenchmarkEngineKind.OVERNIGHT_RATE_INDEX &&
+                            cashBenchmark.kofrIndexProfile != null
+                    val isMoneyMarketCurve =
                         cashBenchmark.engineKind == BenchmarkEngineKind.FIXED_INCOME_CURVE &&
-                            cashBenchmark.fixedIncomeProfile?.assetType == FixedIncomeAssetType.MONEY_MARKET,
-                    ) {
+                            cashBenchmark.fixedIncomeProfile?.assetType == FixedIncomeAssetType.MONEY_MARKET
+                    require(isOvernightRateIndex || isMoneyMarketCurve) {
                         "현금담보 풋스프레드 종목 '${definition.id}'에는 실행 가능한 머니마켓 기준이 필요합니다."
                     }
                     when (terms.optionReference.kind) {

@@ -7,8 +7,12 @@ import com.amond.kmpbook.domain.model.market.Sector
 
 /** Macroeconomic state and already-resolved hourly factor returns. */
 data class MacroEnvironment(
+    /** USD 정책금리 anchor. 기존 전역 금리 소비자와의 의미를 유지한다. */
     val policyRate: Double = 0.03,
     val policyRateChange: Double = 0.0,
+    /** 한국은행 기준금리 anchor. KOFR·KRW 금리곡선은 미국 정책결정과 분리해 이 값을 쓴다. */
+    val koreanPolicyRate: Double = policyRate,
+    val koreanPolicyRateChange: Double = policyRateChange,
     val inflationRate: Double = 0.02,
     val inflationSurprise: Double = 0.0,
     val growthRate: Double = 0.02,
@@ -35,8 +39,14 @@ data class MacroEnvironment(
     val usCircuitBreakerLevel: Int = 0,
 ) {
     init {
-        require(policyRate.isFinite() && inflationRate.isFinite() && growthRate.isFinite())
-        require(policyRateChange.isFinite() && inflationSurprise.isFinite() && growthSurprise.isFinite())
+        require(
+            policyRate.isFinite() && koreanPolicyRate.isFinite() &&
+                inflationRate.isFinite() && growthRate.isFinite(),
+        )
+        require(
+            policyRateChange.isFinite() && koreanPolicyRateChange.isFinite() &&
+                inflationSurprise.isFinite() && growthSurprise.isFinite(),
+        )
         require(usdKrw > 0.0 && usdKrw.isFinite()) { "USD/KRW must be positive and finite" }
         require(previousUsdKrw > 0.0 && previousUsdKrw.isFinite()) {
             "Previous USD/KRW must be positive and finite"

@@ -11,6 +11,9 @@ enum class BenchmarkEngineKind {
     /** 듀레이션·금리곡선·신용스프레드로 고정수익 기준수익률을 만든다. */
     FIXED_INCOME_CURVE,
 
+    /** 전일 KOFR fixing과 익영업일 공표, ACT/365 일복리 지수로 기준수익률을 만든다. */
+    OVERNIGHT_RATE_INDEX,
+
     /** 현물 가격과 명시적 보관·담보 carry로 원자재 기준수익률을 만든다. */
     COMMODITY_SPOT,
 

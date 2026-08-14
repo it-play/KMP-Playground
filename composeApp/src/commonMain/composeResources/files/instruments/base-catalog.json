@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "benchmarks": [
     {
       "benchmarkId": "alternative.ialt-credit-relative-value",
@@ -5147,32 +5147,50 @@
       "alternativeRiskPremiaProfile": null
     },
     {
-      "benchmarkId": "proxy.kospi.423160",
+      "benchmarkId": "kofr.krw.overnight",
       "version": 1,
-      "displayName": "KODEX KOFR금리액티브(합성)",
-      "administrator": "Unverified",
-      "officialSourceUrls": [],
+      "displayName": "Korea Overnight Financing Repo Rate Index",
+      "administrator": "Korea Securities Depository",
+      "officialSourceUrls": [
+        "https://www.bok.or.kr/portal/main/contents.do?menuNo=201069",
+        "https://www.kofr.kr/intro/RFRinfo.jsp?sMenuId=001001&sLangCd=01",
+        "https://www.kofr.kr/resource/file/20220216103446488.pdf",
+        "https://www.kofr.kr/resource/file/20230413140034482.pdf",
+        "https://www.kofr.kr/resource/file/20260722140901204.pdf"
+      ],
       "baseCurrency": "KRW",
-      "engineKind": "FIXED_INCOME_CURVE",
-      "supportLevel": "PROVISIONAL_PROXY",
+      "engineKind": "OVERNIGHT_RATE_INDEX",
+      "supportLevel": "VERIFIED_RULES",
       "componentBenchmarkRefs": [],
       "equityMethodology": null,
       "equityReferenceProfile": null,
-      "fixedIncomeProfile": {
-        "geography": "KOREA",
-        "currencies": [
-          "KRW"
-        ],
-        "assetType": "MONEY_MARKET",
-        "effectiveDurationYears": 0.05,
-        "tenorBand": "OVERNIGHT",
-        "creditQuality": "GOVERNMENT_BACKED",
-        "rateReset": "OVERNIGHT",
-        "realRateLinked": false,
-        "supportLevel": "VERIFIED_REFERENCE",
-        "durationProvenance": "CALIBRATED_ASSUMPTION",
+      "fixedIncomeProfile": null,
+      "kofrIndexProfile": {
+        "currency": "KRW",
+        "dayCountBasis": 365,
+        "volumeTrimFractionPerTail": 0.05,
+        "calculationRatePercentDecimalPlaces": 5,
+        "publicationRatePercentDecimalPlaces": 3,
+        "publicationHourKst": 11,
+        "publicationMinuteKst": 0,
+        "observationCaptureHourKst": 18,
+        "indexBaseDate": "2018-01-02",
+        "indexBaseValue": 1000,
+        "indexDecimalPlaces": 5,
+        "initialPublishedRateAnnual": 0.02771,
+        "initialPublishedRateObservationDate": "2026-08-05",
+        "initialIndexLevel": 1194.83221,
+        "initialIndexPublicationDate": "2026-08-06",
+        "initialPendingRateAnnual": 0.02754,
+        "initialPendingRateObservationDate": "2026-08-06",
+        "supportLevel": "VERIFIED_RULES",
+        "modelAssumptionId": "kofr-policy-anchor-trimmed-repo-transactions-v1",
         "officialSourceUrls": [
-          "https://www.samsungfund.com/etf/product/view.do?id=2ETFG6"
+          "https://www.bok.or.kr/portal/main/contents.do?menuNo=201069",
+          "https://www.kofr.kr/intro/RFRinfo.jsp?sMenuId=001001&sLangCd=01",
+          "https://www.kofr.kr/resource/file/20220216103446488.pdf",
+          "https://www.kofr.kr/resource/file/20230413140034482.pdf",
+          "https://www.kofr.kr/resource/file/20260722140901204.pdf"
         ]
       },
       "fundOfFundsMethodologyProfile": null,
@@ -29140,19 +29158,19 @@
       "sector": "OTHER",
       "instrumentType": "ETF",
       "initialPrice": 11600,
-      "volatility": 0.1,
-      "dividendYield": 0.0292,
+      "volatility": 0.0004,
+      "dividendYield": 0.02771,
       "marketCap": 19300000000000,
       "sharesOutstanding": 1663793103,
       "description": "국채·통안채 담보 익일물 RP금리인 KOFR를 스왑으로 추종해 초과수익을 노리는 ETF입니다.",
-      "beta": 0.05,
+      "beta": 0,
       "quantityStep": 1,
       "lotSize": 1,
       "etfProfile": {
         "benchmark": "KODEX KOFR금리액티브(합성)",
         "assetClass": "MONEY_MARKET",
         "taxCategory": "KOREAN_OTHER",
-        "annualExpenseRatio": 0.0017,
+        "annualExpenseRatio": 0.000594,
         "fxProfile": {
           "legs": [
             {
@@ -29169,17 +29187,27 @@
       },
       "fundProductProfile": {
         "benchmarkRef": {
-          "benchmarkId": "proxy.kospi.423160",
+          "benchmarkId": "kofr.krw.overnight",
           "version": 1
         },
-        "replicationMode": "UNVERIFIED",
-        "returnVariant": "UNVERIFIED",
+        "replicationMode": "DERIVATIVE_SYNTHETIC",
+        "returnVariant": "TOTAL_RETURN",
         "legalStructure": "OPEN_END_ETF",
         "referenceExposure": "CASH",
         "returnTransforms": [
           "PLAIN"
         ],
         "trackingErrorAnnualVolatility": null,
+        "operationProfile": {
+          "managementStyle": "ACTIVE",
+          "syntheticSwapFunding": "FULLY_FUNDED",
+          "activeReturnModelSupport": "UNMODELED",
+          "provenance": "VERIFIED_PRODUCT_DISCLOSURE",
+          "officialSourceUrls": [
+            "https://www.samsungfund.com/etf/product/view.do?id=2ETFG6",
+            "https://www.samsungfund.com/upload/invest/2ETFG6-A.pdf"
+          ]
+        },
         "dailyResetTerms": null,
         "etnProductTerms": null,
         "closedEndFundTerms": null,
@@ -29191,11 +29219,12 @@
       "behaviorProfile": {
         "strategy": "MONEY_MARKET",
         "distributionFrequency": "MONTHLY",
-        "upsideParticipation": 0.02,
-        "downsideParticipation": 0.02,
-        "durationYears": 0.1,
+        "distributionCalendar": "KRX_MONTH_END",
+        "upsideParticipation": 0,
+        "downsideParticipation": 0,
+        "durationYears": 0,
         "creditSpreadSensitivity": 0,
-        "cashRateAccrual": 0.92,
+        "cashRateAccrual": 0,
         "annualStructuralDrag": 0,
         "distributionCoverageRatio": 1,
         "priceDislocationVolatility": 0,
@@ -29210,7 +29239,9 @@
         "issuerOrManager": "삼성자산운용",
         "strategySummary": "국채·통안채 담보 익일물 RP금리인 KOFR를 스왑으로 추종해 초과수익을 노리는 ETF입니다.",
         "officialSourceUrl": "https://www.samsungfund.com/etf/product/view.do?id=2ETFG6",
-        "supportingSourceUrls": [],
+        "supportingSourceUrls": [
+          "https://www.samsungfund.com/upload/core/2ETFG6-Aa.pdf"
+        ],
         "eventRiskTags": [
           "kofr_rate",
           "swap_counterparty",

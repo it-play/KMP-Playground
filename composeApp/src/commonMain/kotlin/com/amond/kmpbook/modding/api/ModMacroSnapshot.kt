@@ -7,6 +7,8 @@ import com.amond.kmpbook.domain.model.market.ReferenceCurrency
 data class ModMacroSnapshot(
     val policyRate: Double,
     val policyRateChange: Double,
+    val koreanPolicyRate: Double,
+    val koreanPolicyRateChange: Double,
     val inflationRate: Double,
     val inflationSurprise: Double,
     val growthRate: Double,
