@@ -78,6 +78,7 @@ import com.amond.kmpbook.presentation.news.NewsStoryUi
 import com.amond.kmpbook.presentation.news.activityPriority
 import com.amond.kmpbook.presentation.protection.ProtectionDetailUi
 import com.amond.kmpbook.presentation.protection.ProtectionStatusBadgeUi
+import com.amond.kmpbook.ui.charts.trading.MarketChartSkeleton
 import com.amond.kmpbook.ui.charts.trading.TradingViewMarketChart
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
@@ -110,6 +111,7 @@ fun MarketTradingScreen(
     hourlyPriceHistory: Map<String, List<PriceBar>>,
     chartPriceHistory: Map<String, Map<PriceBarInterval, List<PriceBar>>>,
     trades: List<Trade>,
+    isAdvancing: Boolean,
     selectedStockId: String?,
     holding: Holding?,
     orderBook: OrderBook?,
@@ -182,6 +184,7 @@ fun MarketTradingScreen(
                 hourlyBars = hourlyBars,
                 chartBars = chartBars,
                 trades = selectedTrades,
+                isAdvancing = isAdvancing,
                 holding = holding,
                 relatedNews = selectedNews,
                 readRelatedNewsEventIds = readStockNewsEventIds[selectedStock.id].orEmpty(),
@@ -642,7 +645,6 @@ private fun FilterGroupLabel(text: String) {
 private fun FilterCell(
     text: String,
     selected: Boolean,
-    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Box(
@@ -652,7 +654,6 @@ private fun FilterCell(
             .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
             .selectable(
                 selected = selected,
-                enabled = enabled,
                 role = Role.Button,
                 onClick = onClick,
             )
@@ -662,11 +663,7 @@ private fun FilterCell(
         Text(
             if (selected) "✓ $text" else text,
             style = MarketType.caption,
-            color = when {
-                selected -> Color.White
-                enabled -> MarketColors.InkMuted
-                else -> MarketColors.InkMuted.copy(alpha = 0.35f)
-            },
+            color = if (selected) Color.White else MarketColors.InkMuted,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -753,6 +750,7 @@ private fun StockChartPanel(
     hourlyBars: List<PriceBar>,
     chartBars: Map<PriceBarInterval, List<PriceBar>>,
     trades: List<Trade>,
+    isAdvancing: Boolean,
     holding: Holding?,
     relatedNews: List<NewsStoryUi>,
     readRelatedNewsEventIds: Set<String>,
@@ -764,8 +762,7 @@ private fun StockChartPanel(
     onOpenProtectionDetail: () -> Unit,
     modifier: Modifier,
 ) {
-    var candleInterval by remember { mutableStateOf(MarketCandleInterval.ONE_DAY) }
-    var chartRange by remember { mutableStateOf(MarketChartRange.THREE_MONTHS) }
+    var chartPeriod by remember { mutableStateOf(MarketChartPeriod.ONE_DAY) }
     var selectedIntelligenceTab by remember { mutableStateOf(IntelligenceTab.IMPACT) }
     var isIntelligenceDeckExpanded by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
@@ -811,22 +808,14 @@ private fun StockChartPanel(
             onRelatedNewsListViewed(relatedNewsEventIds)
         }
     }
+    val candleInterval = remember(chartPeriod, hourlyBars, chartBars) {
+        resolveChartInterval(chartPeriod, hourlyBars, chartBars)
+    }
     val displayedBars = remember(hourlyBars, chartBars, candleInterval) {
         when (candleInterval.priceBarInterval) {
             PriceBarInterval.ONE_HOUR -> hourlyBars
             else -> chartBars[candleInterval.priceBarInterval].orEmpty()
         }
-    }
-    val availableChartRanges = remember(candleInterval, displayedBars) {
-        MarketChartRange.entries.filter { range ->
-            range.isAvailableFor(candleInterval, displayedBars)
-        }
-    }
-    val activeChartRange = remember(chartRange, availableChartRanges) {
-        resolveAvailableChartRange(chartRange, availableChartRanges)
-    }
-    LaunchedEffect(activeChartRange) {
-        if (chartRange != activeChartRange) chartRange = activeChartRange
     }
     val sessionVolume = chartBars[PriceBarInterval.ONE_DAY]
         ?.lastOrNull()
@@ -988,24 +977,11 @@ private fun StockChartPanel(
                 Spacer(Modifier.width(8.dp))
                 Column(horizontalAlignment = Alignment.End) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        FilterGroupLabel("봉")
+                        FilterGroupLabel("기간")
                         Spacer(Modifier.width(5.dp))
-                        MarketCandleInterval.entries.forEach { item ->
-                            FilterCell(item.displayName, item == candleInterval) { candleInterval = item }
-                            Spacer(Modifier.width(3.dp))
-                        }
-                    }
-                    Spacer(Modifier.height(3.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        FilterGroupLabel("범위")
-                        Spacer(Modifier.width(5.dp))
-                        MarketChartRange.entries.forEach { item ->
-                            FilterCell(
-                                text = item.displayName,
-                                selected = item == activeChartRange,
-                                enabled = item in availableChartRanges,
-                            ) {
-                                chartRange = item
+                        MarketChartPeriod.entries.forEach { item ->
+                            FilterCell(item.displayName, item == chartPeriod) {
+                                chartPeriod = item
                             }
                             Spacer(Modifier.width(3.dp))
                         }
@@ -1017,21 +993,26 @@ private fun StockChartPanel(
                     )
                 }
             }
-            TradingViewMarketChart(
-                symbol = stock.symbol,
-                resolution = candleInterval.displayName,
-                market = stock.market,
-                priceMinMove = chartPriceMinMove,
-                rangeKey = activeChartRange.name,
-                bars = displayedBars,
-                visibleDurationSeconds = activeChartRange.durationSeconds,
-                averagePrice = holding?.averagePrice,
-                trades = trades,
-                relatedNews = relatedNews,
-                onOpenEvent = onOpenEvent,
-                onShowAll = { chartRange = MarketChartRange.ALL },
-                modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp),
-            )
+            val chartModifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp)
+            if (isAdvancing) {
+                MarketChartSkeleton(chartModifier)
+            } else {
+                TradingViewMarketChart(
+                    symbol = stock.symbol,
+                    resolution = candleInterval.displayName,
+                    market = stock.market,
+                    priceMinMove = chartPriceMinMove,
+                    rangeKey = chartPeriod.name,
+                    bars = displayedBars,
+                    visibleDurationSeconds = chartPeriod.durationSeconds,
+                    averagePrice = holding?.averagePrice,
+                    trades = trades,
+                    relatedNews = relatedNews,
+                    onOpenEvent = onOpenEvent,
+                    onShowAll = { chartPeriod = MarketChartPeriod.ALL },
+                    modifier = chartModifier,
+                )
+            }
             LedgerDivider()
                 MarketIntelligenceDeck(
                     stock = stock,
@@ -1059,15 +1040,31 @@ private fun StockChartPanel(
     }
 }
 
-private fun resolveAvailableChartRange(
-    requested: MarketChartRange,
-    available: List<MarketChartRange>,
-): MarketChartRange {
-    if (requested in available) return requested
-    val requestedDuration = requested.durationSeconds ?: Long.MAX_VALUE
-    return available.firstOrNull { range ->
-        (range.durationSeconds ?: Long.MAX_VALUE) >= requestedDuration
-    } ?: MarketChartRange.ALL
+private fun resolveChartInterval(
+    period: MarketChartPeriod,
+    hourlyBars: List<PriceBar>,
+    chartBars: Map<PriceBarInterval, List<PriceBar>>,
+): MarketCandleInterval {
+    val availableBars = MarketCandleInterval.entries.associateWith { interval ->
+        when (interval.priceBarInterval) {
+            PriceBarInterval.ONE_HOUR -> hourlyBars
+            else -> chartBars[interval.priceBarInterval].orEmpty()
+        }
+    }
+    if (period == MarketChartPeriod.ALL) {
+        val nonEmpty = availableBars.filterValues(List<PriceBar>::isNotEmpty)
+        val earliestTime = nonEmpty.values.minOfOrNull { bars -> bars.first().startTime }
+            ?: return MarketCandleInterval.ONE_HOUR
+        return MarketCandleInterval.entries.firstOrNull { interval ->
+            availableBars.getValue(interval).firstOrNull()?.startTime == earliestTime
+        } ?: MarketCandleInterval.ONE_HOUR
+    }
+
+    val preferred = requireNotNull(period.preferredInterval)
+    val candidates = MarketCandleInterval.entries.take(preferred.ordinal + 1).asReversed()
+    return candidates.firstOrNull { interval -> availableBars.getValue(interval).size >= 3 }
+        ?: candidates.firstOrNull { interval -> availableBars.getValue(interval).isNotEmpty() }
+        ?: preferred
 }
 
 @Composable

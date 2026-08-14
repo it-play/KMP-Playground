@@ -888,6 +888,7 @@ private fun ScreenContent(
                 hourlyPriceHistory = state.priceHistory,
                 chartPriceHistory = state.chartPriceHistory,
                 trades = state.trades,
+                isAdvancing = state.isAdvancing,
                 selectedStockId = state.selectedStockId,
                 holding = state.selectedHolding,
                 orderBook = state.selectedOrderBook?.toOrderBook(),
