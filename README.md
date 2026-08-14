@@ -2,6 +2,10 @@
 
 Kotlin Multiplatform 앱 프로젝트
 
+## 구현 참고 자료
+
+- [SCHD / Dow Jones U.S. Dividend 100 구현 사례 (참고용)](docs/implementation-notes/schd-dividend-100.md)
+
 ---
 
 ## 앱 히스토리
