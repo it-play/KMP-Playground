@@ -7,4 +7,13 @@ enum class DistributionCalendar {
 
     /** 해당 빈도의 대상 월 마지막 KRX 영업일을 기준일로 쓴다. */
     KRX_MONTH_END,
+
+    /** Vanguard가 공표한 VOO 기준일과 그 이후의 동결 시나리오 투영 규칙을 쓴다. */
+    VANGUARD_VOO_EX_DATE,
+
+    /** Vanguard가 공표한 VTV 기준일과 그 이후의 동결 시나리오 투영 규칙을 쓴다. */
+    VANGUARD_VTV_EX_DATE,
+
+    /** 매월 15일이 KRX 비영업일이면 직전 KRX 영업일을 지급기준일로 쓴다. */
+    KRX_PRECEDING_BUSINESS_DAY_15,
 }

@@ -33,6 +33,15 @@ object DistributionSchedule {
         }
         DistributionCalendar.KRX_MONTH_END ->
             isEligibleMonth(date.month, frequency) && date == lastKrxBusinessDateOfMonth(date)
+        DistributionCalendar.VANGUARD_VOO_EX_DATE ->
+            VanguardVooDistributionCalendar.isDistributionDate(date, frequency)
+        DistributionCalendar.VANGUARD_VTV_EX_DATE ->
+            VanguardVtvDistributionCalendar.isDistributionDate(date, frequency)
+        DistributionCalendar.KRX_PRECEDING_BUSINESS_DAY_15 ->
+            frequency == DistributionFrequency.MONTHLY &&
+                date == precedingKrxBusinessDateOnOrBefore(
+                    LocalDate(date.year, date.month.ordinal + 1, DISTRIBUTION_DAY),
+                )
     }
 
     private fun isEligibleMonth(month: Month, frequency: DistributionFrequency): Boolean = when (frequency) {
@@ -52,6 +61,15 @@ object DistributionSchedule {
         }
         var candidate = firstOfNextMonth.minus(1, DateTimeUnit.DAY)
         val holidays = DefaultMarketHolidays.closedDates(Market.KOSPI, candidate.year)
+        while (GameCalendar.isWeekend(candidate) || candidate in holidays) {
+            candidate = candidate.minus(1, DateTimeUnit.DAY)
+        }
+        return candidate
+    }
+
+    private fun precedingKrxBusinessDateOnOrBefore(date: LocalDate): LocalDate {
+        var candidate = date
+        val holidays = DefaultMarketHolidays.closedDates(Market.KOSPI, date.year)
         while (GameCalendar.isWeekend(candidate) || candidate in holidays) {
             candidate = candidate.minus(1, DateTimeUnit.DAY)
         }
