@@ -38,6 +38,8 @@ data class ReferencePortfolioRecord(
         require(revision > 0L)
         when (kind) {
             ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> require(corporateAction == null)
+            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION_TRANSITION ->
+                require(corporateAction == null)
             ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
             ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
             -> require(
@@ -48,7 +50,7 @@ data class ReferencePortfolioRecord(
             }
             ReferencePortfolioActionKind.CONSTITUENT_MERGER -> require(
                 corporateAction?.kind == ReferencePortfolioCorporateActionKind.MERGER &&
-                    addedAssetIds.isEmpty() && removedAssetIds.isNotEmpty(),
+                    removedAssetIds.isNotEmpty(),
             )
             ReferencePortfolioActionKind.SPIN_OFF_ADDITION -> require(
                 corporateAction?.kind == ReferencePortfolioCorporateActionKind.SPIN_OFF &&
@@ -62,7 +64,7 @@ data class ReferencePortfolioRecord(
             )
             ReferencePortfolioActionKind.TERMINAL_REMOVAL -> require(
                 corporateAction?.kind == ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL &&
-                    addedAssetIds.isEmpty() && removedAssetIds == listOf(corporateAction.primaryAssetId),
+                    removedAssetIds == listOf(corporateAction.primaryAssetId),
             )
         }
     }

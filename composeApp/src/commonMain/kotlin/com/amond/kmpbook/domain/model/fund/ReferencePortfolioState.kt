@@ -14,10 +14,12 @@ data class ReferencePortfolioState(
     val portfolioId: String,
     val benchmarkRef: BenchmarkRef,
     val positions: List<ReferencePortfolioPosition>,
+    val methodologyPathState: EquityMethodologyPathState,
     val revision: Long,
     val lastReconstitutionDate: LocalDate,
     val lastRebalanceDate: LocalDate,
-    val nextReconstitutionDate: LocalDate,
+    /** 정기 재구성이 없는 위원회형 지수는 최초 bootstrap 뒤 null이다. */
+    val nextReconstitutionDate: LocalDate?,
     val nextRebalanceDate: LocalDate,
     val pendingSelectionDate: LocalDate? = null,
     val pendingSelectionIncumbentAssetIds: List<String>? = null,
@@ -45,13 +47,15 @@ data class ReferencePortfolioState(
         require(revision >= 0L)
         require(lastReconstitutionDate <= lastRebalanceDate)
         require(positions.all { it.enteredOn <= lastRebalanceDate })
-        require(lastReconstitutionDate < nextReconstitutionDate)
+        require(nextReconstitutionDate == null || lastReconstitutionDate < nextReconstitutionDate)
         require(lastRebalanceDate < nextRebalanceDate)
         require((pendingSelectionDate == null) == (pendingSelectionIncumbentAssetIds == null))
         pendingSelectionDate?.let { selectionDate ->
+            requireNotNull(nextReconstitutionDate)
             require(selectionDate > lastReconstitutionDate && selectionDate < nextReconstitutionDate)
         }
         pendingSelectionIncumbentAssetIds?.let { incumbentAssetIds ->
+            requireNotNull(nextReconstitutionDate)
             require(incumbentAssetIds.size in 1..ReferencePortfolioLimits.MAX_CONSTITUENTS)
             require(incumbentAssetIds == incumbentAssetIds.distinct().sorted())
             require(incumbentAssetIds.all(ASSET_ID::matches))
@@ -85,10 +89,11 @@ data class ReferencePortfolioState(
             ReferencePortfolioActionKind.TERMINAL_REMOVAL,
             -> 0
             ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL -> 1
-            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> 2
-            ReferencePortfolioActionKind.SCHEDULED_REWEIGHT -> 3
-            ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT -> 4
-            ReferencePortfolioActionKind.SPIN_OFF_ADDITION -> 5
+            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION_TRANSITION -> 2
+            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> 3
+            ReferencePortfolioActionKind.SCHEDULED_REWEIGHT -> 4
+            ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT -> 5
+            ReferencePortfolioActionKind.SPIN_OFF_ADDITION -> 6
         }
     }
 }

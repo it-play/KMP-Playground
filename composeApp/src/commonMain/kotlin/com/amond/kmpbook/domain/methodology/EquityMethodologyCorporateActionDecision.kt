@@ -27,7 +27,7 @@ class EquityMethodologyCorporateActionDecision(
             survivingAcquirerAssetId != null || this.addedAssetIds.isNotEmpty() ||
                 transferredValueFraction == 0.0,
         )
-        require((followUpRemovalDate != null) == this.addedAssetIds.isNotEmpty())
+        require(followUpRemovalDate == null || this.addedAssetIds.isNotEmpty())
     }
 
     companion object {

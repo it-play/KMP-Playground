@@ -1,6 +1,7 @@
 package com.amond.kmpbook.domain.methodology
 
 import com.amond.kmpbook.domain.model.fund.EquityMethodologyProfile
+import com.amond.kmpbook.domain.model.fund.EquityMethodologyPathState
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioActionKind
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioLimits
 
@@ -10,6 +11,7 @@ class EquityMethodologySelectionInput(
     val scheduledAction: EquityMethodologyScheduledAction,
     candidates: List<EquityMethodologyCandidate>,
     incumbentAssetIds: Set<String>,
+    val previousPathState: EquityMethodologyPathState,
 ) {
     val candidates: List<EquityMethodologyCandidate> = buildList { addAll(candidates) }
     val incumbentAssetIds: Set<String> = buildSet { addAll(incumbentAssetIds.sorted()) }
@@ -26,6 +28,11 @@ class EquityMethodologySelectionInput(
         require(candidates.map(EquityMethodologyCandidate::assetId).distinct().size == candidates.size)
         require(incumbentAssetIds.size <= ReferencePortfolioLimits.MAX_CONSTITUENTS)
         require(incumbentAssetIds.all { incumbent -> candidates.any { it.assetId == incumbent } })
+        require(previousPathState.entries.all { entry ->
+            candidates.any { candidate -> candidate.assetId == entry.assetId }
+        }) {
+            "The previous methodology path state must belong to the current candidate universe."
+        }
     }
 
     companion object {

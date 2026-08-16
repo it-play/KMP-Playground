@@ -5,7 +5,7 @@ import com.amond.kmpbook.domain.model.fund.ReferencePortfolioActionKind
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioLimits
 import kotlinx.datetime.LocalDate
 
-/** Bounded input for target-weight construction after constituent selection. */
+/** Bounded input for target-weight construction after selection or a permanent replacement. */
 class EquityMethodologyWeightingInput(
     val profile: EquityMethodologyProfile,
     val actionKind: ReferencePortfolioActionKind,
@@ -25,7 +25,9 @@ class EquityMethodologyWeightingInput(
         require(
             actionKind == ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION ||
                 actionKind == ReferencePortfolioActionKind.SCHEDULED_REWEIGHT ||
-                actionKind == ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
+                actionKind == ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT ||
+                actionKind == ReferencePortfolioActionKind.CONSTITUENT_MERGER ||
+                actionKind == ReferencePortfolioActionKind.TERMINAL_REMOVAL,
         ) { "대상 비중을 생성할 수 없는 참조 포트폴리오 액션입니다." }
         require(observationDate < effectiveDate) {
             "비중 관측일은 액션 효력일보다 빨라야 합니다."

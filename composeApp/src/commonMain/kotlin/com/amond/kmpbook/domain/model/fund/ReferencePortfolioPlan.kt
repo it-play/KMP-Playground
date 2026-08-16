@@ -17,11 +17,15 @@ data class ReferencePortfolioPlan(
     /** Latest availability boundary used while reproducing the fixed selection. */
     val selectionAvailabilityDate: LocalDate?,
     val positions: List<ReferencePortfolioPosition>,
+    val methodologyPathState: EquityMethodologyPathState,
     val addedAssetIds: List<String>,
     val removedAssetIds: List<String>,
+    /** Live target baseline fixed when this staged transition was most recently compiled. */
+    val transitionBaselineWeights: Map<String, Double>?,
     /**
-     * Immutable float-market-value inputs observed at [weightReferenceDate], detached from position
-     * drift.
+     * Immutable float-market-value weighting basis fixed at [weightReferenceDate], detached from
+     * later position drift. Corporate additions may normalize it by target/current weight so drift
+     * already present at the announcement close can be replayed exactly.
      */
     val weightReferenceMarketValues: Map<String, Double>?,
     val corporateAction: ReferencePortfolioCorporateAction? = null,
@@ -65,32 +69,48 @@ data class ReferencePortfolioPlan(
             ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> require(
                 corporateAction == null &&
                     hasValidWeightReferenceMarketValues(orderedPositionIds) &&
+                    transitionBaselineWeights == null &&
                     selectionIncumbentAssetIds != null && selectionAvailabilityDate != null,
             )
-            ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
-            ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
-            -> require(
+            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION_TRANSITION -> require(
+                corporateAction == null && weightReferenceMarketValues == null &&
+                    hasValidTransitionBaselineWeights(positionIds) &&
+                    selectionIncumbentAssetIds == null && selectionAvailabilityDate == null,
+            )
+            ReferencePortfolioActionKind.SCHEDULED_REWEIGHT -> require(
                 addedAssetIds.isEmpty() && removedAssetIds.isEmpty() && corporateAction == null &&
                     hasValidWeightReferenceMarketValues(orderedPositionIds) &&
+                    transitionBaselineWeights == null &&
+                    selectionIncumbentAssetIds == null && selectionAvailabilityDate == null,
+            )
+            ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT -> require(
+                addedAssetIds.isEmpty() && removedAssetIds.isEmpty() && corporateAction == null &&
+                    hasValidConstraintWeightInput(orderedPositionIds) &&
+                    transitionBaselineWeights == null &&
                     selectionIncumbentAssetIds == null && selectionAvailabilityDate == null,
             )
             ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL -> {
                 require(
                     addedAssetIds.isEmpty() && removedAssetIds.isNotEmpty() &&
                         corporateAction == null && weightReferenceMarketValues == null &&
+                        transitionBaselineWeights == null &&
                         selectionIncumbentAssetIds == null && selectionAvailabilityDate == null,
                 )
             }
             ReferencePortfolioActionKind.CONSTITUENT_MERGER -> require(
                 corporateAction?.kind == ReferencePortfolioCorporateActionKind.MERGER &&
-                    addedAssetIds.isEmpty() && removedAssetIds.isNotEmpty() &&
-                    weightReferenceMarketValues == null && selectionIncumbentAssetIds == null &&
+                    removedAssetIds.isNotEmpty() &&
+                    hasReplacementWeightReferenceInput(orderedPositionIds) &&
+                    transitionBaselineWeights == null &&
+                    selectionIncumbentAssetIds == null &&
                     selectionAvailabilityDate == null,
             )
             ReferencePortfolioActionKind.SPIN_OFF_ADDITION -> require(
                 corporateAction?.kind == ReferencePortfolioCorporateActionKind.SPIN_OFF &&
                     addedAssetIds == listOfNotNull(corporateAction.secondaryAssetId) &&
-                    removedAssetIds.isEmpty() && weightReferenceMarketValues == null &&
+                    removedAssetIds.isEmpty() &&
+                    hasValidWeightReferenceMarketValues(orderedPositionIds) &&
+                    transitionBaselineWeights == null &&
                     selectionIncumbentAssetIds == null && selectionAvailabilityDate == null,
             )
             ReferencePortfolioActionKind.SPIN_OFF_REMOVAL -> require(
@@ -98,12 +118,15 @@ data class ReferencePortfolioPlan(
                     addedAssetIds.isEmpty() &&
                     removedAssetIds == listOfNotNull(corporateAction.secondaryAssetId) &&
                     weightReferenceMarketValues == null && selectionIncumbentAssetIds == null &&
+                    transitionBaselineWeights == null &&
                     selectionAvailabilityDate == null,
             )
             ReferencePortfolioActionKind.TERMINAL_REMOVAL -> require(
                 corporateAction?.kind == ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL &&
-                    addedAssetIds.isEmpty() && removedAssetIds == listOf(corporateAction.primaryAssetId) &&
-                    weightReferenceMarketValues == null && selectionIncumbentAssetIds == null &&
+                    removedAssetIds == listOf(corporateAction.primaryAssetId) &&
+                    hasReplacementWeightReferenceInput(orderedPositionIds) &&
+                    transitionBaselineWeights == null &&
+                    selectionIncumbentAssetIds == null &&
                     selectionAvailabilityDate == null,
             )
         }
@@ -113,6 +136,27 @@ data class ReferencePortfolioPlan(
         weightReferenceMarketValues?.let { marketValues ->
             marketValues.keys.toList() == orderedPositionIds &&
                 marketValues.values.all { value -> value.isFinite() && value > 0.0 }
+        } == true
+
+    private fun hasReplacementWeightReferenceInput(orderedPositionIds: List<String>): Boolean =
+        if (addedAssetIds.isEmpty()) {
+            weightReferenceMarketValues == null
+        } else {
+            hasValidWeightReferenceMarketValues(orderedPositionIds)
+        }
+
+    private fun hasValidConstraintWeightInput(orderedPositionIds: List<String>): Boolean =
+        hasValidWeightReferenceMarketValues(orderedPositionIds) &&
+            abs(requireNotNull(weightReferenceMarketValues).values.sum() - 1.0) <= WEIGHT_EPSILON
+
+    private fun hasValidTransitionBaselineWeights(positionIds: Set<String>): Boolean =
+        transitionBaselineWeights?.let { weights ->
+            weights.isNotEmpty() &&
+                weights.size <= ReferencePortfolioLimits.MAX_CONSTITUENTS &&
+                weights.keys.toList() == weights.keys.sorted() &&
+                weights.keys.all { assetId -> assetId in positionIds && ASSET_ID.matches(assetId) } &&
+                weights.values.all { weight -> weight.isFinite() && weight > 0.0 } &&
+                abs(weights.values.sum() - 1.0) <= WEIGHT_EPSILON
         } == true
 
     companion object {
