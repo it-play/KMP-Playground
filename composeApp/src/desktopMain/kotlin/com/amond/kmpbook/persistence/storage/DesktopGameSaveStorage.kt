@@ -22,6 +22,8 @@ import com.amond.kmpbook.domain.model.event.ImpactDirection
 import com.amond.kmpbook.domain.model.fund.BenchmarkRef
 import com.amond.kmpbook.domain.model.fund.AlternativeRiskPremiaStrategyFamily
 import com.amond.kmpbook.domain.model.fund.CompositeSleeveDirection
+import com.amond.kmpbook.domain.model.fund.EquityMethodologyPathEntry
+import com.amond.kmpbook.domain.model.fund.EquityMethodologyPathState
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioLimits
 import com.amond.kmpbook.domain.model.fund.EquityReferenceRegion
 import com.amond.kmpbook.domain.model.fund.FundLegalStructure
@@ -730,6 +732,62 @@ actual class GameSaveStorage actual constructor() {
             return assetId
         }
 
+        fun JsonObject.requireEquityMethodologyPathState(name: String, path: String) {
+            val pathState = requiredObject(name)
+            pathState.requireExactFields(EQUITY_METHODOLOGY_PATH_STATE_FIELDS, path)
+            val entries = pathState.requiredArray("entries")
+            if (entries.size() > EquityMethodologyPathState.MAX_ENTRIES) {
+                throw JsonParseException("필드 '$path.entries'의 항목이 너무 많습니다.")
+            }
+            val assetIds = entries.mapIndexed { index, element ->
+                val entryPath = "$path.entries[$index]"
+                element.requireObject(entryPath).run {
+                    requireExactFields(EQUITY_METHODOLOGY_PATH_ENTRY_FIELDS, entryPath)
+                    val assetId = requiredBoundedNonBlankString(
+                        "assetId",
+                        "$entryPath.assetId",
+                        EquityMethodologyPathEntry.MAX_ASSET_ID_LENGTH,
+                    )
+                    if (!EquityMethodologyPathEntry.isValidAssetId(assetId)) {
+                        throw JsonParseException("필드 '$entryPath.assetId'의 자산 ID가 유효하지 않습니다.")
+                    }
+                    val decimalValues = requiredObject("decimalValues")
+                    val booleanValues = requiredObject("booleanValues")
+                    if (decimalValues.size() > EquityMethodologyPathEntry.MAX_DECIMAL_VALUES ||
+                        booleanValues.size() > EquityMethodologyPathEntry.MAX_BOOLEAN_VALUES ||
+                        decimalValues.size() + booleanValues.size() == 0
+                    ) {
+                        throw JsonParseException("필드 '$entryPath'의 방법론 경로 값 개수가 유효하지 않습니다.")
+                    }
+                    val decimalKeys = decimalValues.keySet().toList()
+                    val booleanKeys = booleanValues.keySet().toList()
+                    if (decimalKeys != decimalKeys.sorted() || booleanKeys != booleanKeys.sorted() ||
+                        (decimalKeys + booleanKeys).any {
+                            !EquityMethodologyPathEntry.isValidValueKey(it)
+                        }
+                    ) {
+                        throw JsonParseException("필드 '$entryPath'의 방법론 경로 키가 정규화되지 않았습니다.")
+                    }
+                    decimalKeys.forEach { key ->
+                        if (decimalValues.requiredFiniteDouble(key, "$entryPath.decimalValues.$key") !in
+                            0.0..1.0
+                        ) {
+                            throw JsonParseException(
+                                "필드 '$entryPath.decimalValues.$key'는 0과 1 사이여야 합니다.",
+                            )
+                        }
+                    }
+                    booleanKeys.forEach { key ->
+                        booleanValues.requiredBoolean(key, "$entryPath.booleanValues.$key")
+                    }
+                    assetId
+                }
+            }
+            if (assetIds != assetIds.distinct().sorted()) {
+                throw JsonParseException("필드 '$path.entries'가 자산 ID 순서로 정규화되지 않았습니다.")
+            }
+        }
+
         fun JsonObject.requireReferencePortfolioPositions(field: String, path: String): List<String> {
             val positions = requiredArray(field)
             if (positions.size() == 0 || positions.size() > ReferencePortfolioLimits.MAX_CONSTITUENTS) {
@@ -748,17 +806,18 @@ actual class GameSaveStorage actual constructor() {
             }
         }
 
-        fun JsonObject.requireReferenceAssetIdArray(field: String, path: String) {
+        fun JsonObject.requireReferenceAssetIdArray(field: String, path: String): List<String> {
             val ids = requiredArray(field)
             if (ids.size() > ReferencePortfolioLimits.MAX_CONSTITUENTS) {
                 throw JsonParseException("필드 '$path'의 항목이 너무 많습니다.")
             }
-            ids.forEachIndexed { index, idElement ->
+            return ids.mapIndexed { index, idElement ->
                 val idPath = "$path[$index]"
                 val id = idElement.requireStrictString(idPath)
                 if (id.isBlank() || id.length > MAX_REFERENCE_ASSET_ID_LENGTH) {
                     throw JsonParseException("필드 '$idPath'의 길이가 올바르지 않습니다.")
                 }
+                id
             }
         }
 
@@ -794,6 +853,7 @@ actual class GameSaveStorage actual constructor() {
             field: String,
             path: String,
             expectedAssetIds: List<String>,
+            requiresUnitSum: Boolean = false,
         ): Boolean {
             requireMember(field)
             val element = get(field)
@@ -814,10 +874,56 @@ actual class GameSaveStorage actual constructor() {
                     "필드 '$path'는 positions와 같은 순서·ID의 시가가치 맵이어야 합니다.",
                 )
             }
-            assetIds.forEach { assetId ->
-                if (marketValues.requiredFiniteDouble(assetId, "$path.$assetId") <= 0.0) {
-                    throw JsonParseException("필드 '$path.$assetId'는 양수여야 합니다.")
+            val totalValue = assetIds.sumOf { assetId ->
+                marketValues.requiredFiniteDouble(assetId, "$path.$assetId").also { value ->
+                    if (value <= 0.0) {
+                        throw JsonParseException("필드 '$path.$assetId'는 양수여야 합니다.")
+                    }
                 }
+            }
+            if (requiresUnitSum &&
+                kotlin.math.abs(totalValue - 1.0) > ReferencePortfolioState.WEIGHT_EPSILON
+            ) {
+                throw JsonParseException("필드 '$path'의 제약 재조정 입력 합은 1이어야 합니다.")
+            }
+            return true
+        }
+
+        fun JsonObject.requireTransitionBaselineWeights(
+            field: String,
+            path: String,
+            positionAssetIds: List<String>,
+        ): Boolean {
+            requireMember(field)
+            val element = get(field)
+            if (element.isJsonNull) return false
+            val weights = element.requireObject(path)
+            if (weights.size() == 0 ||
+                weights.size() > ReferencePortfolioLimits.MAX_CONSTITUENTS
+            ) {
+                throw JsonParseException(
+                    "필드 '$path'는 1~${ReferencePortfolioLimits.MAX_CONSTITUENTS}개 항목이어야 합니다.",
+                )
+            }
+            val assetIds = weights.keySet().toList()
+            if (assetIds != assetIds.sorted() ||
+                assetIds.any { assetId ->
+                    assetId !in positionAssetIds || !REFERENCE_ASSET_ID.matches(assetId)
+                }
+            ) {
+                throw JsonParseException(
+                    "필드 '$path'는 transition positions의 정렬된 baseline ID 맵이어야 합니다.",
+                )
+            }
+            val totalWeight = assetIds.sumOf { assetId ->
+                weights.requiredFiniteDouble(assetId, "$path.$assetId").also { weight ->
+                    if (weight <= 0.0) {
+                        throw JsonParseException("필드 '$path.$assetId'는 양수여야 합니다.")
+                    }
+                }
+            }
+            if (kotlin.math.abs(totalWeight - 1.0) > ReferencePortfolioState.WEIGHT_EPSILON) {
+                throw JsonParseException("필드 '$path'의 baseline 비중 합은 1이어야 합니다.")
             }
             return true
         }
@@ -1300,6 +1406,10 @@ actual class GameSaveStorage actual constructor() {
                 )
                 requiredObject("benchmarkRef").requireBenchmarkRef("$path.benchmarkRef")
                 requireReferencePortfolioPositions("positions", "$path.positions")
+                requireEquityMethodologyPathState(
+                    "methodologyPathState",
+                    "$path.methodologyPathState",
+                )
                 if (requiredLong("revision", "$path.revision") < 0L) {
                     throw JsonParseException("필드 '$path.revision'은 0 이상이어야 합니다.")
                 }
@@ -1308,7 +1418,7 @@ actual class GameSaveStorage actual constructor() {
                     "$path.lastReconstitutionDate",
                 )
                 requiredLocalDate("lastRebalanceDate", "$path.lastRebalanceDate")
-                val nextReconstitutionDate = requiredLocalDate(
+                val nextReconstitutionDate = nullableLocalDate(
                     "nextReconstitutionDate",
                     "$path.nextReconstitutionDate",
                 )
@@ -1321,13 +1431,17 @@ actual class GameSaveStorage actual constructor() {
                     "pendingSelectionIncumbentAssetIds",
                     "$path.pendingSelectionIncumbentAssetIds",
                 )
-                if ((pendingSelectionDate == null) !=
-                    (pendingSelectionIncumbentAssetIds == null) ||
-                    pendingSelectionIncumbentAssetIds?.isEmpty() == true ||
-                    pendingSelectionDate?.let { date ->
-                        date <= lastReconstitutionDate || date >= nextReconstitutionDate
-                    } == true
-                ) {
+                val hasInvalidPendingSelection = if (nextReconstitutionDate == null) {
+                    pendingSelectionDate != null || pendingSelectionIncumbentAssetIds != null
+                } else {
+                    (pendingSelectionDate == null) !=
+                        (pendingSelectionIncumbentAssetIds == null) ||
+                        pendingSelectionIncumbentAssetIds?.isEmpty() == true ||
+                        pendingSelectionDate?.let { date ->
+                            date <= lastReconstitutionDate || date >= nextReconstitutionDate
+                        } == true
+                }
+                if (hasInvalidPendingSelection) {
                     throw JsonParseException(
                         "필드 '$path'의 대기 중 선택일 구성 스냅샷이 재구성 일정과 맞지 않습니다.",
                     )
@@ -1390,23 +1504,47 @@ actual class GameSaveStorage actual constructor() {
                             "positions",
                             "$planPath.positions",
                         )
-                        requireReferenceAssetIdArray("addedAssetIds", "$planPath.addedAssetIds")
+                        val hasTransitionBaselineWeights = requireTransitionBaselineWeights(
+                            "transitionBaselineWeights",
+                            "$planPath.transitionBaselineWeights",
+                            positionAssetIds,
+                        )
+                        if (hasTransitionBaselineWeights !=
+                            (kind == ReferencePortfolioActionKind
+                                .SCHEDULED_RECONSTITUTION_TRANSITION)
+                        ) {
+                            throw JsonParseException(
+                                "필드 '$planPath.transitionBaselineWeights'가 행동 종류와 맞지 않습니다.",
+                            )
+                        }
+                        requireEquityMethodologyPathState(
+                            "methodologyPathState",
+                            "$planPath.methodologyPathState",
+                        )
+                        val addedAssetIds = requireReferenceAssetIdArray(
+                            "addedAssetIds",
+                            "$planPath.addedAssetIds",
+                        )
                         requireReferenceAssetIdArray("removedAssetIds", "$planPath.removedAssetIds")
                         val hasWeightReferenceMarketValues = requireWeightReferenceMarketValues(
                             "weightReferenceMarketValues",
                             "$planPath.weightReferenceMarketValues",
                             positionAssetIds,
+                            requiresUnitSum =
+                                kind == ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
                         )
                         val requiresWeightReferenceMarketValues = when (kind) {
                             ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION,
                             ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
                             ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
                             -> true
-                            ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL,
+                            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION_TRANSITION -> false
                             ReferencePortfolioActionKind.CONSTITUENT_MERGER,
                             ReferencePortfolioActionKind.SPIN_OFF_ADDITION,
-                            ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
                             ReferencePortfolioActionKind.TERMINAL_REMOVAL,
+                            -> addedAssetIds.isNotEmpty()
+                            ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL,
+                            ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
                             -> false
                         }
                         if (hasWeightReferenceMarketValues != requiresWeightReferenceMarketValues) {
@@ -5035,6 +5173,7 @@ actual class GameSaveStorage actual constructor() {
             "portfolioId",
             "benchmarkRef",
             "positions",
+            "methodologyPathState",
             "revision",
             "lastReconstitutionDate",
             "lastRebalanceDate",
@@ -5069,10 +5208,20 @@ actual class GameSaveStorage actual constructor() {
             "selectionIncumbentAssetIds",
             "selectionAvailabilityDate",
             "positions",
+            "transitionBaselineWeights",
+            "methodologyPathState",
             "addedAssetIds",
             "removedAssetIds",
             "weightReferenceMarketValues",
             "corporateAction",
+        )
+
+        val EQUITY_METHODOLOGY_PATH_STATE_FIELDS: Set<String> = setOf("entries")
+
+        val EQUITY_METHODOLOGY_PATH_ENTRY_FIELDS: Set<String> = setOf(
+            "assetId",
+            "decimalValues",
+            "booleanValues",
         )
 
         val REFERENCE_PORTFOLIO_RECORD_FIELDS: Set<String> = setOf(
