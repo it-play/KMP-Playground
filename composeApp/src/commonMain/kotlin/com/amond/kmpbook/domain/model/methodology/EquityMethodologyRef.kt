@@ -45,5 +45,29 @@ data class EquityMethodologyRef(
             version = 2,
         )
 
+        val SP_500_V2: EquityMethodologyRef = EquityMethodologyRef(
+            ownerSourceId = "builtin:base",
+            methodologyId = "sp-500",
+            version = 2,
+        )
+
+        val DOW_JONES_KOREA_DIVIDEND_30_V2: EquityMethodologyRef = EquityMethodologyRef(
+            ownerSourceId = "builtin:base",
+            methodologyId = "dow-jones-korea-dividend-30",
+            version = 2,
+        )
+
+        val KOSPI200_FINANCIAL_HIGH_DIVIDEND_TOP10_V2: EquityMethodologyRef = EquityMethodologyRef(
+            ownerSourceId = "builtin:base",
+            methodologyId = "kospi200-financial-high-dividend-top10",
+            version = 2,
+        )
+
+        val MORNINGSTAR_US_LARGE_CAP_VALUE_V2: EquityMethodologyRef = EquityMethodologyRef(
+            ownerSourceId = "builtin:base",
+            methodologyId = "morningstar-us-large-cap-value",
+            version = 2,
+        )
+
     }
 }

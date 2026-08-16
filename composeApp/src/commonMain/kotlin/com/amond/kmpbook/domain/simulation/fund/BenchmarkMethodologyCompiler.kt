@@ -13,21 +13,48 @@ import com.amond.kmpbook.domain.model.market.ReferenceCurrency
 internal object BenchmarkMethodologyCompiler {
     private val supportedDecimalSignalIds: Set<String> = setOf(
         StandardEquityMethodologySignalIds.FLOAT_MARKET_CAP,
+        StandardEquityMethodologySignalIds.TOTAL_COMPANY_MARKET_CAP,
+        StandardEquityMethodologySignalIds.INVESTABLE_WEIGHT_FACTOR,
+        StandardEquityMethodologySignalIds.FLOAT_ADJUSTED_LIQUIDITY_RATIO,
+        StandardEquityMethodologySignalIds.MINIMUM_SIX_MONTH_MONTHLY_SHARE_VOLUME,
         StandardEquityMethodologySignalIds.AVERAGE_DAILY_VALUE_TRADED,
+        StandardEquityMethodologySignalIds.TRAILING_125_TRADING_DAY_AVERAGE_DAILY_VALUE_TRADED,
         StandardEquityMethodologySignalIds.INDICATED_DIVIDEND_YIELD,
         StandardEquityMethodologySignalIds.FREE_CASH_FLOW_TO_DEBT,
         StandardEquityMethodologySignalIds.RETURN_ON_EQUITY,
         StandardEquityMethodologySignalIds.FIVE_YEAR_DIVIDEND_GROWTH,
+        StandardEquityMethodologySignalIds.THREE_YEAR_AVERAGE_DIVIDEND_PAYOUT_RATIO,
+        StandardEquityMethodologySignalIds.THREE_YEAR_AVERAGE_RETURN_ON_EQUITY,
+        StandardEquityMethodologySignalIds.ONE_MONTH_AVERAGE_DAILY_VALUE_TRADED,
+        StandardEquityMethodologySignalIds.ONE_MONTH_AVERAGE_PRICE_TO_BOOK_RATIO,
+        StandardEquityMethodologySignalIds.ONE_MONTH_AVERAGE_DIVIDEND_YIELD,
+        StandardEquityMethodologySignalIds.ONE_MONTH_AVERAGE_MARKET_CAP,
+        StandardEquityMethodologySignalIds.TRAILING_FOUR_QUARTER_TOTAL_CASH_DIVIDENDS,
+        StandardEquityMethodologySignalIds.BOOK_TO_PRICE,
+        StandardEquityMethodologySignalIds.FUTURE_EARNINGS_TO_PRICE,
+        StandardEquityMethodologySignalIds.HISTORICAL_EARNINGS_TO_PRICE,
+        StandardEquityMethodologySignalIds.DIVIDEND_TO_PRICE,
+        StandardEquityMethodologySignalIds.SALES_TO_PRICE,
+        StandardEquityMethodologySignalIds.FUTURE_LONG_TERM_EARNINGS_GROWTH,
+        StandardEquityMethodologySignalIds.FUTURE_SHORT_TERM_EARNINGS_GROWTH,
+        StandardEquityMethodologySignalIds.THREE_YEAR_HISTORICAL_EARNINGS_GROWTH,
+        StandardEquityMethodologySignalIds.THREE_YEAR_HISTORICAL_SALES_GROWTH,
+        StandardEquityMethodologySignalIds.CURRENT_INVESTMENT_TO_ASSETS,
+        StandardEquityMethodologySignalIds.RETURN_ON_ASSETS,
     )
     private val supportedIntegerSignalIds: Set<String> = setOf(
         StandardEquityMethodologySignalIds.GICS_CLASSIFICATION_CODE,
         StandardEquityMethodologySignalIds.DIVIDEND_PAYMENT_YEARS,
+        StandardEquityMethodologySignalIds.LISTING_AGE_YEARS,
     )
     private val supportedBooleanSignalIds: Set<String> = setOf(
         StandardEquityMethodologySignalIds.ZERO_TOTAL_DEBT,
         StandardEquityMethodologySignalIds.NEGATIVE_BOOK_VALUE_PER_SHARE,
         StandardEquityMethodologySignalIds.SCHEDULED_DIVIDEND_PAYMENT_OMITTED,
         StandardEquityMethodologySignalIds.DIVIDEND_PROGRAM_CEASED_INDEFINITELY,
+        StandardEquityMethodologySignalIds.LATEST_QUARTER_GAAP_NET_INCOME_POSITIVE,
+        StandardEquityMethodologySignalIds.TRAILING_FOUR_QUARTER_GAAP_NET_INCOME_POSITIVE,
+        StandardEquityMethodologySignalIds.KOSPI200_FINANCIAL_MEMBER,
     )
     private val supportedTextSignalIds: Set<String> = emptySet()
 
@@ -53,17 +80,17 @@ internal object BenchmarkMethodologyCompiler {
         val requiredIntegerSignalIds = buildSet { addAll(policy.requiredIntegerSignalIds) }
         val requiredBooleanSignalIds = buildSet { addAll(policy.requiredBooleanSignalIds) }
         val requiredTextSignalIds = buildSet { addAll(policy.requiredTextSignalIds) }
-        require(profile.referenceUniverse == FundReferenceUniverse.US_BROAD_EQUITY) {
-            "The current reference-portfolio host supports the US broad-equity universe only."
-        }
-        require(definition.baseCurrency == ReferenceCurrency.USD) {
-            "The current reference-portfolio host supports USD benchmarks only."
-        }
-        require(schedule.market.isUnitedStates) {
-            "The current reference-portfolio host requires a US methodology market."
-        }
-        require(schedule.exposureRegion == EtfExposureRegion.UNITED_STATES) {
-            "The current reference-portfolio host requires United States regional exposure."
+        when (profile.referenceUniverse) {
+            FundReferenceUniverse.US_BROAD_EQUITY -> {
+                require(definition.baseCurrency == ReferenceCurrency.USD)
+                require(schedule.market.isUnitedStates)
+                require(schedule.exposureRegion == EtfExposureRegion.UNITED_STATES)
+            }
+            FundReferenceUniverse.KOREA_BROAD_EQUITY -> {
+                require(definition.baseCurrency == ReferenceCurrency.KRW)
+                require(schedule.market.isKorean)
+                require(schedule.exposureRegion == EtfExposureRegion.KOREA)
+            }
         }
         requireSupportedSignals(
             valueType = "decimal",

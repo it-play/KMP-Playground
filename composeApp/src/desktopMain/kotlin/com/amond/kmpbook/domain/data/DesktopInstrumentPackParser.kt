@@ -24,6 +24,7 @@ import com.amond.kmpbook.domain.model.fund.CompositeRuleProvenance
 import com.amond.kmpbook.domain.model.fund.CompositeSleeveDirection
 import com.amond.kmpbook.domain.model.fund.CompositeSleeveRole
 import com.amond.kmpbook.domain.model.fund.EquityEligibleUniverse
+import com.amond.kmpbook.domain.model.fund.EquityMethodologyDecisionModel
 import com.amond.kmpbook.domain.model.fund.EquityMethodologyProfile
 import com.amond.kmpbook.domain.model.fund.EquityRebalanceCalendar
 import com.amond.kmpbook.domain.model.fund.EquityReferenceConfidence
@@ -405,6 +406,8 @@ object DesktopInstrumentPackParser {
             var methodologyRef: EquityMethodologyRef? = null
             var effectiveFrom: LocalDate? = null
             var referenceUniverse: FundReferenceUniverse? = null
+            var decisionModel: EquityMethodologyDecisionModel? = null
+            var modelAssumptionId: String? = null
             var parameters: EquityMethodologyParameters? = null
 
             readObject("equityMethodology", EQUITY_METHODOLOGY_FIELDS) { field ->
@@ -412,6 +415,12 @@ object DesktopInstrumentPackParser {
                     "methodologyRef" -> methodologyRef = readEquityMethodologyRef()
                     "effectiveFrom" -> effectiveFrom = readLocalDate("effectiveFrom")
                     "referenceUniverse" -> referenceUniverse = readEnum<FundReferenceUniverse>("referenceUniverse")
+                    "decisionModel" -> decisionModel = readEnum<EquityMethodologyDecisionModel>(field)
+                    "modelAssumptionId" -> modelAssumptionId = readNullableString(
+                        field,
+                        EquityMethodologyProfile.MAX_MODEL_ASSUMPTION_ID_LENGTH,
+                        allowBlank = false,
+                    )
                     "parameters" -> parameters = readEquityMethodologyParameters()
                 }
             }
@@ -419,6 +428,8 @@ object DesktopInstrumentPackParser {
                 methodologyRef = methodologyRef ?: missing("methodologyRef"),
                 effectiveFrom = effectiveFrom ?: missing("effectiveFrom"),
                 referenceUniverse = referenceUniverse ?: missing("referenceUniverse"),
+                decisionModel = decisionModel ?: missing("decisionModel"),
+                modelAssumptionId = modelAssumptionId,
                 parameters = parameters ?: missing("parameters"),
             )
         }
@@ -3529,7 +3540,7 @@ object DesktopInstrumentPackParser {
         )
 
         private companion object {
-            const val SCHEMA_VERSION: Int = 4
+            const val SCHEMA_VERSION: Int = 5
             const val MAX_JSON_DEPTH: Int = 12
             const val MAX_JSON_NODES: Int = 750_000
             const val MAX_FIELD_NAME_LENGTH: Int = 64
@@ -3602,6 +3613,8 @@ object DesktopInstrumentPackParser {
                 "methodologyRef",
                 "effectiveFrom",
                 "referenceUniverse",
+                "decisionModel",
+                "modelAssumptionId",
                 "parameters",
             )
             val EQUITY_METHODOLOGY_REF_FIELDS: Set<String> =

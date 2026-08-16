@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "benchmarks": [
     {
       "benchmarkId": "alternative.ialt-credit-relative-value",
@@ -1751,49 +1751,64 @@
       "alternativeRiskPremiaProfile": null
     },
     {
-      "benchmarkId": "proxy.kospi.0052d0",
-      "version": 1,
+      "benchmarkId": "spdj.dow-jones-korea-dividend-30",
+      "version": 2,
       "displayName": "Dow Jones Korea Dividend 30 Index (PR)",
-      "administrator": "Unverified",
-      "officialSourceUrls": [],
+      "administrator": "S&P Dow Jones Indices",
+      "officialSourceUrls": [
+        "https://www.spglobal.com/spdji/en/documents/education/education-tracking-koreas-quality-yield-dow-jones-korea-dividend-30-index.pdf",
+        "https://www.spglobal.com/spdji/en/documents/methodologies/methodology-dj-dividend-indices.pdf",
+        "https://www.spglobal.com/spdji/en/documents/methodologies/methodology-sp-equity-indices-policies-practices.pdf",
+        "https://www.spglobal.com/spdji/en/indices/dividends-factors/dow-jones-korea-dividend-30-index/"
+      ],
       "baseCurrency": "KRW",
-      "engineKind": "EQUITY_REFERENCE",
-      "supportLevel": "PROVISIONAL_PROXY",
+      "engineKind": "EQUITY_METHODOLOGY",
+      "supportLevel": "VERIFIED_RULES",
       "componentBenchmarkRefs": [],
-      "equityMethodology": null,
-      "equityReferenceProfile": {
-        "region": "KOREA",
-        "countryCodes": [
-          "KR"
-        ],
-        "eligibleUniverse": "BROAD_MARKET",
-        "sectorPolicy": "ALL_SECTORS",
-        "includedSectors": [],
-        "themeId": null,
-        "stylePolicies": [
-          "DIVIDEND"
-        ],
-        "weightingModel": "FACTOR_SCORE",
-        "targetConstituentCount": null,
-        "individualWeightCap": null,
-        "sectorWeightCap": null,
-        "supportLevel": "PROVISIONAL_PROXY",
-        "provenance": "MODEL_ASSUMPTION",
-        "confidence": "HIGH",
-        "officialSourceUrls": [],
-        "assumptionId": "catalog-name-description-policy-v2:proxy.kospi.0052d0",
-        "selectionCalendar": "ANNUAL",
-        "selectionMonths": [
-          12
-        ],
-        "reweightCalendar": "QUARTERLY",
-        "reweightMonths": [
-          3,
-          6,
-          9,
-          12
-        ]
+      "equityMethodology": {
+        "methodologyRef": {
+          "ownerSourceId": "builtin:base",
+          "methodologyId": "dow-jones-korea-dividend-30",
+          "version": 2
+        },
+        "effectiveFrom": "2026-06-12",
+        "referenceUniverse": "KOREA_BROAD_EQUITY",
+        "decisionModel": "DISCRETIONARY_PROXY",
+        "modelAssumptionId": "dj-korea-dividend-30-committee-proxy-2026-08-v1",
+        "parameters": {
+          "integers": {
+            "corporateActionNoticeTradingDays": 2,
+            "februaryDividendReviewCutoffDay": 18,
+            "incumbentRankBuffer": 40,
+            "minimumDividendPaymentYears": 10,
+            "monthlyDividendReviewCutoffDay": 21,
+            "targetConstituentCount": 30
+          },
+          "decimals": {
+            "eligibleYieldFraction": 0.5,
+            "individualWeightCap": 0.04,
+            "minimumAverageDailyValueTraded": 1000000000.0,
+            "minimumTotalCompanyMarketCap": 1000000000000.0
+          },
+          "booleans": {},
+          "texts": {
+            "thresholdPolicy": "FROZEN_AUGUST_2026_METHODOLOGY"
+          },
+          "integerSets": {
+            "reconstitutionMonths": [
+              6,
+              12
+            ],
+            "reweightMonths": [
+              3,
+              6,
+              9,
+              12
+            ]
+          }
+        }
       },
+      "equityReferenceProfile": null,
       "fixedIncomeProfile": null,
       "fundOfFundsMethodologyProfile": null,
       "commoditySpotTerms": null,
@@ -1837,51 +1852,58 @@
       "alternativeRiskPremiaProfile": null
     },
     {
-      "benchmarkId": "proxy.kospi.0089d0",
-      "version": 1,
+      "benchmarkId": "krx.kospi200-financial-high-dividend-top10",
+      "version": 2,
       "displayName": "KOSPI 200 금융 고배당 TOP10 지수",
-      "administrator": "Unverified",
-      "officialSourceUrls": [],
+      "administrator": "한국거래소",
+      "officialSourceUrls": [
+        "https://index.krx.co.kr/contents/MKD/03/0304/03040101/MKD03040101.jsp?upmidCd=0104&idxCd=1359&idxId=K2D04P",
+        "https://www.samsungfund.com/etf/lounge/notice-view.do?no=75474",
+        "https://www.samsungfund.com/upload/invest/2ETFS1-A.pdf"
+      ],
       "baseCurrency": "KRW",
-      "engineKind": "EQUITY_REFERENCE",
-      "supportLevel": "PROVISIONAL_PROXY",
+      "engineKind": "EQUITY_METHODOLOGY",
+      "supportLevel": "VERIFIED_RULES",
       "componentBenchmarkRefs": [],
-      "equityMethodology": null,
-      "equityReferenceProfile": {
-        "region": "KOREA",
-        "countryCodes": [
-          "KR"
-        ],
-        "eligibleUniverse": "SECTOR_INDUSTRY",
-        "sectorPolicy": "INCLUDED_ONLY",
-        "includedSectors": [
-          "FINANCIALS"
-        ],
-        "themeId": null,
-        "stylePolicies": [
-          "DIVIDEND"
-        ],
-        "weightingModel": "FACTOR_SCORE",
-        "targetConstituentCount": 10,
-        "individualWeightCap": null,
-        "sectorWeightCap": null,
-        "supportLevel": "PROVISIONAL_PROXY",
-        "provenance": "MODEL_ASSUMPTION",
-        "confidence": "HIGH",
-        "officialSourceUrls": [],
-        "assumptionId": "catalog-name-description-policy-v2:proxy.kospi.0089d0",
-        "selectionCalendar": "ANNUAL",
-        "selectionMonths": [
-          12
-        ],
-        "reweightCalendar": "QUARTERLY",
-        "reweightMonths": [
-          3,
-          6,
-          9,
-          12
-        ]
+      "equityMethodology": {
+        "methodologyRef": {
+          "ownerSourceId": "builtin:base",
+          "methodologyId": "kospi200-financial-high-dividend-top10",
+          "version": 2
+        },
+        "effectiveFrom": "2026-06-16",
+        "referenceUniverse": "KOREA_BROAD_EQUITY",
+        "decisionModel": "RULE_BASED",
+        "modelAssumptionId": null,
+        "parameters": {
+          "integers": {
+            "minimumDividendPaymentYears": 3,
+            "minimumListingYears": 3,
+            "stageTwoCandidateCount": 13,
+            "targetConstituentCount": 10
+          },
+          "decimals": {
+            "incumbentMaximumPriceToBookRatio": 1.5,
+            "individualWeightCap": 0.25,
+            "maximumDividendPayoutRatio": 0.7,
+            "maximumPriceToBookRatio": 1.0,
+            "minimumAverageDailyValueTraded": 4000000000.0,
+            "minimumDividendPayoutRatio": 0.1,
+            "roeEligibleFraction": 0.9
+          },
+          "booleans": {},
+          "texts": {
+            "thresholdPolicy": "KRX_MAY_2026_RULES"
+          },
+          "integerSets": {
+            "reconstitutionMonths": [
+              6,
+              12
+            ]
+          }
+        }
       },
+      "equityReferenceProfile": null,
       "fixedIncomeProfile": null,
       "fundOfFundsMethodologyProfile": null,
       "commoditySpotTerms": null,
@@ -23982,49 +24004,91 @@
       "alternativeRiskPremiaProfile": null
     },
     {
-      "benchmarkId": "proxy.nyse_arca.vtv",
-      "version": 1,
-      "displayName": "Vanguard Value ETF",
-      "administrator": "Unverified",
-      "officialSourceUrls": [],
+      "benchmarkId": "morningstar.us-large-cap-value",
+      "version": 2,
+      "displayName": "Morningstar US Large Cap Value Index",
+      "administrator": "Morningstar Indexes",
+      "officialSourceUrls": [
+        "https://indexes.morningstar.com/api/docs/6a64c1efd7ce7b357809b99e",
+        "https://indexes.morningstar.com/docs/rulebook/morningstar-us-total-market-FS00009VTK",
+        "https://indexes.morningstar.com/indexes/details/morningstar-us-large-cap-value-FS00009VTJ"
+      ],
       "baseCurrency": "USD",
-      "engineKind": "EQUITY_REFERENCE",
-      "supportLevel": "PROVISIONAL_PROXY",
+      "engineKind": "EQUITY_METHODOLOGY",
+      "supportLevel": "VERIFIED_RULES",
       "componentBenchmarkRefs": [],
-      "equityMethodology": null,
-      "equityReferenceProfile": {
-        "region": "UNITED_STATES",
-        "countryCodes": [
-          "US"
-        ],
-        "eligibleUniverse": "BROAD_MARKET",
-        "sectorPolicy": "ALL_SECTORS",
-        "includedSectors": [],
-        "themeId": null,
-        "stylePolicies": [
-          "VALUE"
-        ],
-        "weightingModel": "FACTOR_SCORE",
-        "targetConstituentCount": null,
-        "individualWeightCap": null,
-        "sectorWeightCap": null,
-        "supportLevel": "PROVISIONAL_PROXY",
-        "provenance": "MODEL_ASSUMPTION",
-        "confidence": "MEDIUM",
-        "officialSourceUrls": [],
-        "assumptionId": "catalog-name-description-policy-v2:proxy.nyse_arca.vtv",
-        "selectionCalendar": "ANNUAL",
-        "selectionMonths": [
-          12
-        ],
-        "reweightCalendar": "QUARTERLY",
-        "reweightMonths": [
-          3,
-          6,
-          9,
-          12
-        ]
+      "equityMethodology": {
+        "methodologyRef": {
+          "ownerSourceId": "builtin:base",
+          "methodologyId": "morningstar-us-large-cap-value",
+          "version": 2
+        },
+        "effectiveFrom": "2026-03-25",
+        "referenceUniverse": "US_BROAD_EQUITY",
+        "decisionModel": "DISCRETIONARY_PROXY",
+        "modelAssumptionId": "morningstar-large-cap-value-data-and-committee-proxy-2026-07-v1",
+        "parameters": {
+          "integers": {
+            "lowVolumeDeletionRankingCount": 2,
+            "maximumConstituentCount": 1001,
+            "reentryClearanceRankingCount": 4,
+            "transitionTradingDayCount": 5
+          },
+          "decimals": {
+            "megaAdjacentCoreLower": 0.5,
+            "megaAdjacentCoreUpper": 0.81,
+            "megaBandLower": 0.64,
+            "megaBandUpper": 0.76,
+            "megaCapTarget": 0.7,
+            "midAdjacentCoreLower": 0.76,
+            "midAdjacentCoreUpper": 0.96,
+            "midBandLower": 0.81,
+            "midBandUpper": 0.89,
+            "midCapTarget": 0.85,
+            "minimumAdditionCompanyMarketCap": 15000000.0,
+            "minimumAdditionFloatFraction": 0.125,
+            "minimumAdditionUniverseFloatMarketCapShare": 0.00005,
+            "minimumAdditionVolumeRatio": 0.001,
+            "minimumDeletionCompanyMarketCap": 10000000.0,
+            "minimumDeletionFloatFraction": 0.1,
+            "minimumDeletionUniverseFloatMarketCapShare": 0.00001,
+            "minimumDeletionVolumeRatio": 0.0008,
+            "packetFraction": 0.5,
+            "ricAggregateCap": 0.45,
+            "ricAggregateThreshold": 0.045,
+            "ricComplianceTargetAggregateCap": 0.49,
+            "ricComplianceTargetAggregateThreshold": 0.0475,
+            "ricComplianceTargetIndividualCap": 0.245,
+            "ricComplianceTestAggregateCap": 0.5,
+            "ricComplianceTestAggregateThreshold": 0.05,
+            "ricComplianceTestIndividualCap": 0.25,
+            "ricIndividualCap": 0.225,
+            "ricMaximumAdjustmentRatio": 10.0,
+            "smallAdjacentCoreLower": 0.89,
+            "smallAdjacentCoreUpper": 1.0,
+            "smallBandLower": 0.96,
+            "smallBandUpper": 0.995,
+            "smallCapTarget": 0.98,
+            "styleBandLower": 0.3333,
+            "styleBandUpper": 0.6667,
+            "winsorLower": 0.05,
+            "winsorUpper": 0.95
+          },
+          "booleans": {},
+          "texts": {
+            "rankingPricePolicy": "FIRST_FRIDAY_CLOSE_LICENSED_RANDOM_DAY_PROXY"
+          },
+          "integerSets": {
+            "reconstitutionMonths": [
+              3,
+              6,
+              9,
+              12
+            ]
+          }
+        }
       },
+      "equityReferenceProfile": null,
       "fixedIncomeProfile": null,
       "fundOfFundsMethodologyProfile": null,
       "commoditySpotTerms": null,
@@ -25467,6 +25531,8 @@
         },
         "effectiveFrom": "2026-03-23",
         "referenceUniverse": "US_BROAD_EQUITY",
+        "decisionModel": "RULE_BASED",
+        "modelAssumptionId": null,
         "parameters": {
           "integers": {
             "annualReconstitutionMonth": 3,
@@ -25561,6 +25627,66 @@
           12
         ]
       },
+      "fixedIncomeProfile": null,
+      "fundOfFundsMethodologyProfile": null,
+      "commoditySpotTerms": null,
+      "futuresReferenceTerms": null,
+      "compositeReferenceProfile": null,
+      "alternativeRiskPremiaProfile": null
+    },
+    {
+      "benchmarkId": "spdj-sp-500",
+      "version": 2,
+      "displayName": "S&P 500 Index",
+      "administrator": "S&P Dow Jones Indices",
+      "officialSourceUrls": [
+        "https://www.spglobal.com/spdji/en/documents/index-policies/methodology-sp-float-adjustment.pdf",
+        "https://www.spglobal.com/spdji/en/documents/methodologies/methodology-sp-equity-indices-policies-practices.pdf",
+        "https://www.spglobal.com/spdji/en/documents/methodologies/methodology-sp-us-indices.pdf",
+        "https://www.spglobal.com/spdji/en/indices/equity/sp-500/",
+        "https://www.spglobal.com/spdji/en/methodology/article/index-mathematics-methodology/"
+      ],
+      "baseCurrency": "USD",
+      "engineKind": "EQUITY_METHODOLOGY",
+      "supportLevel": "VERIFIED_RULES",
+      "componentBenchmarkRefs": [],
+      "equityMethodology": {
+        "methodologyRef": {
+          "ownerSourceId": "builtin:base",
+          "methodologyId": "sp-500",
+          "version": 2
+        },
+        "effectiveFrom": "2026-06-22",
+        "referenceUniverse": "US_BROAD_EQUITY",
+        "decisionModel": "DISCRETIONARY_PROXY",
+        "modelAssumptionId": "sp500-committee-proxy-2026-08-15-v1",
+        "parameters": {
+          "integers": {
+            "quarterlyShareUpdateMonthCount": 4,
+            "targetCompanyCount": 500
+          },
+          "decimals": {
+            "minimumFloatAdjustedLiquidityRatio": 0.75,
+            "minimumFloatAdjustedMarketCap": 11350000000.0,
+            "minimumInvestableWeightFactor": 0.1,
+            "minimumMonthlyShareVolume": 250000.0,
+            "minimumTotalCompanyMarketCap": 22700000000.0
+          },
+          "booleans": {},
+          "texts": {
+            "thresholdPolicy": "FROZEN_JULY_2026_GUIDELINE"
+          },
+          "integerSets": {
+            "quarterlyShareUpdateMonths": [
+              3,
+              6,
+              9,
+              12
+            ]
+          }
+        }
+      },
+      "equityReferenceProfile": null,
       "fixedIncomeProfile": null,
       "fundOfFundsMethodologyProfile": null,
       "commoditySpotTerms": null,
@@ -36708,11 +36834,11 @@
       "market": "NYSE_ARCA",
       "sector": "OTHER",
       "instrumentType": "ETF",
-      "initialPrice": 49,
-      "volatility": 0.25,
-      "dividendYield": 0.0212,
-      "marketCap": 240250000000,
-      "sharesOutstanding": 4903061224,
+      "initialPrice": 706.4,
+      "volatility": 0.1306,
+      "dividendYield": 0.012,
+      "marketCap": 978960000276,
+      "sharesOutstanding": 1385843715,
       "description": "미국 S&P 500 대형주를 시가총액 비중으로 보유해 시장수익률을 추구하는 ETF입니다.",
       "beta": 1,
       "quantityStep": 1,
@@ -36721,7 +36847,7 @@
         "benchmark": "S&P 500 Index",
         "assetClass": "BROAD_EQUITY",
         "taxCategory": "FOREIGN_LISTED",
-        "annualExpenseRatio": 0.001,
+        "annualExpenseRatio": 0.0003,
         "fxProfile": {
           "legs": [
             {
@@ -36739,16 +36865,27 @@
       "fundProductProfile": {
         "benchmarkRef": {
           "benchmarkId": "spdj-sp-500",
-          "version": 1
+          "version": 2
         },
-        "replicationMode": "UNVERIFIED",
-        "returnVariant": "UNVERIFIED",
+        "replicationMode": "PHYSICAL_FULL_REPLICATION",
+        "returnVariant": "TOTAL_RETURN",
         "legalStructure": "OPEN_END_ETF",
         "referenceExposure": "EQUITY",
         "returnTransforms": [
           "PLAIN"
         ],
         "trackingErrorAnnualVolatility": null,
+        "operationProfile": {
+          "managementStyle": "PASSIVE",
+          "syntheticSwapFunding": null,
+          "activeReturnModelSupport": "NOT_APPLICABLE",
+          "provenance": "VERIFIED_PRODUCT_DISCLOSURE",
+          "officialSourceUrls": [
+            "https://investor.vanguard.com/investment-products/etfs/profile/voo",
+            "https://workplace.vanguard.com/assets/corp/fund_communications/pdf_publish/us-products/fact-sheet/F0968.pdf",
+            "https://workplace.vanguard.com/assets/corp/fund_communications/pdf_publish/us-products/prospectuses/p968.pdf"
+          ]
+        },
         "dailyResetTerms": null,
         "etnProductTerms": null,
         "closedEndFundTerms": null,
@@ -36760,6 +36897,7 @@
       "behaviorProfile": {
         "strategy": "BROAD_EQUITY",
         "distributionFrequency": "QUARTERLY",
+        "distributionCalendar": "VANGUARD_VOO_EX_DATE",
         "upsideParticipation": 1,
         "downsideParticipation": 1,
         "durationYears": 0,
@@ -36781,7 +36919,12 @@
         "issuerOrManager": "Vanguard",
         "strategySummary": "미국 S&P 500 대형주를 시가총액 비중으로 보유해 시장수익률을 추구하는 ETF입니다.",
         "officialSourceUrl": "https://investor.vanguard.com/investment-products/etfs/profile/voo",
-        "supportingSourceUrls": [],
+        "supportingSourceUrls": [
+          "https://advisors.vanguard.com/tax-center",
+          "https://workplace.vanguard.com/assets/corp/fund_communications/pdf_publish/us-products/fact-sheet/F0968.pdf",
+          "https://workplace.vanguard.com/assets/corp/fund_communications/pdf_publish/us-products/prospectuses/p968.pdf",
+          "https://www.nasdaq.com/market-activity/etf/voo/historical"
+        ],
         "eventRiskTags": [
           "sp500",
           "index_rebalance",
@@ -37310,24 +37453,24 @@
       "order": 141,
       "symbol": "VTV",
       "name": "뱅가드 미국 대형 가치주 ETF",
-      "englishName": "Vanguard Value ETF",
+      "englishName": "Vanguard Morningstar Value ETF",
       "market": "NYSE_ARCA",
       "sector": "OTHER",
       "instrumentType": "ETF",
-      "initialPrice": 130,
-      "volatility": 0.27,
-      "dividendYield": 0.0203,
-      "marketCap": 235450000000,
-      "sharesOutstanding": 1811153846,
-      "description": "가치 특성이 높은 미국 대형주를 다섯 가지 가치 지표로 선별하는 ETF입니다.",
+      "initialPrice": 227.51,
+      "volatility": 0.1155,
+      "dividendYield": 0.0181,
+      "marketCap": 187800000000,
+      "sharesOutstanding": 825458222,
+      "description": "미국 대형주를 가치·성장 점수로 분류하고 50% 패킷 이동과 5거래일 전환을 적용하는 ETF입니다.",
       "beta": 1,
       "quantityStep": 1,
       "lotSize": 1,
       "etfProfile": {
-        "benchmark": "Vanguard Value ETF",
+        "benchmark": "Morningstar US Large Cap Value Index",
         "assetClass": "BROAD_EQUITY",
         "taxCategory": "FOREIGN_LISTED",
-        "annualExpenseRatio": 0.0012,
+        "annualExpenseRatio": 0.0003,
         "fxProfile": {
           "legs": [
             {
@@ -37344,17 +37487,28 @@
       },
       "fundProductProfile": {
         "benchmarkRef": {
-          "benchmarkId": "proxy.nyse_arca.vtv",
-          "version": 1
+          "benchmarkId": "morningstar.us-large-cap-value",
+          "version": 2
         },
-        "replicationMode": "UNVERIFIED",
-        "returnVariant": "UNVERIFIED",
+        "replicationMode": "PHYSICAL_FULL_REPLICATION",
+        "returnVariant": "TOTAL_RETURN",
         "legalStructure": "OPEN_END_ETF",
         "referenceExposure": "EQUITY",
         "returnTransforms": [
           "PLAIN"
         ],
         "trackingErrorAnnualVolatility": null,
+        "operationProfile": {
+          "managementStyle": "PASSIVE",
+          "syntheticSwapFunding": null,
+          "activeReturnModelSupport": "NOT_APPLICABLE",
+          "provenance": "VERIFIED_PRODUCT_DISCLOSURE",
+          "officialSourceUrls": [
+            "https://investor.vanguard.com/investment-products/etfs/profile/vtv",
+            "https://personal1.vanguard.com/pub/Pdf/sp966.pdf",
+            "https://workplace.vanguard.com/assets/corp/fund_communications/pdf_publish/us-products/fact-sheet/F0966.pdf"
+          ]
+        },
         "dailyResetTerms": null,
         "etnProductTerms": null,
         "closedEndFundTerms": null,
@@ -37366,6 +37520,7 @@
       "behaviorProfile": {
         "strategy": "BROAD_EQUITY",
         "distributionFrequency": "QUARTERLY",
+        "distributionCalendar": "VANGUARD_VTV_EX_DATE",
         "upsideParticipation": 1,
         "downsideParticipation": 1,
         "durationYears": 0,
@@ -37383,15 +37538,24 @@
       "identityProfile": {
         "aliases": [
           "뱅가드 미국 대형 가치주 ETF",
+          "뱅가드 모닝스타 가치주 ETF",
+          "Vanguard Value ETF",
           "Vanguard Morningstar Value ETF"
         ],
         "issuerOrManager": "Vanguard",
-        "strategySummary": "가치 특성이 높은 미국 대형주를 다섯 가지 가치 지표로 선별하는 ETF입니다.",
+        "strategySummary": "미국 대형주를 가치·성장 점수로 분류하고 50% 패킷 이동과 5거래일 전환을 적용하는 ETF입니다.",
         "officialSourceUrl": "https://investor.vanguard.com/investment-products/etfs/profile/vtv",
-        "supportingSourceUrls": [],
+        "supportingSourceUrls": [
+          "https://advisors.vanguard.com/content/dam/fas/pdfs/MRSTR.pdf",
+          "https://corporate.vanguard.com/content/corporatesite/us/en/corp/who-we-are/pressroom/press-release-vanguard-to-update-names-of-us-equity-index-funds-tracking-morningstar-indexes-042926.html",
+          "https://personal1.vanguard.com/pub/Pdf/sp966.pdf",
+          "https://workplace.vanguard.com/assets/corp/fund_communications/pdf_publish/us-products/fact-sheet/F0966.pdf"
+        ],
         "eventRiskTags": [
           "value_factor",
-          "index_rebalance"
+          "index_rebalance",
+          "style_migration",
+          "index_transition"
         ],
         "maturityDate": null,
         "callable": false,
@@ -67361,10 +67525,10 @@
       "market": "KOSPI",
       "sector": "FINANCIALS",
       "instrumentType": "ETF",
-      "initialPrice": 10660,
-      "volatility": 0.261,
-      "dividendYield": 0.051,
-      "marketCap": 196845000000,
+      "initialPrice": 13330,
+      "volatility": 0.3269,
+      "dividendYield": 0.0446,
+      "marketCap": 246148567470,
       "sharesOutstanding": 18465759,
       "description": "KOSPI 200 금융주에서 고ROE·고배당·주주환원 기준으로 10종목을 선별하는 국내주식 패시브 ETF.",
       "beta": 0.95,
@@ -67374,7 +67538,7 @@
         "benchmark": "KOSPI 200 금융 고배당 TOP10 지수",
         "assetClass": "SECTOR_EQUITY",
         "taxCategory": "KOREAN_DOMESTIC_EQUITY",
-        "annualExpenseRatio": 0.0009,
+        "annualExpenseRatio": 0.003367,
         "fxProfile": {
           "legs": [
             {
@@ -67391,17 +67555,27 @@
       },
       "fundProductProfile": {
         "benchmarkRef": {
-          "benchmarkId": "proxy.kospi.0089d0",
-          "version": 1
+          "benchmarkId": "krx.kospi200-financial-high-dividend-top10",
+          "version": 2
         },
-        "replicationMode": "UNVERIFIED",
-        "returnVariant": "UNVERIFIED",
+        "replicationMode": "PHYSICAL_SAMPLING",
+        "returnVariant": "PRICE_RETURN",
         "legalStructure": "OPEN_END_ETF",
         "referenceExposure": "EQUITY",
         "returnTransforms": [
           "PLAIN"
         ],
         "trackingErrorAnnualVolatility": null,
+        "operationProfile": {
+          "managementStyle": "PASSIVE",
+          "syntheticSwapFunding": null,
+          "activeReturnModelSupport": "NOT_APPLICABLE",
+          "provenance": "VERIFIED_PRODUCT_DISCLOSURE",
+          "officialSourceUrls": [
+            "https://www.samsungfund.com/etf/product/view.do?id=2ETFS1",
+            "https://www.samsungfund.com/upload/invest/2ETFS1-A.pdf"
+          ]
+        },
         "dailyResetTerms": null,
         "etnProductTerms": null,
         "closedEndFundTerms": null,
@@ -67413,6 +67587,7 @@
       "behaviorProfile": {
         "strategy": "DIVIDEND_EQUITY",
         "distributionFrequency": "MONTHLY",
+        "distributionCalendar": "KRX_PRECEDING_BUSINESS_DAY_15",
         "upsideParticipation": 1,
         "downsideParticipation": 1,
         "durationYears": 0,
@@ -67432,7 +67607,10 @@
         "issuerOrManager": "삼성자산운용",
         "strategySummary": "KOSPI 200 금융주에서 고ROE·고배당·주주환원 기준으로 10종목을 선별하는 국내주식 패시브 ETF.",
         "officialSourceUrl": "https://www.samsungfund.com/etf/product/view.do?id=2ETFS1",
-        "supportingSourceUrls": [],
+        "supportingSourceUrls": [
+          "https://www.samsungfund.com/etf/lounge/notice-view.do?no=75474",
+          "https://www.samsungfund.com/upload/invest/2ETFS1-A.pdf"
+        ],
         "eventRiskTags": [
           "금융업 집중",
           "10종목 집중",
@@ -67456,13 +67634,13 @@
       "name": "TIGER 코리아배당다우존스",
       "englishName": "TIGER 코리아배당다우존스",
       "market": "KOSPI",
-      "sector": "FINANCIALS",
+      "sector": "OTHER",
       "instrumentType": "ETF",
-      "initialPrice": 11260,
-      "volatility": 0.262,
-      "dividendYield": 0.047,
-      "marketCap": 194457000000,
-      "sharesOutstanding": 17269715,
+      "initialPrice": 15910,
+      "volatility": 0.2981,
+      "dividendYield": 0.04075,
+      "marketCap": 346116624690,
+      "sharesOutstanding": 21754659,
       "description": "재무건전성·ROE·배당수익률·배당성장을 반영해 국내 품질 배당주 30종목을 담는 패시브 ETF.",
       "beta": 0.95,
       "quantityStep": 1,
@@ -67471,7 +67649,7 @@
         "benchmark": "Dow Jones Korea Dividend 30 Index (PR)",
         "assetClass": "BROAD_EQUITY",
         "taxCategory": "KOREAN_DOMESTIC_EQUITY",
-        "annualExpenseRatio": 0.0009,
+        "annualExpenseRatio": 0.003,
         "fxProfile": {
           "legs": [
             {
@@ -67488,10 +67666,10 @@
       },
       "fundProductProfile": {
         "benchmarkRef": {
-          "benchmarkId": "proxy.kospi.0052d0",
-          "version": 1
+          "benchmarkId": "spdj.dow-jones-korea-dividend-30",
+          "version": 2
         },
-        "replicationMode": "UNVERIFIED",
+        "replicationMode": "PHYSICAL_FULL_REPLICATION",
         "returnVariant": "PRICE_RETURN",
         "legalStructure": "OPEN_END_ETF",
         "referenceExposure": "EQUITY",
@@ -67499,6 +67677,16 @@
           "PLAIN"
         ],
         "trackingErrorAnnualVolatility": null,
+        "operationProfile": {
+          "managementStyle": "PASSIVE",
+          "syntheticSwapFunding": null,
+          "activeReturnModelSupport": "NOT_APPLICABLE",
+          "provenance": "VERIFIED_PRODUCT_DISCLOSURE",
+          "officialSourceUrls": [
+            "https://www.tigeretf.com/ko/product/search/detail/index.do?ksdFund=KR70052D0006",
+            "https://www.tigeretf.com/upload/etf/20260528073140006876.pdf"
+          ]
+        },
         "dailyResetTerms": null,
         "etnProductTerms": null,
         "closedEndFundTerms": null,
@@ -67510,6 +67698,7 @@
       "behaviorProfile": {
         "strategy": "DIVIDEND_EQUITY",
         "distributionFrequency": "MONTHLY",
+        "distributionCalendar": "KRX_PRECEDING_BUSINESS_DAY_15",
         "upsideParticipation": 1,
         "downsideParticipation": 1,
         "durationYears": 0,
@@ -67529,7 +67718,10 @@
         "issuerOrManager": "미래에셋자산운용",
         "strategySummary": "재무건전성·ROE·배당수익률·배당성장을 반영해 국내 품질 배당주 30종목을 담는 패시브 ETF.",
         "officialSourceUrl": "https://investments.miraeasset.com/tigeretf/ko/product/search/detail/index.do?ksdFund=KR70052D0006",
-        "supportingSourceUrls": [],
+        "supportingSourceUrls": [
+          "https://www.spglobal.com/spdji/en/documents/methodologies/methodology-dj-dividend-indices.pdf",
+          "https://www.tigeretf.com/upload/etf/20260528073140006876.pdf"
+        ],
         "eventRiskTags": [
           "배당·가치 팩터",
           "업종 쏠림",
