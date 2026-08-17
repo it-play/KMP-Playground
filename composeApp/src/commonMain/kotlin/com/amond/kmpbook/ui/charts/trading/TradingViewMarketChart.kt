@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +33,7 @@ import com.amond.kmpbook.domain.model.pricing.PriceBar
 import com.amond.kmpbook.domain.model.trading.OrderSide
 import com.amond.kmpbook.domain.model.trading.Trade
 import com.amond.kmpbook.presentation.news.NewsStoryUi
+import com.amond.kmpbook.ui.components.LoadingFinancialFact
 import com.amond.kmpbook.ui.format.formatQuantity
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketType
@@ -371,7 +373,21 @@ private fun ChartLoading(modifier: Modifier) {
         modifier = modifier.background(MarketColors.Paper),
         contentAlignment = Alignment.Center,
     ) {
-        CircularProgressIndicator(color = MarketColors.Signal)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(color = MarketColors.Signal)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "차트를 준비하고 있습니다.",
+                style = MarketType.label,
+                color = MarketColors.InkMuted,
+            )
+            Spacer(Modifier.height(14.dp))
+            LoadingFinancialFact(
+                factKey = "trading-chart",
+                modifier = Modifier.padding(horizontal = 24.dp).widthIn(max = 480.dp),
+                compact = true,
+            )
+        }
     }
 }
 

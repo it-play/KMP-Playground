@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import com.amond.kmpbook.domain.model.game.TurnStep
 import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.presentation.simulator.TurnProcessingUiState
+import com.amond.kmpbook.ui.components.LoadingFinancialFact
 import com.amond.kmpbook.ui.components.MarketButton
 import com.amond.kmpbook.ui.components.MarketButtonTone
 import com.amond.kmpbook.ui.components.MarketButtonVariant
@@ -379,6 +380,12 @@ private fun ProcessingDetail(
                 }
             }
         }
+        LoadingFinancialFact(
+            factKey = "turn:${state.startedAt}",
+            modifier = Modifier.padding(top = MarketSpacing.xs),
+            dark = true,
+            compact = true,
+        )
     }
 }
 

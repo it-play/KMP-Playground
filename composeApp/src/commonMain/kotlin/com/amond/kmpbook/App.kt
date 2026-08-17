@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -74,6 +75,7 @@ import com.amond.kmpbook.presentation.settings.AudioSettings
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
 import com.amond.kmpbook.presentation.simulator.SimulatorViewModel
+import com.amond.kmpbook.ui.components.LoadingFinancialFact
 import com.amond.kmpbook.ui.components.MarketProtectionDetailSurface
 import com.amond.kmpbook.ui.components.MarketProtectionStrip
 import com.amond.kmpbook.ui.screens.dashboard.HomeDashboardScreen
@@ -786,33 +788,46 @@ private fun GameOperationLoadingDialog(
 ) {
     Dialog(onDismissRequest = {}) {
         Surface(
-            modifier = Modifier.width(380.dp),
+            modifier = Modifier.width(460.dp),
             color = MarketColors.NavyRaised,
             shape = RoundedCornerShape(14.dp),
             shadowElevation = 6.dp,
         ) {
-            Row(
+            Column(
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
-                horizontalArrangement = Arrangement.spacedBy(18.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(38.dp),
-                    color = MarketColors.SignalLine,
-                    strokeWidth = 3.dp,
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(
-                        text = title,
-                        style = MarketType.heading,
-                        color = Color.White,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(38.dp),
+                        color = MarketColors.SignalLine,
+                        strokeWidth = 3.dp,
                     )
-                    Text(
-                        text = detail,
-                        style = MarketType.body,
-                        color = MarketColors.Grey200,
-                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Text(
+                            text = title,
+                            style = MarketType.heading,
+                            color = Color.White,
+                        )
+                        Text(
+                            text = detail,
+                            style = MarketType.body,
+                            color = MarketColors.Grey200,
+                        )
+                    }
                 }
+                LoadingFinancialFact(
+                    factKey = "operation:$title",
+                    dark = true,
+                    compact = true,
+                )
             }
         }
     }
@@ -1029,6 +1044,12 @@ private fun TurnAdvanceLoadingOverlay(
                         )
                     }
                 }
+                LoadingFinancialFact(
+                    factKey = "turn-fallback:$hours",
+                    modifier = Modifier.padding(top = 16.dp),
+                    dark = true,
+                    compact = true,
+                )
                 TextButton(
                     onClick = onCancel,
                     modifier = Modifier.align(Alignment.End),

@@ -69,6 +69,7 @@ import com.amond.kmpbook.modding.model.ModSettingType
 import com.amond.kmpbook.modding.storage.loadModCoverImage
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
+import com.amond.kmpbook.ui.components.LoadingFinancialFact
 import com.amond.kmpbook.ui.components.MarketButton
 import com.amond.kmpbook.ui.components.MarketButtonVariant
 import com.amond.kmpbook.ui.components.MarketCheckRow
@@ -332,6 +333,8 @@ private fun ModsLoadingState(modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.height(12.dp))
         Text("모드 폴더를 검색하고 있습니다.", style = MarketType.body, color = MarketColors.InkMuted)
+        Spacer(Modifier.height(16.dp))
+        LoadingFinancialFact(factKey = "mods-discovery")
     }
 }
 

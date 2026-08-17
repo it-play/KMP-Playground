@@ -44,6 +44,7 @@ import com.amond.kmpbook.persistence.model.GameSaveEntry
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
+import com.amond.kmpbook.ui.components.LoadingFinancialFact
 import com.amond.kmpbook.ui.components.StatusLabel
 import com.amond.kmpbook.ui.components.VisibleVerticalScrollbar
 import com.amond.kmpbook.ui.format.formatDateTimeKst
@@ -303,6 +304,8 @@ private fun SaveOverview(
                 )
                 Spacer(Modifier.height(12.dp))
                 Text("저장 파일을 확인하고 있습니다.", style = MarketType.body, color = MarketColors.InkMuted)
+                Spacer(Modifier.height(16.dp))
+                LoadingFinancialFact(factKey = "lobby-save-scan")
             }
         } else if (saves.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

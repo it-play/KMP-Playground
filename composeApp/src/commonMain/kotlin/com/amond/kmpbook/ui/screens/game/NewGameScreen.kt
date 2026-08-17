@@ -55,6 +55,7 @@ import com.amond.kmpbook.domain.simulation.market.ExternalMarketForces
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
+import com.amond.kmpbook.ui.components.LoadingFinancialFact
 import com.amond.kmpbook.ui.components.MarketButton
 import com.amond.kmpbook.ui.components.MarketButtonVariant
 import com.amond.kmpbook.ui.components.MarketCheckRow
@@ -436,6 +437,13 @@ private fun NewGameOperationStatus(message: String, isBusy: Boolean) {
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(message, style = MarketType.caption, color = MarketColors.Ink)
+                if (isBusy) {
+                    Spacer(Modifier.height(7.dp))
+                    LoadingFinancialFact(
+                        factKey = "new-game-preparation",
+                        compact = true,
+                    )
+                }
             }
         }
     }

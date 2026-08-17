@@ -40,6 +40,7 @@ import com.amond.kmpbook.domain.data.DesktopInstrumentPackParser
 import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.data.InstrumentPack
 import com.amond.kmpbook.presentation.simulator.SimulatorViewModel
+import com.amond.kmpbook.ui.components.LoadingFinancialFact
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketDesignSystem
 import com.amond.kmpbook.ui.theme.MarketLayout
@@ -261,6 +262,12 @@ private fun BootstrapLoadingScreen(
                                 modifier = Modifier.weight(1f),
                                 style = MarketType.body,
                                 color = if (error == null) MarketColors.Grey200 else MarketColors.Rise,
+                            )
+                        }
+                        if (error == null) {
+                            LoadingFinancialFact(
+                                factKey = "bootstrap:$stage",
+                                dark = true,
                             )
                         }
                         if (error != null) {

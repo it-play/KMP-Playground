@@ -1,5 +1,6 @@
 package com.amond.kmpbook.ui.screens.game
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +27,7 @@ import com.amond.kmpbook.presentation.market.MarketIndexPoint
 import com.amond.kmpbook.presentation.market.MarketIndexSeries
 import com.amond.kmpbook.ui.charts.SparklineChart
 import com.amond.kmpbook.ui.components.LedgerPanel
+import com.amond.kmpbook.ui.components.LoadingFinancialFact
 import com.amond.kmpbook.ui.format.formatPercent
 import com.amond.kmpbook.ui.format.formatPrice
 import com.amond.kmpbook.ui.theme.MarketColors
@@ -66,8 +68,23 @@ fun LobbyMarketCarousel(modifier: Modifier = Modifier) {
 
     Box(modifier) {
         when {
-            loading && series.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            loading && series.isEmpty() -> Column(
+                Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
                 CircularProgressIndicator(color = MarketColors.Primary)
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "시장 지수를 불러오고 있습니다.",
+                    style = MarketType.body,
+                    color = MarketColors.InkMuted,
+                )
+                Spacer(Modifier.height(16.dp))
+                LoadingFinancialFact(
+                    factKey = "lobby-market-history",
+                    compact = true,
+                )
             }
             loadError != null && series.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(loadError.orEmpty(), style = MarketType.body, color = MarketColors.RiseText)

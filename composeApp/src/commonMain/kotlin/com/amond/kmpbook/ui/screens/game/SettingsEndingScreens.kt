@@ -49,6 +49,7 @@ import com.amond.kmpbook.presentation.settings.AudioSettings
 import com.amond.kmpbook.ui.charts.LineAreaChart
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
+import com.amond.kmpbook.ui.components.LoadingFinancialFact
 import com.amond.kmpbook.ui.components.MarketButton
 import com.amond.kmpbook.ui.components.MarketButtonTone
 import com.amond.kmpbook.ui.components.MarketButtonVariant
@@ -275,6 +276,11 @@ fun SettingsScreen(
                                             "저장 파일을 확인하고 있습니다.",
                                             style = MarketType.body,
                                             color = MarketColors.InkMuted,
+                                        )
+                                        Spacer(Modifier.height(12.dp))
+                                        LoadingFinancialFact(
+                                            factKey = "settings-save-scan",
+                                            compact = true,
                                         )
                                     }
                                 } else {
