@@ -18,15 +18,17 @@ import kotlinx.datetime.toLocalDateTime
  * 게임 시간과 거래소 정규장을 계산하는 상태 없는 달력.
  *
  * 게임 기준 시각은 KST이며, 미국 시장 판단은 America/New_York 변환 결과를 사용하므로
- * 서머타임(EDT/EST) 전환이 자동 반영된다. 거래소별 임시 휴장일은 [closedDates] 인자로
- * 주입할 수 있어 엔진과 테스트가 외부 상태 없이 동일한 결과를 얻는다. 미국 정규장은
- * 공통 09:30-16:00이고 확장 세션 표시는 [MarketVenueProfiles]의 venue 규칙을 따른다.
+ * 서머타임(EDT/EST) 전환이 자동 반영된다. 연산형 베이스 휴장일과 NYSE
+ * 조기폐장은 항상 적용하고, [closedDates]는 거래소별 임시 휴장일을 추가한다.
+ * 미국 정규장은 09:30에 열리고 13:00 또는 16:00에 닫히며, 확장 세션 표시는
+ * [MarketVenueProfiles]의 venue 규칙을 따른다.
  */
 object GameCalendar {
     val KOREA_TIME_ZONE: TimeZone = TimeZone.of("Asia/Seoul")
     val NEW_YORK_TIME_ZONE: TimeZone = TimeZone.of("America/New_York")
 
-    val START_LOCAL_DATE_TIME: LocalDateTime = LocalDateTime(2026, 8, 7, 9, 0)
+    /** 토요일 bootstrap 뒤 첫 거래 세션은 2026-08-03 KRX 정규장이다. */
+    val START_LOCAL_DATE_TIME: LocalDateTime = LocalDateTime(2026, 8, 1, 9, 0)
     val CAMPAIGN_END_DATE: LocalDate = LocalDate(2040, 12, 31)
     private val END_NEW_YORK_DATE_TIME: LocalDateTime = LocalDateTime(CAMPAIGN_END_DATE, LocalTime(16, 0))
     val startInstant: Instant = START_LOCAL_DATE_TIME.toInstant(KOREA_TIME_ZONE)
@@ -42,7 +44,6 @@ object GameCalendar {
     private val krxOpen: LocalTime = LocalTime(9, 0)
     private val krxClose: LocalTime = LocalTime(15, 30)
     private val usRegularOpen: LocalTime = LocalTime(9, 30)
-    private val usRegularClose: LocalTime = LocalTime(16, 0)
 
     fun timeZoneFor(market: Market): TimeZone = when {
         market.isKorean -> KOREA_TIME_ZONE
@@ -98,13 +99,10 @@ object GameCalendar {
         closedDates: Set<LocalDate> = emptySet(),
     ): Boolean {
         val localDate = marketLocalDateTime(market, time).date
-        return !isWeekend(localDate) && localDate !in closedDates
+        return !isClosed(market, localDate, closedDates)
     }
 
-    /**
-     * KRX는 09:00 이상 15:30 미만, 미국은 현지 09:30 이상 16:00 미만을 정규장으로 본다.
-     * 휴장일 집합은 각 시장 현지 날짜로 전달한다.
-     */
+    /** 휴장일 집합과 날짜별 조기폐장을 반영한 정규장 구간인지 판정한다. */
     fun isRegularMarketOpen(
         market: Market,
         time: Instant,
@@ -122,20 +120,13 @@ object GameCalendar {
         closedDates: Set<LocalDate> = emptySet(),
     ): Double {
         val local = marketLocalDateTime(market, hourStart)
-        if (isWeekend(local.date) || local.date in closedDates) return 0.0
-        return if (market.isKorean) {
-            when {
-                local.time >= LocalTime(9, 0) && local.time < LocalTime(15, 0) -> 1.0
-                local.time >= LocalTime(15, 0) && local.time < LocalTime(15, 30) -> 0.5
-                else -> 0.0
-            }
-        } else {
-            when {
-                local.time >= LocalTime(9, 0) && local.time < LocalTime(10, 0) -> 0.5
-                local.time >= LocalTime(10, 0) && local.time < LocalTime(16, 0) -> 1.0
-                else -> 0.0
-            }
-        }
+        val window = regularSessionWindow(market, local.date, closedDates) ?: return 0.0
+        val hourEnd = hourStart + 1.hours
+        val overlapStart = maxOf(hourStart, window.opensAt)
+        val overlapEnd = minOf(hourEnd, window.closesAt)
+        if (overlapEnd <= overlapStart) return 0.0
+        return ((overlapEnd - overlapStart).inWholeMilliseconds / MILLIS_PER_HOUR)
+            .coerceIn(0.0, 1.0)
     }
 
     fun marketSession(
@@ -144,7 +135,7 @@ object GameCalendar {
         closedDates: Set<LocalDate> = emptySet(),
     ): MarketSession {
         val local = marketLocalDateTime(market, time)
-        if (isWeekend(local.date) || local.date in closedDates) return MarketSession.CLOSED
+        if (isClosed(market, local.date, closedDates)) return MarketSession.CLOSED
 
         if (market.isKorean) {
             return if (local.time.isInHalfOpenRange(krxOpen, krxClose)) {
@@ -156,13 +147,17 @@ object GameCalendar {
 
         val venue = MarketVenueProfiles.forMarket(market)
         val preMarketOpen = venue.preMarketOpensAt
-        val afterHoursClose = venue.afterHoursClosesAt
+        val regularClose = usRegularClose(local.date)
+        val afterHoursClose = NyseHolidayCalendar.extendedSessionClose(
+            date = local.date,
+            ordinaryClose = venue.afterHoursClosesAt,
+        )
         return when {
             preMarketOpen != null && local.time.isInHalfOpenRange(preMarketOpen, usRegularOpen) ->
                 MarketSession.PRE_MARKET
 
-            local.time.isInHalfOpenRange(usRegularOpen, usRegularClose) -> MarketSession.REGULAR
-            afterHoursClose != null && local.time.isInHalfOpenRange(usRegularClose, afterHoursClose) ->
+            local.time.isInHalfOpenRange(usRegularOpen, regularClose) -> MarketSession.REGULAR
+            afterHoursClose != null && local.time.isInHalfOpenRange(regularClose, afterHoursClose) ->
                 MarketSession.AFTER_HOURS
 
             else -> MarketSession.CLOSED
@@ -183,10 +178,10 @@ object GameCalendar {
         localDate: LocalDate,
         closedDates: Set<LocalDate> = emptySet(),
     ): MarketSessionWindow? {
-        if (isWeekend(localDate) || localDate in closedDates) return null
+        if (isClosed(market, localDate, closedDates)) return null
         val zone = timeZoneFor(market)
         val openTime = if (market.isKorean) krxOpen else usRegularOpen
-        val closeTime = if (market.isKorean) krxClose else usRegularClose
+        val closeTime = if (market.isKorean) krxClose else usRegularClose(localDate)
         return MarketSessionWindow(
             market = market,
             localDate = localDate,
@@ -197,4 +192,20 @@ object GameCalendar {
 
     private fun LocalTime.isInHalfOpenRange(start: LocalTime, end: LocalTime): Boolean =
         this >= start && this < end
+
+    private fun usRegularClose(localDate: LocalDate): LocalTime =
+        NyseHolidayCalendar.regularSessionClose(localDate)
+
+    private fun isClosed(
+        market: Market,
+        localDate: LocalDate,
+        additionalClosedDates: Set<LocalDate>,
+    ): Boolean = isWeekend(localDate) ||
+        localDate in additionalClosedDates ||
+        (
+            DefaultMarketHolidays.supportsYear(localDate.year) &&
+                localDate in DefaultMarketHolidays.closedDates(market, localDate.year)
+        )
+
+    private const val MILLIS_PER_HOUR: Double = 3_600_000.0
 }
