@@ -27,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,6 +59,7 @@ import com.amond.kmpbook.ui.components.MarketButton
 import com.amond.kmpbook.ui.components.MarketButtonVariant
 import com.amond.kmpbook.ui.components.MarketCheckRow
 import com.amond.kmpbook.ui.components.MarketSlider
+import com.amond.kmpbook.ui.components.VisibleVerticalScrollbar
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketMotion
 import com.amond.kmpbook.ui.theme.MarketRadii
@@ -80,6 +83,9 @@ private const val CUSTOM_DIFFICULTY_INDEX = 3
 fun NewGameScreen(
     onStart: (NewGameOptions) -> Unit,
     onBack: () -> Unit = {},
+    isBusy: Boolean = false,
+    busyMessage: String? = null,
+    errorMessage: String? = null,
     modifier: Modifier = Modifier,
     embedded: Boolean = false,
 ) {
@@ -112,7 +118,17 @@ fun NewGameScreen(
                     modifier = if (embedded) Modifier.fillMaxSize() else Modifier.width(520.dp).fillMaxHeight(),
                     padding = 30.dp,
                 ) {
-                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    val setupScrollState = rememberScrollState()
+                    VisibleVerticalScrollbar(
+                        state = setupScrollState,
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(setupScrollState)
+                            .padding(end = 13.dp),
+                    ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -121,7 +137,7 @@ fun NewGameScreen(
                                 color = MarketColors.Ink,
                             )
                         }
-                        TextButton(onClick = onBack) {
+                        TextButton(onClick = onBack, enabled = !isBusy) {
                             Text(if (embedded) "닫기" else "← 로비", style = MarketType.label, color = MarketColors.InkMuted)
                         }
                     }
@@ -187,29 +203,66 @@ fun NewGameScreen(
                         text = "게임 세부 설정",
                         onClick = { showDetailedSettings = true },
                         modifier = Modifier.fillMaxWidth(),
+                        enabled = !isBusy,
                         variant = MarketButtonVariant.Weak,
                     )
                     Spacer(Modifier.height(24.dp))
                     LedgerDivider()
                     Spacer(Modifier.height(18.dp))
-                    MarketButton(
-                        text = "게임 시작  →",
-                        onClick = {
-                            onStart(
-                                NewGameOptions(
-                                    scenarioName = NewGameOptions.DEFAULT_SCENARIO_NAME,
-                                    difficultyName = difficultyLabels[selectedDifficulty],
-                                    initialCapitalKrw = seedMoneyAmounts[selectedSeedMoney],
-                                    seed = marketSeed,
-                                    usFractionalTrading = fractional,
-                                    autoExchange = autoExchange,
-                                    ironmanMode = ironmanMode,
-                                    initialExternalMarketForces = externalForces,
-                                ),
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    when {
+                        isBusy -> NewGameOperationStatus(
+                            message = busyMessage ?: "새 게임에 필요한 시장 데이터를 준비하고 있습니다.",
+                            isBusy = true,
+                        )
+                        !errorMessage.isNullOrBlank() -> NewGameOperationStatus(
+                            message = errorMessage,
+                            isBusy = false,
+                        )
+                    }
+                    if (isBusy || !errorMessage.isNullOrBlank()) Spacer(Modifier.height(12.dp))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .semantics { stateDescription = if (isBusy) "게임 준비 중" else "게임 시작 가능" },
+                    ) {
+                        MarketButton(
+                            text = if (isBusy) "" else "게임 시작  →",
+                            onClick = {
+                                onStart(
+                                    NewGameOptions(
+                                        scenarioName = NewGameOptions.DEFAULT_SCENARIO_NAME,
+                                        difficultyName = difficultyLabels[selectedDifficulty],
+                                        initialCapitalKrw = seedMoneyAmounts[selectedSeedMoney],
+                                        seed = marketSeed,
+                                        usFractionalTrading = fractional,
+                                        autoExchange = autoExchange,
+                                        ironmanMode = ironmanMode,
+                                        initialExternalMarketForces = externalForces,
+                                    ),
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isBusy,
+                        )
+                        if (isBusy) {
+                            Row(
+                                modifier = Modifier.align(Alignment.Center),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(17.dp),
+                                    color = MarketColors.Grey400,
+                                    strokeWidth = 2.dp,
+                                )
+                                Text(
+                                    "게임 준비 중",
+                                    style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MarketColors.Grey400,
+                                )
+                            }
+                        }
+                    }
                     TextButton(
                         onClick = {
                             selectedSeedMoney = 1
@@ -221,8 +274,10 @@ fun NewGameScreen(
                             externalForces = forcesForDifficulty(1)
                         },
                         modifier = Modifier.align(Alignment.CenterHorizontally),
+                        enabled = !isBusy,
                     ) {
                         Text("기본값으로 되돌리기", style = MarketType.label, color = MarketColors.InkMuted)
+                    }
                     }
                     }
                 }
@@ -343,6 +398,50 @@ private fun SetupSectionTitle(title: String, detail: String? = null) {
 }
 
 @Composable
+private fun NewGameOperationStatus(message: String, isBusy: Boolean) {
+    val accent = if (isBusy) MarketColors.Primary else MarketColors.Rise
+    val background = if (isBusy) MarketColors.PrimaryWeak else MarketColors.RiseSoft
+    val textColor = if (isBusy) MarketColors.PrimaryText else MarketColors.RiseText
+    LedgerPanel(
+        modifier = Modifier.fillMaxWidth(),
+        background = background,
+        padding = 13.dp,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(11.dp),
+        ) {
+            if (isBusy) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(19.dp),
+                    color = accent,
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(19.dp)
+                        .background(accent, RoundedCornerShape(MarketRadii.pill)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("!", style = MarketType.label, color = Color.White)
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (isBusy) "새 게임 준비 중" else "게임을 시작하지 못했습니다",
+                    style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                    color = textColor,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(message, style = MarketType.caption, color = MarketColors.Ink)
+            }
+        }
+    }
+}
+
+@Composable
 private fun SetupChoiceCard(
     title: String,
     detail: String,
@@ -391,6 +490,7 @@ private fun NewGameDetailedSettingsDialog(
     onIronmanModeChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val detailScrollState = rememberScrollState()
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -413,13 +513,16 @@ private fun NewGameDetailedSettingsDialog(
                 }
                 LedgerDivider()
 
-                Column(
-                    Modifier
-                        .weight(1f, fill = false)
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 22.dp, vertical = 16.dp),
+                VisibleVerticalScrollbar(
+                    state = detailScrollState,
+                    modifier = Modifier.weight(1f, fill = false).fillMaxWidth(),
                 ) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(detailScrollState)
+                            .padding(start = 22.dp, end = 35.dp, top = 16.dp, bottom = 16.dp),
+                    ) {
                     SetupSectionTitle("거래 설정")
                     Spacer(Modifier.height(8.dp))
                     MarketCheckRow(
@@ -443,6 +546,7 @@ private fun NewGameDetailedSettingsDialog(
                         title = "철인 모드",
                         detail = "게임 불러오기와 시장 동역학 변경을 사용할 수 없습니다.",
                     )
+                    }
                 }
 
                 LedgerDivider()
@@ -463,6 +567,7 @@ private fun NewGameCustomDifficultyDialog(
     onDismiss: () -> Unit,
 ) {
     var draftForces by remember(initialForces) { mutableStateOf(initialForces) }
+    val customScrollState = rememberScrollState()
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -489,13 +594,16 @@ private fun NewGameCustomDifficultyDialog(
                 }
                 LedgerDivider()
 
-                Column(
-                    Modifier
-                        .weight(1f, fill = false)
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 22.dp, vertical = 16.dp),
+                VisibleVerticalScrollbar(
+                    state = customScrollState,
+                    modifier = Modifier.weight(1f, fill = false).fillMaxWidth(),
                 ) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(customScrollState)
+                            .padding(start = 22.dp, end = 35.dp, top = 16.dp, bottom = 16.dp),
+                    ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             SetupSectionTitle("초기 시장 환경", "게임 시작 시 적용할 시장 조건입니다.")
@@ -539,6 +647,7 @@ private fun NewGameCustomDifficultyDialog(
                         value = draftForces.economicMomentum,
                         onValueChange = { draftForces = draftForces.copy(economicMomentum = it) },
                     )
+                    }
                 }
 
                 LedgerDivider()
@@ -612,14 +721,21 @@ private fun ScenarioSelectionCard(
 
 @Composable
 private fun ScenarioBackgroundPanel(onDismiss: () -> Unit) {
-    Column(
-        Modifier
+    val backgroundScrollState = rememberScrollState()
+    VisibleVerticalScrollbar(
+        state = backgroundScrollState,
+        modifier = Modifier
             .width(430.dp)
             .fillMaxHeight()
             .background(MarketColors.Paper)
-            .border(1.dp, MarketColors.Line)
-            .verticalScroll(rememberScrollState()),
+            .border(1.dp, MarketColors.Line),
     ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(backgroundScrollState)
+                .padding(end = 13.dp),
+        ) {
         Image(
             painter = painterResource(Res.drawable.jpmorgan_taegeukgi_july_2026),
             contentDescription = "태극기가 걸린 JP모건 사옥",
@@ -658,6 +774,7 @@ private fun ScenarioBackgroundPanel(onDismiss: () -> Unit) {
                 style = MarketType.body,
                 color = MarketColors.Ink,
             )
+        }
         }
     }
 }

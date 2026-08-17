@@ -31,11 +31,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -71,6 +73,7 @@ import com.amond.kmpbook.ui.components.MarketButton
 import com.amond.kmpbook.ui.components.MarketButtonVariant
 import com.amond.kmpbook.ui.components.MarketCheckRow
 import com.amond.kmpbook.ui.components.StatusLabel
+import com.amond.kmpbook.ui.components.VisibleVerticalScrollbar
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketComponentSize
 import com.amond.kmpbook.ui.theme.MarketMotion
@@ -87,11 +90,14 @@ fun ModsScreen(
     onSettingChanged: (InstalledMod, String, String) -> Unit,
     onRefresh: () -> Unit,
     onOpenModsDirectory: () -> Unit,
+    isMutating: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     var selectedModId by remember { mutableStateOf<String?>(null) }
     var detailVisible by remember { mutableStateOf(false) }
     val selectedMod = selectedModId?.let { id -> mods.firstOrNull { it.id == id } }
+    val controlsBusy = isScanning || isMutating
+    val modListState = rememberLazyListState()
 
     LaunchedEffect(selectedModId, selectedMod) {
         if (selectedModId != null && selectedMod == null) detailVisible = false
@@ -101,6 +107,7 @@ fun ModsScreen(
         Column(Modifier.fillMaxSize()) {
             ModsHeader(
                 isScanning = isScanning,
+                isMutating = isMutating,
                 onRefresh = onRefresh,
                 onOpenModsDirectory = onOpenModsDirectory,
             )
@@ -117,7 +124,9 @@ fun ModsScreen(
             }
 
             Spacer(Modifier.height(18.dp))
-            if (mods.isEmpty()) {
+            if (mods.isEmpty() && isScanning) {
+                ModsLoadingState(Modifier.fillMaxWidth().weight(1f))
+            } else if (mods.isEmpty()) {
                 EmptyModsState(
                     onOpenModsDirectory = onOpenModsDirectory,
                     modifier = Modifier.fillMaxWidth().weight(1f),
@@ -140,22 +149,28 @@ fun ModsScreen(
                     )
                 }
                 Spacer(Modifier.height(9.dp))
-                LazyColumn(
+                VisibleVerticalScrollbar(
+                    state = modListState,
                     modifier = Modifier.fillMaxWidth().weight(1f),
-                    contentPadding = PaddingValues(start = 1.dp, end = 1.dp, bottom = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    items(items = mods, key = { it.id }) { mod ->
-                        ModListRow(
-                            mod = mod,
-                            selected = detailVisible && selectedModId == mod.id,
-                            enabled = !isScanning,
-                            onSelect = {
-                                selectedModId = mod.id
-                                detailVisible = true
-                            },
-                            onToggle = { enabled -> onToggleMod(mod, enabled) },
-                        )
+                    LazyColumn(
+                        state = modListState,
+                        modifier = Modifier.fillMaxSize().padding(end = 13.dp),
+                        contentPadding = PaddingValues(start = 1.dp, end = 1.dp, bottom = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(items = mods, key = { it.id }) { mod ->
+                            ModListRow(
+                                mod = mod,
+                                selected = detailVisible && selectedModId == mod.id,
+                                enabled = !controlsBusy,
+                                onSelect = {
+                                    selectedModId = mod.id
+                                    detailVisible = true
+                                },
+                                onToggle = { enabled -> onToggleMod(mod, enabled) },
+                            )
+                        }
                     }
                 }
             }
@@ -194,7 +209,7 @@ fun ModsScreen(
                     onDismiss = { detailVisible = false },
                     onToggle = { enabled -> onToggleMod(mod, enabled) },
                     onSettingChanged = { key, value -> onSettingChanged(mod, key, value) },
-                    controlsEnabled = !isScanning,
+                    controlsEnabled = !controlsBusy,
                 )
             }
         }
@@ -204,9 +219,11 @@ fun ModsScreen(
 @Composable
 private fun ModsHeader(
     isScanning: Boolean,
+    isMutating: Boolean,
     onRefresh: () -> Unit,
     onOpenModsDirectory: () -> Unit,
 ) {
+    val controlsBusy = isScanning || isMutating
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
             "모드",
@@ -214,11 +231,25 @@ private fun ModsHeader(
             color = MarketColors.Ink,
         )
         Spacer(Modifier.weight(1f))
+        if (controlsBusy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                color = MarketColors.Primary,
+                strokeWidth = 2.dp,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = if (isScanning) "폴더 검색 중" else "변경 저장 중",
+                style = MarketType.caption,
+                color = MarketColors.InkMuted,
+            )
+            Spacer(Modifier.width(14.dp))
+        }
         MarketButton(
             text = "새로고침",
             onClick = onRefresh,
             modifier = Modifier.width(112.dp),
-            enabled = !isScanning,
+            enabled = !controlsBusy,
             variant = MarketButtonVariant.Weak,
         )
         Spacer(Modifier.width(9.dp))
@@ -248,12 +279,22 @@ private fun ModStatusMessage(message: String) {
 
 @Composable
 private fun ModIssueSummary(issues: List<ModLoadIssue>) {
+    val issueScrollState = rememberScrollState()
     LedgerPanel(
         modifier = Modifier.fillMaxWidth().heightIn(max = 168.dp),
         background = MarketColors.AmberSoft,
         padding = 14.dp,
     ) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+        VisibleVerticalScrollbar(
+            state = issueScrollState,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(issueScrollState)
+                    .padding(end = 13.dp),
+            ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "불러오지 못한 모드",
@@ -272,7 +313,25 @@ private fun ModIssueSummary(issues: List<ModLoadIssue>) {
                     color = MarketColors.Ink,
                 )
             }
+            }
         }
+    }
+}
+
+@Composable
+private fun ModsLoadingState(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(28.dp),
+            color = MarketColors.Primary,
+            strokeWidth = 2.5.dp,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text("모드 폴더를 검색하고 있습니다.", style = MarketType.body, color = MarketColors.InkMuted)
     }
 }
 
@@ -465,14 +524,21 @@ private fun ModDetailDrawer(
     onSettingChanged: (String, String) -> Unit,
     controlsEnabled: Boolean,
 ) {
-    Column(
-        Modifier
+    val detailScrollState = rememberScrollState()
+    VisibleVerticalScrollbar(
+        state = detailScrollState,
+        modifier = Modifier
             .width(430.dp)
             .fillMaxHeight()
             .background(MarketColors.Paper)
-            .border(1.dp, MarketColors.Line)
-            .verticalScroll(rememberScrollState()),
+            .border(1.dp, MarketColors.Line),
     ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(detailScrollState)
+                .padding(end = 13.dp),
+        ) {
         ModCoverImage(
             mod = mod,
             compact = false,
@@ -545,6 +611,7 @@ private fun ModDetailDrawer(
                 }
             }
             Spacer(Modifier.height(20.dp))
+        }
         }
     }
 }

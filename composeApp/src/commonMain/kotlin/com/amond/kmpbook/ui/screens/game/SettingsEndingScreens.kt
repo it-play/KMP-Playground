@@ -14,13 +14,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,6 +57,7 @@ import com.amond.kmpbook.ui.components.MarketSlider
 import com.amond.kmpbook.ui.components.Metric
 import com.amond.kmpbook.ui.components.SectionHeading
 import com.amond.kmpbook.ui.components.StatusLabel
+import com.amond.kmpbook.ui.components.VisibleVerticalScrollbar
 import com.amond.kmpbook.ui.components.deltaColor
 import com.amond.kmpbook.ui.format.formatMoney
 import com.amond.kmpbook.ui.format.formatPercent
@@ -88,8 +92,10 @@ fun SettingsScreen(
     saves: List<GameSaveEntry>,
     saveDirectory: String,
     saveStatus: String,
+    isLoadingSaves: Boolean,
     isSaving: Boolean,
     isLoading: Boolean,
+    deletingSaveFileName: String?,
     audioSettings: AudioSettings,
     onAudioSettingsChanged: (AudioSettings) -> Unit,
     onSaveGame: (String) -> Unit,
@@ -112,27 +118,38 @@ fun SettingsScreen(
     var deleteArmed by remember { mutableStateOf(false) }
     var selectedSaveFileName by remember { mutableStateOf<String?>(null) }
     val selectedSave = saves.firstOrNull { it.fileName == selectedSaveFileName }
-    val saveOperationInProgress = isSaving || isLoading
+    val saveOperationInProgress = isLoadingSaves || isSaving || isLoading || deletingSaveFileName != null
+    val settingsScrollState = rememberScrollState()
+    val saveListState = rememberLazyListState()
     LaunchedEffect(saves) {
         if (saves.none { it.fileName == selectedSaveFileName }) selectedSaveFileName = null
     }
     LaunchedEffect(selectedSaveFileName) {
         deleteArmed = false
     }
-    Column(
-        modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(MarketLayout.screenPadding),
-        verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+    VisibleVerticalScrollbar(
+        state = settingsScrollState,
+        modifier = modifier.fillMaxSize(),
     ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(settingsScrollState)
+                .padding(MarketLayout.screenPadding)
+                .padding(end = 13.dp),
+            verticalArrangement = Arrangement.spacedBy(MarketLayout.screenGap),
+        ) {
         LedgerPanel(Modifier.fillMaxWidth().height(136.dp), padding = 16.dp) {
             Column(Modifier.fillMaxSize()) {
                 SectionHeading(
                     title = "계정 설정",
                     action = {
                         StatusLabel(
-                            text = if (saves.isNotEmpty()) "저장된 게임 ${saves.size}개" else "저장된 게임 없음",
+                            text = when {
+                                isLoadingSaves -> "저장 파일 확인 중"
+                                saves.isNotEmpty() -> "저장된 게임 ${saves.size}개"
+                                else -> "저장된 게임 없음"
+                            },
                             color = if (saves.isNotEmpty()) MarketColors.Positive else MarketColors.InkMuted,
                         )
                     },
@@ -246,28 +263,56 @@ fun SettingsScreen(
                                     .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.small)),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text("저장된 게임이 없습니다.", style = MarketType.body, color = MarketColors.InkMuted)
+                                if (isLoadingSaves) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(22.dp),
+                                            color = MarketColors.Primary,
+                                            strokeWidth = 2.dp,
+                                        )
+                                        Spacer(Modifier.height(8.dp))
+                                        Text(
+                                            "저장 파일을 확인하고 있습니다.",
+                                            style = MarketType.body,
+                                            color = MarketColors.InkMuted,
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        "저장된 게임이 없습니다.",
+                                        style = MarketType.body,
+                                        color = MarketColors.InkMuted,
+                                    )
+                                }
                             }
                         } else {
-                            LazyColumn(
+                            VisibleVerticalScrollbar(
+                                state = saveListState,
                                 modifier = Modifier.fillMaxWidth().weight(1f),
-                                contentPadding = PaddingValues(vertical = 2.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
-                                itemsIndexed(saves, key = { _, save -> save.fileName }) { index, save ->
-                                    SaveSelectionRow(
-                                        save = save,
-                                        isLatest = index == 0,
-                                        selected = save.fileName == selectedSaveFileName,
-                                        enabled = !saveOperationInProgress,
-                                        onClick = {
-                                            selectedSaveFileName = if (selectedSaveFileName == save.fileName) {
-                                                null
-                                            } else {
-                                                save.fileName
-                                            }
-                                        },
-                                    )
+                                LazyColumn(
+                                    state = saveListState,
+                                    modifier = Modifier.fillMaxSize().padding(end = 13.dp),
+                                    contentPadding = PaddingValues(vertical = 2.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    itemsIndexed(saves, key = { _, save -> save.fileName }) { index, save ->
+                                        SaveSelectionRow(
+                                            save = save,
+                                            isLatest = index == 0,
+                                            selected = save.fileName == selectedSaveFileName,
+                                            enabled = !saveOperationInProgress,
+                                            onClick = {
+                                                selectedSaveFileName = if (
+                                                    selectedSaveFileName == save.fileName
+                                                ) {
+                                                    null
+                                                } else {
+                                                    save.fileName
+                                                }
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -288,7 +333,11 @@ fun SettingsScreen(
                                 variant = MarketButtonVariant.Weak,
                             )
                             MarketButton(
-                                text = if (deleteArmed) "삭제 확정" else "게임 삭제",
+                                text = when {
+                                    selectedSave?.fileName == deletingSaveFileName -> "삭제 중…"
+                                    deleteArmed -> "삭제 확정"
+                                    else -> "게임 삭제"
+                                },
                                 onClick = {
                                     if (deleteArmed) {
                                         selectedSave?.let(onDeleteSave)
@@ -385,6 +434,7 @@ fun SettingsScreen(
                 }
             }
         }
+    }
     }
 }
 

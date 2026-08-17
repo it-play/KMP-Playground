@@ -25,6 +25,7 @@ import com.amond.kmpbook.ui.components.MarketButton
 import com.amond.kmpbook.ui.components.MarketButtonVariant
 import com.amond.kmpbook.ui.components.SectionHeading
 import com.amond.kmpbook.ui.components.StatusLabel
+import com.amond.kmpbook.ui.components.VisibleVerticalScrollbar
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
@@ -39,14 +40,20 @@ fun LobbySettingsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val scrollState = rememberScrollState()
     Box(modifier.fillMaxSize().background(MarketColors.Ledger), contentAlignment = Alignment.Center) {
-        Column(
-            Modifier
-                .fillMaxWidth(0.9f)
-                .widthIn(max = 820.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(vertical = 24.dp),
+        VisibleVerticalScrollbar(
+            state = scrollState,
+            modifier = Modifier.fillMaxSize(),
         ) {
+            Column(
+                Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth(0.9f)
+                    .widthIn(max = 820.dp)
+                    .verticalScroll(scrollState)
+                    .padding(vertical = 24.dp, horizontal = 13.dp),
+            ) {
             LedgerPanel(Modifier.fillMaxWidth(), padding = 22.dp) {
                 SectionHeading(
                     title = "설정",
@@ -95,6 +102,7 @@ fun LobbySettingsScreen(
             }
             Spacer(Modifier.height(16.dp))
             MarketButton("로비로 돌아가기", onBack, Modifier.fillMaxWidth(), variant = MarketButtonVariant.Weak)
+            }
         }
     }
 }

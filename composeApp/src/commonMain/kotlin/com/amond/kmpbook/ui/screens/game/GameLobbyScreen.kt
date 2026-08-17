@@ -8,6 +8,7 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -15,11 +16,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -40,6 +45,7 @@ import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
 import com.amond.kmpbook.ui.components.StatusLabel
+import com.amond.kmpbook.ui.components.VisibleVerticalScrollbar
 import com.amond.kmpbook.ui.format.formatDateTimeKst
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketRadii
@@ -63,6 +69,13 @@ fun GameLobbyScreen(
     onOpenModsDirectory: () -> Unit,
     onSettings: () -> Unit,
     onExit: () -> Unit,
+    isLoadingSaves: Boolean = false,
+    deletingSaveFileName: String? = null,
+    onDeleteSave: (GameSaveEntry) -> Unit = {},
+    isScanningMods: Boolean = areModControlsBusy,
+    isMutatingMods: Boolean = false,
+    newGameBusyMessage: String? = null,
+    newGameErrorMessage: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val latest = saves.firstOrNull()
@@ -86,7 +99,7 @@ fun GameLobbyScreen(
             LobbyMenuItem(
                 label = "게임 이어하기",
                 value = latest?.name,
-                enabled = latest != null,
+                enabled = latest != null && !isLoadingSaves && deletingSaveFileName == null,
                 emphasized = true,
                 onClick = {
                     latest?.let { save ->
@@ -97,8 +110,12 @@ fun GameLobbyScreen(
             )
             LobbyMenuItem(
                 label = "게임 불러오기",
-                value = if (saves.isEmpty()) null else "${saves.size}개",
-                enabled = saves.isNotEmpty(),
+                value = when {
+                    isLoadingSaves -> "확인 중"
+                    saves.isEmpty() -> null
+                    else -> "${saves.size}개"
+                },
+                enabled = saves.isNotEmpty() || isLoadingSaves,
                 selected = selectedPanel == LobbyPanel.LOAD_GAME,
                 onClick = {
                     selectedPanel = if (selectedPanel == LobbyPanel.LOAD_GAME) {
@@ -142,7 +159,10 @@ fun GameLobbyScreen(
                     title = "저장 파일",
                     saves = saves,
                     statusMessage = saveStatus,
+                    isLoading = isLoadingSaves,
+                    deletingSaveFileName = deletingSaveFileName,
                     onLoad = onLoad,
+                    onDelete = onDeleteSave,
                     modifier = Modifier.fillMaxSize(),
                 )
                 LobbyPanel.NEW_GAME -> NewGameScreen(
@@ -157,6 +177,10 @@ fun GameLobbyScreen(
                         }
                     },
                     onBack = { selectedPanel = LobbyPanel.MARKET },
+                    isBusy = isModCatalogBusy,
+                    busyMessage = newGameBusyMessage
+                        ?: if (isModCatalogBusy) "모드와 시장 데이터를 준비하고 있습니다." else null,
+                    errorMessage = newGameErrorMessage,
                     modifier = Modifier.fillMaxSize(),
                     embedded = true,
                 )
@@ -164,7 +188,8 @@ fun GameLobbyScreen(
                     mods = mods,
                     issues = modIssues,
                     statusMessage = modStatusMessage,
-                    isScanning = areModControlsBusy,
+                    isScanning = isScanningMods,
+                    isMutating = isMutatingMods,
                     onToggleMod = onToggleMod,
                     onSettingChanged = onModSettingChanged,
                     onRefresh = onRefreshMods,
@@ -233,13 +258,24 @@ private fun SaveOverview(
     title: String,
     saves: List<GameSaveEntry>,
     statusMessage: String?,
+    isLoading: Boolean,
+    deletingSaveFileName: String?,
     onLoad: (GameSaveEntry) -> Unit,
+    onDelete: (GameSaveEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, style = MarketType.display.copy(fontSize = 30.sp), color = MarketColors.Ink)
             Spacer(Modifier.weight(1f))
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = MarketColors.Primary,
+                    strokeWidth = 2.dp,
+                )
+                Spacer(Modifier.width(9.dp))
+            }
             StatusLabel("${saves.size}개", if (saves.isEmpty()) MarketColors.InkMuted else MarketColors.Positive)
         }
         Spacer(Modifier.height(18.dp))
@@ -254,18 +290,46 @@ private fun SaveOverview(
                 Text(statusMessage, style = MarketType.body, color = MarketColors.PrimaryText)
             }
         }
-        if (saves.isEmpty()) {
+        if (saves.isEmpty() && isLoading) {
+            Column(
+                Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(28.dp),
+                    color = MarketColors.Primary,
+                    strokeWidth = 2.5.dp,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("저장 파일을 확인하고 있습니다.", style = MarketType.body, color = MarketColors.InkMuted)
+            }
+        } else if (saves.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("저장된 게임이 없습니다.", style = MarketType.body, color = MarketColors.InkMuted)
             }
         } else {
-            Column(
-                Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+            val listState = rememberLazyListState()
+            VisibleVerticalScrollbar(
+                state = listState,
+                modifier = Modifier.fillMaxWidth().weight(1f),
             ) {
-                Spacer(Modifier.height(18.dp))
-                saves.forEachIndexed { index, save ->
-                    SaveFileRow(save = save, isLatest = index == 0, onClick = { onLoad(save) })
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize().padding(end = 13.dp),
+                    contentPadding = PaddingValues(top = 18.dp, bottom = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    itemsIndexed(items = saves, key = { _, save -> save.fileName }) { index, save ->
+                        SaveFileRow(
+                            save = save,
+                            isLatest = index == 0,
+                            isDeleting = deletingSaveFileName == save.fileName,
+                            actionsEnabled = !isLoading && deletingSaveFileName == null,
+                            onLoad = { onLoad(save) },
+                            onDelete = { onDelete(save) },
+                        )
+                    }
                 }
             }
         }
@@ -273,19 +337,21 @@ private fun SaveOverview(
 }
 
 @Composable
-private fun SaveFileRow(save: GameSaveEntry, isLatest: Boolean, onClick: () -> Unit) {
+private fun SaveFileRow(
+    save: GameSaveEntry,
+    isLatest: Boolean,
+    isDeleting: Boolean,
+    actionsEnabled: Boolean,
+    onLoad: () -> Unit,
+    onDelete: () -> Unit,
+) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    var deleteArmed by remember(save.fileName) { mutableStateOf(false) }
     LedgerPanel(
         modifier = Modifier
             .fillMaxWidth()
-            .hoverable(interaction)
-            .clickable(
-                interactionSource = interaction,
-                indication = null,
-                role = Role.Button,
-                onClick = onClick,
-            ),
+            .hoverable(interaction),
         background = if (hovered) MarketColors.PrimaryWeak else MarketColors.Paper,
         padding = 18.dp,
     ) {
@@ -311,7 +377,48 @@ private fun SaveFileRow(save: GameSaveEntry, isLatest: Boolean, onClick: () -> U
                 }
             }
             Spacer(Modifier.width(20.dp))
-            Text("불러오기", style = MarketType.label.copy(fontWeight = FontWeight.SemiBold), color = MarketColors.PrimaryText)
+            TextButton(
+                onClick = { if (deleteArmed) deleteArmed = false else onLoad() },
+                enabled = actionsEnabled,
+            ) {
+                Text(
+                    if (deleteArmed) "취소" else "불러오기",
+                    style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                    color = if (actionsEnabled) MarketColors.PrimaryText else MarketColors.Grey400,
+                )
+            }
+            TextButton(
+                onClick = {
+                    if (deleteArmed) {
+                        deleteArmed = false
+                        onDelete()
+                    } else {
+                        deleteArmed = true
+                    }
+                },
+                enabled = actionsEnabled,
+            ) {
+                if (isDeleting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(17.dp),
+                        color = MarketColors.Rise,
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.width(7.dp))
+                }
+                Text(
+                    when {
+                        isDeleting -> "삭제 중"
+                        deleteArmed -> "삭제 확정"
+                        else -> "삭제"
+                    },
+                    style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                    color = when {
+                        isDeleting || actionsEnabled -> MarketColors.RiseText
+                        else -> MarketColors.Grey400
+                    },
+                )
+            }
         }
     }
 }
