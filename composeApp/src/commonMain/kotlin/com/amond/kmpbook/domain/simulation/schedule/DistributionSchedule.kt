@@ -49,10 +49,16 @@ object DistributionSchedule {
             val recordDate = precedingKrxBusinessDateOnOrBefore(
                 LocalDate(date.year, date.month.ordinal + 1, DISTRIBUTION_DAY),
             )
-            frequency == DistributionFrequency.MONTHLY && date == previousBusinessDate(
+            isEligibleMonth(recordDate.month, frequency) && date == previousBusinessDate(
                 Market.KOSPI,
                 recordDate,
             )
+        }
+        DistributionCalendar.KRX_ANNUAL_NOVEMBER_MONTH_END -> {
+            val recordDate = lastKrxBusinessDateOfMonth(date)
+            frequency == DistributionFrequency.ANNUAL &&
+                recordDate.month == Month.NOVEMBER &&
+                date == previousBusinessDate(Market.KOSPI, recordDate)
         }
     }
 
@@ -79,6 +85,7 @@ object DistributionSchedule {
         val recordDate = when (stock.behavior.distributionCalendar) {
             DistributionCalendar.KRX_MONTH_END,
             DistributionCalendar.KRX_PRECEDING_BUSINESS_DAY_15,
+            DistributionCalendar.KRX_ANNUAL_NOVEMBER_MONTH_END,
             -> nextBusinessDate(stock.market, date)
             else -> date
         }

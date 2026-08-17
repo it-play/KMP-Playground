@@ -33,8 +33,8 @@ class FundOperationProfile(
                     require(activeSyntheticSwapModelParameters != null) {
                         "결정론적 액티브 합성 모델에는 명시적인 수치 가정이 필요합니다."
                     }
-                    require(syntheticSwapFunding == SyntheticSwapFunding.FULLY_FUNDED) {
-                        "액티브 합성 스왑 가정은 fully-funded 상품에만 적용합니다."
+                    require(syntheticSwapFunding != null) {
+                        "액티브 합성 스왑 가정에는 공시로 확인된 funding 구조가 필요합니다."
                     }
                 }
                 ActiveReturnModelSupport.NOT_APPLICABLE -> error(

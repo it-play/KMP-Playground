@@ -6086,39 +6086,6 @@
       "alternativeRiskPremiaProfile": null
     },
     {
-      "benchmarkId": "proxy.kospi.449170",
-      "version": 1,
-      "displayName": "TIGER KOFR금리액티브(합성)",
-      "administrator": "Unverified",
-      "officialSourceUrls": [],
-      "baseCurrency": "KRW",
-      "engineKind": "FIXED_INCOME_CURVE",
-      "supportLevel": "PROVISIONAL_PROXY",
-      "componentBenchmarkRefs": [],
-      "equityMethodology": null,
-      "equityReferenceProfile": null,
-      "fixedIncomeProfile": {
-        "geography": "KOREA",
-        "currencies": [
-          "KRW"
-        ],
-        "assetType": "MONEY_MARKET",
-        "effectiveDurationYears": 0.05,
-        "tenorBand": "OVERNIGHT",
-        "creditQuality": "GOVERNMENT_BACKED",
-        "rateReset": "OVERNIGHT",
-        "realRateLinked": false,
-        "supportLevel": "PROVISIONAL_PROXY",
-        "durationProvenance": "CALIBRATED_ASSUMPTION",
-        "officialSourceUrls": []
-      },
-      "fundOfFundsMethodologyProfile": null,
-      "commoditySpotTerms": null,
-      "futuresReferenceTerms": null,
-      "compositeReferenceProfile": null,
-      "alternativeRiskPremiaProfile": null
-    },
-    {
       "benchmarkId": "proxy.kospi.449450",
       "version": 1,
       "displayName": "PLUS K방산",
@@ -7196,39 +7163,6 @@
         "tenorBand": "ULTRA_SHORT",
         "creditQuality": "MIXED",
         "rateReset": "VARIABLE",
-        "realRateLinked": false,
-        "supportLevel": "PROVISIONAL_PROXY",
-        "durationProvenance": "CALIBRATED_ASSUMPTION",
-        "officialSourceUrls": []
-      },
-      "fundOfFundsMethodologyProfile": null,
-      "commoditySpotTerms": null,
-      "futuresReferenceTerms": null,
-      "compositeReferenceProfile": null,
-      "alternativeRiskPremiaProfile": null
-    },
-    {
-      "benchmarkId": "proxy.kospi.479520",
-      "version": 1,
-      "displayName": "RISE KOFR금리액티브(합성)",
-      "administrator": "Unverified",
-      "officialSourceUrls": [],
-      "baseCurrency": "KRW",
-      "engineKind": "FIXED_INCOME_CURVE",
-      "supportLevel": "PROVISIONAL_PROXY",
-      "componentBenchmarkRefs": [],
-      "equityMethodology": null,
-      "equityReferenceProfile": null,
-      "fixedIncomeProfile": {
-        "geography": "KOREA",
-        "currencies": [
-          "KRW"
-        ],
-        "assetType": "MONEY_MARKET",
-        "effectiveDurationYears": 0.05,
-        "tenorBand": "OVERNIGHT",
-        "creditQuality": "GOVERNMENT_BACKED",
-        "rateReset": "OVERNIGHT",
         "realRateLinked": false,
         "supportLevel": "PROVISIONAL_PROXY",
         "durationProvenance": "CALIBRATED_ASSUMPTION",
@@ -30603,24 +30537,24 @@
       "order": 71,
       "symbol": "449170",
       "name": "TIGER KOFR금리액티브(합성)",
-      "englishName": "TIGER KOFR금리액티브(합성)",
+      "englishName": "TIGER SYNTH-KOFR ACTIVE",
       "market": "KOSPI",
       "sector": "OTHER",
       "instrumentType": "ETF",
-      "initialPrice": 74300,
-      "volatility": 0.05,
-      "dividendYield": 0.0354,
-      "marketCap": 16050000000000,
-      "sharesOutstanding": 216016150,
+      "initialPrice": 111485,
+      "volatility": 0.0005,
+      "dividendYield": 0.0061,
+      "marketCap": 2433048640000,
+      "sharesOutstanding": 21824000,
       "description": "국채·통안채 담보 익일물 RP금리인 KOFR를 스왑으로 추종해 초과수익을 노리는 ETF입니다.",
-      "beta": 0.05,
+      "beta": 0,
       "quantityStep": 1,
       "lotSize": 1,
       "etfProfile": {
-        "benchmark": "TIGER KOFR금리액티브(합성)",
+        "benchmark": "KOFR 지수",
         "assetClass": "MONEY_MARKET",
         "taxCategory": "KOREAN_OTHER",
-        "annualExpenseRatio": 0.002,
+        "annualExpenseRatio": 0.0004,
         "fxProfile": {
           "legs": [
             {
@@ -30637,17 +30571,36 @@
       },
       "fundProductProfile": {
         "benchmarkRef": {
-          "benchmarkId": "proxy.kospi.449170",
+          "benchmarkId": "kofr.krw.overnight",
           "version": 1
         },
-        "replicationMode": "UNVERIFIED",
-        "returnVariant": "UNVERIFIED",
+        "replicationMode": "DERIVATIVE_SYNTHETIC",
+        "returnVariant": "TOTAL_RETURN",
         "legalStructure": "OPEN_END_ETF",
         "referenceExposure": "CASH",
         "returnTransforms": [
           "PLAIN"
         ],
         "trackingErrorAnnualVolatility": null,
+        "operationProfile": {
+          "managementStyle": "ACTIVE",
+          "syntheticSwapFunding": "FLEXIBLE_FUNDED_OR_UNFUNDED",
+          "activeReturnModelSupport": "DETERMINISTIC_ASSUMPTION",
+          "activeSyntheticSwapModelParameters": {
+            "assumptionId": "tiger-kofr-active-flexible-swap-overlay-2026-08-v1",
+            "activeAlphaAnnualMean": 0.0009,
+            "activeAlphaAnnualVolatility": 0.00055,
+            "annualSwapFundingSpread": 0.00012,
+            "counterpartyDefaultHazardRateAnnual": 0.001,
+            "counterpartyRecoveryRate": 0.4,
+            "counterpartyExposureFraction": 0.025
+          },
+          "provenance": "VERIFIED_PRODUCT_DISCLOSURE",
+          "officialSourceUrls": [
+            "https://www.tigeretf.com/ko/product/search/detail/index.do?ksdFund=KR7449170000",
+            "https://www.tigeretf.com/upload/etf/20260515104256087370.pdf"
+          ]
+        },
         "dailyResetTerms": null,
         "etnProductTerms": null,
         "closedEndFundTerms": null,
@@ -30658,12 +30611,28 @@
       },
       "behaviorProfile": {
         "strategy": "MONEY_MARKET",
-        "distributionFrequency": "MONTHLY",
-        "upsideParticipation": 0.02,
-        "downsideParticipation": 0.02,
-        "durationYears": 0.1,
+        "distributionFrequency": "ANNUAL",
+        "distributionCalendar": "KRX_ANNUAL_NOVEMBER_MONTH_END",
+        "distributionPolicy": {
+          "projectedPaymentLagBusinessDays": 2,
+          "projectionAssumption": "tiger-kofr-annual-november-month-end-manager-amount-2026-08-v1",
+          "projectedAnnualNominalGrowthRate": 0,
+          "projectedAmountVariationRate": 0.12,
+          "announcedDistributions": [
+            {
+              "exDate": "2025-11-27",
+              "recordDate": "2025-11-28",
+              "payDate": "2025-12-02",
+              "declaredGrossPerUnit": 680,
+              "skip": false
+            }
+          ]
+        },
+        "upsideParticipation": 0,
+        "downsideParticipation": 0,
+        "durationYears": 0,
         "creditSpreadSensitivity": 0,
-        "cashRateAccrual": 0.92,
+        "cashRateAccrual": 0,
         "annualStructuralDrag": 0,
         "distributionCoverageRatio": 1,
         "priceDislocationVolatility": 0,
@@ -30674,15 +30643,25 @@
         "principalRisk": "RATE_AND_CREDIT"
       },
       "identityProfile": {
-        "aliases": [],
+        "aliases": [
+          "미래에셋 TIGER KOFR금리액티브(합성)"
+        ],
         "issuerOrManager": "미래에셋자산운용",
-        "strategySummary": "국채·통안채 담보 익일물 RP금리인 KOFR를 스왑으로 추종해 초과수익을 노리는 ETF입니다.",
-        "officialSourceUrl": "https://data.krx.co.kr/contents/MDC/MAIN/main/index.cmd",
-        "supportingSourceUrls": [],
+        "strategySummary": "KOFR 지수를 스왑과 채권·RP 운용으로 초과 추종하는 액티브 ETF입니다.",
+        "officialSourceUrl": "https://www.tigeretf.com/ko/product/search/detail/index.do?ksdFund=KR7449170000",
+        "supportingSourceUrls": [
+          "https://kind.krx.co.kr/disclosure/etfisudetail.do?method=searchEtfIsuSummary&strIsurCd=44917",
+          "https://www.tigeretf.com/upload/etf/20260515104256087370.pdf",
+          "https://www.tigeretf.com/upload/etf/20260805110957006508.pdf"
+        ],
         "eventRiskTags": [
-          "asset_money_market",
-          "region_korea",
-          "strategy_money_market"
+          "kofr_rate",
+          "swap_counterparty",
+          "collateral",
+          "tracking_error",
+          "active_management",
+          "flexible_swap_funding",
+          "distribution_change"
         ],
         "maturityDate": null,
         "callable": false,
@@ -35101,24 +35080,25 @@
       "order": 116,
       "symbol": "479520",
       "name": "RISE KOFR금리액티브(합성)",
-      "englishName": "RISE KOFR금리액티브(합성)",
+      "englishName": "RISE KOFR Active(Synth)",
       "market": "KOSPI",
       "sector": "OTHER",
       "instrumentType": "ETF",
-      "initialPrice": 13900,
-      "volatility": 0.09,
-      "dividendYield": 0.0338,
-      "marketCap": 4800000000000,
-      "sharesOutstanding": 345323741,
+      "initialPrice": 106115,
+      "volatility": 0.0005,
+      "dividendYield": 0.00552,
+      "marketCap": 1030907225000,
+      "sharesOutstanding": 9715000,
       "description": "국채·통안채 담보 익일물 RP금리인 KOFR를 스왑으로 추종해 초과수익을 노리는 ETF입니다.",
-      "beta": 0.05,
+      "beta": 0,
       "quantityStep": 1,
       "lotSize": 1,
       "etfProfile": {
-        "benchmark": "RISE KOFR금리액티브(합성)",
+        "benchmark": "KOFR 지수",
         "assetClass": "MONEY_MARKET",
         "taxCategory": "KOREAN_OTHER",
-        "annualExpenseRatio": 0.002,
+        "annualExpenseRatio": 0.00034,
+        "annualTransactionCostRate": 0.00001,
         "fxProfile": {
           "legs": [
             {
@@ -35135,17 +35115,36 @@
       },
       "fundProductProfile": {
         "benchmarkRef": {
-          "benchmarkId": "proxy.kospi.479520",
+          "benchmarkId": "kofr.krw.overnight",
           "version": 1
         },
-        "replicationMode": "UNVERIFIED",
-        "returnVariant": "UNVERIFIED",
+        "replicationMode": "DERIVATIVE_SYNTHETIC",
+        "returnVariant": "TOTAL_RETURN",
         "legalStructure": "OPEN_END_ETF",
         "referenceExposure": "CASH",
         "returnTransforms": [
           "PLAIN"
         ],
         "trackingErrorAnnualVolatility": null,
+        "operationProfile": {
+          "managementStyle": "ACTIVE",
+          "syntheticSwapFunding": "UNFUNDED",
+          "activeReturnModelSupport": "DETERMINISTIC_ASSUMPTION",
+          "activeSyntheticSwapModelParameters": {
+            "assumptionId": "rise-kofr-active-unfunded-swap-overlay-2026-08-v1",
+            "activeAlphaAnnualMean": 0.0008,
+            "activeAlphaAnnualVolatility": 0.0006,
+            "annualSwapFundingSpread": 0.00015,
+            "counterpartyDefaultHazardRateAnnual": 0.001,
+            "counterpartyRecoveryRate": 0.4,
+            "counterpartyExposureFraction": 0.03
+          },
+          "provenance": "VERIFIED_PRODUCT_DISCLOSURE",
+          "officialSourceUrls": [
+            "https://riseetf.co.kr/prod/finderDetail/44G5",
+            "https://riseetf.co.kr/upload/cdn/2026/08/07/2026080741104da5e90f4d4.pdf"
+          ]
+        },
         "dailyResetTerms": null,
         "etnProductTerms": null,
         "closedEndFundTerms": null,
@@ -35156,12 +35155,28 @@
       },
       "behaviorProfile": {
         "strategy": "MONEY_MARKET",
-        "distributionFrequency": "MONTHLY",
-        "upsideParticipation": 0.02,
-        "downsideParticipation": 0.02,
-        "durationYears": 0.1,
+        "distributionFrequency": "ANNUAL",
+        "distributionCalendar": "KRX_PRECEDING_BUSINESS_DAY_15",
+        "distributionPolicy": {
+          "projectedPaymentLagBusinessDays": 2,
+          "projectionAssumption": "rise-kofr-annual-december-15-manager-amount-2026-08-v1",
+          "projectedAnnualNominalGrowthRate": 0,
+          "projectedAmountVariationRate": 0.12,
+          "announcedDistributions": [
+            {
+              "exDate": "2025-12-12",
+              "recordDate": "2025-12-15",
+              "payDate": "2025-12-17",
+              "declaredGrossPerUnit": 586,
+              "skip": false
+            }
+          ]
+        },
+        "upsideParticipation": 0,
+        "downsideParticipation": 0,
+        "durationYears": 0,
         "creditSpreadSensitivity": 0,
-        "cashRateAccrual": 0.92,
+        "cashRateAccrual": 0,
         "annualStructuralDrag": 0,
         "distributionCoverageRatio": 1,
         "priceDislocationVolatility": 0,
@@ -35172,15 +35187,24 @@
         "principalRisk": "RATE_AND_CREDIT"
       },
       "identityProfile": {
-        "aliases": [],
+        "aliases": [
+          "KBSTAR KOFR금리액티브(합성)"
+        ],
         "issuerOrManager": "KB자산운용",
-        "strategySummary": "국채·통안채 담보 익일물 RP금리인 KOFR를 스왑으로 추종해 초과수익을 노리는 ETF입니다.",
-        "officialSourceUrl": "https://data.krx.co.kr/contents/MDC/MAIN/main/index.cmd",
-        "supportingSourceUrls": [],
+        "strategySummary": "KOFR 지수를 자금비공여형 스왑과 채권 운용으로 초과 추종하는 액티브 ETF입니다.",
+        "officialSourceUrl": "https://riseetf.co.kr/prod/finderDetail/44G5",
+        "supportingSourceUrls": [
+          "https://riseetf.co.kr/upload/cdn/2026/08/07/2026080741104da5e90f4d4.pdf",
+          "https://www.riseetf.co.kr/cust/notice/147"
+        ],
         "eventRiskTags": [
-          "asset_money_market",
-          "region_korea",
-          "strategy_money_market"
+          "kofr_rate",
+          "swap_counterparty",
+          "collateral",
+          "tracking_error",
+          "active_management",
+          "unfunded_swap",
+          "distribution_change"
         ],
         "maturityDate": null,
         "callable": false,
@@ -80609,6 +80633,270 @@
         "exposedSectors": [
           "SEMICONDUCTOR"
         ]
+      },
+      "industrySegments": []
+    },
+    {
+      "order": 552,
+      "symbol": "453060",
+      "name": "HANARO KOFR금리액티브(합성)",
+      "englishName": "HANARO KOFR Active(Synth)",
+      "market": "KOSPI",
+      "sector": "OTHER",
+      "instrumentType": "ETF",
+      "initialPrice": 111155,
+      "volatility": 0.0005,
+      "dividendYield": 0.00009,
+      "marketCap": 12227050000,
+      "sharesOutstanding": 110000,
+      "description": "KOFR 지수를 자금공여형 스왑과 단기금융자산 운용으로 초과 추종하는 액티브 ETF입니다.",
+      "beta": 0,
+      "quantityStep": 1,
+      "lotSize": 1,
+      "etfProfile": {
+        "benchmark": "KOFR 지수",
+        "assetClass": "MONEY_MARKET",
+        "taxCategory": "KOREAN_OTHER",
+        "annualExpenseRatio": 0.000741,
+        "fxProfile": {
+          "legs": [
+            {
+              "currency": "KRW",
+              "grossNotional": 1,
+              "hedgeRatioToListingCurrency": 0
+            }
+          ],
+          "annualHedgeCostRate": 0
+        },
+        "leverage": 1,
+        "taxablePriceGainRatio": 0.8,
+        "exposureRegion": "KOREA"
+      },
+      "fundProductProfile": {
+        "benchmarkRef": {
+          "benchmarkId": "kofr.krw.overnight",
+          "version": 1
+        },
+        "replicationMode": "DERIVATIVE_SYNTHETIC",
+        "returnVariant": "TOTAL_RETURN",
+        "legalStructure": "OPEN_END_ETF",
+        "referenceExposure": "CASH",
+        "returnTransforms": [
+          "PLAIN"
+        ],
+        "trackingErrorAnnualVolatility": null,
+        "operationProfile": {
+          "managementStyle": "ACTIVE",
+          "syntheticSwapFunding": "FULLY_FUNDED",
+          "activeReturnModelSupport": "DETERMINISTIC_ASSUMPTION",
+          "activeSyntheticSwapModelParameters": {
+            "assumptionId": "hanaro-kofr-active-fully-funded-swap-overlay-2026-08-v1",
+            "activeAlphaAnnualMean": 0.00085,
+            "activeAlphaAnnualVolatility": 0.00055,
+            "annualSwapFundingSpread": 0.00009,
+            "counterpartyDefaultHazardRateAnnual": 0.001,
+            "counterpartyRecoveryRate": 0.4,
+            "counterpartyExposureFraction": 0.01
+          },
+          "provenance": "VERIFIED_PRODUCT_DISCLOSURE",
+          "officialSourceUrls": [
+            "https://www.hanaroetf.com/_upload/public/fund-new/FB58E7CC6231433E/G410MK10WESAUINX7.pdf",
+            "https://www.hanaroetf.com/fund/FB58E7CC6231433E"
+          ]
+        },
+        "dailyResetTerms": null,
+        "etnProductTerms": null,
+        "closedEndFundTerms": null,
+        "closedEndFundMarketModelParameters": null,
+        "cashCollateralizedPutSpreadTerms": null,
+        "optionStrategyTerms": null,
+        "etnIssuerCreditModelParameters": null
+      },
+      "behaviorProfile": {
+        "strategy": "MONEY_MARKET",
+        "distributionFrequency": "ANNUAL",
+        "distributionCalendar": "KRX_MONTH_END",
+        "distributionPolicy": {
+          "projectedPaymentLagBusinessDays": 2,
+          "projectionAssumption": "hanaro-kofr-annual-year-end-manager-amount-2026-08-v1",
+          "projectedAnnualNominalGrowthRate": 0,
+          "projectedAmountVariationRate": 0.15,
+          "announcedDistributions": [
+            {
+              "exDate": "2025-12-29",
+              "recordDate": "2025-12-30",
+              "payDate": "2026-01-05",
+              "declaredGrossPerUnit": 10,
+              "skip": false
+            }
+          ]
+        },
+        "upsideParticipation": 0,
+        "downsideParticipation": 0,
+        "durationYears": 0,
+        "creditSpreadSensitivity": 0,
+        "cashRateAccrual": 0,
+        "annualStructuralDrag": 0,
+        "distributionCoverageRatio": 1,
+        "priceDislocationVolatility": 0,
+        "referenceCurrency": null,
+        "referenceCurrencySensitivity": 0,
+        "commodityFactorSensitivity": 0,
+        "cryptoFactorSensitivity": 0,
+        "principalRisk": "RATE_AND_CREDIT"
+      },
+      "identityProfile": {
+        "aliases": [
+          "NH-Amundi HANARO KOFR금리액티브(합성)"
+        ],
+        "issuerOrManager": "NH-Amundi자산운용",
+        "strategySummary": "KOFR 지수를 자금공여형 스왑과 단기금융 운용으로 초과 추종하는 ETF입니다.",
+        "officialSourceUrl": "https://www.hanaroetf.com/fund/FB58E7CC6231433E",
+        "supportingSourceUrls": [
+          "https://www.hanaroetf.com/_upload/public/fund-new/FB58E7CC6231433E/G410MK10WESAUINX7.pdf",
+          "https://www.hanaroetf.com/_upload/public/fund-new/FB58E7CC6231433E/cal0WeYwNtrv6tiM.pdf"
+        ],
+        "eventRiskTags": [
+          "kofr_rate",
+          "swap_counterparty",
+          "collateral",
+          "tracking_error",
+          "active_management",
+          "funded_swap",
+          "distribution_change"
+        ],
+        "maturityDate": null,
+        "callable": false,
+        "adrUnderlyingShareRatio": null,
+        "underlyingInstrumentIds": [],
+        "exposedSectors": []
+      },
+      "industrySegments": []
+    },
+    {
+      "order": 553,
+      "symbol": "453010",
+      "name": "PLUS KOFR금리",
+      "englishName": "PLUS KOFR Rate",
+      "market": "KOSPI",
+      "sector": "OTHER",
+      "instrumentType": "ETF",
+      "initialPrice": 109595,
+      "volatility": 0.0004,
+      "dividendYield": 0.01024,
+      "marketCap": 16877630000,
+      "sharesOutstanding": 154000,
+      "description": "KOFR 산출 대상과 같은 초단기 원화자산을 실물로 편입해 지수 수익률을 추종하는 ETF입니다.",
+      "beta": 0,
+      "quantityStep": 1,
+      "lotSize": 1,
+      "etfProfile": {
+        "benchmark": "KOFR 지수",
+        "assetClass": "MONEY_MARKET",
+        "taxCategory": "KOREAN_OTHER",
+        "annualExpenseRatio": 0.0006,
+        "annualTransactionCostRate": 0.000326,
+        "fxProfile": {
+          "legs": [
+            {
+              "currency": "KRW",
+              "grossNotional": 1,
+              "hedgeRatioToListingCurrency": 0
+            }
+          ],
+          "annualHedgeCostRate": 0
+        },
+        "leverage": 1,
+        "taxablePriceGainRatio": 0.8,
+        "exposureRegion": "KOREA"
+      },
+      "fundProductProfile": {
+        "benchmarkRef": {
+          "benchmarkId": "kofr.krw.overnight",
+          "version": 1
+        },
+        "replicationMode": "PHYSICAL_FULL_REPLICATION",
+        "returnVariant": "TOTAL_RETURN",
+        "legalStructure": "OPEN_END_ETF",
+        "referenceExposure": "CASH",
+        "returnTransforms": [
+          "PLAIN"
+        ],
+        "trackingErrorAnnualVolatility": null,
+        "operationProfile": {
+          "managementStyle": "PASSIVE",
+          "syntheticSwapFunding": null,
+          "activeReturnModelSupport": "NOT_APPLICABLE",
+          "provenance": "VERIFIED_PRODUCT_DISCLOSURE",
+          "officialSourceUrls": [
+            "https://www.plusetf.co.kr/product/detail?n=006180",
+            "https://www.plusetf.co.kr/upload/fund/J2602130800%ED%88%AC%EC%9E%90%EC%84%A4%EB%AA%85%EC%84%9C-%ED%95%9C%ED%99%94%20PLUS%20KOFR%EA%B8%88%EB%A6%AC%ED%8A%B9%EB%B3%84%EC%9E%90%EC%82%B0%EC%83%81%EC%9E%A5%EC%A7%80%EC%88%98%ED%88%AC%EC%9E%90%EC%8B%A0%ED%83%81%28%EA%B8%88%EB%A6%AC%29-006180-20260213.pdf"
+          ]
+        },
+        "dailyResetTerms": null,
+        "etnProductTerms": null,
+        "closedEndFundTerms": null,
+        "closedEndFundMarketModelParameters": null,
+        "cashCollateralizedPutSpreadTerms": null,
+        "optionStrategyTerms": null,
+        "etnIssuerCreditModelParameters": null
+      },
+      "behaviorProfile": {
+        "strategy": "MONEY_MARKET",
+        "distributionFrequency": "ANNUAL",
+        "distributionCalendar": "KRX_PRECEDING_BUSINESS_DAY_15",
+        "distributionPolicy": {
+          "projectedPaymentLagBusinessDays": 2,
+          "projectionAssumption": "plus-kofr-annual-december-15-manager-amount-2026-08-v1",
+          "projectedAnnualNominalGrowthRate": 0,
+          "projectedAmountVariationRate": 0.12,
+          "announcedDistributions": [
+            {
+              "exDate": "2025-12-12",
+              "recordDate": "2025-12-15",
+              "payDate": "2025-12-17",
+              "declaredGrossPerUnit": 1122,
+              "skip": false
+            }
+          ]
+        },
+        "upsideParticipation": 0,
+        "downsideParticipation": 0,
+        "durationYears": 0,
+        "creditSpreadSensitivity": 0,
+        "cashRateAccrual": 0,
+        "annualStructuralDrag": 0,
+        "distributionCoverageRatio": 1,
+        "priceDislocationVolatility": 0,
+        "referenceCurrency": null,
+        "referenceCurrencySensitivity": 0,
+        "commodityFactorSensitivity": 0,
+        "cryptoFactorSensitivity": 0,
+        "principalRisk": "RATE_AND_CREDIT"
+      },
+      "identityProfile": {
+        "aliases": [
+          "ARIRANG KOFR금리"
+        ],
+        "issuerOrManager": "한화자산운용",
+        "strategySummary": "KOFR 산출 자산을 실물로 편입해 지수 수익률을 추종하는 패시브 ETF입니다.",
+        "officialSourceUrl": "https://www.plusetf.co.kr/product/detail?n=006180",
+        "supportingSourceUrls": [
+          "https://www.plusetf.co.kr/upload/fund/J2602130800%ED%88%AC%EC%9E%90%EC%84%A4%EB%AA%85%EC%84%9C-%ED%95%9C%ED%99%94%20PLUS%20KOFR%EA%B8%88%EB%A6%AC%ED%8A%B9%EB%B3%84%EC%9E%90%EC%82%B0%EC%83%81%EC%9E%A5%EC%A7%80%EC%88%98%ED%88%AC%EC%9E%90%EC%8B%A0%ED%83%81%28%EA%B8%88%EB%A6%AC%29-006180-20260213.pdf",
+          "https://www.plusetf.co.kr/upload/fund/PLUS_KOFR%EA%B8%88%EB%A6%AC_20260731.pdf"
+        ],
+        "eventRiskTags": [
+          "kofr_rate",
+          "physical_replication",
+          "repo_market_liquidity",
+          "tracking_error",
+          "distribution_change"
+        ],
+        "maturityDate": null,
+        "callable": false,
+        "adrUnderlyingShareRatio": null,
+        "underlyingInstrumentIds": [],
+        "exposedSectors": []
       },
       "industrySegments": []
     }

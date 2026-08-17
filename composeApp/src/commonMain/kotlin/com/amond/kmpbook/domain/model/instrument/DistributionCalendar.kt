@@ -17,6 +17,9 @@ enum class DistributionCalendar {
     /** Schwab가 공표한 연간 equity ETF 일정과 이후 동결 시나리오 투영을 쓴다. */
     SCHWAB_EQUITY_ETF_EX_DATE,
 
-    /** 매월 15일이 KRX 비영업일이면 직전 KRX 영업일을 지급기준일로 쓴다. */
+    /** 대상 월 15일이 KRX 비영업일이면 직전 KRX 영업일을 지급기준일로 쓴다. */
     KRX_PRECEDING_BUSINESS_DAY_15,
+
+    /** 매년 11월 마지막 KRX 영업일을 지급기준일로 쓴다. */
+    KRX_ANNUAL_NOVEMBER_MONTH_END,
 }

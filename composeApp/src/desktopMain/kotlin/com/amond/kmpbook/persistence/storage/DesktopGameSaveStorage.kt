@@ -4005,7 +4005,7 @@ actual class GameSaveStorage actual constructor() {
                         ActiveReturnModelSupport.UNMODELED -> !hasActiveSyntheticSwapParameters
                         ActiveReturnModelSupport.DETERMINISTIC_ASSUMPTION ->
                             hasActiveSyntheticSwapParameters &&
-                                syntheticSwapFunding == SyntheticSwapFunding.FULLY_FUNDED
+                                syntheticSwapFunding != null
                         ActiveReturnModelSupport.NOT_APPLICABLE -> false
                     }
                 }

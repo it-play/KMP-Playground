@@ -4,4 +4,6 @@ package com.amond.kmpbook.domain.model.fund
 enum class SyntheticSwapFunding {
     FULLY_FUNDED,
     UNFUNDED,
+    /** 상품 설명서가 자금공여형 또는 비자금공여형 스왑을 선택해 쓸 수 있게 허용한다. */
+    FLEXIBLE_FUNDED_OR_UNFUNDED,
 }
