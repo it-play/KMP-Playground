@@ -1,4 +1,5 @@
-import dev.nucleusframework.desktop.application.dsl.TargetFormat
+import com.amond.kmpbook.build.distribution.ValidateWindowsGameImageTask
+import org.gradle.api.tasks.bundling.Zip
 
 val appVersion = providers.gradleProperty("appVersion").get()
 val appVersionMatch = Regex("""^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$""").matchEntire(appVersion)
@@ -46,6 +47,10 @@ kotlin {
             implementation(libs.lucide.icons)
         }
         val desktopMain by getting
+        desktopMain.resources.exclude("bundled-mods/**")
+        desktopMain.resources.srcDir(
+            project(":debugModBundle").layout.buildDirectory.dir("generated/hostTrustResources"),
+        )
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.gson)
@@ -63,7 +68,6 @@ nucleus.application {
 
     nativeDistributions {
         artifactName = "MarketLedger2040-\${version}.\${ext}"
-        targetFormats(TargetFormat.Msi)
         modules("java.instrument", "java.prefs", "java.sql", "jdk.unsupported")
         cleanupNativeLibs = true
         appResourcesRootDir.set(project.layout.projectDirectory.dir("src/desktopMain/appResources"))
@@ -76,10 +80,37 @@ nucleus.application {
         windows {
             iconFile.set(project.file("src/desktopMain/resources/icons/market-ledger.ico"))
             console = false
-            upgradeUuid = "9D509036-9E61-4F1B-9D02-86F71FC2C184"
-            msi {
-                perMachine = false
-            }
         }
     }
+}
+
+tasks.matching { task -> task.name == "desktopProcessResources" }.configureEach {
+    dependsOn(":debugModBundle:generateHostTrustResources")
+}
+
+tasks.register("packageDebugBundle") {
+    group = "distribution"
+    description = "Assembles the signed debug extension distributed next to the game payload."
+    dependsOn(":debugModBundle:packageDebugBundle")
+}
+
+val windowsGameImage = layout.buildDirectory.dir("compose/binaries/main/app/MarketLedger2040")
+val validateWindowsGameImage = tasks.register<ValidateWindowsGameImageTask>("validateWindowsGameImage") {
+    group = "verification"
+    description = "Validates the Nucleus Windows app-image before release ZIP creation."
+    dependsOn("createDistributable")
+    imageDirectory.set(windowsGameImage)
+}
+
+tasks.register<Zip>("packageGamePayload") {
+    group = "distribution"
+    description = "Packages the Windows game app-image consumed by the secure launcher."
+    dependsOn(validateWindowsGameImage)
+    from(windowsGameImage)
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+    archiveFileName.set("market-ledger-game-$appVersion-windows-x64.zip")
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+    includeEmptyDirs = false
+
 }
