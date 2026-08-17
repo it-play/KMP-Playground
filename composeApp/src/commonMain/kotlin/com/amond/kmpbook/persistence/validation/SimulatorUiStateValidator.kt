@@ -29,6 +29,8 @@ import com.amond.kmpbook.domain.model.event.EventType
 import com.amond.kmpbook.domain.model.event.GameEvent
 import com.amond.kmpbook.domain.model.event.GameEventImpact
 import com.amond.kmpbook.domain.model.event.ImpactDirection
+import com.amond.kmpbook.domain.model.game.GamePhase
+import com.amond.kmpbook.domain.model.game.Screen
 import com.amond.kmpbook.domain.model.fund.BenchmarkDefinition
 import com.amond.kmpbook.domain.model.fund.BenchmarkEngineKind
 import com.amond.kmpbook.domain.model.fund.BenchmarkRef
@@ -76,10 +78,12 @@ import com.amond.kmpbook.domain.model.fundstructure.amountsAreClose
 import com.amond.kmpbook.domain.model.index.MarketIndexId
 import com.amond.kmpbook.domain.model.instrument.InstrumentStrategy
 import com.amond.kmpbook.domain.model.instrument.InstrumentType
+import com.amond.kmpbook.domain.model.instrument.DistributionAmountBasis
 import com.amond.kmpbook.domain.model.instrument.FundFinancialState
 import com.amond.kmpbook.domain.model.instrument.MAX_FUND_REFERENCE_VALUE
 import com.amond.kmpbook.domain.model.instrument.MIN_FUND_REFERENCE_VALUE
 import com.amond.kmpbook.domain.model.instrument.StockDefinition
+import com.amond.kmpbook.domain.model.instrument.grossReceivableAmount
 import com.amond.kmpbook.domain.model.listing.alert.InvestmentAlertStatus
 import com.amond.kmpbook.domain.model.listing.lifecycle.ListingFinalDispositionType
 import com.amond.kmpbook.domain.model.listing.lifecycle.ListingLifecycleEventKind
@@ -107,7 +111,10 @@ import com.amond.kmpbook.domain.model.marketaction.krxViOccurrenceId
 import com.amond.kmpbook.domain.model.marketaction.usLuldOccurrenceId
 import com.amond.kmpbook.domain.model.marketaction.usMwcbOccurrenceId
 import com.amond.kmpbook.domain.simulation.market.MarketMicrostructure
+import com.amond.kmpbook.domain.simulation.protection.TradingProtectionEngine
+import com.amond.kmpbook.domain.simulation.protection.TradingProtectionRules
 import com.amond.kmpbook.domain.model.venue.MarketSession
+import com.amond.kmpbook.domain.model.pricing.PriceBar
 import com.amond.kmpbook.domain.model.pricing.PriceBarInterval
 import com.amond.kmpbook.domain.model.reference.CreditQuality
 import com.amond.kmpbook.domain.model.reference.CreditSpreadSnapshot
@@ -153,6 +160,7 @@ import com.amond.kmpbook.domain.model.protection.krx.KrxCircuitBreakerPhase
 import com.amond.kmpbook.domain.model.protection.krx.KrxSidecarPhase
 import com.amond.kmpbook.domain.model.protection.krx.KrxViPhase
 import com.amond.kmpbook.domain.model.protection.us.UsLuldPhase
+import com.amond.kmpbook.domain.model.protection.us.UsMwcbLevel
 import com.amond.kmpbook.domain.model.protection.us.UsMwcbPhase
 import com.amond.kmpbook.domain.model.schedule.ScheduledEventKind
 import com.amond.kmpbook.domain.model.schedule.ScheduledEventMetricKind
@@ -168,6 +176,8 @@ import com.amond.kmpbook.domain.simulation.reference.AlternativeRiskPremiaBookEn
 import com.amond.kmpbook.domain.simulation.reference.CompositeReferenceBookEngine
 import com.amond.kmpbook.domain.simulation.reference.CompositeScheduleResolver
 import com.amond.kmpbook.domain.simulation.reference.FixedIncomeReferenceBookEngine
+import com.amond.kmpbook.domain.simulation.reference.KofrIndexBookEngine
+import com.amond.kmpbook.domain.simulation.reference.KofrRateModel
 import com.amond.kmpbook.domain.simulation.listing.ListingLifecyclePolicyCatalog
 import com.amond.kmpbook.domain.simulation.market.MacroEnvironment
 import com.amond.kmpbook.domain.simulation.market.MarketDynamicsEngine
@@ -176,15 +186,36 @@ import com.amond.kmpbook.domain.simulation.market.MarketRegimeProbabilities
 import com.amond.kmpbook.domain.simulation.price.DeterministicRandom
 import com.amond.kmpbook.domain.simulation.schedule.ScheduledEventEngine
 import com.amond.kmpbook.domain.simulation.schedule.DistributionSchedule
+import com.amond.kmpbook.domain.simulation.schedule.DistributionAmountProjection
 import com.amond.kmpbook.domain.tax.dividend.DividendTaxCalculator
 import com.amond.kmpbook.domain.tax.dividend.DividendTaxClass
 import com.amond.kmpbook.domain.tax.dividend.DividendTaxRequest
+import com.amond.kmpbook.domain.tax.dividend.DistributionReturnOfCapitalPolicy
+import com.amond.kmpbook.domain.tax.core.MoneyRoundingPolicy
+import com.amond.kmpbook.domain.tax.liability.TaxLiabilityStatus
+import com.amond.kmpbook.domain.tax.liability.AccountingObservationBoundary
 import com.amond.kmpbook.domain.time.DefaultMarketHolidays
 import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.domain.time.KofrBusinessCalendar
+import com.amond.kmpbook.modding.builtin.debug.DebugMod
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.presentation.simulator.SimulatorRuntime
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
+import com.amond.kmpbook.presentation.simulator.canonicalReadEventLedgerViolation
+import com.amond.kmpbook.presentation.simulator.projectSimulatorMarketUi
+import com.amond.kmpbook.presentation.portfolio.DividendLedgerEntry
+import com.amond.kmpbook.presentation.portfolio.AnnualTaxProjectionEngine
+import com.amond.kmpbook.presentation.portfolio.CanonicalCashAccountingReplay
+import com.amond.kmpbook.presentation.portfolio.CanonicalDailyPriceBarProjection
+import com.amond.kmpbook.presentation.portfolio.CanonicalPortfolioSnapshotAccountingReplay
+import com.amond.kmpbook.presentation.portfolio.CanonicalPriceHistoryRetention
+import com.amond.kmpbook.presentation.portfolio.canonicalPendingTaxSettlementTradeIds
+import com.amond.kmpbook.presentation.portfolio.pendingTaxSettlementRatesMatchExecutionFacts
+import com.amond.kmpbook.presentation.portfolio.CanonicalTaxAccountingReplay
+import com.amond.kmpbook.presentation.portfolio.CanonicalTradingLedgerValidation
+import com.amond.kmpbook.presentation.portfolio.KrxDailySurveillanceProjection
+import com.amond.kmpbook.presentation.portfolio.PortfolioPerformanceExtrema
+import com.amond.kmpbook.presentation.portfolio.roundCurrencyForAccounting
 import kotlin.math.exp
 import kotlin.math.abs
 import kotlin.math.round
@@ -221,6 +252,10 @@ private const val FIXED_INCOME_CONVEXITY_MULTIPLIER: Double = 1.10
 private const val COMMODITY_REFERENCE_VALUE_EPSILON: Double = 1e-10
 private const val STRUCTURED_REFERENCE_EPSILON: Double = 1e-8
 private const val STRUCTURED_REFERENCE_MORTGAGE_SPREAD: Double = 0.0175
+private const val DISTRIBUTION_QUANTITY_EPSILON: Double = 1e-8
+private const val REQUIRED_SURVEILLANCE_DECISION_POINTS: Int = 16
+private const val SURVEILLANCE_TURNOVER_EPSILON: Double = 1e-9
+private const val MAX_SAFE_PERSISTED_SEQUENCE: Long = Long.MAX_VALUE - 1_000_000L
 private const val BENCHMARK_START_VALUE: Double = 100.0
 private val REFERENCE_PORTFOLIO_ASSET_ID_PATTERN =
     Regex("[A-Za-z0-9][A-Za-z0-9:._-]{0,199}")
@@ -255,8 +290,28 @@ private fun validateSimulatorUiStateInternal(
     ) {
         return "현재 게임 시각이 캠페인 범위·시간 격자·턴 번호와 일치하지 않습니다."
     }
-    if (state.nextSequence < 0L) return "다음 원장 시퀀스가 음수입니다."
-    if (state.eventEngineSnapshot.sequence < 0L) return "이벤트 엔진 시퀀스가 음수입니다."
+    val atCampaignEnd = GameCalendar.isFinished(state.currentTime)
+    if (state.phase == GamePhase.SETUP && state.currentTime != GameCalendar.startInstant ||
+        state.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED) && atCampaignEnd ||
+        state.phase in setOf(GamePhase.SETTLEMENT, GamePhase.FINISHED) && !atCampaignEnd ||
+        state.phase in setOf(GamePhase.SETTLEMENT, GamePhase.FINISHED) &&
+        state.screen != Screen.ENDING
+    ) {
+        return "게임 단계가 캠페인 시작·종료 시각 및 정산 화면과 일치하지 않습니다."
+    }
+    if (!state.options.initialCapitalKrw.isFinite() ||
+        state.options.initialCapitalKrw < NewGameOptions.MIN_INITIAL_CAPITAL_KRW ||
+        state.options.initialCapitalKrw.toBits() !=
+        roundCurrencyForAccounting(state.options.initialCapitalKrw, Currency.KRW).toBits()
+    ) {
+        return "초기 원화 자금은 최소 자금 이상의 원 단위여야 합니다."
+    }
+    if (state.nextSequence !in 1L..MAX_SAFE_PERSISTED_SEQUENCE) {
+        return "다음 원장 시퀀스가 양수 또는 안전한 증가 범위가 아닙니다."
+    }
+    if (state.eventEngineSnapshot.sequence !in 0L..MAX_SAFE_PERSISTED_SEQUENCE) {
+        return "이벤트 엔진 시퀀스가 안전한 증가 범위가 아닙니다."
+    }
     if (!state.currentBenchmarkValue.isFinite() || state.currentBenchmarkValue <= 0.0) {
         return "현재 벤치마크 값이 유한한 양수가 아닙니다."
     }
@@ -291,7 +346,22 @@ private fun validateSimulatorUiStateInternal(
             val validDailyDate = daily.date == timestampDate ||
                 timestampDate != immediatelyBeforeDate && daily.date == immediatelyBeforeDate
             portfolio.timestamp != benchmark.timestamp || !validDailyDate ||
-                daily.benchmarkValue.toBits() != benchmark.value.toBits()
+                listOf(
+                    daily.totalAssetsKrw,
+                    daily.cashValueKrw,
+                    daily.stockValueKrw,
+                    daily.dailyReturn,
+                    daily.drawdown,
+                    daily.benchmarkValue,
+                    daily.usdKrw,
+                ).any { value -> !value.isFinite() } ||
+                daily.totalAssetsKrw < 0.0 || daily.cashValueKrw < 0.0 ||
+                daily.stockValueKrw < 0.0 || daily.drawdown !in 0.0..1.0 ||
+                daily.benchmarkValue <= 0.0 || daily.usdKrw <= 0.0 ||
+                daily.benchmarkValue.toBits() != benchmark.value.toBits() ||
+                daily.totalAssetsKrw.toBits() != portfolio.totalAssetValueKrw.toBits() ||
+                daily.cashValueKrw.toBits() != portfolio.cashValueKrw.toBits() ||
+                daily.stockValueKrw.toBits() != portfolio.stockValueKrw.toBits()
         }
     ) {
         return "일별 포트폴리오·통계·벤치마크 이력의 시각·날짜 또는 값이 다릅니다."
@@ -320,6 +390,37 @@ private fun validateSimulatorUiStateInternal(
         state.macro.validatedCopy()
     } catch (_: RuntimeException) {
         return "거시 환경의 금리·물가·성장·환율·시장 팩터 상태가 유효하지 않습니다."
+    }
+    var dailyCloseExtrema = runCatching {
+        PortfolioPerformanceExtrema.initial(state.options.initialCapitalKrw)
+    }.getOrNull() ?: return "일별 마감 성과 극값의 초기자본이 유효하지 않습니다."
+    for (index in state.portfolioSnapshots.indices) {
+        val assetsKrw = state.portfolioSnapshots[index].totalAssetValueKrw
+        dailyCloseExtrema = runCatching { dailyCloseExtrema.observe(assetsKrw) }.getOrNull()
+            ?: return "일별 마감 성과 극값의 자산 관측값이 유효하지 않습니다."
+        val previousAssetsKrw = state.portfolioSnapshots.getOrNull(index - 1)?.totalAssetValueKrw
+        val canonicalDailyReturn = if (previousAssetsKrw == null || previousAssetsKrw == 0.0) {
+            assetsKrw / state.options.initialCapitalKrw - 1.0
+        } else {
+            assetsKrw / previousAssetsKrw - 1.0
+        }
+        if (state.dailyStatistics[index].dailyReturn.toBits() != canonicalDailyReturn.toBits()) {
+            return "일별 수익률이 일별 마감 자산 계보의 canonical 값과 다릅니다."
+        }
+        if (state.dailyStatistics[index].drawdown.toBits() !=
+            dailyCloseExtrema.drawdownAt(assetsKrw).toBits()
+        ) {
+            return "일별 낙폭이 일별 마감 자산의 running peak 계보와 다릅니다."
+        }
+    }
+    val currentAssetsKrw = state.totalAssetsKrw
+    val canonicalPerformanceExtrema = runCatching {
+        dailyCloseExtrema.observe(currentAssetsKrw)
+    }.getOrNull() ?: return "현재 포트폴리오의 성과 극값 자산 관측값이 유효하지 않습니다."
+    if (state.peakAssetsKrw.toBits() != canonicalPerformanceExtrema.peakAssetsKrw.toBits() ||
+        state.maximumDrawdown.toBits() != canonicalPerformanceExtrema.maximumDrawdown.toBits()
+    ) {
+        return "최고자산·최대 낙폭이 일별 마감 및 현재 평가 계보의 canonical 값과 다릅니다."
     }
     if (!state.options.initialExternalMarketForces.values.all { it.isFinite() && it in 0.0..1.0 } ||
         !state.externalMarketForcesTarget.values.all { it.isFinite() && it in 0.0..1.0 } ||
@@ -446,12 +547,24 @@ private fun validateSimulatorUiStateInternal(
         return "시세 맵의 ID·시각·유한 양수 가격·OHLC 포함관계·호가·거래소 tick이 유효하지 않습니다."
     }
     if (state.priceHistory.keys != stockIds || state.priceHistory.any { (id, bars) ->
-            bars.isEmpty() ||
-                bars.any { it.stockId != id || it.step != PriceBarInterval.ONE_HOUR } ||
-                bars.zipWithNext().any { (previous, next) -> previous.startTime >= next.startTime }
+            val stock = stocksById[id] ?: return@any true
+            bars.isEmpty() || bars.size > SimulatorRuntime.MAX_RECENT_BARS ||
+                bars.any { bar ->
+                    val isInitialPlaceholder = bars.size == 1 && bar.volume == 0L &&
+                        bar.endTime == GameCalendar.startInstant &&
+                        bar.startTime == GameCalendar.startInstant - 1.hours
+                    bar.stockId != id || bar.step != PriceBarInterval.ONE_HOUR ||
+                        bar.endTime > state.currentTime ||
+                        bar.endTime - bar.startTime != 1.hours ||
+                        !isInitialPlaceholder &&
+                        GameCalendar.regularTradingFraction(stock.market, bar.startTime) <= 0.0 ||
+                        runCatching { bar.copy() }.isFailure ||
+                        listOf(bar.open, bar.high, bar.low, bar.close).any { !it.isFinite() }
+                } ||
+                bars.zipWithNext().any { (previous, next) -> previous.endTime > next.startTime }
         }
     ) {
-        return "시간봉 가격 히스토리의 종목·주기·시간 순서가 올바르지 않습니다."
+        return "시간봉 가격 히스토리의 종목·주기·OHLCV·시간·보존 한도가 올바르지 않습니다."
     }
     val chartIntervals = setOf(
         PriceBarInterval.ONE_DAY,
@@ -461,48 +574,197 @@ private fun validateSimulatorUiStateInternal(
     )
     if (state.chartPriceHistory.keys != stockIds || state.chartPriceHistory.any { (id, histories) ->
             histories.keys != chartIntervals || histories.any { (interval, bars) ->
-                bars.any { it.stockId != id || it.step != interval } ||
-                    bars.zipWithNext().any { (previous, next) -> previous.startTime >= next.startTime }
+                bars.size > SimulatorRuntime.MAX_CHART_BARS_PER_INTERVAL ||
+                    bars.any { bar ->
+                        bar.stockId != id || bar.step != interval ||
+                            bar.endTime > state.currentTime ||
+                            runCatching { bar.copy() }.isFailure ||
+                            listOf(bar.open, bar.high, bar.low, bar.close).any { !it.isFinite() }
+                    } ||
+                    bars.zipWithNext().any { (previous, next) -> previous.endTime > next.startTime }
             }
         }
     ) {
-        return "주기별 차트 히스토리의 종목·주기·시간 순서가 올바르지 않습니다."
+        return "주기별 차트 히스토리의 종목·주기·OHLCV·시간·보존 한도가 올바르지 않습니다."
     }
     if (state.portfolioSnapshots.any { snapshot ->
             snapshot.holdingCostBasisKrw.keys != snapshot.holdings.mapTo(linkedSetOf()) { it.stockId } ||
-                snapshot.holdingCostBasisKrw.values.any { !it.isFinite() || it < 0.0 }
+                snapshot.holdingCostBasisKrw.values.any { !it.isFinite() || it < 0.0 } ||
+                snapshot.distributionReceivableByCurrency.values.any { amount ->
+                    !amount.isFinite() || amount !in 0.0..MAX_FUND_REFERENCE_VALUE || amount == 0.0
+                } ||
+                (snapshot.distributionReceivableByCurrency.keys - Currency.KRW).any { currency ->
+                    snapshot.exchangeRatesToKrw[currency]?.let { rate ->
+                        rate.isFinite() && rate > 0.0
+                    } != true
+                } ||
+                !snapshot.distributionReceivableValueKrw.isFinite() ||
+                snapshot.distributionReceivableValueKrw !in 0.0..MAX_FUND_REFERENCE_VALUE ||
+                !snapshot.totalAssetValueKrw.isFinite() || snapshot.totalAssetValueKrw < 0.0
         }
     ) {
-        return "포트폴리오 스냅샷에 모든 보유 종목의 FIFO 원가가 필요합니다."
+        return "포트폴리오 스냅샷의 FIFO 원가·분배 미수금·환율·총자산이 유효하지 않습니다."
     }
     if (state.pendingEtfReferenceReturns.any { (stockId, returnRate) ->
-            stockId !in stockIds || !returnRate.isFinite()
+            stocksById[stockId]?.isFundLike != true || !returnRate.isFinite() ||
+                returnRate !in -2.5..2.5
         }
     ) {
         return "ETF 기초시장 이월 수익률이 유효하지 않습니다."
     }
     if (state.pendingClosedEventLogReturns.any { (stockId, logReturn) ->
-            stockId !in stockIds || !logReturn.isFinite()
+            stockId !in stockIds || !logReturn.isFinite() || logReturn !in -2.5..2.5
         }
     ) {
         return "폐장 중 이벤트 이월 수익률이 유효하지 않습니다."
     }
     val requiredIndexIds = MarketIndexId.entries.toSet()
     if (state.marketIndices.keys != requiredIndexIds ||
-        state.marketIndices.any { (id, snapshot) -> id != snapshot.id }
+        state.marketIndices.any { (id, snapshot) ->
+            id != snapshot.id || snapshot.timestamp != state.currentTime ||
+                runCatching { snapshot.copy() }.isFailure ||
+                snapshot.sessionDate?.let { date ->
+                    date > GameCalendar.marketLocalDateTime(Market.NYSE, snapshot.timestamp).date
+                } == true
+        }
     ) {
         return "대표 지수 현재값에 필수 지수가 없거나 맵 키와 지수 ID가 일치하지 않습니다."
     }
     if (state.marketIndexHistory.keys != requiredIndexIds ||
         state.marketIndexHistory.any { (id, values) ->
-            values.isEmpty() || values.any { it.id != id || it.timestamp > state.currentTime } ||
-                values.zipWithNext().any { (previous, next) -> previous.timestamp >= next.timestamp }
+            values.isEmpty() || values.size > SimulatorRuntime.MAX_INDEX_BARS ||
+                values.last() != state.marketIndices.getValue(id) ||
+                values.any { snapshot ->
+                    snapshot.id != id || snapshot.timestamp > state.currentTime ||
+                        runCatching { snapshot.copy() }.isFailure ||
+                        snapshot.sessionDate?.let { date ->
+                            date > GameCalendar.marketLocalDateTime(Market.NYSE, snapshot.timestamp).date
+                        } == true
+                } ||
+                values.zipWithNext().any { (previous, next) ->
+                    next.timestamp != previous.timestamp + 1.hours
+                }
         }
     ) {
         return "대표 지수 이력에 필수 지수가 없거나 시간·ID 순서가 올바르지 않습니다."
     }
-    if (state.annualTaxLedgers.any { (year, ledger) -> year != ledger.taxYear }) {
-        return "연간 세금 원장의 연도 키가 일치하지 않습니다."
+    CanonicalTradingLedgerValidation.validate(
+        orders = state.orders,
+        trades = state.trades,
+        stocksById = stocksById,
+        holdingsByStockId = state.holdings,
+        listingLifecycleStates = state.listingLifecycleStates,
+        corporateActions = state.corporateActionLedger,
+        currentTime = state.currentTime,
+    )?.let { violation -> return violation }
+    val canonicalTaxReplay = runCatching {
+        CanonicalTaxAccountingReplay.replay(
+            stocksById = stocksById,
+            orders = state.orders,
+            trades = state.trades,
+            transactionCosts = state.transactionCosts,
+            taxExchangeRatesByTradeId = state.taxExchangeRatesByTradeId,
+            corporateActions = state.corporateActionLedger,
+            distributionOrigins = state.distributionEntitlementOrigins,
+            dividendEntries = state.dividendLedger,
+            portfolioSnapshots = state.portfolioSnapshots,
+        )
+    }.getOrNull() ?: return "거래·FIFO·기업행동·ROC에서 canonical 세무 원장을 재생할 수 없습니다."
+    val canonicalNativeHoldings = canonicalTaxReplay.nativeHoldingsByStockId
+    val nativeHoldingsMismatch = state.holdings.keys != canonicalNativeHoldings.keys ||
+        state.holdings.any { (stockId, holding) ->
+            val canonical = canonicalNativeHoldings[stockId] ?: return@any true
+            holding.stockId != canonical.stockId ||
+                holding.quantity.toBits() != canonical.quantity.toBits() ||
+                holding.averagePrice.toBits() != canonical.averagePrice.toBits() ||
+                holding.currency != canonical.currency ||
+                holding.realizedProfit.toBits() != canonical.realizedProfit.toBits()
+        }
+    if (state.fifoCostBasisBook != canonicalTaxReplay.fifoCostBasisBook ||
+        state.realizedGains != canonicalTaxReplay.realizedGains ||
+        nativeHoldingsMismatch ||
+        state.distributionEntitlementOrigins.any { origin ->
+            canonicalTaxReplay.originExcessReturnOfCapitalGainKrw[origin.id] !=
+                origin.excessReturnOfCapitalGainKrw
+        } || state.dividendLedger.any { dividend ->
+            canonicalTaxReplay.dividendExcessReturnOfCapitalGainKrw[dividend.id] !=
+                dividend.excessReturnOfCapitalGainKrw
+        }
+    ) {
+        return "보유 수량·평균원가·실현손익·FIFO·세무 원장이 canonical 회계 재생 결과와 다릅니다."
+    }
+    val debugCashEnabled = state.options.activeMods.any { mod ->
+        DebugMod.isCompatible(mod.id, mod.version)
+    }
+    if (state.cashAdjustmentLedger.isNotEmpty() && !debugCashEnabled) {
+        return "디버그 현금 조정 원장은 호환되는 신뢰 디버그 모드에서만 허용됩니다."
+    }
+    if (state.cashAdjustmentLedger.any { adjustment ->
+            adjustment.balanceAfter > when (adjustment.currency) {
+                Currency.KRW -> SimulatorRuntime.MAX_DEBUG_CASH_KRW
+                Currency.USD -> SimulatorRuntime.MAX_DEBUG_CASH_USD
+            }
+        }
+    ) {
+        return "디버그 현금 조정 결과가 통화별 허용 한도를 벗어났습니다."
+    }
+    val canonicalCash = runCatching {
+        CanonicalCashAccountingReplay.replay(
+            initialCapitalKrw = state.options.initialCapitalKrw,
+            campaignSeed = state.options.seed,
+            currentTime = state.currentTime,
+            trades = state.trades,
+            transactionCosts = state.transactionCosts,
+            foreignExchanges = state.foreignExchangeLedger,
+            dividends = state.dividendLedger,
+            taxPaymentNotices = state.taxPaymentNotices,
+            cashAdjustments = state.cashAdjustmentLedger,
+        )
+    }.getOrNull() ?: return "초기자본과 현금 회계 원장에서 통화별 잔액을 재생할 수 없습니다."
+    if (canonicalCash != state.cashByCurrency) {
+        return "현재 통화별 현금이 canonical 체결·환전·분배·세금 원장과 다릅니다."
+    }
+    validatePortfolioSnapshotAccountingLineage(state, stocksById)?.let { violation ->
+        return violation
+    }
+
+    val currentTaxYear = GameCalendar.campaignDate(state.currentTime).year
+    val canonicalTaxYears = (2026..currentTaxYear).toSet()
+    if (state.annualTaxLedgers.keys != canonicalTaxYears ||
+        state.annualTaxLedgers.any { (year, ledger) -> year != ledger.taxYear } ||
+        state.taxPaymentNotices.map { notice -> notice.id }.distinct().size !=
+        state.taxPaymentNotices.size
+    ) {
+        return "연간 세금 원장의 연도 키 또는 납부 고지 ID가 canonical 집합과 다릅니다."
+    }
+    val noticesByYear = state.taxPaymentNotices.groupBy { notice -> notice.taxYear }
+    for (year in canonicalTaxYears) {
+        val canonicalProjection = runCatching {
+            AnnualTaxProjectionEngine.calculate(
+                year = year,
+                stocksById = stocksById,
+                dividendEntries = state.dividendLedger,
+                gainEntries = canonicalTaxReplay.realizedGains,
+            )
+        }.getOrNull() ?: return "연간 세금 원장을 canonical 거래·분배 계보에서 계산할 수 없습니다."
+        val actualNotices = noticesByYear[year].orEmpty()
+        val mergedProjection = runCatching {
+            AnnualTaxProjectionEngine.mergeCanonicalProjectionWithPaidFacts(
+                projection = canonicalProjection,
+                paidFacts = actualNotices.filter { notice ->
+                    notice.status == TaxLiabilityStatus.PAID
+                },
+                currentTime = state.currentTime,
+            )
+        }.getOrNull() ?: return "세금 납부 사실이 canonical 세액·기한·회계 시각과 다릅니다."
+        if (state.annualTaxLedgers.getValue(year) != mergedProjection.first ||
+            actualNotices != mergedProjection.second
+        ) {
+            return "연간 세금 원장·납부 고지가 canonical projection 및 납부 사실과 다릅니다."
+        }
+    }
+    if (noticesByYear.keys.any { year -> year !in canonicalTaxYears }) {
+        return "캠페인 현재 연도 밖의 세금 납부 고지가 있습니다."
     }
     val tradesById = state.trades.associateBy { it.id }
     val tradeIds = tradesById.keys
@@ -523,8 +785,19 @@ private fun validateSimulatorUiStateInternal(
     ) {
         return "체결별 세무 환율 원장에 모든 체결의 유효한 환율이 필요합니다."
     }
-    if (state.pendingTaxSettlementTradeIds.any { it !in tradeIds }) {
-        return "미결제 세무 환율 원장에 알 수 없는 체결이 있습니다."
+    val canonicalPendingTaxSettlements = canonicalPendingTaxSettlementTradeIds(
+        trades = state.trades,
+        stocksById = stocksById,
+        currentTime = state.currentTime,
+    )
+    if (state.pendingTaxSettlementTradeIds != canonicalPendingTaxSettlements ||
+        !pendingTaxSettlementRatesMatchExecutionFacts(
+            pendingTradeIds = canonicalPendingTaxSettlements,
+            transactionCosts = state.transactionCosts,
+            taxExchangeRatesByTradeId = state.taxExchangeRatesByTradeId,
+        )
+    ) {
+        return "미결제 세무 환율 원장이 미국 거래소 체결의 canonical 결제 일정과 다릅니다."
     }
     if (state.watchlistedStockIds.any { it !in stockIds }) {
         return "관심 종목에 알 수 없는 종목 ID가 있습니다."
@@ -561,8 +834,15 @@ private fun validateSimulatorUiStateInternal(
         val stock = stocksById[entry.stockId]
             ?: return "분배 원장에 알 수 없는 종목이 있습니다."
         val paidOn = GameCalendar.marketLocalDateTime(stock.market, entry.paidAt).date
-        val expectedId = "dividend:${stock.id}:$paidOn"
+        val expectedId = "dividend:${stock.id}:${entry.exDate}:$paidOn"
+        val grossRoundingTolerance = if (stock.currency == Currency.KRW) 0.500001 else 0.005001
         if (entry.id != expectedId || entry.currency != stock.currency ||
+            entry.exDate > entry.recordDate || entry.recordDate > paidOn ||
+            !entry.grossPerUnit.isFinite() || entry.grossPerUnit <= 0.0 ||
+            entry.grossPerUnit > MAX_FUND_REFERENCE_VALUE ||
+            !entry.entitledQuantity.isFinite() || entry.entitledQuantity <= 0.0 ||
+            entry.entitledQuantity > MAX_FUND_REFERENCE_VALUE ||
+            abs(entry.grossAmount - entry.grossPerUnit * entry.entitledQuantity) > grossRoundingTolerance ||
             !entry.grossAmount.isFinite() || entry.grossAmount !in
             0.0..MAX_FUND_REFERENCE_VALUE || entry.grossAmount == 0.0 ||
             !entry.withholdingTax.isFinite() || entry.withholdingTax !in
@@ -574,6 +854,9 @@ private fun validateSimulatorUiStateInternal(
             !entry.returnOfCapitalAmount.isFinite() || entry.returnOfCapitalAmount !in
             0.0..MAX_FUND_REFERENCE_VALUE ||
             entry.excessReturnOfCapitalGainKrw < 0L ||
+            (!DistributionReturnOfCapitalPolicy.isEligible(stock) &&
+                (entry.returnOfCapitalAmount.toBits() != 0.0.toBits() ||
+                    entry.excessReturnOfCapitalGainKrw != 0L)) ||
             entry.taxableIncomeAmount > entry.grossAmount ||
             entry.withholdingTax > entry.taxableIncomeAmount ||
             !amountsAreClose(
@@ -628,6 +911,10 @@ private fun validateSimulatorUiStateInternal(
         state.trades.mapTo(this) { it.accountingSequence }
         state.dividendLedger.mapTo(this) { it.accountingSequence }
         state.corporateActionLedger.mapTo(this) { it.accountingSequence }
+        state.distributionEntitlementOrigins.mapTo(this) { it.accountingSequence }
+        state.taxPaymentNotices.mapNotNullTo(this) { it.accountingSequence }
+        state.foreignExchangeLedger.mapTo(this) { it.accountingSequence }
+        state.cashAdjustmentLedger.mapTo(this) { it.accountingSequence }
     }
     if (accountingSequences.any { it <= 0L || it >= state.nextSequence } ||
         accountingSequences.distinct().size != accountingSequences.size
@@ -640,17 +927,13 @@ private fun validateSimulatorUiStateInternal(
     if (state.newsEvents.map { it.id }.distinct().size != state.newsEvents.size) {
         return "뉴스 이벤트 ID가 중복되었습니다."
     }
-    val newsEventIds = state.newsEvents.mapTo(linkedSetOf()) { it.id }
     val newsEventsById = state.newsEvents.associateBy(GameEvent::id)
-    if (state.readStockNewsEventIds.keys.any { it !in stockIds } ||
-        state.readStockNewsEventIds.values.any { readIds -> readIds.any { it !in newsEventIds } } ||
-        state.readStockNewsEventIds.any { (stockId, readIds) ->
-            val stock = stocksById[stockId] ?: return@any true
-            readIds.any { eventId -> newsEventsById[eventId]?.affects(stock) != true }
-        }
-    ) {
-        return "종목별 연관 뉴스 읽음 원장이 현재 종목·뉴스 원장과 일치하지 않습니다."
-    }
+    canonicalReadEventLedgerViolation(
+        newsEvents = state.newsEvents,
+        readEventIds = state.readEventIds,
+        readStockNewsEventIds = state.readStockNewsEventIds,
+        stocksById = stocksById,
+    )?.let { violation -> return violation }
     if (state.newsEvents.any { it.startsAt > state.currentTime }) {
         return "아직 발표되지 않은 이벤트가 뉴스 원장에 포함되었습니다."
     }
@@ -793,6 +1076,20 @@ private fun validateSimulatorUiStateInternal(
         }
     ) {
         return "최종 상장 상태에 잔고 처분 방식이 없습니다."
+    }
+    if (state.holdings.any { (stockId, holding) ->
+            val contractualUnitValue = listings[stockId]
+                ?.takeIf { listing -> listing.status == ListingLifecycleStatus.LIQUIDATION_PENDING }
+                ?.finalDisposition
+                ?.takeIf { disposition ->
+                    disposition.type == ListingFinalDispositionType.CASH_LIQUIDATION
+                }
+                ?.cashPerUnit
+            val canonicalCurrentPrice = contractualUnitValue ?: state.quotes.getValue(stockId).price
+            holding.currentPrice.toBits() != canonicalCurrentPrice.toBits()
+        }
+    ) {
+        return "보유 종목의 현재가는 canonical 호가·계약상 청산 단가와 일치해야 합니다."
     }
     if (listings.any { (stockId, listing) ->
             val disposition = listing.finalDisposition ?: return@any false
@@ -1198,6 +1495,75 @@ private fun validateSimulatorUiStateInternal(
     ) {
         return "미국 MWCB 거래소 맵 키와 내부 시장이 일치하지 않습니다."
     }
+    val marketUi = runCatching {
+        projectSimulatorMarketUi(
+            campaignSeed = state.options.seed,
+            currentTime = state.currentTime,
+            selectedStockId = state.selectedStockId,
+            stocksById = stocksById,
+            quotes = state.quotes,
+            listingLifecycleStates = listings,
+            protection = protection,
+            macro = state.macro,
+            activeEvents = state.activeEvents,
+        )
+    }.getOrNull() ?: return "시장 세션·선택 호가창의 canonical UI projection을 계산할 수 없습니다."
+    if (state.marketSessions != marketUi.marketSessions ||
+        state.selectedOrderBook != marketUi.selectedOrderBook ||
+        state.quotes != marketUi.quotes
+    ) {
+        return "시장 세션·종목 호가·선택 호가창이 달력·상장·보호·이벤트 정본과 다릅니다."
+    }
+
+    fun regularSessionCloseTime(market: Market, tradingDate: LocalDate): LocalTime? =
+        GameCalendar.regularSessionWindow(market, tradingDate)?.let { session ->
+            GameCalendar.marketLocalDateTime(market, session.closesAt).time
+        }
+
+    val mwcbTimingInvalid = if (mwcb.phase == UsMwcbPhase.NORMAL) {
+        false
+    } else {
+        val level = mwcb.activeLevel
+        val triggeredAt = mwcb.triggeredAt
+        val session = GameCalendar.regularSessionWindow(Market.NYSE, mwcb.tradingDate)
+        if (level == null || triggeredAt == null || session == null) {
+            true
+        } else {
+            val triggeredLocal = GameCalendar.marketLocalDateTime(Market.NYSE, triggeredAt)
+            val closeTime = GameCalendar.marketLocalDateTime(Market.NYSE, session.closesAt).time
+            triggeredLocal.date != mwcb.tradingDate ||
+                triggeredAt !in session.opensAt..<session.closesAt ||
+                level in setOf(UsMwcbLevel.LEVEL_1, UsMwcbLevel.LEVEL_2) &&
+                triggeredLocal.time >= TradingProtectionRules.usMwcbLevel12Cutoff(closeTime)
+        }
+    }
+    if (mwcbTimingInvalid) {
+        return "미국 MWCB 발동 시각이 해당 거래일 정규장·마감 전 경계와 일치하지 않습니다."
+    }
+
+    val usLuldCanonicalStateInvalid = protection.usLuldStates.values.any { current ->
+        val currentLocal = GameCalendar.marketLocalDateTime(current.primaryMarket, state.currentTime)
+        if (currentLocal.date != current.tradingDate) return@any true
+        val session = GameCalendar.regularSessionWindow(current.primaryMarket, current.tradingDate)
+        val closeTime = regularSessionCloseTime(current.primaryMarket, current.tradingDate)
+        val canonicalBands = runCatching {
+            TradingProtectionEngine.calculateUsLuldBands(
+                tier = current.tier,
+                previousClose = current.previousClose,
+                referencePrice = current.referencePrice,
+                easternTime = currentLocal.time,
+                regularSessionClose = closeTime,
+            )
+        }.getOrNull() ?: return@any true
+        val active = current.phase !in setOf(UsLuldPhase.NORMAL, UsLuldPhase.CLOSED_FOR_DAY)
+        current.bands != canonicalBands ||
+            active && (session == null || state.currentTime !in session.opensAt..<session.closesAt) ||
+            current.phase == UsLuldPhase.CLOSED_FOR_DAY &&
+            (session == null || state.currentTime < session.closesAt)
+    }
+    if (usLuldCanonicalStateInvalid) {
+        return "미국 LULD 상태가 해당 거래일 정규장 마감·가격밴드 정본과 일치하지 않습니다."
+    }
 
     val marketActions = state.newsEvents.mapNotNull(GameEvent::marketAction)
     fun hasMarketAction(
@@ -1270,11 +1636,20 @@ private fun validateSimulatorUiStateInternal(
         val pauseStartedAt = current.pauseStartedAt ?: return@any true
         val occurrenceId = usLuldOccurrenceId(current.stockId, pauseStartedAt)
         !hasMarketAction(MarketActionKind.US_LIMIT_UP_LIMIT_DOWN, occurrenceId) { action ->
-            action.stockId == current.stockId && action.markets == setOf(current.primaryMarket) &&
-                action.transition in setOf(
-                MarketActionTransition.HALT_STARTED,
-                MarketActionTransition.CLOSING_AUCTION_STARTED,
-            )
+            if (action.stockId != current.stockId || action.markets != setOf(current.primaryMarket)) {
+                false
+            } else if (current.phase == UsLuldPhase.CLOSING_AUCTION_ONLY) {
+                val session = GameCalendar.regularSessionWindow(current.primaryMarket, current.tradingDate)
+                    ?: return@hasMarketAction false
+                val closeTime = GameCalendar.marketLocalDateTime(current.primaryMarket, session.closesAt).time
+                val actionLocal = GameCalendar.marketLocalDateTime(current.primaryMarket, action.effectiveAt)
+                action.transition == MarketActionTransition.CLOSING_AUCTION_STARTED &&
+                    action.endsAt == session.closesAt && actionLocal.date == current.tradingDate &&
+                    actionLocal.time >= TradingProtectionRules.usLuldCloseOnlyFrom(closeTime) &&
+                    action.effectiveAt < session.closesAt
+            } else {
+                action.transition == MarketActionTransition.HALT_STARTED
+            }
         }
     }
     val instrumentHaltLineageInvalid = (
@@ -1312,13 +1687,512 @@ private fun validateSimulatorUiStateInternal(
         return "현재 거래 보호상태와 시장조치 뉴스의 발생 계보가 일치하지 않습니다."
     }
 
+    val listingEventsByStockId = state.listingLifecycleLedger.groupBy { event -> event.stockId }
+    val debugPriceFactsAllowed = state.options.activeMods.any { mod ->
+        DebugMod.isCompatible(mod.id, mod.version)
+    }
+    val oneDayChartBarsByStockId = state.chartPriceHistory.mapValues { (_, histories) ->
+        histories.getValue(PriceBarInterval.ONE_DAY)
+    }
+    val canonicalRetainedDailyBarsByStockId = stocksById.mapValues { (stockId, stock) ->
+        CanonicalDailyPriceBarProjection.aggregateRetainedHourly(
+            stockId = stock.id,
+            market = stock.market,
+            hourlyBars = state.priceHistory.getValue(stockId),
+            dropPotentiallyTruncatedFirstDate = false,
+        )
+    }
+    val canonicalDailyBarsByStockId = canonicalRetainedDailyBarsByStockId.mapValues {
+            (stockId, bars) ->
+        val stock = stocksById.getValue(stockId)
+        bars.filter { bar ->
+            val date = GameCalendar.marketLocalDateTime(stock.market, bar.startTime).date
+            GameCalendar.regularSessionWindow(stock.market, date)?.closesAt?.let { closeAt ->
+                closeAt in GameCalendar.startInstant..state.currentTime
+            } == true
+        }
+    }
+    val incompleteDailyCoverage = stocksById.any { (stockId, stock) ->
+        val canonicalRetainedBars = canonicalRetainedDailyBarsByStockId.getValue(stockId)
+        val canonicalCompletedBars = canonicalDailyBarsByStockId.getValue(stockId)
+        val completedDates = canonicalCompletedBars.map { bar ->
+            GameCalendar.marketLocalDateTime(stock.market, bar.startTime).date
+        }
+        val incompleteDates = (canonicalRetainedBars - canonicalCompletedBars.toSet()).map { bar ->
+            GameCalendar.marketLocalDateTime(stock.market, bar.startTime).date
+        }
+        val expectedDecisionDates = expectedRecentCompletedSessionDates(
+            stock = stock,
+            listingEvents = listingEventsByStockId[stockId].orEmpty(),
+            currentTime = state.currentTime,
+            count = REQUIRED_SURVEILLANCE_DECISION_POINTS,
+        )
+        val expectedChronologicalCompletedDates = expectedRecentCompletedSessionDates(
+            stock = stock,
+            listingEvents = listingEventsByStockId[stockId].orEmpty(),
+            currentTime = state.currentTime,
+            count = (
+                CanonicalPriceHistoryRetention.CHRONOLOGICAL_ONE_DAY_TAIL -
+                    incompleteDates.size
+                ).coerceAtLeast(0),
+        )
+        val protectedPositiveDates = canonicalCompletedBars
+            .filter { bar -> bar.volume > 0L }
+            .takeLast(CanonicalPriceHistoryRetention.POSITIVE_DECISION_DAYS)
+            .asSequence()
+            .map { bar -> GameCalendar.marketLocalDateTime(stock.market, bar.startTime).date }
+            .toSet()
+        val expectedSavedDates = (
+            expectedChronologicalCompletedDates + incompleteDates + protectedPositiveDates
+            ).distinct().sorted()
+        val savedBars = oneDayChartBarsByStockId.getValue(stockId)
+        val savedDates = savedBars.map { bar ->
+            GameCalendar.marketLocalDateTime(stock.market, bar.startTime).date
+        }
+        val savedByDate = savedBars.associateBy { bar ->
+            GameCalendar.marketLocalDateTime(stock.market, bar.startTime).date
+        }
+        completedDates.takeLast(expectedDecisionDates.size) != expectedDecisionDates ||
+            savedDates != expectedSavedDates || savedByDate.size != savedBars.size ||
+            canonicalRetainedBars.any { canonical ->
+                val date = GameCalendar.marketLocalDateTime(stock.market, canonical.startTime).date
+                savedByDate[date] != canonical
+            }
+    }
+    if (incompleteDailyCoverage) {
+        return "시간봉에서 독립 재구성한 최근 거래일과 일봉·시장감시 의사결정 구간이 다릅니다."
+    }
+    val requiredSurveillanceTailByStockId = canonicalDailyBarsByStockId.mapValues { (_, bars) ->
+        bars.filter { bar -> bar.volume > 0L }.takeLast(REQUIRED_SURVEILLANCE_DECISION_POINTS)
+    }
+    val krxProjectionDates = requiredSurveillanceTailByStockId.asSequence()
+        .filter { (stockId, _) -> stocksById.getValue(stockId).market.isKorean }
+        .flatMap { (stockId, bars) ->
+            val market = stocksById.getValue(stockId).market
+            bars.asSequence().map { bar ->
+                GameCalendar.marketLocalDateTime(market, bar.startTime).date
+            }
+        }
+        .distinct()
+        .toList()
+    val expectedKrxProxyByStockDate = linkedMapOf<Pair<String, LocalDate>, Double>()
+    val expectedKrxRankByStockDate = linkedMapOf<Pair<String, LocalDate>, Int>()
+    for (date in krxProjectionDates) {
+        val indexEligibleIds = stocksById.values.asSequence().filter { stock ->
+            stock.market.isKorean && stock.hasCorporateEarnings &&
+                listingStatusBeforeSurveillance(
+                    listingEventsByStockId[stock.id].orEmpty(),
+                    date,
+                ) !in setOf(
+                    ListingLifecycleStatus.LIQUIDATION_PENDING,
+                    ListingLifecycleStatus.DELISTED,
+                    ListingLifecycleStatus.TERMINATED,
+                )
+        }.mapTo(linkedSetOf(), StockDefinition::id)
+        val closeByStockId = stocksById.values.asSequence()
+            .filter { stock -> stock.market.isKorean }
+            .associate { stock ->
+            val close = canonicalDailyBarsByStockId.getValue(stock.id)
+                .lastOrNull { bar ->
+                    GameCalendar.marketLocalDateTime(stock.market, bar.startTime).date <= date
+                }
+                ?.close
+                ?: stock.initialPrice
+            stock.id to close
+        }
+        val projection = KrxDailySurveillanceProjection.project(
+            stocks = stocksById.values,
+            closeByStockId = closeByStockId,
+            indexEligibleStockIds = indexEligibleIds,
+            top100MarketCapProxyKrw = SimulatorRuntime.KRX_TOP_100_MARKET_CAP_PROXY_KRW,
+        )
+        projection.marketProxyByStockId.forEach { (stockId, proxy) ->
+            expectedKrxProxyByStockDate[stockId to date] = proxy
+        }
+        projection.marketCapRankByStockId.forEach { (stockId, rank) ->
+            expectedKrxRankByStockDate[stockId to date] = rank
+        }
+    }
+    val krxSurveillanceDates = state.dailyTradingSurveillance.values.asSequence()
+        .flatten()
+        .map { point -> point.date }
+        .distinct()
+        .toList()
+    val krxProxyAvailableAt = buildSet {
+        krxSurveillanceDates.forEach { date ->
+            stocksById.values.asSequence()
+                .filter { stock -> stock.market.isKorean && stock.hasCorporateEarnings }
+                .filter { stock ->
+                    listingStatusBeforeSurveillance(
+                        listingEventsByStockId[stock.id].orEmpty(),
+                        date,
+                    ) !in setOf(
+                        ListingLifecycleStatus.LIQUIDATION_PENDING,
+                        ListingLifecycleStatus.DELISTED,
+                        ListingLifecycleStatus.TERMINATED,
+                    )
+                }
+                .mapTo(this) { stock -> stock.market to date }
+        }
+    }
     if (state.dailyTradingSurveillance.keys != stockIds ||
-        state.dailyTradingSurveillance.any { (_, points) ->
+        state.dailyTradingSurveillance.any { (stockId, points) ->
+                val stock = stocksById.getValue(stockId)
+                points.size > SimulatorRuntime.MAX_DAILY_SURVEILLANCE_POINTS ||
                 points.zipWithNext().any { (previous, next) -> previous.date >= next.date } ||
-                points.any { it.date > state.currentDate }
+                invalidDailyTradingSurveillanceHistory(
+                    stock = stock,
+                    points = points,
+                    listingEvents = listingEventsByStockId[stockId].orEmpty(),
+                    krxProxyAvailableAt = krxProxyAvailableAt,
+                    requiredTailBars = requiredSurveillanceTailByStockId.getValue(stockId),
+                    expectedKrxProxyByStockDate = expectedKrxProxyByStockDate,
+                    expectedKrxRankByStockDate = expectedKrxRankByStockDate,
+                    debugPriceFactsAllowed = debugPriceFactsAllowed,
+                    currentDate = state.currentDate,
+                )
         }
     ) {
-        return "일별 시장감시 이력의 종목·날짜 순서가 올바르지 않습니다."
+        return "일별 시장감시 이력의 종목·값·거래일·날짜 순서·보존 한도가 올바르지 않습니다."
+    }
+    return null
+}
+
+private fun invalidDailyTradingSurveillanceHistory(
+    stock: StockDefinition,
+    points: List<com.amond.kmpbook.presentation.portfolio.DailyTradingSurveillancePoint>,
+    listingEvents: List<ListingLifecycleLedgerEvent>,
+    krxProxyAvailableAt: Set<Pair<Market, LocalDate>>,
+    requiredTailBars: List<com.amond.kmpbook.domain.model.pricing.PriceBar>,
+    expectedKrxProxyByStockDate: Map<Pair<String, LocalDate>, Double>,
+    expectedKrxRankByStockDate: Map<Pair<String, LocalDate>, Int>,
+    debugPriceFactsAllowed: Boolean,
+    currentDate: LocalDate,
+): Boolean {
+    val orderedEvents = listingEvents.sortedWith(
+        compareBy(ListingLifecycleLedgerEvent::tradingDate)
+            .thenBy(ListingLifecycleLedgerEvent::sequence),
+    )
+    var lifecycleStatus = ListingLifecycleStatus.LISTED
+    var eventIndex = 0
+    val requiredDates = requiredTailBars.map { bar ->
+        GameCalendar.marketLocalDateTime(stock.market, bar.startTime).date
+    }
+    val actualTail = points.takeLast(requiredDates.size)
+    if (actualTail.map { point -> point.date } != requiredDates ||
+        actualTail.zip(requiredTailBars).any { (point, bar) ->
+            !debugPriceFactsAllowed && point.close.toBits() != bar.close.toBits() ||
+                point.volume != bar.volume ||
+                abs(point.turnoverRate -
+                    point.volume.toDouble() / stock.sharesOutstanding.toDouble()) >
+                SURVEILLANCE_TURNOVER_EPSILON
+        }
+    ) {
+        return true
+    }
+    for (point in points) {
+        while (eventIndex < orderedEvents.size &&
+            orderedEvents[eventIndex].tradingDate < point.date
+        ) {
+            lifecycleStatus = orderedEvents[eventIndex].toStatus
+            eventIndex += 1
+        }
+        val requiresKrxRank = stock.market.isKorean && stock.hasCorporateEarnings &&
+            lifecycleStatus !in setOf(
+                ListingLifecycleStatus.LIQUIDATION_PENDING,
+                ListingLifecycleStatus.DELISTED,
+                ListingLifecycleStatus.TERMINATED,
+            )
+        val projectionKey = stock.id to point.date
+        val expectedProxy = expectedKrxProxyByStockDate[projectionKey]
+        if (point.date > currentDate || runCatching { point.copy() }.isFailure ||
+            GameCalendar.regularSessionWindow(stock.market, point.date) == null ||
+            stock.market.isUnitedStates &&
+            (point.marketProxyClose != null || point.krxMarketCapRank != null) ||
+            ((stock.market to point.date) in krxProxyAvailableAt) !=
+            (point.marketProxyClose != null) ||
+            requiresKrxRank != (point.krxMarketCapRank != null) ||
+            !debugPriceFactsAllowed && expectedProxy != null &&
+            point.marketProxyClose?.toBits() != expectedProxy.toBits() ||
+            !debugPriceFactsAllowed && requiresKrxRank &&
+            expectedKrxRankByStockDate[projectionKey]?.let { expectedRank ->
+                point.krxMarketCapRank != expectedRank
+            } == true
+        ) {
+            return true
+        }
+    }
+    return false
+}
+
+private fun listingStatusBeforeSurveillance(
+    events: List<ListingLifecycleLedgerEvent>,
+    date: LocalDate,
+): ListingLifecycleStatus = events.asSequence()
+    .filter { event -> event.tradingDate < date }
+    .maxByOrNull(ListingLifecycleLedgerEvent::sequence)
+    ?.toStatus
+    ?: ListingLifecycleStatus.LISTED
+
+/**
+ * Rebuilds the completed daily suffix from the independent retained hourly series. The first
+ * date is discarded when the fixed-size hourly ring is full because it may start mid-session.
+ */
+private fun canonicalCompletedDailyBarsFromRetainedHourly(
+    stock: StockDefinition,
+    hourlyBars: List<PriceBar>,
+    currentTime: kotlin.time.Instant,
+): List<PriceBar> {
+    return CanonicalDailyPriceBarProjection.aggregateRetainedHourly(
+        stockId = stock.id,
+        market = stock.market,
+        hourlyBars = hourlyBars,
+        dropPotentiallyTruncatedFirstDate = false,
+    ).filter { bar ->
+        val date = GameCalendar.marketLocalDateTime(stock.market, bar.startTime).date
+        GameCalendar.regularSessionWindow(stock.market, date)?.closesAt?.let { closeAt ->
+            closeAt in GameCalendar.startInstant..currentTime
+        } == true
+    }
+}
+
+private fun expectedRecentCompletedSessionDates(
+    stock: StockDefinition,
+    listingEvents: List<ListingLifecycleLedgerEvent>,
+    currentTime: kotlin.time.Instant,
+    count: Int,
+): List<LocalDate> {
+    val result = ArrayDeque<LocalDate>()
+    val firstMarketDate = GameCalendar.marketLocalDateTime(
+        stock.market,
+        GameCalendar.startInstant,
+    ).date
+    val orderedEvents = listingEvents.sortedWith(
+        compareBy(ListingLifecycleLedgerEvent::tradingDate)
+            .thenBy(ListingLifecycleLedgerEvent::sequence),
+    )
+    var eventIndex = orderedEvents.lastIndex
+    var date = GameCalendar.marketLocalDateTime(stock.market, currentTime).date
+    while (date >= firstMarketDate && result.size < count) {
+        val session = GameCalendar.regularSessionWindow(stock.market, date)
+        while (eventIndex >= 0 && orderedEvents[eventIndex].tradingDate >= date) {
+            eventIndex -= 1
+        }
+        val priorListingEvent = orderedEvents.getOrNull(eventIndex)
+        val status = priorListingEvent?.toStatus ?: ListingLifecycleStatus.LISTED
+        val stillListed = status !in setOf(
+            ListingLifecycleStatus.DELISTED,
+            ListingLifecycleStatus.TERMINATED,
+        )
+        if (stillListed && session?.closesAt?.let { closeAt ->
+                closeAt in GameCalendar.startInstant..currentTime
+            } == true
+        ) {
+            result.addFirst(date)
+        }
+        date = date.minus(1, DateTimeUnit.DAY)
+    }
+    return result.toList()
+}
+
+private fun validatePortfolioSnapshotAccountingLineage(
+    state: SimulatorUiState,
+    stocksById: Map<String, StockDefinition>,
+): String? {
+    if (state.portfolioSnapshots.isEmpty()) return "일별 포트폴리오 스냅샷이 비어 있습니다."
+    val debugPriceFactsAllowed = state.options.activeMods.any { mod ->
+        DebugMod.isCompatible(mod.id, mod.version)
+    }
+    val expectedCashCurrencies = Currency.entries.toSet()
+    val expectedExchangeRateCurrencies = setOf(Currency.USD)
+    var expectedDate = GameCalendar.START_LOCAL_DATE_TIME.date
+    var previousBoundary: AccountingObservationBoundary? = null
+    state.portfolioSnapshots.forEachIndexed { index, snapshot ->
+        val daily = state.dailyStatistics[index]
+        if (daily.date != expectedDate) {
+            return "일별 포트폴리오 이력의 게임 날짜가 시작일부터 연속적이지 않습니다."
+        }
+        expectedDate = expectedDate.plus(1, DateTimeUnit.DAY)
+        val boundary = AccountingObservationBoundary(
+            snapshot.timestamp,
+            snapshot.accountingSequenceExclusiveUpperBound,
+        )
+        if (snapshot.timestamp !in GameCalendar.startInstant..state.currentTime ||
+            snapshot.accountingSequenceExclusiveUpperBound !in 0L..state.nextSequence ||
+            previousBoundary?.let { previous ->
+                previous.timestamp > boundary.timestamp ||
+                    previous.timestamp == boundary.timestamp &&
+                    previous.accountingSequenceExclusiveUpperBound >=
+                    boundary.accountingSequenceExclusiveUpperBound
+            } == true
+        ) {
+            return "일별 포트폴리오 관측의 시각·회계 순번 상한이 오름차순 계보와 다릅니다."
+        }
+        previousBoundary = boundary
+
+        val isCurrentLogicalDate = daily.date == state.currentDate
+        val isLast = index == state.portfolioSnapshots.lastIndex
+        val canonicalCompletedAt = LocalDateTime(
+            daily.date.plus(1, DateTimeUnit.DAY),
+            LocalTime(0, 0),
+        ).toInstant(GameCalendar.KOREA_TIME_ZONE) - 1.nanoseconds
+        val earliestCurrentObservation = if (daily.date == GameCalendar.START_LOCAL_DATE_TIME.date) {
+            GameCalendar.startInstant
+        } else {
+            LocalDateTime(daily.date, LocalTime(0, 0)).toInstant(GameCalendar.KOREA_TIME_ZONE)
+        }
+        if (isCurrentLogicalDate) {
+            if (!isLast || snapshot.timestamp !in earliestCurrentObservation..state.currentTime) {
+                return "현재 게임 날짜의 포트폴리오 관측 위치가 마지막 기록과 다릅니다."
+            }
+        } else if (daily.date > state.currentDate || snapshot.timestamp != canonicalCompletedAt) {
+            return "완료된 게임 날짜의 포트폴리오 관측은 다음 KST 자정 직전이어야 합니다."
+        }
+
+        if (snapshot.cashByCurrency.keys != expectedCashCurrencies ||
+            snapshot.cashByCurrency.any { (currency, amount) ->
+                !amount.isFinite() || amount < 0.0 ||
+                    amount.toBits() != roundCurrencyForAccounting(amount, currency).toBits()
+            } || snapshot.exchangeRatesToKrw.keys != expectedExchangeRateCurrencies ||
+            snapshot.exchangeRatesToKrw.getValue(Currency.USD) !in 800.0..2_500.0 ||
+            snapshot.initialCapitalKrw.toBits() != state.options.initialCapitalKrw.toBits() ||
+            !snapshot.realizedProfitKrw.isFinite() ||
+            !snapshot.cumulativeCommissionKrw.isFinite() ||
+            !snapshot.cumulativeTaxKrw.isFinite() ||
+            snapshot.cumulativeCommissionKrw < 0.0 || snapshot.cumulativeTaxKrw < 0.0 ||
+            daily.usdKrw.toBits() != snapshot.exchangeRatesToKrw.getValue(Currency.USD).toBits()
+        ) {
+            return "일별 포트폴리오의 현금·환율·초기자본·누계 값이 canonical 형식과 다릅니다."
+        }
+        val holdingIds = snapshot.holdings.map { holding -> holding.stockId }
+        if (holdingIds.distinct().size != holdingIds.size ||
+            holdingIds.any { stockId -> stockId !in stocksById } ||
+            snapshot.holdings.any { holding ->
+                val stock = stocksById.getValue(holding.stockId)
+                val boundaryListingEvent = state.listingLifecycleLedger.asSequence()
+                    .filter { event ->
+                        event.stockId == stock.id &&
+                            GameCalendar.regularSessionWindow(stock.market, event.tradingDate)
+                                ?.closesAt?.let { closeAt ->
+                                    boundary.includes(closeAt, event.sequence)
+                                } == true
+                    }
+                    .maxByOrNull(ListingLifecycleLedgerEvent::sequence)
+                val contractualLiquidationPrice = boundaryListingEvent
+                    ?.takeIf { event ->
+                        event.toStatus == ListingLifecycleStatus.LIQUIDATION_PENDING &&
+                            event.disposition?.type == ListingFinalDispositionType.CASH_LIQUIDATION
+                    }
+                    ?.disposition
+                    ?.cashPerUnit
+                val retainedKrxDailyClose = if (contractualLiquidationPrice == null &&
+                    !debugPriceFactsAllowed && stock.market.isKorean &&
+                    state.corporateActionLedger.none { action ->
+                        action.stockId == stock.id && action.effectiveAt > snapshot.timestamp
+                    } && GameCalendar.regularSessionWindow(stock.market, daily.date)
+                        ?.closesAt?.let { closeAt -> closeAt <= snapshot.timestamp } == true
+                ) {
+                    state.chartPriceHistory.getValue(stock.id)
+                        .getValue(PriceBarInterval.ONE_DAY)
+                        .lastOrNull { bar ->
+                            GameCalendar.marketLocalDateTime(stock.market, bar.startTime).date ==
+                                daily.date
+                        }
+                        ?.close
+                } else {
+                    null
+                }
+                runCatching { holding.copy() }.isFailure || holding.currency != stock.currency ||
+                    listOf(
+                        holding.quantity,
+                        holding.averagePrice,
+                        holding.currentPrice,
+                    holding.realizedProfit,
+                ).any { value -> !value.isFinite() } ||
+                    holding.quantity !in Double.MIN_VALUE..MAX_FUND_REFERENCE_VALUE ||
+                    holding.averagePrice !in Double.MIN_VALUE..SimulatorRuntime.MAX_DEBUG_NATIVE_PRICE ||
+                    if (contractualLiquidationPrice == null) {
+                        holding.currentPrice !in Double.MIN_VALUE..SimulatorRuntime.MAX_DEBUG_NATIVE_PRICE
+                    } else {
+                        holding.currentPrice !in 0.0..SimulatorRuntime.MAX_DEBUG_NATIVE_PRICE ||
+                            holding.currentPrice.toBits() != contractualLiquidationPrice.toBits()
+                    } ||
+                    abs(holding.realizedProfit) > MAX_FUND_REFERENCE_VALUE ||
+                    retainedKrxDailyClose?.let { close ->
+                        holding.currentPrice.toBits() != close.toBits()
+                    } == true ||
+                    contractualLiquidationPrice == null && run {
+                        val rounded = MarketMicrostructure.roundNearest(stock, holding.currentPrice)
+                        val tolerance = maxOf(
+                            1e-12,
+                            MarketMicrostructure.tickSize(stock, holding.currentPrice) * 1e-9,
+                        )
+                        abs(rounded - holding.currentPrice) > tolerance
+                    }
+            } || snapshot.holdingCostBasisKrw.keys != holdingIds.toSet()
+        ) {
+            return "일별 포트폴리오 보유 종목의 ID·통화·가격·FIFO 원가 구조가 유효하지 않습니다."
+        }
+    }
+    val finalRecordedDate = state.dailyStatistics.last().date
+    val previousGameDate = state.currentDate.minus(1, DateTimeUnit.DAY)
+    if (finalRecordedDate != state.currentDate && finalRecordedDate != previousGameDate) {
+        return "일별 포트폴리오 이력이 현재 날짜 직전의 완료된 KST 마감까지 이어지지 않았습니다."
+    }
+    val lastSnapshot = state.portfolioSnapshots.last()
+    if (lastSnapshot.timestamp == state.currentTime &&
+        lastSnapshot.accountingSequenceExclusiveUpperBound == state.nextSequence &&
+        lastSnapshot != state.currentPortfolio
+    ) {
+        return "현재 시각 포트폴리오 관측이 현재 상태 및 회계 순번과 다릅니다."
+    }
+
+    val canonicalFacts = runCatching {
+        CanonicalPortfolioSnapshotAccountingReplay.replay(
+            stocksById = stocksById,
+            initialCapitalKrw = state.options.initialCapitalKrw,
+            campaignSeed = state.options.seed,
+            currentTime = state.currentTime,
+            orders = state.orders,
+            trades = state.trades,
+            transactionCosts = state.transactionCosts,
+            taxExchangeRatesByTradeId = state.taxExchangeRatesByTradeId,
+            corporateActions = state.corporateActionLedger,
+            distributionOrigins = state.distributionEntitlementOrigins,
+            dividendEntries = state.dividendLedger,
+            taxPaymentNotices = state.taxPaymentNotices,
+            foreignExchanges = state.foreignExchangeLedger,
+            cashAdjustments = state.cashAdjustmentLedger,
+            portfolioSnapshots = state.portfolioSnapshots,
+        )
+    }.getOrNull() ?: return "일별 포트폴리오 회계 prefix를 canonical 원장에서 재생할 수 없습니다."
+    state.portfolioSnapshots.forEach { snapshot ->
+        val boundary = AccountingObservationBoundary(
+            snapshot.timestamp,
+            snapshot.accountingSequenceExclusiveUpperBound,
+        )
+        val canonical = canonicalFacts[boundary]
+            ?: return "일별 포트폴리오 관측 경계의 canonical 회계 결과가 없습니다."
+        val holdingsById = snapshot.holdings.associateBy { holding -> holding.stockId }
+        val holdingsMismatch = holdingsById.keys != canonical.nativeHoldingsByStockId.keys ||
+            holdingsById.any { (stockId, holding) ->
+                val expected = canonical.nativeHoldingsByStockId[stockId] ?: return@any true
+                holding.quantity.toBits() != expected.quantity.toBits() ||
+                    holding.averagePrice.toBits() != expected.averagePrice.toBits() ||
+                    holding.currency != expected.currency ||
+                    holding.realizedProfit.toBits() != expected.realizedProfit.toBits()
+            }
+        if (snapshot.cashByCurrency != canonical.cashByCurrency || holdingsMismatch ||
+            snapshot.holdingCostBasisKrw != canonical.holdingCostBasisKrw ||
+            snapshot.distributionReceivableByCurrency !=
+            canonical.distributionReceivableByCurrency ||
+            snapshot.realizedProfitKrw.toBits() != canonical.realizedProfitKrw.toBits() ||
+            snapshot.cumulativeCommissionKrw.toBits() !=
+            canonical.cumulativeCommissionKrw.toBits() ||
+            snapshot.cumulativeTaxKrw.toBits() != canonical.cumulativeTaxKrw.toBits()
+        ) {
+            return "일별 포트폴리오의 현금·보유·FIFO·분배 미수금·손익·비용 누계가 회계 prefix와 다릅니다."
+        }
     }
     return null
 }
@@ -1614,7 +2488,10 @@ private fun validateInstrumentFinancialStates(
                 MIN_FUND_REFERENCE_VALUE..MAX_FUND_REFERENCE_VALUE ||
                 !financialState.unitsOrNotesOutstanding.isFinite() ||
                 financialState.unitsOrNotesOutstanding <= 0.0 ||
-                !financialState.lastNetFlow.isFinite() || financialState.asOf > state.currentTime
+                !financialState.lastNetFlow.isFinite() ||
+                !financialState.accruedDistributionPerUnit.isFinite() ||
+                financialState.accruedDistributionPerUnit !in 0.0..MAX_FUND_REFERENCE_VALUE ||
+                financialState.asOf > state.currentTime
         }
     ) {
         return "개방형 ETF 원시 재무 맵의 ID·NAV·지표가치·존속 좌수·기준 시각이 유효하지 않습니다."
@@ -1627,6 +2504,7 @@ private fun validateInstrumentFinancialStates(
                 indicativeValuePerUnit = financialState.indicativeValuePerUnit,
                 unitsOrNotesOutstanding = financialState.unitsOrNotesOutstanding,
                 lastNetFlow = financialState.lastNetFlow,
+                accruedDistributionPerUnit = financialState.accruedDistributionPerUnit,
                 cumulativeUnitAdjustmentFactor = financialState.cumulativeUnitAdjustmentFactor,
                 lastCorporateActionAccountingSequence =
                 financialState.lastCorporateActionAccountingSequence,
@@ -1732,12 +2610,17 @@ private fun validateDistributionEvaluationPersistenceState(
                     ?: return "분배 평가 중단 상장 원장의 거래일에 canonical 정규장 종가가 없습니다."
                 boundary < close
             } != false
-            if (boundary > GameCalendar.startInstant && boundary <= state.currentTime &&
-                beforeBlockedClose && DistributionSchedule.isDistributionDate(
+            val isExDate = if (stock.instrumentType == InstrumentType.ETF) {
+                DistributionSchedule.eventOnExDate(stock, candidate) != null
+            } else {
+                DistributionSchedule.isDistributionDate(
                     date = candidate,
                     frequency = frequency,
                     calendar = stock.behavior.distributionCalendar,
                 )
+            }
+            if (boundary > GameCalendar.startInstant && boundary <= state.currentTime &&
+                beforeBlockedClose && isExDate
             ) {
                 expected[stockId] = candidate
                 break
@@ -1763,12 +2646,278 @@ private fun validateDistributionEvaluationPersistenceState(
             state.lastEvaluatedDistributionDateByStock[stockId]?.let { local.date <= it } == true
     }
 
-    if (state.dividendLedger.any { entry -> !validDistributionInstant(entry.stockId, entry.paidAt) } ||
+    val paidEtfDistributionKeys = state.dividendLedger.asSequence()
+        .filter { entry -> stocksById[entry.stockId]?.instrumentType == InstrumentType.ETF }
+        .map { entry -> entry.stockId to entry.exDate }
+        .toSet()
+    val originsById = state.distributionEntitlementOrigins.associateBy { origin -> origin.id }
+    val originsByKey = state.distributionEntitlementOrigins.associateBy { origin ->
+        origin.stockId to origin.exDate
+    }
+    if (originsById.size != state.distributionEntitlementOrigins.size ||
+        originsByKey.size != state.distributionEntitlementOrigins.size
+    ) {
+        return "ETF 분배 권리 origin 원장의 ID 또는 종목·분배락 키가 중복되었습니다."
+    }
+
+    fun replayEntitledQuantity(originId: String): Double? {
+        val origin = originsById[originId] ?: return null
+        if (state.trades.any { trade ->
+                trade.stockId == origin.stockId &&
+                    (trade.executedAt < origin.establishedAt) !=
+                    (trade.accountingSequence < origin.accountingSequence)
+            } || state.corporateActionLedger.any { action ->
+                action.stockId == origin.stockId &&
+                    (action.effectiveAt < origin.establishedAt) !=
+                    (action.accountingSequence < origin.accountingSequence)
+            }
+        ) return null
+        val transitions = buildList {
+            state.trades.asSequence()
+                .filter { trade ->
+                    trade.stockId == origin.stockId && trade.executedAt < origin.establishedAt
+                }
+                .forEach { trade ->
+                    val signedQuantity = if (trade.side == OrderSide.BUY) trade.quantity else -trade.quantity
+                    add(Triple(trade.accountingSequence, signedQuantity, false))
+                }
+            state.corporateActionLedger.asSequence()
+                .filter { action ->
+                    action.stockId == origin.stockId && action.effectiveAt < origin.establishedAt
+                }
+                .forEach { action ->
+                    add(Triple(action.accountingSequence, action.quantityMultiplier, true))
+                }
+        }.sortedBy { transition -> transition.first }
+        var quantity = 0.0
+        for ((_, value, isMultiplier) in transitions) {
+            quantity = if (isMultiplier) quantity * value else quantity + value
+            if (!quantity.isFinite() || quantity < -DISTRIBUTION_QUANTITY_EPSILON) return null
+        }
+        return if (abs(quantity) <= DISTRIBUTION_QUANTITY_EPSILON) 0.0 else quantity
+    }
+
+    if (state.distributionEntitlementOrigins.any { origin ->
+            val stock = stocksById[origin.stockId] ?: return@any true
+            val schedule = DistributionSchedule.eventOnExDate(stock, origin.exDate)
+            val expectedEstablishedAt = LocalDateTime(origin.exDate, LocalTime(0, 0))
+                .toInstant(GameCalendar.timeZoneFor(stock.market))
+            val expectedBasis = if (schedule?.declaredGrossPerUnit == null) {
+                DistributionAmountBasis.DETERMINISTIC_POLICY_PROJECTION
+            } else {
+                DistributionAmountBasis.ANNOUNCED
+            }
+            val expectedGrossPerUnit = schedule?.declaredGrossPerUnit
+                ?: runCatching {
+                    DistributionAmountProjection.projectedGrossPerUnit(stock, origin.exDate)
+                }.getOrNull()
+            stock.instrumentType != InstrumentType.ETF || schedule == null || schedule.skip ||
+                origin.id != "distribution-origin:${stock.id}:${origin.exDate}" ||
+                origin.establishedAt != expectedEstablishedAt ||
+                origin.establishedAt <= GameCalendar.startInstant ||
+                origin.establishedAt > state.currentTime ||
+                origin.amountBasis != expectedBasis ||
+                expectedGrossPerUnit == null ||
+                origin.grossPerUnit.toBits() != expectedGrossPerUnit.toBits() ||
+                !origin.grossPerUnit.isFinite() ||
+                origin.grossPerUnit !in 0.0..MAX_FUND_REFERENCE_VALUE || origin.grossPerUnit == 0.0 ||
+                !origin.entitledQuantity.isFinite() ||
+                origin.entitledQuantity !in 0.0..MAX_FUND_REFERENCE_VALUE ||
+                origin.entitledQuantity == 0.0 ||
+                replayEntitledQuantity(origin.id)?.let { quantity ->
+                    abs(quantity - origin.entitledQuantity) <= DISTRIBUTION_QUANTITY_EPSILON
+                } != true ||
+                !origin.taxableCoverageRatio.isFinite() ||
+                origin.taxableCoverageRatio.toBits() !=
+                DistributionReturnOfCapitalPolicy.modeledTaxableCoverageRatio(stock).toBits() ||
+                !origin.taxBasisExchangeRateToKrw.isFinite() ||
+                stock.currency == Currency.KRW && origin.taxBasisExchangeRateToKrw.toBits() != 1.0.toBits() ||
+                stock.currency == Currency.USD && origin.taxBasisExchangeRateToKrw !in
+                SimulatorRuntime.MIN_USD_KRW..SimulatorRuntime.MAX_USD_KRW ||
+                runCatching {
+                    val canonicalGross = grossReceivableAmount(
+                        stock.currency,
+                        origin.grossPerUnit,
+                        origin.entitledQuantity,
+                    )
+                    val canonicalTaxable = MoneyRoundingPolicy.MINOR_UNIT_HALF_UP.fromMajorUnits(
+                        canonicalGross * origin.taxableCoverageRatio,
+                        stock.currency,
+                    ).amount
+                    origin.returnOfCapitalAmount.toBits() !=
+                        (canonicalGross - canonicalTaxable).coerceAtLeast(0.0).toBits()
+                }.getOrDefault(true) ||
+                !origin.accruedDistributionPerUnitBeforeEx.isFinite() ||
+                origin.accruedDistributionPerUnitBeforeEx !in 0.0..MAX_FUND_REFERENCE_VALUE ||
+                !origin.navPerUnitBeforeEx.isFinite() ||
+                origin.navPerUnitBeforeEx !in MIN_FUND_REFERENCE_VALUE..MAX_FUND_REFERENCE_VALUE ||
+                !origin.navPerUnitAfterEx.isFinite() ||
+                origin.navPerUnitAfterEx !in MIN_FUND_REFERENCE_VALUE..MAX_FUND_REFERENCE_VALUE ||
+                origin.navPerUnitAfterEx.toBits() !=
+                (origin.navPerUnitBeforeEx - origin.grossPerUnit)
+                    .coerceAtLeast(MIN_FUND_REFERENCE_VALUE).toBits() ||
+                schedule.declaredGrossPerUnit?.toBits()?.let { declared ->
+                    declared != origin.grossPerUnit.toBits()
+                } == true ||
+                state.lastEvaluatedDistributionDateByStock[stock.id]
+                    ?.let { origin.exDate <= it } != true ||
+                origin.excessReturnOfCapitalGainKrw < 0L
+        }
+    ) {
+        return "ETF 분배 권리 origin의 ex 시각·금액 source·NAV 전이·보유 원장 계보가 유효하지 않습니다."
+    }
+
+    val pendingEntitlementCount = state.pendingDistributionEntitlements.size
+    if (state.pendingDistributionEntitlements.map { it.id }.distinct().size != pendingEntitlementCount ||
+        state.pendingDistributionEntitlements.map { it.originId }.distinct().size != pendingEntitlementCount ||
+        state.pendingDistributionEntitlements
+            .map { entitlement -> entitlement.stockId to entitlement.exDate }
+            .distinct()
+            .size != pendingEntitlementCount ||
+        state.pendingDistributionEntitlements.any { entitlement ->
+            val stock = stocksById[entitlement.stockId] ?: return@any true
+            val schedule = DistributionSchedule.eventOnExDate(stock, entitlement.exDate)
+            val origin = originsById[entitlement.originId]
+            val currentLocalDate = GameCalendar.marketLocalDateTime(stock.market, state.currentTime).date
+            stock.instrumentType != InstrumentType.ETF ||
+                entitlement.id != "distribution-entitlement:${stock.id}:${entitlement.exDate}" ||
+                origin == null || origin.stockId != entitlement.stockId ||
+                origin.exDate != entitlement.exDate ||
+                origin.grossPerUnit.toBits() != entitlement.grossPerUnit.toBits() ||
+                origin.entitledQuantity.toBits() != entitlement.entitledQuantity.toBits() ||
+                origin.taxableCoverageRatio.toBits() != entitlement.taxableCoverageRatio.toBits() ||
+                replayEntitledQuantity(entitlement.originId)?.let { replayed ->
+                    abs(replayed - entitlement.entitledQuantity) <= DISTRIBUTION_QUANTITY_EPSILON
+                } != true ||
+                (entitlement.stockId to entitlement.exDate) in paidEtfDistributionKeys ||
+                entitlement.currency != stock.currency ||
+                schedule == null || schedule.skip ||
+                entitlement.recordDate != schedule.recordDate || entitlement.payDate != schedule.payDate ||
+                entitlement.payDate <= currentLocalDate ||
+                state.lastEvaluatedDistributionDateByStock[stock.id]?.let { entitlement.exDate <= it } != true ||
+                !entitlement.grossPerUnit.isFinite() ||
+                entitlement.grossPerUnit !in 0.0..MAX_FUND_REFERENCE_VALUE || entitlement.grossPerUnit == 0.0 ||
+                !entitlement.entitledQuantity.isFinite() ||
+                entitlement.entitledQuantity !in 0.0..MAX_FUND_REFERENCE_VALUE || entitlement.entitledQuantity == 0.0 ||
+                entitlement.grossReceivableAmount().let { gross ->
+                    !gross.isFinite() || gross !in 0.0..MAX_FUND_REFERENCE_VALUE || gross == 0.0
+                } ||
+                !entitlement.taxableCoverageRatio.isFinite() ||
+                entitlement.taxableCoverageRatio !in 0.0..1.0 ||
+                entitlement.taxableCoverageRatio.toBits() !=
+                DistributionReturnOfCapitalPolicy.modeledTaxableCoverageRatio(stock).toBits() ||
+                schedule.declaredGrossPerUnit?.toBits()?.let { declared ->
+                    declared != entitlement.grossPerUnit.toBits()
+                } == true
+        }
+    ) {
+        return "미지급 ETF 분배 권리의 ID·일정·통화·분배락 평가 계보가 유효하지 않습니다."
+    }
+    val paidEtfEntries = state.dividendLedger.filter { entry ->
+        stocksById[entry.stockId]?.instrumentType == InstrumentType.ETF
+    }
+    if (paidEtfEntries.any { entry ->
+            val stock = stocksById[entry.stockId] ?: return@any true
+            val origin = originsByKey[entry.stockId to entry.exDate] ?: return@any true
+            val canonicalTaxableCoverageRatio =
+                DistributionReturnOfCapitalPolicy.modeledTaxableCoverageRatio(stock)
+            val replayedQuantity = replayEntitledQuantity(origin.id) ?: return@any true
+            if (abs(replayedQuantity - origin.entitledQuantity) > DISTRIBUTION_QUANTITY_EPSILON) {
+                return@any true
+            }
+            val canonicalGrossAmount = grossReceivableAmount(
+                currency = entry.currency,
+                grossPerUnit = origin.grossPerUnit,
+                entitledQuantity = replayedQuantity,
+            )
+            val paidOn = GameCalendar.marketLocalDateTime(stock.market, entry.paidAt).date
+            val canonicalTaxableInput = runCatching {
+                MoneyRoundingPolicy.MINOR_UNIT_HALF_UP.fromMajorUnits(
+                    canonicalGrossAmount * canonicalTaxableCoverageRatio,
+                    entry.currency,
+                )
+            }.getOrNull() ?: return@any true
+            val canonicalTaxResult = runCatching {
+                DividendTaxCalculator().calculate(
+                    DividendTaxRequest(
+                        taxClass = if (stock.market.isKorean) {
+                            DividendTaxClass.KOREAN_ETF_DISTRIBUTION
+                        } else {
+                            DividendTaxClass.US_RIC_ETF_DISTRIBUTION
+                        },
+                        grossAmount = canonicalTaxableInput,
+                        paidOn = paidOn,
+                        taxExchangeRateToKrw = entry.exchangeRateToKrw,
+                        w8BenValid = true,
+                    ),
+                )
+            }.getOrNull() ?: return@any true
+            val canonicalTaxableAmount = canonicalTaxResult.breakdown.taxableBase.amount
+            val canonicalReturnOfCapital =
+                (canonicalGrossAmount - canonicalTaxableAmount).coerceAtLeast(0.0)
+            val canonicalWithholdingTax = canonicalTaxResult.breakdown.totalTax.amount
+            val canonicalNetAmount = grossReceivableAmount(
+                currency = entry.currency,
+                grossPerUnit = canonicalTaxResult.netCash.amount + canonicalReturnOfCapital,
+                entitledQuantity = 1.0,
+            )
+            origin.grossPerUnit.toBits() != entry.grossPerUnit.toBits() ||
+                origin.entitledQuantity.toBits() != entry.entitledQuantity.toBits() ||
+                origin.taxableCoverageRatio.toBits() != canonicalTaxableCoverageRatio.toBits() ||
+                entry.grossAmount.toBits() != canonicalGrossAmount.toBits() ||
+                entry.taxBreakdown != canonicalTaxResult.breakdown ||
+                entry.taxableIncomeAmount.toBits() != canonicalTaxableAmount.toBits() ||
+                origin.returnOfCapitalAmount.toBits() != canonicalReturnOfCapital.toBits() ||
+                entry.returnOfCapitalAmount.toBits() != origin.returnOfCapitalAmount.toBits() ||
+                entry.excessReturnOfCapitalGainKrw != origin.excessReturnOfCapitalGainKrw ||
+                entry.withholdingTax.toBits() != canonicalWithholdingTax.toBits() ||
+                entry.netAmount.toBits() != canonicalNetAmount.toBits() ||
+                origin.accountingSequence >= entry.accountingSequence
+        }
+    ) {
+        return "지급된 ETF 분배 원장의 권리 수량·통화 반올림 gross·과세/ROC·세금·net이 canonical 계보와 다릅니다."
+    }
+    val pendingOriginIds = state.pendingDistributionEntitlements.mapTo(linkedSetOf()) { it.originId }
+    val paidOriginIds = paidEtfEntries.mapNotNullTo(linkedSetOf()) { entry ->
+        originsByKey[entry.stockId to entry.exDate]?.id
+    }
+    if (pendingOriginIds.intersect(paidOriginIds).isNotEmpty() ||
+        pendingOriginIds + paidOriginIds != originsById.keys
+    ) {
+        return "ETF 분배 권리 origin은 정확히 하나의 미지급 권리 또는 지급 원장에 연결되어야 합니다."
+    }
+    if (state.distributionReceivableByCurrency.values.any { amount ->
+            !amount.isFinite() || amount !in 0.0..MAX_FUND_REFERENCE_VALUE || amount == 0.0
+        } || state.portfolioSnapshots.lastOrNull()
+            ?.takeIf { snapshot -> snapshot.timestamp == state.currentTime }
+            ?.distributionReceivableByCurrency
+            ?.let { receivables -> receivables != state.distributionReceivableByCurrency } == true
+    ) {
+        return "현재 ETF 분배 미수금의 통화별 gross 평가액이 권리 원장·현재 스냅샷과 다릅니다."
+    }
+
+    fun validDividendEntry(entry: DividendLedgerEntry): Boolean {
+        val stock = stocksById[entry.stockId] ?: return false
+        val paidLocal = GameCalendar.marketLocalDateTime(stock.market, entry.paidAt)
+        if (entry.paidAt <= GameCalendar.startInstant || entry.paidAt > state.currentTime ||
+            paidLocal.time != LocalTime(0, 0)
+        ) return false
+        if (stock.instrumentType != InstrumentType.ETF) {
+            return entry.exDate == paidLocal.date && entry.recordDate == paidLocal.date &&
+                validDistributionInstant(entry.stockId, entry.paidAt)
+        }
+        val schedule = DistributionSchedule.eventOnExDate(stock, entry.exDate) ?: return false
+        return !schedule.skip && entry.recordDate == schedule.recordDate &&
+            paidLocal.date == schedule.payDate &&
+            state.lastEvaluatedDistributionDateByStock[stock.id]?.let { entry.exDate <= it } == true
+    }
+
+    if (state.dividendLedger.any { entry -> !validDividendEntry(entry) } ||
         state.dividendLedger.map { entry ->
             entry.stockId to GameCalendar.marketLocalDateTime(
                 stocksById.getValue(entry.stockId).market,
                 entry.paidAt,
-            ).date
+            ).date to entry.exDate
         }.distinct().size != state.dividendLedger.size
     ) {
         return "보유자 분배 원장의 지급 시각·주기·종목별 날짜 유일성이 분배 평가 계보와 다릅니다."
@@ -2461,6 +3610,7 @@ private fun validateReferencePortfolioPersistenceState(
                 ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
                 -> true
                 ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION_TRANSITION,
+                ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION,
                 ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL,
                 ReferencePortfolioActionKind.CONSTITUENT_MERGER,
                 ReferencePortfolioActionKind.SPIN_OFF_ADDITION,
@@ -2656,6 +3806,22 @@ private fun validateReferencePortfolioPersistenceState(
             when (plan.kind) {
                 ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> Unit
                 ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION_TRANSITION -> Unit
+                ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION -> if (
+                    plan.corporateAction?.kind !in setOf(
+                        ReferencePortfolioCorporateActionKind.MERGER,
+                        ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL,
+                    ) ||
+                    plan.corporateAction?.primaryAssetId !in pendingBaselineIds ||
+                    plan.corporateAction?.primaryAssetId !in plannedIds ||
+                    plan.removedAssetIds.isNotEmpty() || plan.addedAssetIds.size > 1 ||
+                    plannedIds != pendingBaselineIds + plan.addedAssetIds ||
+                    plan.addedAssetIds.any { assetId ->
+                        plan.positions.single { position -> position.assetId == assetId }.enteredOn !=
+                            plan.corporateAction?.effectiveDate
+                    }
+                ) {
+                    return "기업행동 전환 계획은 대상 종목을 유지하며 canonical 대체 종목만 단계 편입해야 합니다."
+                }
                 ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
                 ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
                 -> if (plannedIds != pendingBaselineIds) {
@@ -2705,7 +3871,55 @@ private fun validateReferencePortfolioPersistenceState(
             }
             if (definition != null && plan.corporateAction != null) {
                 val action = requireNotNull(plan.corporateAction)
-                if (plan.kind != ReferencePortfolioActionKind.SPIN_OFF_REMOVAL) {
+                val transitionSteps = engine.canonicalCorporateActionTransitionSteps(
+                    definition,
+                    action,
+                ) ?: return "대기 중 기준 포트폴리오 기업행동의 provider 전환 단계를 복원할 수 없습니다."
+                val isStagedCompletion = transitionSteps.isNotEmpty() &&
+                    plan.kind == action.primaryReferenceActionKind() &&
+                    plan.effectiveDate == transitionSteps.last().effectiveDate
+                if (plan.kind == ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION) {
+                    val step = transitionSteps.singleOrNull { candidate ->
+                        candidate.effectiveDate == plan.effectiveDate &&
+                            candidate.completionFraction < 1.0
+                    } ?: return "대기 중 기업행동 전환 계획이 canonical 단계와 다릅니다."
+                    val finalPlan = portfolio.pendingPlans.singleOrNull { candidate ->
+                        candidate.corporateAction?.eventId == action.eventId &&
+                            candidate.kind == action.primaryReferenceActionKind() &&
+                            candidate.effectiveDate == transitionSteps.last().effectiveDate
+                    } ?: return "대기 중 기업행동 전환 계획의 최종 완료 계획이 없습니다."
+                    val previousFraction = transitionSteps.lastOrNull { candidate ->
+                        candidate.effectiveDate < step.effectiveDate
+                    }?.completionFraction ?: 0.0
+                    val incrementalFraction = (step.completionFraction - previousFraction) /
+                        (1.0 - previousFraction)
+                    val baselineWeights = plan.transitionBaselineWeights
+                        ?: return "대기 중 기업행동 전환 계획의 고정 baseline이 없습니다."
+                    if (!transitionTargetsMatchCanonicalBlend(
+                            positions = plan.positions,
+                            initialTargetWeights = baselineWeights,
+                            finalPositions = finalPlan.positions,
+                            completionFraction = incrementalFraction,
+                        )
+                    ) {
+                        return "대기 중 기업행동 전환 계획의 목표 비중이 30/70 단계 계보와 다릅니다."
+                    }
+                    if (plan.addedAssetIds.isNotEmpty()) {
+                        val decision = engine.canonicalCorporateActionDecision(
+                            definition,
+                            action,
+                            pendingBaselineIds,
+                        )
+                        if (decision == null ||
+                            decision.addedAssetIds != plan.addedAssetIds.toSet() ||
+                            decision.removedAssetIds != setOf(action.primaryAssetId)
+                        ) {
+                            return "대기 중 기업행동 전환의 최초 대체 편입이 방법론 결정과 다릅니다."
+                        }
+                    }
+                } else if (plan.kind != ReferencePortfolioActionKind.SPIN_OFF_REMOVAL &&
+                    !isStagedCompletion
+                ) {
                     val decision = engine.canonicalCorporateActionDecision(
                         definition,
                         action,
@@ -2718,15 +3932,47 @@ private fun validateReferencePortfolioPersistenceState(
                         return "대기 중 기준 포트폴리오 기업행동의 편입·편출이 방법론 결정과 다릅니다."
                     }
                 }
-                val canonicalTargetWeights = engine.canonicalCorporateActionTargetWeights(
-                    definition,
-                    action,
-                    pendingBaselinePositions,
-                    plan.kind,
-                    plan.weightReferenceMarketValues,
-                )
-                if (!referenceTargetWeightsMatch(plan.positions, canonicalTargetWeights)) {
-                    return "대기 중 기준 포트폴리오 기업행동의 목표 비중이 방법론 결정과 다릅니다."
+                if (isStagedCompletion) {
+                    val replacementPosition = plan.positions.maxBy(
+                        ReferencePortfolioPosition::selectionRank,
+                    )
+                    val originalPositions = pendingBaselinePositions.filterNot { position ->
+                        position.assetId == replacementPosition.assetId
+                    }
+                    val decision = engine.canonicalCorporateActionDecision(
+                        definition,
+                        action,
+                        originalPositions.mapTo(linkedSetOf(), ReferencePortfolioPosition::assetId),
+                    )
+                    val canonicalTargetWeights = engine.canonicalCorporateActionTargetWeights(
+                        definition,
+                        action,
+                        originalPositions,
+                        plan.kind,
+                        plan.weightReferenceMarketValues,
+                    )
+                    if (replacementPosition.enteredOn != action.effectiveDate ||
+                        decision == null ||
+                        decision.addedAssetIds != setOf(replacementPosition.assetId) ||
+                        decision.removedAssetIds != setOf(action.primaryAssetId) ||
+                        !referenceTargetWeightsMatch(plan.positions, canonicalTargetWeights)
+                    ) {
+                        return "대기 중 기업행동 완료 계획의 대체 종목·목표 비중이 canonical 결정과 다릅니다."
+                    }
+                }
+                if (plan.kind != ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION &&
+                    !isStagedCompletion
+                ) {
+                    val canonicalTargetWeights = engine.canonicalCorporateActionTargetWeights(
+                        definition,
+                        action,
+                        pendingBaselinePositions,
+                        plan.kind,
+                        plan.weightReferenceMarketValues,
+                    )
+                    if (!referenceTargetWeightsMatch(plan.positions, canonicalTargetWeights)) {
+                        return "대기 중 기준 포트폴리오 기업행동의 목표 비중이 방법론 결정과 다릅니다."
+                    }
                 }
             }
             pendingBaselinePositions = plan.positions
@@ -2791,10 +4037,14 @@ private fun validateReferencePortfolioPersistenceState(
     val savedCorporateExecutionKeys = buildList {
         state.referencePortfolioStates.values.forEach { portfolio ->
             portfolio.pendingPlans.filter { plan -> plan.corporateAction != null }
-                .mapTo(this) { plan -> requireNotNull(plan.corporateAction).eventId to plan.kind }
+                .mapTo(this) { plan ->
+                    Triple(requireNotNull(plan.corporateAction).eventId, plan.kind, plan.effectiveDate)
+                }
         }
         state.referencePortfolioLedger.filter { record -> record.corporateAction != null }
-            .mapTo(this) { record -> requireNotNull(record.corporateAction).eventId to record.kind }
+            .mapTo(this) { record ->
+                Triple(requireNotNull(record.corporateAction).eventId, record.kind, record.effectiveDate)
+            }
     }
     if (savedCorporateExecutionKeys.distinct().size != savedCorporateExecutionKeys.size) {
         return "같은 기업행동의 동일 실행 단계가 계획·원장에 중복 저장되었습니다."
@@ -2837,14 +4087,14 @@ private fun validateReferencePortfolioPersistenceState(
             val actualPendingCorporateExecutions = portfolio.pendingPlans
                 .mapNotNull { plan ->
                     plan.corporateAction?.let { action ->
-                        ReferenceCorporateExecutionKey(action.eventId, plan.kind)
+                        ReferenceCorporateExecutionKey(action.eventId, plan.kind, plan.effectiveDate)
                     }
                 }
                 .toSet()
             val actualAppliedCorporateExecutions = records
                 .mapNotNull { record ->
                     record.corporateAction?.let { action ->
-                        ReferenceCorporateExecutionKey(action.eventId, record.kind)
+                        ReferenceCorporateExecutionKey(action.eventId, record.kind, record.effectiveDate)
                     }
                 }
                 .toSet()
@@ -2869,7 +4119,7 @@ private fun validateReferencePortfolioPersistenceState(
                 }.getOrNull() ?: return null
                 return bootstrap.pendingPlans.mapNotNullTo(linkedSetOf()) { plan ->
                     plan.corporateAction?.let { action ->
-                        ReferenceCorporateExecutionKey(action.eventId, plan.kind)
+                        ReferenceCorporateExecutionKey(action.eventId, plan.kind, plan.effectiveDate)
                     }
                 }.also { executions -> bootstrapPendingCorporateExecutionCache = executions }
             }
@@ -2880,7 +4130,8 @@ private fun validateReferencePortfolioPersistenceState(
                 effectiveDate: LocalDate,
             ): Set<String> {
                 records.singleOrNull { record ->
-                    record.kind == kind && record.corporateAction?.eventId == event.eventId
+                    record.kind == kind && record.effectiveDate == effectiveDate &&
+                        record.corporateAction?.eventId == event.eventId
                 }?.let { record ->
                     return beforeMembershipByRevision.getValue(record.revision)
                 }
@@ -2952,48 +4203,64 @@ private fun validateReferencePortfolioPersistenceState(
 
             for (event in announcedEvents) {
                 val primaryKind = event.primaryReferenceActionKind()
-                val primaryKey = ReferenceCorporateExecutionKey(event.eventId, primaryKind)
+                val transitionSteps = engine.canonicalCorporateActionTransitionSteps(
+                    definition,
+                    event,
+                ) ?: return "기준 포트폴리오 기업행동의 provider 전환 단계를 복원할 수 없습니다."
+                val executionPoints = if (transitionSteps.isEmpty()) {
+                    listOf(primaryKind to event.effectiveDate)
+                } else {
+                    transitionSteps.map { step ->
+                        val kind = if (step.completionFraction < 1.0) {
+                            ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION
+                        } else {
+                            primaryKind
+                        }
+                        kind to step.effectiveDate
+                    }
+                }
+                val firstExecution = executionPoints.first()
                 val primaryPassedAtBootstrap = schedule.hasPassedRegularOpen(
-                    event.effectiveDate,
+                    firstExecution.second,
                     GameCalendar.startInstant,
                 )
                 val eventWasApplicable = if (primaryPassedAtBootstrap) {
-                    val followUpPendingAtBootstrap =
-                        event.kind == ReferencePortfolioCorporateActionKind.SPIN_OFF &&
-                            event.followUpEffectiveDate?.let { followUpDate ->
-                                !schedule.hasPassedRegularOpen(
-                                    followUpDate,
-                                    GameCalendar.startInstant,
-                                )
-                            } == true
-                    if (followUpPendingAtBootstrap) {
-                        val bootstrapExecutions = bootstrapPendingCorporateExecutions()
-                            ?: return "캠페인 시작 시점의 기준 포트폴리오 기업행동을 복원할 수 없습니다."
+                    val bootstrapExecutions = bootstrapPendingCorporateExecutions()
+                        ?: return "캠페인 시작 시점의 기준 포트폴리오 기업행동을 복원할 수 없습니다."
+                    executionPoints.any { (kind, effectiveDate) ->
+                        ReferenceCorporateExecutionKey(event.eventId, kind, effectiveDate) in
+                            bootstrapExecutions
+                    } || event.kind == ReferencePortfolioCorporateActionKind.SPIN_OFF &&
                         ReferenceCorporateExecutionKey(
                             event.eventId,
                             ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
+                            requireNotNull(event.followUpEffectiveDate),
                         ) in bootstrapExecutions
-                    } else {
-                        false
-                    }
                 } else {
                     val baselineIds = membershipBeforeExecution(
                         event = event,
-                        kind = primaryKind,
-                        effectiveDate = event.effectiveDate,
+                        kind = firstExecution.first,
+                        effectiveDate = firstExecution.second,
                     )
                     engine.canonicalCorporateActionDecision(definition, event, baselineIds) != null
                 }
                 if (!eventWasApplicable) continue
 
-                expectExecution(primaryKey, event.effectiveDate)
+                executionPoints.forEach { (kind, effectiveDate) ->
+                    expectExecution(
+                        ReferenceCorporateExecutionKey(event.eventId, kind, effectiveDate),
+                        effectiveDate,
+                    )
+                }
                 if (event.kind == ReferencePortfolioCorporateActionKind.SPIN_OFF) {
+                    val followUpDate = requireNotNull(event.followUpEffectiveDate)
                     expectExecution(
                         key = ReferenceCorporateExecutionKey(
                             event.eventId,
                             ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
+                            followUpDate,
                         ),
-                        effectiveDate = requireNotNull(event.followUpEffectiveDate),
+                        effectiveDate = followUpDate,
                     )
                 }
             }
@@ -3120,16 +4387,46 @@ private fun validateReferencePortfolioPersistenceState(
                 record.kind != ReferencePortfolioActionKind.SPIN_OFF_REMOVAL
             ) {
                 val action = requireNotNull(record.corporateAction)
-                val decision = engine.canonicalCorporateActionDecision(
+                val transitionSteps = engine.canonicalCorporateActionTransitionSteps(
                     definition,
                     action,
-                    beforeMembershipByRevision.getValue(record.revision),
-                )
-                if (decision == null ||
-                    decision.addedAssetIds != record.addedAssetIds.toSet() ||
-                    decision.removedAssetIds != record.removedAssetIds.toSet()
-                ) {
-                    return "기준 포트폴리오 원장의 기업행동 편입·편출이 방법론 결정과 다릅니다."
+                ) ?: return "기준 포트폴리오 원장의 provider 기업행동 전환 단계를 복원할 수 없습니다."
+                val stagedRecords = records.filter { candidate ->
+                    candidate.corporateAction?.eventId == action.eventId
+                }
+                val firstStagedRecord = stagedRecords.minWithOrNull(REFERENCE_RECORD_ORDER)
+                val decisionBaseline = firstStagedRecord?.let { first ->
+                    beforeMembershipByRevision.getValue(first.revision)
+                }
+                val decision = decisionBaseline?.let { baseline ->
+                    engine.canonicalCorporateActionDecision(definition, action, baseline)
+                }
+                val canonicalMembershipChange = when {
+                    transitionSteps.isEmpty() -> decision != null &&
+                        decision.addedAssetIds == record.addedAssetIds.toSet() &&
+                        decision.removedAssetIds == record.removedAssetIds.toSet()
+                    record.kind == ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION -> {
+                        val stepIsCanonical = transitionSteps.any { step ->
+                            step.completionFraction < 1.0 &&
+                                step.effectiveDate == record.effectiveDate
+                        }
+                        val isInitialProviderStep =
+                            record.effectiveDate == transitionSteps.first().effectiveDate
+                        stepIsCanonical && record.removedAssetIds.isEmpty() && when {
+                            !isInitialProviderStep -> record.addedAssetIds.isEmpty()
+                            decision == null -> false
+                            else -> decision.addedAssetIds == record.addedAssetIds.toSet() &&
+                                decision.removedAssetIds == setOf(action.primaryAssetId)
+                        }
+                    }
+                    record.kind == action.primaryReferenceActionKind() &&
+                        record.effectiveDate == transitionSteps.last().effectiveDate ->
+                        record.addedAssetIds.isEmpty() &&
+                            record.removedAssetIds == setOf(action.primaryAssetId)
+                    else -> false
+                }
+                if (!canonicalMembershipChange) {
+                    return "기준 포트폴리오 원장의 기업행동 편입·편출이 방법론 단계 결정과 다릅니다."
                 }
             }
             val expectedCount = constituentCount +
@@ -3154,6 +4451,14 @@ private fun validateReferencePortfolioPersistenceState(
             when (record.kind) {
                 ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> Unit
                 ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION_TRANSITION -> Unit
+                ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION -> if (
+                    record.corporateAction?.kind !in setOf(
+                        ReferencePortfolioCorporateActionKind.MERGER,
+                        ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL,
+                    ) || record.removedAssetIds.isNotEmpty() || record.addedAssetIds.size > 1
+                ) {
+                    return "기업행동 전환 원장은 대상 종목을 유지하며 대체 종목을 단계 편입해야 합니다."
+                }
                 ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
                 ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
                 -> if (record.addedAssetIds.isNotEmpty() || record.removedAssetIds.isNotEmpty()) {
@@ -3289,11 +4594,55 @@ private fun validateReferencePortfolioActionDates(
         }
 
         ReferencePortfolioActionKind.CONSTITUENT_MERGER,
+        ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION,
         ReferencePortfolioActionKind.SPIN_OFF_ADDITION,
         ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
         ReferencePortfolioActionKind.TERMINAL_REMOVAL,
         -> corporateAction?.let { action ->
-            referenceCorporateActionLinkIsValid(
+            val transitionSteps = runCatching {
+                policy.corporateActionTransitionSteps(methodology, action)
+            }.getOrNull() ?: return@let false
+            val transitionStepsAreValid = transitionSteps.size <
+                ReferencePortfolioState.MAX_PENDING_PLANS &&
+                transitionSteps == transitionSteps.sortedBy { step -> step.effectiveDate } &&
+                transitionSteps.map { step -> step.effectiveDate }.distinct().size ==
+                transitionSteps.size &&
+                transitionSteps.zipWithNext().all { (left, right) ->
+                    left.completionFraction < right.completionFraction
+                } && transitionSteps.all { step ->
+                    step.completionFraction.isFinite() &&
+                        step.completionFraction > 0.0 && step.completionFraction <= 1.0 &&
+                        schedule.isTradingDate(step.effectiveDate)
+                } && if (transitionSteps.isEmpty()) {
+                    true
+                } else {
+                    action.kind != ReferencePortfolioCorporateActionKind.SPIN_OFF &&
+                        transitionSteps.first().effectiveDate == action.effectiveDate &&
+                        transitionSteps.last().completionFraction == 1.0 &&
+                        transitionSteps.dropLast(1).all { step ->
+                            step.completionFraction < 1.0
+                        }
+                }
+            if (!transitionStepsAreValid) return@let false
+            val stagedDateIsCanonical = when (kind) {
+                ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION ->
+                    transitionSteps.any { step ->
+                        step.completionFraction < 1.0 && step.effectiveDate == effectiveDate
+                    }
+                ReferencePortfolioActionKind.CONSTITUENT_MERGER,
+                ReferencePortfolioActionKind.TERMINAL_REMOVAL,
+                -> if (transitionSteps.isEmpty()) {
+                    effectiveDate == action.effectiveDate
+                } else {
+                    transitionSteps.lastOrNull()?.let { step ->
+                        step.completionFraction == 1.0 && step.effectiveDate == effectiveDate
+                    } == true
+                }
+                ReferencePortfolioActionKind.SPIN_OFF_ADDITION,
+                ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
+                -> transitionSteps.isEmpty()
+            }
+            stagedDateIsCanonical && referenceCorporateActionLinkIsValid(
                 kind = kind,
                 selectionDate = selectionDate,
                 weightReferenceDate = weightReferenceDate,
@@ -3318,25 +4667,32 @@ private fun referenceCorporateActionLinkIsValid(
 ): Boolean {
     if (kind !in CORPORATE_REFERENCE_ACTION_KINDS) return corporateAction == null
     val action = corporateAction ?: return false
-    val expectedEventKind = when (kind) {
+    val eventKindMatches = when (kind) {
         ReferencePortfolioActionKind.CONSTITUENT_MERGER ->
-            ReferencePortfolioCorporateActionKind.MERGER
+            action.kind == ReferencePortfolioCorporateActionKind.MERGER
+        ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION ->
+            action.kind == ReferencePortfolioCorporateActionKind.MERGER ||
+                action.kind == ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL
         ReferencePortfolioActionKind.SPIN_OFF_ADDITION,
         ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
-        -> ReferencePortfolioCorporateActionKind.SPIN_OFF
+        -> action.kind == ReferencePortfolioCorporateActionKind.SPIN_OFF
         ReferencePortfolioActionKind.TERMINAL_REMOVAL ->
-            ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL
+            action.kind == ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL
         else -> return false
     }
     val observationDate = action.announcementDate
-    val expectedEffectiveDate = if (kind == ReferencePortfolioActionKind.SPIN_OFF_REMOVAL) {
-        action.followUpEffectiveDate
-    } else {
-        action.effectiveDate
+    val effectiveDateMatches = when (kind) {
+        ReferencePortfolioActionKind.SPIN_OFF_REMOVAL ->
+            effectiveDate == action.followUpEffectiveDate
+        ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION,
+        ReferencePortfolioActionKind.CONSTITUENT_MERGER,
+        ReferencePortfolioActionKind.TERMINAL_REMOVAL,
+        -> effectiveDate >= action.effectiveDate
+        ReferencePortfolioActionKind.SPIN_OFF_ADDITION -> effectiveDate == action.effectiveDate
     }
-    return action.kind == expectedEventKind &&
+    return eventKindMatches &&
         selectionDate == observationDate && weightReferenceDate == observationDate &&
-        effectiveDate == expectedEffectiveDate
+        effectiveDateMatches
 }
 
 private fun referenceWeightingInputIsValid(plan: ReferencePortfolioPlan): Boolean {
@@ -3348,8 +4704,10 @@ private fun referenceWeightingInputIsValid(plan: ReferencePortfolioPlan): Boolea
         ReferencePortfolioActionKind.CONSTITUENT_MERGER,
         ReferencePortfolioActionKind.SPIN_OFF_ADDITION,
         ReferencePortfolioActionKind.TERMINAL_REMOVAL,
-        -> plan.addedAssetIds.isNotEmpty()
+        -> plan.addedAssetIds.isNotEmpty() ||
+            plan.corporateAction?.let { action -> plan.effectiveDate > action.effectiveDate } == true
         ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION_TRANSITION,
+        ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION,
         ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL,
         ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
         -> false
@@ -3492,6 +4850,7 @@ private const val REFERENCE_MARKET_VALUE_RELATIVE_EPSILON: Double = 1e-12
 
 private val CORPORATE_REFERENCE_ACTION_KINDS: Set<ReferencePortfolioActionKind> = setOf(
     ReferencePortfolioActionKind.CONSTITUENT_MERGER,
+    ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION,
     ReferencePortfolioActionKind.SPIN_OFF_ADDITION,
     ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
     ReferencePortfolioActionKind.TERMINAL_REMOVAL,
@@ -3500,6 +4859,7 @@ private val CORPORATE_REFERENCE_ACTION_KINDS: Set<ReferencePortfolioActionKind> 
 private data class ReferenceCorporateExecutionKey(
     val corporateEventId: String,
     val kind: ReferencePortfolioActionKind,
+    val effectiveDate: LocalDate,
 )
 
 private data class ReferenceExecutionOrder(
@@ -3541,6 +4901,7 @@ private fun ReferencePortfolioRecord.referenceExecutionOrder(): ReferenceExecuti
 
 private fun ReferencePortfolioActionKind.allowsTemporaryTargetCapBreach(): Boolean = when (this) {
     ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION_TRANSITION,
+    ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION,
     ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL,
     ReferencePortfolioActionKind.CONSTITUENT_MERGER,
     ReferencePortfolioActionKind.SPIN_OFF_ADDITION,
@@ -3555,6 +4916,7 @@ private fun ReferencePortfolioActionKind.allowsTemporaryTargetCapBreach(): Boole
 
 private fun ReferencePortfolioActionKind.referenceExecutionPriority(): Int = when (this) {
     ReferencePortfolioActionKind.CONSTITUENT_MERGER,
+    ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION,
     ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
     ReferencePortfolioActionKind.TERMINAL_REMOVAL,
     -> 0
@@ -4968,6 +6330,23 @@ private fun validateKofrIndexPersistenceState(
                 saved.pendingRateObservationDate != profile.initialPendingRateObservationDate)
         ) {
             return "KOFR 초기 공식 공표 snapshot이 카탈로그 anchor와 다릅니다."
+        }
+    }
+    if (definitionsByRef != null) {
+        val scheduledEventEngine = ScheduledEventEngine(
+            DeterministicRandom.mixSeed(state.options.seed, ScheduledEventEngine.STREAM_ID),
+        )
+        val canonicalBook = runCatching {
+            KofrIndexBookEngine(KofrRateModel.forCampaignSeed(state.options.seed)).canonicalBook(
+                definitions = definitionsByRef.values,
+                at = state.currentTime,
+                koreanPolicyRateAnnualAt = { at ->
+                    scheduledEventEngine.centralBankRateAnnualAt(ScheduledEventKind.KR_BOK, at)
+                },
+            )
+        }.getOrNull() ?: return "KOFR 공식 anchor에서 현재 시각까지 canonical 상태를 재생할 수 없습니다."
+        if (state.kofrIndexStates != canonicalBook.states) {
+            return "KOFR 금리·지수·대기 fixing 상태가 공식 anchor와 정책금리 계보를 재생한 원본과 다릅니다."
         }
     }
     return null

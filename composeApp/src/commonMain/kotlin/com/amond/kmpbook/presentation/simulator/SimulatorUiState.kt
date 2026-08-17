@@ -35,7 +35,10 @@ import com.amond.kmpbook.domain.model.game.TurnStep
 import com.amond.kmpbook.domain.model.index.MarketIndexId
 import com.amond.kmpbook.domain.model.index.MarketIndexSnapshot
 import com.amond.kmpbook.domain.model.instrument.FundFinancialState
+import com.amond.kmpbook.domain.model.instrument.PendingDistributionEntitlement
+import com.amond.kmpbook.domain.model.instrument.DistributionEntitlementOrigin
 import com.amond.kmpbook.domain.model.instrument.StockDefinition
+import com.amond.kmpbook.domain.model.instrument.distributionReceivableByCurrency
 import com.amond.kmpbook.domain.model.listing.lifecycle.ListingLifecycleLedgerEvent
 import com.amond.kmpbook.domain.model.listing.lifecycle.ListingLifecycleState
 import com.amond.kmpbook.domain.model.market.Currency
@@ -63,6 +66,8 @@ import com.amond.kmpbook.domain.tax.liability.TaxLiabilityStatus
 import com.amond.kmpbook.domain.tax.lot.FifoCostBasisBook
 import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.presentation.portfolio.BenchmarkPoint
+import com.amond.kmpbook.presentation.portfolio.CashAdjustmentRecord
+import com.amond.kmpbook.presentation.portfolio.CanonicalPortfolioAccountingTotals
 import com.amond.kmpbook.presentation.portfolio.DailyPortfolioStat
 import com.amond.kmpbook.presentation.portfolio.DailyTradingSurveillancePoint
 import com.amond.kmpbook.presentation.portfolio.DividendLedgerEntry
@@ -172,11 +177,19 @@ data class SimulatorUiState(
     val fifoCostBasisBook: FifoCostBasisBook = FifoCostBasisBook(),
     /** 보유·지급액과 무관하게 상품 분배 주기를 마지막으로 평가한 종목별 날짜다. */
     val lastEvaluatedDistributionDateByStock: Map<String, LocalDate>,
+    /** 분배락일 보유량을 동결했지만 지급일이 아직 오지 않은 ETF 현금 권리다. */
+    val pendingDistributionEntitlements: List<PendingDistributionEntitlement>,
+    /** 분배락 당시 보유권·금액 source를 지급 뒤에도 보존하는 영구 계보 원장이다. */
+    val distributionEntitlementOrigins: List<DistributionEntitlementOrigin>,
     val dividendLedger: List<DividendLedgerEntry>,
     val foreignExchangeLedger: List<ForeignExchangeRecord>,
+    /** 명시적 디버그 현금 설정만 보존하는 관측 사실 원장이다. */
+    val cashAdjustmentLedger: List<CashAdjustmentRecord>,
     val annualTaxLedgers: Map<Int, AnnualTaxLedger>,
     val taxPaymentNotices: List<TaxPaymentNotice>,
+    /** 초기자본·일별 마감 스냅샷·현재 평가값에서 파생한 최고자산이다. */
     val peakAssetsKrw: Double,
+    /** 일별 마감 및 현재 평가 시계열의 running peak 대비 최대 낙폭이다. */
     val maximumDrawdown: Double,
     /** 저장 게임에서 그대로 복원할 수 있는 기본 난수 스트림 상태. */
     val rngState: Long,
@@ -249,7 +262,16 @@ data class SimulatorUiState(
             holding.marketValue * if (holding.currency == Currency.USD) macro.usdKrw else 1.0
         }
 
-    val totalAssetsKrw: Double get() = cashValueKrw + stockValueKrw
+    val distributionReceivableByCurrency: Map<Currency, Double>
+        get() = pendingDistributionEntitlements.distributionReceivableByCurrency()
+
+    val distributionReceivableValueKrw: Double
+        get() = distributionReceivableByCurrency.entries.sumOf { (currency, amount) ->
+            amount * if (currency == Currency.USD) macro.usdKrw else 1.0
+        }
+
+    val totalAssetsKrw: Double
+        get() = cashValueKrw + stockValueKrw + distributionReceivableValueKrw
     val totalAssets: Double get() = totalAssetsKrw
 
     val unrealizedProfitKrw: Double
@@ -263,7 +285,10 @@ data class SimulatorUiState(
             }
         }
 
-    val realizedProfitKrw: Double get() = realizedGains.sumOf(RealizedGainRecord::gainKrw)
+    val realizedProfitKrw: Double
+        get() = CanonicalPortfolioAccountingTotals.realizedProfitKrw(
+            realizedGains.asSequence().map(RealizedGainRecord::taxGainKrw),
+        )
     val totalCommissionKrw: Double get() = transactionCosts.sumOf(TransactionCostRecord::commissionKrw)
     val totalSaleTaxKrw: Double get() = transactionCosts.sumOf(TransactionCostRecord::saleTaxKrw)
     val grossTradeTurnoverKrw: Double
@@ -286,15 +311,23 @@ data class SimulatorUiState(
     val currentPortfolio: PortfolioSnapshot
         get() = PortfolioSnapshot(
             timestamp = currentTime,
+            accountingSequenceExclusiveUpperBound = nextSequence,
             cashByCurrency = cashByCurrency,
             holdings = holdingList,
+            distributionReceivableByCurrency = distributionReceivableByCurrency,
             exchangeRatesToKrw = mapOf(Currency.USD to macro.usdKrw),
             initialCapitalKrw = initialCapitalKrw,
             realizedProfitKrw = realizedProfitKrw,
             cumulativeCommissionKrw = totalCommissionKrw,
-            cumulativeTaxKrw = totalSaleTaxKrw +
-                dividendLedger.sumOf(DividendLedgerEntry::withholdingTaxKrw) +
-                paidAnnualTaxKrw,
+            cumulativeTaxKrw = CanonicalPortfolioAccountingTotals.cumulativeTaxKrw(
+                saleTaxesKrw = transactionCosts.asSequence()
+                    .map(TransactionCostRecord::saleTaxKrw),
+                dividendWithholdingTaxesKrw = dividendLedger.asSequence()
+                    .map(DividendLedgerEntry::withholdingTaxKrw),
+                paidAnnualTaxesKrw = taxPaymentNotices.asSequence()
+                    .filter { notice -> notice.status == TaxLiabilityStatus.PAID }
+                    .map { notice -> notice.amountKrw.toDouble() },
+            ),
             holdingCostBasisKrw = fifoCostBasisBook.lots.groupBy { it.stockId }
                 .mapValues { (_, lots) -> lots.sumOf { it.remainingCostBasisKrw }.toDouble() },
         )

@@ -1,5 +1,7 @@
 package com.amond.kmpbook.presentation.simulator
 
+import com.amond.kmpbook.modding.builtin.debug.DebugMod
+import com.amond.kmpbook.persistence.validation.validateSimulatorUiState
 import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.model.corporateaction.CorporateActionKind
 import com.amond.kmpbook.domain.model.corporateaction.CorporateActionMath
@@ -93,6 +95,11 @@ import com.amond.kmpbook.domain.model.instrument.DistributionFrequency
 import com.amond.kmpbook.domain.model.instrument.EtfExposureRegion
 import com.amond.kmpbook.domain.model.instrument.EtfTaxCategory
 import com.amond.kmpbook.domain.model.instrument.FundFinancialState
+import com.amond.kmpbook.domain.model.instrument.PendingDistributionEntitlement
+import com.amond.kmpbook.domain.model.instrument.DistributionAmountBasis
+import com.amond.kmpbook.domain.model.instrument.DistributionEntitlementOrigin
+import com.amond.kmpbook.domain.model.instrument.distributionReceivableByCurrency
+import com.amond.kmpbook.domain.model.instrument.grossReceivableAmount
 import com.amond.kmpbook.domain.model.instrument.InstrumentStrategy
 import com.amond.kmpbook.domain.model.instrument.InstrumentType
 import com.amond.kmpbook.domain.model.instrument.StockDefinition
@@ -218,8 +225,6 @@ import com.amond.kmpbook.domain.simulation.market.MarketDynamicsEngine
 import com.amond.kmpbook.domain.simulation.market.MarketIndexCalculationInput
 import com.amond.kmpbook.domain.simulation.market.MarketIndexEngine
 import com.amond.kmpbook.domain.simulation.market.MarketMicrostructure
-import com.amond.kmpbook.domain.simulation.order.OrderBookEngine
-import com.amond.kmpbook.domain.simulation.order.OrderBookGenerationInput
 import com.amond.kmpbook.domain.simulation.order.OrderBookSnapshot
 import com.amond.kmpbook.domain.simulation.price.DeterministicRandom
 import com.amond.kmpbook.domain.simulation.price.InstrumentMetricsEngine
@@ -232,39 +237,50 @@ import com.amond.kmpbook.domain.simulation.protection.TradingProtectionEngine
 import com.amond.kmpbook.domain.simulation.protection.TradingProtectionRules
 import com.amond.kmpbook.domain.simulation.schedule.ScheduledEventEngine
 import com.amond.kmpbook.domain.simulation.schedule.DistributionSchedule
+import com.amond.kmpbook.domain.simulation.schedule.DistributionAmountProjection
 import com.amond.kmpbook.domain.tax.core.MoneyAmount
 import com.amond.kmpbook.domain.tax.core.CheckedMonetaryArithmetic
 import com.amond.kmpbook.domain.tax.core.MoneyRoundingPolicy
-import com.amond.kmpbook.domain.tax.core.TaxRate
 import com.amond.kmpbook.domain.tax.dividend.DividendTaxCalculator
 import com.amond.kmpbook.domain.tax.dividend.DividendTaxClass
 import com.amond.kmpbook.domain.tax.dividend.DividendTaxRequest
-import com.amond.kmpbook.domain.tax.domestic.DomesticEtfSaleTaxCalculator
-import com.amond.kmpbook.domain.tax.domestic.DomesticEtfSaleTaxRequest
-import com.amond.kmpbook.domain.tax.domestic.DomesticSaleTaxCalculator
-import com.amond.kmpbook.domain.tax.domestic.DomesticSaleTaxRequest
-import com.amond.kmpbook.domain.tax.fee.BrokerFeeCalculator
-import com.amond.kmpbook.domain.tax.fee.BrokerFeeRequest
-import com.amond.kmpbook.domain.tax.fee.BrokerFeeSchedule
-import com.amond.kmpbook.domain.tax.foreign.ForeignInstrumentTaxClass
-import com.amond.kmpbook.domain.tax.liability.AnnualStockTaxCalculator
-import com.amond.kmpbook.domain.tax.liability.AnnualStockTaxRequest
+import com.amond.kmpbook.domain.tax.dividend.DistributionReturnOfCapitalPolicy
 import com.amond.kmpbook.domain.tax.liability.AnnualTaxLedger
+import com.amond.kmpbook.domain.tax.liability.CanonicalHoldingQuantityHistory
+import com.amond.kmpbook.domain.tax.liability.AccountingObservationBoundary
 import com.amond.kmpbook.domain.tax.liability.StockGainTaxTreatment
+import com.amond.kmpbook.domain.tax.liability.StockGainTaxTreatmentResolver
 import com.amond.kmpbook.domain.tax.liability.TaxLiabilityStatus
 import com.amond.kmpbook.domain.tax.lot.FifoCostBasisBook
-import com.amond.kmpbook.domain.tax.lot.RealizedStockGain
-import com.amond.kmpbook.domain.tax.shareholder.MajorShareholderAssessmentRequest
-import com.amond.kmpbook.domain.tax.shareholder.MajorShareholderCalculator
-import com.amond.kmpbook.domain.tax.shareholder.ShareholderHoldingSnapshot
-import com.amond.kmpbook.domain.tax.shareholder.ShareholderRelation
 import com.amond.kmpbook.domain.time.DefaultMarketHolidays
 import com.amond.kmpbook.domain.time.GameCalendar
+import com.amond.kmpbook.domain.time.KofrBusinessCalendar
+import com.amond.kmpbook.domain.time.SecuritiesSettlementCalendar
+import com.amond.kmpbook.presentation.portfolio.AnnualTaxProjectionEngine
+import com.amond.kmpbook.presentation.portfolio.CanonicalCashAccountingReplay
+import com.amond.kmpbook.presentation.portfolio.CanonicalDailyPriceBarProjection
+import com.amond.kmpbook.presentation.portfolio.CanonicalPortfolioAccountingTotals
+import com.amond.kmpbook.presentation.portfolio.CanonicalPriceHistoryRetention
+import com.amond.kmpbook.presentation.portfolio.CanonicalTradeCostProjection
+import com.amond.kmpbook.presentation.portfolio.canonicalDayOrderSessionClose
+import com.amond.kmpbook.presentation.portfolio.canonicalPendingTaxSettlementTradeIds
+import com.amond.kmpbook.presentation.portfolio.pendingTaxSettlementRatesMatchExecutionFacts
+import com.amond.kmpbook.presentation.portfolio.CanonicalTaxAccountingReplay
+import com.amond.kmpbook.presentation.portfolio.CanonicalTradingLedgerValidation
+import com.amond.kmpbook.presentation.portfolio.CashAdjustmentRecord
+import com.amond.kmpbook.presentation.portfolio.FOREIGN_EXCHANGE_SPREAD_RATE
+import com.amond.kmpbook.presentation.portfolio.canonicalForeignExchangeReceivedAmount
+import com.amond.kmpbook.presentation.portfolio.canonicalForeignExchangeSpreadCostKrw
+import com.amond.kmpbook.presentation.portfolio.minimumKrwSourceForUsdReceipt
+import com.amond.kmpbook.presentation.portfolio.roundCurrencyForAccounting
+import com.amond.kmpbook.presentation.portfolio.tradeCashBalanceAfter
 import com.amond.kmpbook.presentation.portfolio.BenchmarkPoint
 import com.amond.kmpbook.presentation.portfolio.DailyPortfolioStat
 import com.amond.kmpbook.presentation.portfolio.DailyTradingSurveillancePoint
 import com.amond.kmpbook.presentation.portfolio.DividendLedgerEntry
 import com.amond.kmpbook.presentation.portfolio.ForeignExchangeRecord
+import com.amond.kmpbook.presentation.portfolio.KrxDailySurveillanceProjection
+import com.amond.kmpbook.presentation.portfolio.PortfolioPerformanceExtrema
 import com.amond.kmpbook.presentation.portfolio.RealizedGainRecord
 import com.amond.kmpbook.presentation.portfolio.TaxPaymentNotice
 import com.amond.kmpbook.presentation.portfolio.TransactionCostRecord
@@ -306,14 +322,11 @@ private fun runtimePersistenceObservationAt(
 /**
  * Campaign-aware exchange closures.
  *
- * The frozen holiday pack ends in 2040, while the last New York session reaches
- * 2041-01-01 06:00 KST and legal T+1/T+2 dates can fall a few days into 2041.
- * Only New Year's Day needs an explicit closure in that short settlement tail.
+ * The calculated calendar supports the 2025 bootstrap boundary through the 2041 settlement tail.
  */
 private fun runtimeClosedDates(market: Market, date: LocalDate): Set<LocalDate> = when {
-    date.year in GameCalendar.START_LOCAL_DATE_TIME.year..GameCalendar.CAMPAIGN_END_DATE.year ->
+    DefaultMarketHolidays.supportsYear(date.year) ->
         DefaultMarketHolidays.closedDates(market, date.year)
-    date == LocalDate(GameCalendar.CAMPAIGN_END_DATE.year + 1, 1, 1) -> setOf(date)
     else -> emptySet()
 }
 
@@ -718,7 +731,10 @@ internal class SimulatorRuntime(
     private val marketIndices = linkedMapOf<MarketIndexId, MarketIndexSnapshot>()
     private val marketIndexHistory = linkedMapOf<MarketIndexId, ArrayDeque<MarketIndexSnapshot>>()
     private val dailyTrackers = mutableMapOf<String, DailyPriceTracker>()
-    private val cash = mutableMapOf(Currency.KRW to options.initialCapitalKrw, Currency.USD to 0.0)
+    private val cash = mutableMapOf(
+        Currency.KRW to roundCurrencyForAccounting(options.initialCapitalKrw, Currency.KRW),
+        Currency.USD to 0.0,
+    )
     private val holdings = linkedMapOf<String, Holding>()
     private val orders = mutableListOf<Order>()
     private val trades = mutableListOf<Trade>()
@@ -729,7 +745,10 @@ internal class SimulatorRuntime(
     private val pendingTaxSettlementTradeIds = linkedSetOf<String>()
     private val dividends = mutableListOf<DividendLedgerEntry>()
     private val lastEvaluatedDistributionDateByStock = linkedMapOf<String, LocalDate>()
+    private val pendingDistributionEntitlements = mutableListOf<PendingDistributionEntitlement>()
+    private val distributionEntitlementOrigins = mutableListOf<DistributionEntitlementOrigin>()
     private val foreignExchanges = mutableListOf<ForeignExchangeRecord>()
+    private val cashAdjustments = mutableListOf<CashAdjustmentRecord>()
     private val activeEvents = mutableListOf<GameEvent>()
     private val newsEvents = mutableListOf<GameEvent>()
     private val readEventIds = mutableSetOf<String>()
@@ -748,6 +767,8 @@ internal class SimulatorRuntime(
     private val taxPaymentNotices = mutableListOf<TaxPaymentNotice>()
 
     private var macro = MacroEnvironment(
+        policyRate = INITIAL_US_POLICY_RATE,
+        policyRateChange = 0.0,
         koreanPolicyRate = INITIAL_KOREAN_POLICY_RATE,
         koreanPolicyRateChange = 0.0,
         usdKrw = options.initialUsdKrw,
@@ -757,8 +778,8 @@ internal class SimulatorRuntime(
     private var externalMarketForcesTarget = options.initialExternalMarketForces
     private var macroDate = gameDate(currentTime)
     private var benchmarkValue = BENCHMARK_START
-    private var peakAssetsKrw = options.initialCapitalKrw
-    private var maximumDrawdown = 0.0
+    private var dailyClosePerformanceExtrema =
+        PortfolioPerformanceExtrema.initial(options.initialCapitalKrw)
     private var nextSequence = 1L
 
     private val random = DeterministicRandom(
@@ -864,7 +885,7 @@ internal class SimulatorRuntime(
     private val cashCollateralizedPutSpreadEngine = CashCollateralizedPutSpreadEngine()
     private val fixedIncomeReferenceBookEngine = FixedIncomeReferenceBookEngine()
     private val kofrIndexBookEngine = KofrIndexBookEngine(
-        KofrRateModel(DeterministicRandom.mixSeed(options.seed, KOFR_STREAM_ID)),
+        KofrRateModel.forCampaignSeed(options.seed),
     )
     private val commodityMarketModel = CommodityMarketModel.forCampaignSeed(options.seed)
     private val commodityReferenceBookEngine = CommodityReferenceBookEngine()
@@ -872,7 +893,6 @@ internal class SimulatorRuntime(
     private val alternativeRiskPremiaBookEngine =
         AlternativeRiskPremiaBookEngine.forCampaignSeed(options.seed)
     private val compositeReferenceBookEngine = CompositeReferenceBookEngine.forCampaignSeed(options.seed)
-    private val orderBookEngine = OrderBookEngine(DeterministicRandom.mixSeed(options.seed, BOOK_STREAM_ID))
     private val marketIndexEngine = MarketIndexEngine()
     private val listingLifecycleEngine = ListingLifecycleEngine()
     private val eventEngine = EventEngine(DeterministicRandom.mixSeed(options.seed, EVENT_STREAM_ID))
@@ -882,20 +902,7 @@ internal class SimulatorRuntime(
     private val instrumentMetricsEngine = InstrumentMetricsEngine(
         DeterministicRandom.mixSeed(options.seed, InstrumentMetricsEngine.STREAM_ID),
     )
-    private val domesticSaleTaxCalculator = DomesticSaleTaxCalculator()
-    private val domesticEtfSaleTaxCalculator = DomesticEtfSaleTaxCalculator()
-    private val majorShareholderCalculator = MajorShareholderCalculator()
-    private val annualStockTaxCalculator = AnnualStockTaxCalculator()
     private val dividendTaxCalculator = DividendTaxCalculator()
-    private val brokerFeeCalculator = BrokerFeeCalculator(
-        BrokerFeeSchedule(
-            id = "simulator-general-account-2026",
-            brokerName = "일반계좌",
-            domesticCommissionRate = TaxRate(150L), // 0.015%
-            usCommissionRate = TaxRate(700L), // 0.070%
-            fxSpreadRate = TaxRate(1_000L), // 0.10%
-        ),
-    )
 
     init {
         require(stocks.size >= 24) { "기본 종목 카탈로그가 충분하지 않습니다." }
@@ -1020,6 +1027,9 @@ internal class SimulatorRuntime(
 
     internal fun debugSetCash(currency: Currency, amount: Double): DebugRuntimeResult {
         if (phase !in DEBUG_MUTABLE_PHASES) return debugFailure("현재 게임 단계에서는 현금을 바꿀 수 없습니다.")
+        if (options.activeMods.none { mod -> DebugMod.isCompatible(mod.id, mod.version) }) {
+            return debugFailure("호환되는 디버그 모드가 활성화되지 않았습니다.")
+        }
         val maximum = when (currency) {
             Currency.KRW -> MAX_DEBUG_CASH_KRW
             Currency.USD -> MAX_DEBUG_CASH_USD
@@ -1028,7 +1038,19 @@ internal class SimulatorRuntime(
             return debugFailure("${currency.name} 현금은 0 이상 $maximum 이하여야 합니다.")
         }
         val rounded = roundCurrency(amount, currency)
+        val before = cash.getValue(currency)
+        val sequence = nextSequence
+        val adjustmentId = nextId("cash-adjustment")
         cash[currency] = rounded
+        cashAdjustments += CashAdjustmentRecord(
+            id = adjustmentId,
+            adjustedAt = currentTime,
+            currency = currency,
+            balanceBefore = before,
+            balanceAfter = rounded,
+            reason = CashAdjustmentRecord.DEBUG_SET_CASH_REASON,
+            accountingSequence = sequence,
+        )
         refreshDebugPortfolioState()
         lastMessage = "${currency.displayName} 현금을 ${currency.symbol}$rounded(으)로 설정했습니다."
         return DebugRuntimeResult.success(lastMessage.orEmpty(), rounded.toString())
@@ -1183,7 +1205,6 @@ internal class SimulatorRuntime(
     }
 
     private fun refreshDebugPortfolioState() {
-        updateDrawdown()
         recordDailySnapshot(gameDate(currentTime), currentTime)
     }
 
@@ -1404,43 +1425,29 @@ internal class SimulatorRuntime(
     }
 
     fun snapshot(): SimulatorUiState {
-        val sessions = Market.entries.associateWith(::marketSessionAtCurrentTime)
+        // User actions such as an immediate FX conversion can change current assets without an
+        // advance turn. Derive the live observation here instead of maintaining mutable extrema
+        // caches that could become stale between the action and a save.
+        val performanceExtrema = dailyClosePerformanceExtrema.observe(totalAssetsKrw())
         // The save/UI state keeps the original published record. Price-only copies whose
         // startsAt is shifted to the market effect window remain internal to the pricing path.
         val scheduledActiveEvents = newsEvents.filter { event ->
             event.recordKind == EventRecordKind.SCHEDULED_RELEASE &&
                 currentTime >= event.effectStartsAt && currentTime < event.effectEndsAt
         }
-        val stateQuotes = quotes.mapValues { (stockId, quote) ->
-            val stock = stockById.getValue(stockId)
-            quote.copy(
-                session = if (listingLifecycleStates.getValue(stockId).isTradable) {
-                    sessions.getValue(stock.market)
-                } else {
-                    MarketSession.CLOSED
-                },
-            )
-        }.toMutableMap()
-        val selectedBook = selectedStockId?.takeIf { id ->
-            val stock = stockById.getValue(id)
-            !isInstrumentMatured(stock, currentTime) &&
-                listingLifecycleStates.getValue(id).isTradable &&
-                TradingProtectionEngine.permission(
-                    tradingProtectionSnapshot,
-                    TradingProtectionRequest(
-                        market = stock.market,
-                        action = TradingProtectionAction.CONTINUOUS_TRADING,
-                        stockId = id,
-                    ),
-                    currentTime,
-                ).allowed
-        }?.let { id ->
-            val stock = stockById.getValue(id)
-            val quote = stateQuotes.getValue(id)
-            orderBook(stock, quote, sessions.getValue(stock.market)).also { book ->
-                stateQuotes[id] = book.applyTopOfBook(quote)
-            }
-        }
+        val publishedActiveEvents = (activeEvents.filter { it.isActiveAt(currentTime) } +
+            scheduledActiveEvents).distinctBy(GameEvent::id)
+        val marketUi = projectSimulatorMarketUi(
+            campaignSeed = options.seed,
+            currentTime = currentTime,
+            selectedStockId = selectedStockId,
+            stocksById = stockById,
+            quotes = quotes,
+            listingLifecycleStates = listingLifecycleStates,
+            protection = tradingProtectionSnapshot,
+            macro = macro,
+            activeEvents = publishedActiveEvents,
+        )
         return SimulatorUiState(
             options = options,
             catalogReference = instrumentCatalog.reference,
@@ -1478,7 +1485,7 @@ internal class SimulatorRuntime(
             futuresAllocationLedger = futuresAllocationLedger.toList(),
             pendingFundFlowRates = pendingFundFlowRates.toMap(),
             selectedStockId = selectedStockId,
-            quotes = stateQuotes.toMap(),
+            quotes = marketUi.quotes,
             priceHistory = history.mapValues { (_, bars) -> bars.toList() },
             chartPriceHistory = chartPriceHistory.mapValues { (_, histories) ->
                 histories.mapValues { (_, bars) -> bars.toList() }
@@ -1487,13 +1494,12 @@ internal class SimulatorRuntime(
             holdings = holdings.toMap(),
             orders = orders.toList(),
             trades = trades.toList(),
-            selectedOrderBook = selectedBook,
-            marketSessions = sessions,
+            selectedOrderBook = marketUi.selectedOrderBook,
+            marketSessions = marketUi.marketSessions,
             macro = macro,
             externalMarketForcesTarget = externalMarketForcesTarget,
             marketDynamicsSnapshot = marketDynamicsEngine.snapshot(),
-            activeEvents = (activeEvents.filter { it.isActiveAt(currentTime) } + scheduledActiveEvents)
-                .distinctBy(GameEvent::id),
+            activeEvents = publishedActiveEvents,
             newsEvents = newsEvents.sortedByDescending(GameEvent::startsAt),
             readEventIds = readEventIds.toSet(),
             readStockNewsEventIds = readStockNewsEventIds.mapValues { (_, eventIds) -> eventIds.toSet() },
@@ -1505,12 +1511,15 @@ internal class SimulatorRuntime(
             realizedGains = realizedGains.toList(),
             fifoCostBasisBook = fifoCostBasisBook,
             lastEvaluatedDistributionDateByStock = lastEvaluatedDistributionDateByStock.toMap(),
+            pendingDistributionEntitlements = pendingDistributionEntitlements.toList(),
+            distributionEntitlementOrigins = distributionEntitlementOrigins.toList(),
             dividendLedger = dividends.toList(),
             foreignExchangeLedger = foreignExchanges.toList(),
+            cashAdjustmentLedger = cashAdjustments.toList(),
             annualTaxLedgers = annualTaxLedgers.toMap(),
             taxPaymentNotices = taxPaymentNotices.toList(),
-            peakAssetsKrw = peakAssetsKrw,
-            maximumDrawdown = maximumDrawdown,
+            peakAssetsKrw = performanceExtrema.peakAssetsKrw,
+            maximumDrawdown = performanceExtrema.maximumDrawdown,
             rngState = random.snapshot(),
             eventEngineSnapshot = eventEngine.snapshot(),
             nextSequence = nextSequence,
@@ -1777,18 +1786,22 @@ internal class SimulatorRuntime(
         marketDynamicsEngine.restore(restoredDynamics)
         macroDate = gameDate(currentTime)
         benchmarkValue = state.currentBenchmarkValue
-        peakAssetsKrw = state.peakAssetsKrw
-        maximumDrawdown = state.maximumDrawdown
         nextSequence = state.nextSequence
-        require(nextSequence > 0L) { "저장 시퀀스가 올바르지 않습니다." }
+        require(nextSequence in 1L..MAX_SAFE_PERSISTED_SEQUENCE &&
+            state.eventEngineSnapshot.sequence in 0L..MAX_SAFE_PERSISTED_SEQUENCE
+        ) { "저장 시퀀스가 안전한 증가 범위가 아닙니다." }
         val accountingSequences = buildList {
             state.trades.mapTo(this) { it.accountingSequence }
             state.dividendLedger.mapTo(this) { it.accountingSequence }
             state.corporateActionLedger.mapTo(this) { it.accountingSequence }
+            state.distributionEntitlementOrigins.mapTo(this) { it.accountingSequence }
+            state.taxPaymentNotices.mapNotNullTo(this) { it.accountingSequence }
+            state.foreignExchangeLedger.mapTo(this) { it.accountingSequence }
+            state.cashAdjustmentLedger.mapTo(this) { it.accountingSequence }
         }
         require(accountingSequences.all { it in 1 until nextSequence } &&
             accountingSequences.distinct().size == accountingSequences.size
-        ) { "체결·분배·기업행동의 전역 회계 순번이 올바르지 않습니다." }
+        ) { "체결·분배·기업행동·환전·납부의 전역 회계 순번이 올바르지 않습니다." }
         require(state.dividendLedger.map(DividendLedgerEntry::id).distinct().size == state.dividendLedger.size &&
             state.dividendLedger.all { it.stockId in ids && it.accountingSequence > 0L }
         ) { "분배 원장 ID·종목·회계 순번이 올바르지 않습니다." }
@@ -1800,10 +1813,11 @@ internal class SimulatorRuntime(
         history.clear()
         state.priceHistory.forEach { (stockId, bars) ->
             require(bars.isNotEmpty()) { "차트 기록이 비어 있습니다." }
+            require(bars.size <= MAX_RECENT_BARS) { "시간봉 저장 한도를 초과했습니다." }
             require(bars.all { it.step == PriceBarInterval.ONE_HOUR }) {
                 "엔진 가격 기록에는 시간봉만 포함되어야 합니다."
             }
-            history[stockId] = ArrayDeque(bars.takeLast(MAX_RECENT_BARS))
+            history[stockId] = ArrayDeque(bars)
         }
         chartPriceHistory.clear()
         state.chartPriceHistory.forEach { (stockId, savedHistories) ->
@@ -1812,10 +1826,13 @@ internal class SimulatorRuntime(
             }
             chartPriceHistory[stockId] = CHART_INTERVALS.associateWithTo(linkedMapOf()) { interval ->
                 val bars = savedHistories.getValue(interval)
+                require(bars.size <= MAX_CHART_BARS_PER_INTERVAL) {
+                    "차트 주기별 저장 한도를 초과했습니다."
+                }
                 require(bars.all { it.step == interval }) {
                     "차트 가격 기록의 봉 주기가 일치하지 않습니다."
                 }
-                ArrayDeque(bars.takeLast(MAX_CHART_BARS_PER_INTERVAL))
+                ArrayDeque(bars)
             }
         }
         pendingEtfReferenceReturns.clear()
@@ -1826,8 +1843,9 @@ internal class SimulatorRuntime(
         marketIndexHistory.clear()
         marketIndices.putAll(savedIndices)
         for (id in MarketIndexId.entries) {
-            val values = state.marketIndexHistory.getValue(id).takeLast(MAX_INDEX_BARS)
+            val values = state.marketIndexHistory.getValue(id)
             require(values.isNotEmpty()) { "대표 지수 이력이 비어 있습니다." }
+            require(values.size <= MAX_INDEX_BARS) { "대표 지수 이력 저장 한도를 초과했습니다." }
             marketIndexHistory[id] = ArrayDeque<MarketIndexSnapshot>().apply {
                 addAll(values)
             }
@@ -1836,10 +1854,21 @@ internal class SimulatorRuntime(
         cash.putAll(state.cashByCurrency)
         holdings.clear()
         holdings.putAll(state.holdings)
+        require(
+            CanonicalTradingLedgerValidation.validate(
+                orders = state.orders,
+                trades = state.trades,
+                stocksById = stockById,
+                holdingsByStockId = state.holdings,
+                listingLifecycleStates = state.listingLifecycleStates,
+                corporateActions = state.corporateActionLedger,
+                currentTime = state.currentTime,
+            ) == null,
+        ) { "저장된 주문·체결 원장이 canonical 생성자·상태 불변식을 위반합니다." }
         orders.clear()
-        orders += state.orders
+        orders += state.orders.map { order -> order.copy() }
         trades.clear()
-        trades += state.trades
+        trades += state.trades.map { trade -> trade.copy() }
         transactionCosts.clear()
         transactionCosts += state.transactionCosts
         realizedGains.clear()
@@ -1848,6 +1877,13 @@ internal class SimulatorRuntime(
         dividends += state.dividendLedger
         lastEvaluatedDistributionDateByStock.clear()
         lastEvaluatedDistributionDateByStock.putAll(state.lastEvaluatedDistributionDateByStock)
+        pendingDistributionEntitlements.clear()
+        pendingDistributionEntitlements += state.pendingDistributionEntitlements
+        distributionEntitlementOrigins.clear()
+        distributionEntitlementOrigins += state.distributionEntitlementOrigins
+        fifoCostBasisBook = state.fifoCostBasisBook
+        portfolioSnapshots.clear()
+        portfolioSnapshots += state.portfolioSnapshots
         corporateActionLedger.clear()
         corporateActionLedger += state.corporateActionLedger
         corporateFundamentals.clear()
@@ -1912,28 +1948,57 @@ internal class SimulatorRuntime(
                 lifecycle.finalDisposition.entitledQuantity != null &&
                 lifecycle.finalDisposition.entitledCostBasis != null
         }) { "청산 대기 상태에는 확정된 수량과 원가가 필요합니다." }
+        require(holdings.all { (stockId, holding) ->
+            val contractualUnitValue = listingLifecycleStates[stockId]
+                ?.takeIf { lifecycle ->
+                    lifecycle.status == ListingLifecycleStatus.LIQUIDATION_PENDING
+                }
+                ?.finalDisposition
+                ?.takeIf { disposition ->
+                    disposition.type == ListingFinalDispositionType.CASH_LIQUIDATION
+                }
+                ?.cashPerUnit
+            val canonicalCurrentPrice = contractualUnitValue ?: quotes.getValue(stockId).price
+            holding.currentPrice.toBits() == canonicalCurrentPrice.toBits()
+        }) { "저장된 보유 현재가가 canonical 호가·계약상 청산 단가와 다릅니다." }
         updateHoldingPrices()
         listingLifecycleLedger.clear()
         listingLifecycleLedger += state.listingLifecycleLedger
         tradingProtectionSnapshot = state.tradingProtectionSnapshot
         dailyTradingSurveillance.clear()
         stocks.forEach { stock ->
+            val savedSurveillance = state.dailyTradingSurveillance.getValue(stock.id)
+            require(savedSurveillance.size <= MAX_DAILY_SURVEILLANCE_POINTS) {
+                "일별 시장감시 이력 저장 한도를 초과했습니다."
+            }
             dailyTradingSurveillance[stock.id] = ArrayDeque(
-                state.dailyTradingSurveillance.getValue(stock.id)
-                    .takeLast(MAX_DAILY_SURVEILLANCE_POINTS),
+                savedSurveillance,
             )
         }
         restoreTaxExchangeRateLedger(state)
-        val replayedTaxYears = replayTaxAccountingLedger()
+        val replayedTaxYears = replayTaxAccountingLedger(requireExistingCanonical = true)
         require(fifoCostBasisBook.lots.all { it.stockId in ids } && fifoBookMatchesHoldings()) {
             "FIFO 세무원장과 보유 수량이 일치하지 않습니다."
         }
         foreignExchanges.clear()
         foreignExchanges += state.foreignExchangeLedger
+        cashAdjustments.clear()
+        cashAdjustments += state.cashAdjustmentLedger
+        require(cashAdjustments.isEmpty() || options.activeMods.any { mod ->
+            DebugMod.isCompatible(mod.id, mod.version)
+        }) { "디버그 현금 조정은 호환되는 신뢰 디버그 모드에서만 복원할 수 있습니다." }
         activeEvents.clear()
         activeEvents += state.eventEngineSnapshot.activeEvents
         newsEvents.clear()
         newsEvents += state.newsEvents.sortedBy(GameEvent::startsAt)
+        require(
+            canonicalReadEventLedgerViolation(
+                newsEvents = state.newsEvents,
+                readEventIds = state.readEventIds,
+                readStockNewsEventIds = state.readStockNewsEventIds,
+                stocksById = stockById,
+            ) == null,
+        ) { "저장된 뉴스 읽음 원장이 보존 뉴스·종목 계보와 일치하지 않습니다." }
         readEventIds.clear()
         readEventIds += state.readEventIds
         readStockNewsEventIds.clear()
@@ -1944,8 +2009,10 @@ internal class SimulatorRuntime(
         watchlistedStockIds += state.watchlistedStockIds
         pendingCorporateActions.clear()
         pendingCorporateActions += state.pendingCorporateActions
-        portfolioSnapshots.clear()
-        portfolioSnapshots += state.portfolioSnapshots
+        dailyClosePerformanceExtrema = PortfolioPerformanceExtrema.derive(
+            initialCapitalKrw = options.initialCapitalKrw,
+            orderedAssetsKrw = portfolioSnapshots.map { snapshot -> snapshot.totalAssetValueKrw },
+        )
         dailyStatistics.clear()
         dailyStatistics += state.dailyStatistics
         benchmarkHistory.clear()
@@ -1954,6 +2021,19 @@ internal class SimulatorRuntime(
         annualTaxLedgers.putAll(state.annualTaxLedgers)
         taxPaymentNotices.clear()
         taxPaymentNotices += state.taxPaymentNotices
+        require(
+            CanonicalCashAccountingReplay.replay(
+                initialCapitalKrw = options.initialCapitalKrw,
+                campaignSeed = options.seed,
+                currentTime = currentTime,
+                trades = trades,
+                transactionCosts = transactionCosts,
+                foreignExchanges = foreignExchanges,
+                dividends = dividends,
+                taxPaymentNotices = taxPaymentNotices,
+                cashAdjustments = cashAdjustments,
+            ) == cash,
+        ) { "저장된 통화별 현금이 canonical 회계 원장 재생 결과와 다릅니다." }
         replayedTaxYears.forEach(::recalculateAnnualTax)
 
         dailyTrackers.clear()
@@ -1971,6 +2051,33 @@ internal class SimulatorRuntime(
                 },
             )
         }
+        val marketUi = projectSimulatorMarketUi(
+            campaignSeed = options.seed,
+            currentTime = currentTime,
+            selectedStockId = selectedStockId,
+            stocksById = stockById,
+            quotes = quotes,
+            listingLifecycleStates = listingLifecycleStates,
+            protection = tradingProtectionSnapshot,
+            macro = macro,
+            activeEvents = state.activeEvents,
+        )
+        require(
+            state.marketSessions == marketUi.marketSessions &&
+                state.selectedOrderBook == marketUi.selectedOrderBook &&
+                state.quotes == marketUi.quotes,
+        ) { "저장된 시장 세션·선택 호가창이 canonical UI projection과 다릅니다." }
+        quotes.clear()
+        quotes.putAll(
+            marketUi.quotes.mapValues { (_, quote) ->
+                quote.copy(
+                    bidPrice = null,
+                    askPrice = null,
+                    bidQuantity = 0.0,
+                    askQuantity = 0.0,
+                )
+            },
+        )
     }
 
     private fun initializeMarketData() {
@@ -2013,7 +2120,11 @@ internal class SimulatorRuntime(
             }
             when (stock.fundProductProfile?.legalStructure) {
                 FundLegalStructure.OPEN_END_ETF -> fundFinancialStates[stock.id] =
-                    instrumentMetricsEngine.initialFundState(stock, currentTime)
+                    instrumentMetricsEngine.initialFundState(
+                        stock = stock,
+                        at = currentTime,
+                        openingAnnualDistributionYield = openingAnnualDistributionYield(stock),
+                    )
                 FundLegalStructure.EXCHANGE_TRADED_NOTE -> etnStates[stock.id] =
                     initialEtnState(stock)
                 FundLegalStructure.CLOSED_END_FUND -> closedEndFundStates[stock.id] =
@@ -2408,6 +2519,7 @@ internal class SimulatorRuntime(
                 referencePrice = quote.price,
                 referencePriceEffectiveAt = at,
                 easternTime = easternTime,
+                regularSessionClose = regularSessionCloseTime(stock.market, usDate),
             )
         }
         tradingProtectionSnapshot = TradingProtectionSnapshot(
@@ -2473,6 +2585,8 @@ internal class SimulatorRuntime(
         val to = GameCalendar.advanceHours(from, 1)
         if (to <= from) return
         val fromGameDate = gameDate(from)
+        val toGameDate = gameDate(to)
+        val crossesGameDateBoundary = toGameDate != fromGameDate
 
         processInstrumentLifecycle(from)
         advanceProtectionClock(from)
@@ -2590,7 +2704,7 @@ internal class SimulatorRuntime(
             },
             commit = true,
         )
-        advanceFundFinancialStates(to, finalized)
+        advanceFundFinancialStates(from, to, finalized)
 
         updateMarketIndices(to, finalized.bars, previousClosesByStockId, tradingFractions)
         updateMarketChange(finalized.bars, tradingFractions)
@@ -2610,9 +2724,16 @@ internal class SimulatorRuntime(
         processDailyListingSurveillance(from, to)
         reconcileStructuredSourceAvailability(to)
         processInstrumentLifecycle(to)
-        processScheduledDividends(from, to)
+        if (!crossesGameDateBoundary) {
+            // U.S. local midnight occurs at 13:00/14:00 KST and belongs to the current game date.
+            // KRX local midnight is the game-date boundary and is applied after the completed-day
+            // snapshot below so its ex/pay accounting cannot leak into the preceding date.
+            processTaxExchangeRateSettlements(to)
+            processScheduledEtfDistributions(from, to)
+            processScheduledDividends(from, to)
+        }
         maybeAnnounceCorporateActions(from, to)
-        applyDueCorporateActionsAtBoundary(to)
+        if (!crossesGameDateBoundary) applyDueCorporateActionsAtBoundary(to)
         updateHoldingPrices()
         expireDayOrders(to)
         updateBenchmark(finalized.bars, tradingFractions)
@@ -2624,19 +2745,28 @@ internal class SimulatorRuntime(
         // Make restrictions whose legal boundary is exactly the turn end visible before the user
         // can place the next order (for example, a KRX full-session halt beginning at 09:00).
         advanceProtectionClock(to)
-        processTaxExchangeRateSettlements(to)
-        processDueTaxPayments(gameDate(to))
-        updateDrawdown()
 
-        val toGameDate = gameDate(to)
-        if (toGameDate != fromGameDate) {
+        if (crossesGameDateBoundary) {
+            // Record the left-limit state of the completed game date before legal/accounting
+            // transitions whose effective instant is exactly the following KST midnight.
             recalculateAnnualTax(fromGameDate.year)
+            recordDailySnapshot(fromGameDate, to - 1.nanoseconds)
+
+            processTaxExchangeRateSettlements(to)
+            processScheduledEtfDistributions(from, to)
+            processScheduledDividends(from, to)
+            applyDueCorporateActionsAtBoundary(to)
+            updateHoldingPrices()
+
             if (toGameDate.year != fromGameDate.year && toGameDate.year <= 2040) {
                 recalculateAnnualTax(toGameDate.year)
             }
-            recordDailySnapshot(fromGameDate, to)
             trimMarketActionNewsArchive()
         }
+        // Settlement FX and statutory payments become effective on the new local/game date. They
+        // must follow the completed-day snapshot at a KST boundary but retain their existing
+        // intraday timing at a U.S. local-midnight boundary.
+        processDueTaxPayments(toGameDate)
     }
 
     private fun realizedSystemicReturn(
@@ -2980,7 +3110,7 @@ internal class SimulatorRuntime(
             val benchmarkAnnualIncomeYield = productProfile?.benchmarkRef
                 ?.let(::explicitBenchmarkAnnualIncomeYield)
             val basketGrossLogReturn = benchmarkGrossLogReturn?.let { benchmarkReturn ->
-                benchmarkReturn + fundProductOverlayEngine.trackingErrorLogReturn(
+                benchmarkReturn + fundProductOverlayEngine.productOverlayLogReturn(
                     productId = stock.id,
                     profile = requireNotNull(productProfile),
                     from = from,
@@ -3038,7 +3168,7 @@ internal class SimulatorRuntime(
                                 DAILY_RESET_BASE_SHORT_BORROW_RATE +
                                     macro.liquidityStress * DAILY_RESET_STRESS_BORROW_SPREAD
                                 ).coerceIn(0.0, 2.0),
-                            productExpenseRateAnnual = requireNotNull(stock.etfProfile).annualExpenseRatio,
+                            productExpenseRateAnnual = requireNotNull(stock.etfProfile).annualTotalCostRate,
                             referenceTradingDate = calendarFacts.marketDatesAtStart
                                 .getValue(referenceMarket),
                             resetAtEnd = calendarFacts.marketCloseReached
@@ -3109,7 +3239,7 @@ internal class SimulatorRuntime(
             val optionProductLogReturn = optionStrategyAdvance?.productLogReturn
                 ?.takeIf { stock.instrumentType != InstrumentType.ETN }
                 ?.minus(
-                    requireNotNull(stock.etfProfile).annualExpenseRatio /
+                    requireNotNull(stock.etfProfile).annualTotalCostRate /
                         REFERENCE_TRADING_HOURS_PER_YEAR * requireNotNull(fundReferenceFraction),
                 )
             val elapsedWallYearFraction = ((to - from).inWholeNanoseconds.toDouble() /
@@ -3172,7 +3302,7 @@ internal class SimulatorRuntime(
                 }
             val cashCollateralizedPutSpreadProductLogReturn =
                 cashCollateralizedPutSpreadAdvance?.productLogReturn?.minus(
-                    requireNotNull(stock.etfProfile).annualExpenseRatio /
+                    requireNotNull(stock.etfProfile).annualTotalCostRate /
                         REFERENCE_TRADING_HOURS_PER_YEAR * requireNotNull(fundReferenceFraction),
                 )
             val etnAdvance = productProfile?.etnProductTerms
@@ -3309,7 +3439,7 @@ internal class SimulatorRuntime(
                                 macro.policyRate + parameters.annualPreferredDistributionSpread
                                 ).coerceIn(0.0, 100.0),
                             operatingExpenses = previous.grossAssets *
-                                requireNotNull(stock.etfProfile).annualExpenseRatio *
+                                requireNotNull(stock.etfProfile).annualTotalCostRate *
                                 elapsedWallYearFraction,
                             realizedGainReserveChange = 0.0,
                             marketDiscountShock = closedEndFundDiscountShock(
@@ -3819,7 +3949,9 @@ internal class SimulatorRuntime(
                 kofrIndexBookEngine.advance(
                     book = book,
                     definitions = kofrIndexBenchmarkDefinitions,
-                    macro = macroSnapshot,
+                    koreanPolicyRateAnnualAt = { at ->
+                        scheduledEventEngine.centralBankRateAnnualAt(ScheduledEventKind.KR_BOK, at)
+                    },
                     from = from,
                     to = to,
                 )
@@ -4278,6 +4410,7 @@ internal class SimulatorRuntime(
     }
 
     private fun advanceFundFinancialStates(
+        from: Instant,
         at: Instant,
         turn: TurnGenerationResult,
     ) {
@@ -4289,7 +4422,21 @@ internal class SimulatorRuntime(
                 pendingFundFlowRates.remove(stockId)
                 continue
             }
-            if (attribution == null) continue
+            val distributionAccrualFraction = regularTradingFraction(stock.market, from, at)
+            val annualDistributionYield = currentProductAnnualDistributionYield(stock)
+            if (attribution == null) {
+                if (distributionAccrualFraction > 0.0) {
+                    fundFinancialStates[stockId] =
+                        instrumentMetricsEngine.advanceFundDistributionAccrual(
+                            state = previousState,
+                            stock = stock,
+                            annualDistributionYield = annualDistributionYield,
+                            distributionAccrualFraction = distributionAccrualFraction,
+                            at = at,
+                        )
+                }
+                continue
+            }
             val tradingFraction = turn.stockTradingFractions[stockId] ?: 0.0
             val externalFlowRate = if (tradingFraction > 0.0) {
                 pendingFundFlowRates[stockId] ?: 0.0
@@ -4304,6 +4451,8 @@ internal class SimulatorRuntime(
                 tradingFraction = tradingFraction,
                 riskSentiment = macro.riskSentiment,
                 externalFlowRate = externalFlowRate,
+                annualDistributionYield = annualDistributionYield,
+                distributionAccrualFraction = distributionAccrualFraction,
                 at = at,
             )
             if (tradingFraction > 0.0) pendingFundFlowRates.remove(stockId)
@@ -4398,43 +4547,7 @@ internal class SimulatorRuntime(
 
     /** Runs once at each listing venue's local close and turns news/price data into exchange state. */
     private fun processDailyListingSurveillance(from: Instant, to: Instant) {
-        val eligibleKrxStocks = stocks.filter { stock ->
-            stock.market.isKorean && stock.hasCorporateEarnings &&
-                listingLifecycleStates.getValue(stock.id).isIndexEligible
-        }
-        val krxMarketProxyClose = listOf(Market.KOSPI, Market.KOSDAQ).associateWith { market ->
-            eligibleKrxStocks.asSequence()
-                .filter { stock -> stock.market == market }
-                .sumOf { stock -> stock.sharesOutstanding.toDouble() * quotes.getValue(stock.id).price }
-                .takeIf { it > 0.0 }
-        }
-        // KOSPI 공시의 상대상승 비교는 업종지수 기준이다. 카탈로그 섹터에 비교 종목이
-        // 둘 이상 있을 때 섹터 시총 프록시를 쓰고, 단독 섹터는 자기 자신과 비교하지
-        // 않도록 KOSPI 종합 프록시로 물러난다. KOSDAQ은 공시대로 종합지수 프록시다.
-        val krxSectorProxyClose = eligibleKrxStocks
-            .groupBy { stock -> stock.market to stock.sector }
-            .mapValues { (_, members) ->
-                members.takeIf { it.size >= 2 }
-                    ?.sumOf { stock -> stock.sharesOutstanding.toDouble() * quotes.getValue(stock.id).price }
-            }
-        val krxMarketCaps = stocks.asSequence()
-            .filter { stock ->
-                stock.market.isKorean && stock.hasCorporateEarnings &&
-                    listingLifecycleStates.getValue(stock.id).isIndexEligible
-            }
-            .map { stock ->
-                stock.id to stock.sharesOutstanding.toDouble() * quotes.getValue(stock.id).price
-            }
-            .sortedByDescending(Pair<String, Double>::second)
-            .toList()
-        // 카탈로그가 KRX 전 종목을 담지는 않으므로 단순 1..N 순위는 모든 종목을 상위100으로
-        // 오인한다. 기준일 시총 경계 프록시를 먼저 적용하고, 경계 밖은 101위부터 매긴다.
-        val top100Proxy = krxMarketCaps.filter { it.second >= KRX_TOP_100_MARKET_CAP_PROXY_KRW }
-        val outsideTop100Proxy = krxMarketCaps.filter { it.second < KRX_TOP_100_MARKET_CAP_PROXY_KRW }
-        val krxMarketCapRanks = buildMap {
-            top100Proxy.forEachIndexed { index, (stockId, _) -> put(stockId, index + 1) }
-            outsideTop100Proxy.forEachIndexed { index, (stockId, _) -> put(stockId, 101 + index) }
-        }
+        val krxProjection = projectKrxDailySurveillance(marketDate(Market.KOSPI, from))
         for (stock in stocks) {
             val previous = listingLifecycleStates.getValue(stock.id)
             if (previous.isTerminal) continue
@@ -4513,13 +4626,8 @@ internal class SimulatorRuntime(
                         close = quote.price,
                         volume = dayVolume,
                         turnoverRate = dayVolume.toDouble() / stock.sharesOutstanding.toDouble(),
-                        marketProxyClose = if (stock.market == Market.KOSPI) {
-                            krxSectorProxyClose[stock.market to stock.sector]
-                                ?: krxMarketProxyClose[stock.market]
-                        } else {
-                            krxMarketProxyClose[stock.market]
-                        },
-                        krxMarketCapRank = krxMarketCapRanks[stock.id],
+                        marketProxyClose = krxProjection.marketProxyByStockId[stock.id],
+                        krxMarketCapRank = krxProjection.marketCapRankByStockId[stock.id],
                     ),
                 )
                 while (surveillance.size > MAX_DAILY_SURVEILLANCE_POINTS) surveillance.removeFirst()
@@ -4624,6 +4732,111 @@ internal class SimulatorRuntime(
             if (!previous.isTerminal && nextState.isTerminal) {
                 applyListingFinalDisposition(stock, nextState, venueCloseAt)
             }
+        }
+    }
+
+    /**
+     * Split-adjusted chart closes and dynamic shares are the canonical KRX surveillance basis.
+     * This keeps historical proxy/rank values reproducible after a unit adjustment instead of
+     * preserving a pre-split floating-point value beside retroactively adjusted price history.
+     */
+    private fun projectKrxDailySurveillance(date: LocalDate): KrxDailySurveillanceProjection.Result {
+        val closeByStockId = stocks.asSequence()
+            .filter { stock -> stock.market.isKorean }
+            .associate { stock ->
+                val close = chartPriceHistory.getValue(stock.id)
+                    .getValue(PriceBarInterval.ONE_DAY)
+                    .lastOrNull { bar -> marketDate(stock.market, bar.startTime) <= date }
+                    ?.close
+                    ?: stock.initialPrice
+                stock.id to close
+            }
+        val indexEligibleIds = stocks.asSequence()
+            .filter { stock -> stock.market.isKorean && stock.hasCorporateEarnings }
+            .filter { stock ->
+                val status = listingLifecycleLedger.asSequence()
+                    .filter { event -> event.stockId == stock.id && event.tradingDate < date }
+                    .maxByOrNull(ListingLifecycleLedgerEvent::sequence)
+                    ?.toStatus
+                    ?: ListingLifecycleStatus.LISTED
+                status !in setOf(
+                    ListingLifecycleStatus.LIQUIDATION_PENDING,
+                    ListingLifecycleStatus.DELISTED,
+                    ListingLifecycleStatus.TERMINATED,
+                )
+            }
+            .mapTo(linkedSetOf(), StockDefinition::id)
+        return KrxDailySurveillanceProjection.project(
+            stocks = stocks,
+            closeByStockId = closeByStockId,
+            indexEligibleStockIds = indexEligibleIds,
+            top100MarketCapProxyKrw = KRX_TOP_100_MARKET_CAP_PROXY_KRW,
+        )
+    }
+
+    /** Re-bases all retained KRX decision facts after a split/reverse split. */
+    private fun rebaseKrxDailySurveillanceAfterUnitAdjustment() {
+        val dates = dailyTradingSurveillance.values.asSequence()
+            .flatten()
+            .map(DailyTradingSurveillancePoint::date)
+            .distinct()
+            .sorted()
+            .toList()
+        dates.forEach { date ->
+            val projection = projectKrxDailySurveillance(date)
+            dailyTradingSurveillance.forEach { (stockId, points) ->
+                val stock = stockById.getValue(stockId)
+                if (!stock.market.isKorean) return@forEach
+                val rewritten = points.map { point ->
+                    if (point.date != date) return@map point
+                    point.copy(
+                        turnoverRate = point.volume.toDouble() /
+                            stock.sharesOutstanding.toDouble(),
+                        marketProxyClose = projection.marketProxyByStockId[stockId],
+                        krxMarketCapRank = projection.marketCapRankByStockId[stockId],
+                    )
+                }
+                points.clear()
+                points.addAll(rewritten)
+            }
+        }
+    }
+
+    private fun rebuildRetainedDailyFactsAfterUnitAdjustment(stockId: String) {
+        val stock = stockById.getValue(stockId)
+        val canonicalDailyBars = CanonicalDailyPriceBarProjection.aggregateRetainedHourly(
+            stockId = stockId,
+            market = stock.market,
+            hourlyBars = history.getValue(stockId).toList(),
+            dropPotentiallyTruncatedFirstDate = false,
+        )
+        val replacementDates = canonicalDailyBars.mapTo(hashSetOf()) { bar ->
+            marketDate(stock.market, bar.startTime)
+        }
+        val dailyBars = chartPriceHistory.getValue(stockId).getValue(PriceBarInterval.ONE_DAY)
+        val rebuiltBars = (dailyBars.filter { bar ->
+            marketDate(stock.market, bar.startTime) !in replacementDates
+        } + canonicalDailyBars).sortedBy(PriceBar::startTime)
+        dailyBars.clear()
+        dailyBars.addAll(rebuiltBars)
+        trimChartBars(stock, PriceBarInterval.ONE_DAY, dailyBars)
+
+        val canonicalByDate = canonicalDailyBars.associateBy { bar ->
+            marketDate(stock.market, bar.startTime)
+        }
+        dailyTradingSurveillance[stockId]?.let { points ->
+            val rewritten = points.map { point ->
+                canonicalByDate[point.date]?.let { bar ->
+                    point.copy(
+                        close = bar.close,
+                        volume = bar.volume,
+                        turnoverRate = bar.volume.toDouble() /
+                            stock.sharesOutstanding.toDouble(),
+                    )
+                } ?: point
+            }
+            points.clear()
+            points.addAll(rewritten)
         }
     }
 
@@ -5556,27 +5769,19 @@ internal class SimulatorRuntime(
         val price = requireNotNull(disposition.cashPerUnit).coerceAtLeast(0.0)
         val gross = roundCurrency(price * quantity, stock.currency)
         val paidOn = marketDate(stock.market, at)
-        val taxBreakdown = if (stock.market.isKorean && stock.etfProfile != null) {
-            val acquisitionValueKrw = round(requireNotNull(disposition.entitledCostBasis)).toLong()
-            val positiveGain = (gross.toLong() - acquisitionValueKrw).coerceAtLeast(0L)
-            domesticEtfSaleTaxCalculator.calculate(
-                DomesticEtfSaleTaxRequest(
-                    taxCategory = stock.etfProfile.taxCategory,
-                    grossProceedsKrw = gross.toLong(),
-                    acquisitionValueKrw = acquisitionValueKrw,
-                    taxableStandardGainKrw = round(
-                        positiveGain * stock.etfProfile.taxablePriceGainRatio,
-                    ).toLong(),
-                    soldOn = paidOn,
-                ),
-            )
-        } else {
-            null
-        }
-        val saleTax = taxBreakdown?.totalTax?.amount ?: 0.0
-        cash[stock.currency] = roundCurrency(
-            cash.getValue(stock.currency) + gross - saleTax,
-            stock.currency,
+        val projectedCost = CanonicalTradeCostProjection.project(
+            stock = stock,
+            side = OrderSide.SELL,
+            quantity = quantity,
+            grossCash = gross,
+            tradedOn = paidOn,
+            preSaleAveragePrice = holding.averagePrice,
+            mode = CanonicalTradeCostProjection.Mode.CONTRACTUAL_CASH_SETTLEMENT,
+        )
+        val taxBreakdown = projectedCost.taxBreakdown
+        val saleTax = projectedCost.saleTax
+        cash[stock.currency] = tradeCashBalanceAfter(
+            cash.getValue(stock.currency), OrderSide.SELL, gross, 0.0, saleTax, stock.currency,
         )
         val exchangeRateToKrw = if (stock.currency == Currency.USD) macro.usdKrw else 1.0
         val fifoSale = fifoCostBasisBook.sell(
@@ -5661,6 +5866,7 @@ internal class SimulatorRuntime(
         taxExchangeRatesByTradeId[tradeId] = exchangeRateToKrw
         // This record is created on the contractual cash-payment date, so the settlement FX is
         // already known and must not enter the pending T+ settlement queue.
+        replayTaxAccountingLedger()
         recalculateAnnualTax(paidOn.year)
     }
 
@@ -5679,45 +5885,21 @@ internal class SimulatorRuntime(
         val gross = roundCurrency(price * holding.quantity, stock.currency)
         val tradedOn = marketDate(stock.market, at)
         val settledOn = settlementDate(stock.market, tradedOn)
-        val feeBreakdown = brokerFeeCalculator.calculate(
-            BrokerFeeRequest(
-                market = stock.market,
-                side = OrderSide.SELL,
-                grossAmount = money(gross, stock.currency),
-                quantity = holding.quantity,
-                tradedOn = tradedOn,
-            ),
+        val projectedCost = CanonicalTradeCostProjection.project(
+            stock = stock,
+            side = OrderSide.SELL,
+            quantity = holding.quantity,
+            grossCash = gross,
+            tradedOn = tradedOn,
+            preSaleAveragePrice = holding.averagePrice,
+            mode = CanonicalTradeCostProjection.Mode.REGULAR_EXCHANGE,
         )
-        val commission = feeBreakdown.totalFees.amount
-        val taxBreakdown = when {
-            !stock.market.isKorean -> null
-            stock.etfProfile != null -> {
-                val acquisitionValueKrw = round(holding.averagePrice * holding.quantity).toLong()
-                val positiveGain = (gross.toLong() - acquisitionValueKrw).coerceAtLeast(0L)
-                domesticEtfSaleTaxCalculator.calculate(
-                    DomesticEtfSaleTaxRequest(
-                        taxCategory = stock.etfProfile.taxCategory,
-                        grossProceedsKrw = gross.toLong(),
-                        acquisitionValueKrw = acquisitionValueKrw,
-                        taxableStandardGainKrw = round(
-                            positiveGain * stock.etfProfile.taxablePriceGainRatio,
-                        ).toLong(),
-                        soldOn = tradedOn,
-                    ),
-                )
-            }
-            else -> domesticSaleTaxCalculator.calculate(
-                DomesticSaleTaxRequest(
-                    market = stock.market,
-                    grossProceedsKrw = gross.toLong(),
-                    soldOn = tradedOn,
-                ),
-            )
-        }
-        val saleTax = taxBreakdown?.totalTax?.amount ?: 0.0
-        cash[stock.currency] = roundCurrency(
-            cash.getValue(stock.currency) + gross - commission - saleTax,
-            stock.currency,
+        val feeBreakdown = requireNotNull(projectedCost.feeBreakdown)
+        val commission = projectedCost.commission
+        val taxBreakdown = projectedCost.taxBreakdown
+        val saleTax = projectedCost.saleTax
+        cash[stock.currency] = tradeCashBalanceAfter(
+            cash.getValue(stock.currency), OrderSide.SELL, gross, commission, saleTax, stock.currency,
         )
         val exchangeRateToKrw = if (stock.currency == Currency.USD) macro.usdKrw else 1.0
         val fifoSale = fifoCostBasisBook.sell(
@@ -5800,6 +5982,7 @@ internal class SimulatorRuntime(
         )
         taxExchangeRatesByTradeId[tradeId] = exchangeRateToKrw
         if (stock.market.isUnitedStates) pendingTaxSettlementTradeIds += tradeId
+        replayTaxAccountingLedger()
         recalculateAnnualTax(settledOn.year)
     }
 
@@ -6189,6 +6372,7 @@ internal class SimulatorRuntime(
                 referencePrice = adjustedQuote.price,
                 referencePriceEffectiveAt = effectiveAt,
                 easternTime = local.time,
+                regularSessionClose = regularSessionCloseTime(stock.market, local.date),
             )
             tradingProtectionSnapshot = tradingProtectionSnapshot.copy(
                 usLuldStates = tradingProtectionSnapshot.usLuldStates + (stock.id to adjustedLuld),
@@ -6274,6 +6458,8 @@ internal class SimulatorRuntime(
             }
         }
         applyDynamicShareMultiplier(stock.id, multiplier)
+        rebuildRetainedDailyFactsAfterUnitAdjustment(stock.id)
+        rebaseKrxDailySurveillanceAfterUnitAdjustment()
         adjustedFundFinancialState?.let { fundFinancialStates[stock.id] = it }
         adjustedDailyResetState?.let { dailyResetStates[stock.id] = it }
         adjustedOptionStrategyState?.let { optionStrategyStates[stock.id] = it }
@@ -6297,6 +6483,9 @@ internal class SimulatorRuntime(
             accountingSequence = actionAccountingSequence,
         )
         corporateActionLedger += record
+        if (settledFraction) {
+            replayTaxAccountingLedger().forEach(::recalculateAnnualTax)
+        }
         val ratioLabel = corporateActionRatioLabel(action)
         newsEvents += GameEvent(
             id = "${action.id}:effective",
@@ -6417,33 +6606,17 @@ internal class SimulatorRuntime(
         )
         val tradedOn = marketDate(stock.market, effectiveAt)
         val settledOn = settlementDate(stock.market, tradedOn)
-        val taxBreakdown = when {
-            !stock.market.isKorean -> null
-            stock.etfProfile != null -> {
-                val acquisitionValueKrw = round(holding.averagePrice * remainder).toLong()
-                val positiveTradingGain = (gross.toLong() - acquisitionValueKrw).coerceAtLeast(0L)
-                domesticEtfSaleTaxCalculator.calculate(
-                    DomesticEtfSaleTaxRequest(
-                        taxCategory = stock.etfProfile.taxCategory,
-                        grossProceedsKrw = gross.toLong(),
-                        acquisitionValueKrw = acquisitionValueKrw,
-                        taxableStandardGainKrw = round(
-                            positiveTradingGain * stock.etfProfile.taxablePriceGainRatio,
-                        ).toLong(),
-                        soldOn = tradedOn,
-                    ),
-                )
-            }
-
-            else -> domesticSaleTaxCalculator.calculate(
-                DomesticSaleTaxRequest(
-                    market = stock.market,
-                    grossProceedsKrw = gross.toLong(),
-                    soldOn = tradedOn,
-                ),
-            )
-        }
-        val saleTax = taxBreakdown?.totalTax?.amount ?: 0.0
+        val projectedCost = CanonicalTradeCostProjection.project(
+            stock = stock,
+            side = OrderSide.SELL,
+            quantity = remainder,
+            grossCash = gross,
+            tradedOn = tradedOn,
+            preSaleAveragePrice = holding.averagePrice,
+            mode = CanonicalTradeCostProjection.Mode.CORPORATE_ACTION_CASH_IN_LIEU,
+        )
+        val taxBreakdown = projectedCost.taxBreakdown
+        val saleTax = projectedCost.saleTax
         val exchangeRateToKrw = if (stock.currency == Currency.USD) macro.usdKrw else 1.0
         val fifoSale = fifoCostBasisBook.sell(
             stockId = stock.id,
@@ -6464,9 +6637,8 @@ internal class SimulatorRuntime(
                 realizedProfit = holding.realizedProfit + realized,
             )
         }
-        cash[stock.currency] = roundCurrency(
-            cash.getValue(stock.currency) + gross - saleTax,
-            stock.currency,
+        cash[stock.currency] = tradeCashBalanceAfter(
+            cash.getValue(stock.currency), OrderSide.SELL, gross, 0.0, saleTax, stock.currency,
         )
 
         val orderId = nextId("cash-in-lieu-order")
@@ -6887,14 +7059,17 @@ internal class SimulatorRuntime(
             !isProtectedLedgerNews(event) && event.id !in activeIds
         }
         if (historicalStochasticCount <= MAX_NEWS_EVENTS) return
+        val removedEventIds = mutableSetOf<String>()
         val iterator = newsEvents.listIterator()
         while (iterator.hasNext() && historicalStochasticCount > MAX_NEWS_EVENTS) {
             val event = iterator.next()
             if (!isProtectedLedgerNews(event) && event.id !in activeIds) {
                 iterator.remove()
+                removedEventIds += event.id
                 historicalStochasticCount -= 1
             }
         }
+        removeReadMarkersFor(removedEventIds)
     }
 
     /**
@@ -6939,6 +7114,11 @@ internal class SimulatorRuntime(
             if (remove) removedEventIds += event.id
             remove
         }
+        removeReadMarkersFor(removedEventIds)
+    }
+
+    private fun removeReadMarkersFor(removedEventIds: Set<String>) {
+        if (removedEventIds.isEmpty()) return
         readEventIds.removeAll(removedEventIds)
         readStockNewsEventIds.values.forEach { eventIds -> eventIds.removeAll(removedEventIds) }
         readStockNewsEventIds.entries.removeAll { (_, eventIds) -> eventIds.isEmpty() }
@@ -7112,12 +7292,32 @@ internal class SimulatorRuntime(
     }
 
     private fun appendHistory(stockId: String, bar: PriceBar) {
-        if (bar.volume == 0L) return
-        val bars = history.getValue(stockId)
-        if (bars.size == 1 && bars.first().volume == 0L) bars.clear()
-        bars.addLast(bar)
-        while (bars.size > MAX_RECENT_BARS) bars.removeFirst()
         val stock = stockById.getValue(stockId)
+        if (bar.volume == 0L && (
+                listingLifecycleStates.getValue(stockId).isTerminal ||
+                    GameCalendar.regularTradingFraction(
+                        stock.market,
+                        bar.startTime,
+                        runtimeClosedDates(stock.market, marketDate(stock.market, bar.startTime)),
+                    ) <= 0.0
+                )
+        ) {
+            return
+        }
+        val bars = history.getValue(stockId)
+        if (bars.size == 1 && bars.first().volume == 0L &&
+            bars.first().endTime <= bar.startTime
+        ) {
+            bars.clear()
+        }
+        bars.addLast(bar)
+        CanonicalPriceHistoryRetention.hourly(stock.market, bars.toList()).let { canonicalRetained ->
+            if (canonicalRetained.size != bars.size) {
+                check(canonicalRetained.size <= MAX_RECENT_BARS)
+                bars.clear()
+                bars.addAll(canonicalRetained)
+            }
+        }
         CHART_INTERVALS.forEach { interval -> appendChartPriceHistory(stock, bar, interval) }
     }
 
@@ -7154,7 +7354,25 @@ internal class SimulatorRuntime(
                 ),
             )
         }
-        while (bars.size > MAX_CHART_BARS_PER_INTERVAL) bars.removeFirst()
+        trimChartBars(stock, interval, bars)
+    }
+
+    private fun trimChartBars(
+        stock: StockDefinition,
+        interval: PriceBarInterval,
+        bars: ArrayDeque<PriceBar>,
+    ) {
+        val retained = bars.toList()
+        val canonicalRetained = if (interval == PriceBarInterval.ONE_DAY) {
+            CanonicalPriceHistoryRetention.oneDay(stock.market, retained)
+        } else {
+            retained.takeLast(CanonicalPriceHistoryRetention.CHRONOLOGICAL_ONE_DAY_TAIL)
+        }
+        check(canonicalRetained.size <= MAX_CHART_BARS_PER_INTERVAL)
+        if (canonicalRetained.size != bars.size) {
+            bars.clear()
+            bars.addAll(canonicalRetained)
+        }
     }
 
     private fun belongsToSameChartPeriod(
@@ -7197,19 +7415,27 @@ internal class SimulatorRuntime(
         protectionBeforeObservation: TradingProtectionSnapshot,
         protectionImpact: TurnProtectionImpact,
     ) {
-        for (index in orders.indices) {
+        val candidates = orders.indices.mapNotNull { index ->
             val order = orders[index]
-            if (!order.isOpen || order.status == OrderStatus.PENDING) continue
+            if (!order.isOpen || order.status == OrderStatus.PENDING) return@mapNotNull null
             val stock = stockById.getValue(order.stockId)
-            if (!listingLifecycleStates.getValue(stock.id).isTradable) continue
-            if ((fractions[stock.id] ?: 0.0) <= 0.0) continue
+            if (!listingLifecycleStates.getValue(stock.id).isTradable) return@mapNotNull null
+            if ((fractions[stock.id] ?: 0.0) <= 0.0) return@mapNotNull null
             val bar = bars.getValue(stock.id)
-            if (bar.volume <= 0L) continue
+            if (bar.volume <= 0L) return@mapNotNull null
             val fillPrice = when (order.type) {
                 OrderType.MARKET -> bar.open
                 OrderType.LIMIT -> limitFillPrice(order, bar)
-            } ?: continue
+            } ?: return@mapNotNull null
             val executionAt = firstExecutionTimes[stock.id] ?: bar.startTime
+            Triple(index, fillPrice, executionAt)
+        }.sortedWith(
+            compareBy<Triple<Int, Double, Instant>> { candidate -> candidate.third }
+                .thenBy { candidate -> candidate.first },
+        )
+        for ((index, fillPrice, executionAt) in candidates) {
+            val order = orders[index]
+            val stock = stockById.getValue(order.stockId)
             val newlyRestrictedAt = protectionImpact.firstNewRestrictionAt(stock)
             val executionSnapshot = if (newlyRestrictedAt != null && executionAt < newlyRestrictedAt) {
                 protectionBeforeObservation
@@ -7276,50 +7502,27 @@ internal class SimulatorRuntime(
         val quantity = order.remainingQuantity
         val gross = roundCurrency(price * quantity, stock.currency)
         val tradedOn = marketDate(stock.market, executedAt)
-        val feeBreakdown = brokerFeeCalculator.calculate(
-            BrokerFeeRequest(
-                market = stock.market,
-                side = order.side,
-                grossAmount = money(gross, stock.currency),
-                quantity = quantity,
-                tradedOn = tradedOn,
-            ),
-        )
-        val commission = feeBreakdown.totalFees.amount
         val preSaleHolding = if (order.side == OrderSide.SELL) holdings[stock.id] else null
-        val taxBreakdown = when {
-            order.side != OrderSide.SELL || !stock.market.isKorean -> null
-            stock.etfProfile != null -> {
-                val acquisitionValueKrw = round((preSaleHolding?.averagePrice ?: price) * quantity).toLong()
-                val positiveTradingGain = (gross.toLong() - acquisitionValueKrw).coerceAtLeast(0L)
-                domesticEtfSaleTaxCalculator.calculate(
-                    DomesticEtfSaleTaxRequest(
-                        taxCategory = stock.etfProfile.taxCategory,
-                        grossProceedsKrw = gross.toLong(),
-                        acquisitionValueKrw = acquisitionValueKrw,
-                        taxableStandardGainKrw = round(
-                            positiveTradingGain * stock.etfProfile.taxablePriceGainRatio,
-                        ).toLong(),
-                        soldOn = tradedOn,
-                    ),
-                )
-            }
-            else -> domesticSaleTaxCalculator.calculate(
-                DomesticSaleTaxRequest(
-                    market = stock.market,
-                    grossProceedsKrw = gross.toLong(),
-                    soldOn = tradedOn,
-                ),
-            )
-        }
-        val saleTax = taxBreakdown?.totalTax?.amount ?: 0.0
+        val projectedCost = CanonicalTradeCostProjection.project(
+            stock = stock,
+            side = order.side,
+            quantity = quantity,
+            grossCash = gross,
+            tradedOn = tradedOn,
+            preSaleAveragePrice = preSaleHolding?.averagePrice,
+            mode = CanonicalTradeCostProjection.Mode.REGULAR_EXCHANGE,
+        )
+        val feeBreakdown = requireNotNull(projectedCost.feeBreakdown)
+        val commission = projectedCost.commission
+        val taxBreakdown = projectedCost.taxBreakdown
+        val saleTax = projectedCost.saleTax
         val exchangeRateToKrw = if (stock.currency == Currency.USD) macro.usdKrw else 1.0
         val settledOn = settlementDate(stock.market, tradedOn)
-        val tradeId = nextId("trade")
+        val tradeId: String
 
         if (order.side == OrderSide.BUY) {
-            val required = gross + commission
-            if (!ensureCash(stock.currency, required)) {
+            val required = roundCurrency(gross + commission, stock.currency)
+            if (!ensureCash(stock.currency, required, executedAt)) {
                 orders[index] = order.copy(
                     status = OrderStatus.REJECTED,
                     updatedAt = executedAt,
@@ -7328,7 +7531,10 @@ internal class SimulatorRuntime(
                 lastMessage = "잔고 부족으로 주문이 거부되었습니다."
                 return
             }
-            cash[stock.currency] = roundCurrency(cash.getValue(stock.currency) - required, stock.currency)
+            tradeId = nextId("trade")
+            cash[stock.currency] = tradeCashBalanceAfter(
+                cash.getValue(stock.currency), OrderSide.BUY, gross, commission, 0.0, stock.currency,
+            )
             val previous = holdings[stock.id]
             val newQuantity = (previous?.quantity ?: 0.0) + quantity
             val totalCost = (previous?.costBasis ?: 0.0) + gross + commission
@@ -7361,8 +7567,10 @@ internal class SimulatorRuntime(
                 lastMessage = "보유 수량 부족으로 주문이 거부되었습니다."
                 return
             }
-            val proceeds = gross - commission - saleTax
-            cash[stock.currency] = roundCurrency(cash.getValue(stock.currency) + proceeds, stock.currency)
+            tradeId = nextId("trade")
+            cash[stock.currency] = tradeCashBalanceAfter(
+                cash.getValue(stock.currency), OrderSide.SELL, gross, commission, saleTax, stock.currency,
+            )
             val costBasis = previous.averagePrice * quantity
             val realized = gross - costBasis - commission - saleTax
             val (taxTreatment, assessmentNotes) = assessStockGainTreatment(stock, tradedOn, previous)
@@ -7449,7 +7657,10 @@ internal class SimulatorRuntime(
             averageFilledPrice = price,
             updatedAt = executedAt,
         )
-        if (order.side == OrderSide.SELL) recalculateAnnualTax(settledOn.year)
+        if (order.side == OrderSide.SELL) {
+            replayTaxAccountingLedger()
+            recalculateAnnualTax(settledOn.year)
+        }
     }
 
     private fun validateOrderResources(stock: StockDefinition, request: OrderRequest): Boolean {
@@ -7476,19 +7687,33 @@ internal class SimulatorRuntime(
         val nativeAvailable = cash.getValue(stock.currency) - existingReservation
         if (nativeAvailable + CASH_EPSILON >= estimated) return true
         if (stock.currency == Currency.USD && options.autoExchange) {
-            val usdFromKrw = cash.getValue(Currency.KRW) / macro.usdKrw * (1.0 - FX_SPREAD_RATE)
+            val usdFromKrw = cash.getValue(Currency.KRW) / macro.usdKrw *
+                (1.0 - FOREIGN_EXCHANGE_SPREAD_RATE)
             if (nativeAvailable + usdFromKrw + CASH_EPSILON >= estimated) return true
         }
         return fail("주문 가능 현금이 부족합니다.")
     }
 
-    private fun ensureCash(currency: Currency, required: Double): Boolean {
-        if (cash.getValue(currency) + CASH_EPSILON >= required) return true
+    private fun ensureCash(currency: Currency, required: Double, executedAt: Instant): Boolean {
+        val canonicalRequired = roundCurrency(required, currency)
+        if (cash.getValue(currency) >= canonicalRequired) return true
         if (currency != Currency.USD || !options.autoExchange) return false
-        val shortage = required - cash.getValue(Currency.USD)
-        val krwRequired = shortage * macro.usdKrw / (1.0 - FX_SPREAD_RATE) + 1.0
-        if (!exchangeInternal(Currency.KRW, Currency.USD, krwRequired, automatic = true)) return false
-        return cash.getValue(Currency.USD) + CASH_EPSILON >= required
+        val shortage = roundCurrency(
+            canonicalRequired - cash.getValue(Currency.USD),
+            Currency.USD,
+        )
+        val krwRequired = minimumKrwSourceForUsdReceipt(shortage, macro.usdKrw)
+            ?: return false
+        if (!exchangeInternal(
+                Currency.KRW,
+                Currency.USD,
+                krwRequired,
+                automatic = true,
+                executedAt = executedAt,
+                minimumTargetBalance = canonicalRequired,
+            )
+        ) return false
+        return true
     }
 
     private fun exchangeInternal(
@@ -7496,28 +7721,41 @@ internal class SimulatorRuntime(
         to: Currency,
         sourceAmount: Double,
         automatic: Boolean,
+        executedAt: Instant = currentTime,
+        minimumTargetBalance: Double? = null,
     ): Boolean {
         val roundedSource = roundCurrency(sourceAmount, from)
-        if (roundedSource <= 0.0 || cash.getValue(from) + CASH_EPSILON < roundedSource) {
+        if (roundedSource <= 0.0 || cash.getValue(from) < roundedSource) {
             return fail("환전할 잔고가 부족합니다.")
         }
-        val received = when {
-            from == Currency.KRW && to == Currency.USD ->
-                roundCurrency(roundedSource / macro.usdKrw * (1.0 - FX_SPREAD_RATE), Currency.USD)
-            from == Currency.USD && to == Currency.KRW ->
-                roundCurrency(roundedSource * macro.usdKrw * (1.0 - FX_SPREAD_RATE), Currency.KRW)
-            else -> return fail("지원하지 않는 환전 통화입니다.")
+        if (setOf(from, to) != setOf(Currency.KRW, Currency.USD)) {
+            return fail("지원하지 않는 환전 통화입니다.")
         }
+        val received = canonicalForeignExchangeReceivedAmount(
+            sourceAmount = roundedSource,
+            from = from,
+            to = to,
+            usdKrwRate = macro.usdKrw,
+        )
         if (received <= 0.0) return fail("환전 후 수령 금액이 최소 통화 단위보다 작습니다.")
-        cash[from] = roundCurrency(cash.getValue(from) - roundedSource, from)
-        cash[to] = roundCurrency(cash.getValue(to) + received, to)
-        val spreadCostKrw = when (from) {
-            Currency.KRW -> roundedSource * FX_SPREAD_RATE
-            Currency.USD -> roundedSource * macro.usdKrw * FX_SPREAD_RATE
+        val projectedFromBalance = roundCurrency(cash.getValue(from) - roundedSource, from)
+        val projectedToBalance = roundCurrency(cash.getValue(to) + received, to)
+        if (minimumTargetBalance != null &&
+            projectedToBalance < roundCurrency(minimumTargetBalance, to)
+        ) {
+            return fail("환전 후 수령 금액이 주문 체결 필요액보다 작습니다.")
         }
+        val spreadCostKrw = canonicalForeignExchangeSpreadCostKrw(
+            sourceAmount = roundedSource,
+            from = from,
+            usdKrwRate = macro.usdKrw,
+        )
+        cash[from] = projectedFromBalance
+        cash[to] = projectedToBalance
+        val accountingSequence = nextSequence++
         foreignExchanges += ForeignExchangeRecord(
-            id = nextId("fx"),
-            executedAt = currentTime,
+            id = "fx-${options.seed}-$accountingSequence",
+            executedAt = executedAt,
             fromCurrency = from,
             toCurrency = to,
             sourceAmount = roundedSource,
@@ -7525,8 +7763,241 @@ internal class SimulatorRuntime(
             usdKrwRate = macro.usdKrw,
             spreadCostKrw = spreadCostKrw,
             automatic = automatic,
+            accountingSequence = accountingSequence,
         )
         return true
+    }
+
+    private fun processScheduledEtfDistributions(from: Instant, to: Instant) {
+        val commits = mutableListOf<() -> Unit>()
+        val plannedLastEvaluated = lastEvaluatedDistributionDateByStock.toMutableMap()
+        val plannedPending = pendingDistributionEntitlements.toMutableList()
+        val plannedOrigins = distributionEntitlementOrigins.toMutableList()
+        val plannedDividends = mutableListOf<DividendLedgerEntry>()
+        val plannedCash = cash.toMutableMap()
+        var plannedFifoCostBasisBook = fifoCostBasisBook
+        var plannedNextSequence = nextSequence
+        val affectedTaxYears = linkedSetOf<Int>()
+
+        // First create the legal entitlement and remove the distribution from NAV/quote on ex-date.
+        // The frozen quantity remains payable even if the investor sells before pay date.
+        for (stock in stocks) {
+            if (stock.instrumentType != InstrumentType.ETF) continue
+            if (isInstrumentMatured(stock, to)) continue
+            if (listingLifecycleStates[stock.id]?.isSettlementPending == true) continue
+            val fromDate = marketDate(stock.market, from)
+            val exDate = marketDate(stock.market, to)
+            if (fromDate == exDate) continue
+            val schedule = DistributionSchedule.eventOnExDate(stock, exDate) ?: continue
+            val lastEvaluated = lastEvaluatedDistributionDateByStock[stock.id]
+            require(lastEvaluated == null || lastEvaluated <= exDate) {
+                "Distribution ex-date moved backwards for ${stock.id}: last=$lastEvaluated, next=$exDate"
+            }
+            if (lastEvaluated == exDate) continue
+            plannedLastEvaluated[stock.id] = exDate
+            if (schedule.skip) continue
+
+            val financialState = fundFinancialStates[stock.id] ?: continue
+            // Manager-declared history wins. A future amount must remain independently replayable
+            // from catalog policy; the mutable accrued reserve is accounting memo, not authority.
+            val grossPerUnit = schedule.declaredGrossPerUnit
+                ?: DistributionAmountProjection.projectedGrossPerUnit(stock, schedule.exDate)
+            if (!grossPerUnit.isFinite() || grossPerUnit <= 0.0) continue
+            val quoteBeforeDistribution = quotes.getValue(stock.id)
+            val nextFinancialState = instrumentMetricsEngine.applyFundDistribution(
+                state = financialState,
+                grossPerUnit = grossPerUnit,
+                at = to,
+            )
+            commits += { fundFinancialStates[stock.id] = nextFinancialState }
+
+            val adjustedPrice = MarketMicrostructure.roundNearest(
+                stock,
+                (quoteBeforeDistribution.price - grossPerUnit).coerceAtLeast(
+                    MarketMicrostructure.tickSize(stock, quoteBeforeDistribution.price),
+                ),
+            )
+            val adjustedQuote = quoteBeforeDistribution.copy(
+                price = adjustedPrice,
+                high = maxOf(quoteBeforeDistribution.high, adjustedPrice),
+                low = minOf(quoteBeforeDistribution.low, adjustedPrice),
+                bidPrice = null,
+                askPrice = null,
+                bidQuantity = 0.0,
+                askQuantity = 0.0,
+            )
+            commits += {
+                quotes[stock.id] = adjustedQuote
+                dailyTrackers[stock.id]?.let { tracker ->
+                    tracker.high = maxOf(tracker.high, adjustedPrice)
+                    tracker.low = minOf(tracker.low, adjustedPrice)
+                }
+                holdings[stock.id]?.let { holding ->
+                    holdings[stock.id] = holding.copy(currentPrice = adjustedPrice)
+                }
+            }
+
+            val entitledQuantity = holdings[stock.id]?.quantity ?: 0.0
+            if (entitledQuantity <= 0.0) continue
+            val roundedEntitledGross = roundCurrency(
+                grossPerUnit * entitledQuantity,
+                stock.currency,
+            )
+            if (!roundedEntitledGross.isFinite() || roundedEntitledGross <= 0.0) continue
+            val taxableCoverageRatio =
+                DistributionReturnOfCapitalPolicy.modeledTaxableCoverageRatio(stock)
+            val taxableAmountAtEx = MoneyRoundingPolicy.MINOR_UNIT_HALF_UP.fromMajorUnits(
+                roundedEntitledGross * taxableCoverageRatio,
+                stock.currency,
+            ).amount
+            val returnOfCapitalAtEx = (roundedEntitledGross - taxableAmountAtEx).coerceAtLeast(0.0)
+            val taxBasisExchangeRateToKrw = if (stock.currency == Currency.USD) macro.usdKrw else 1.0
+            val (basisAfterEx, excessReturnOfCapitalGainKrw) =
+                plannedFifoCostBasisBook.applyReturnOfCapital(
+                    stockId = stock.id,
+                    amountKrw = round(returnOfCapitalAtEx * taxBasisExchangeRateToKrw).toLong(),
+                )
+            plannedFifoCostBasisBook = basisAfterEx
+            val origin = DistributionEntitlementOrigin(
+                id = "distribution-origin:${stock.id}:${schedule.exDate}",
+                stockId = stock.id,
+                exDate = schedule.exDate,
+                establishedAt = to,
+                amountBasis = if (schedule.declaredGrossPerUnit == null) {
+                    DistributionAmountBasis.DETERMINISTIC_POLICY_PROJECTION
+                } else {
+                    DistributionAmountBasis.ANNOUNCED
+                },
+                grossPerUnit = grossPerUnit,
+                entitledQuantity = entitledQuantity,
+                taxableCoverageRatio = taxableCoverageRatio,
+                taxBasisExchangeRateToKrw = taxBasisExchangeRateToKrw,
+                returnOfCapitalAmount = returnOfCapitalAtEx,
+                excessReturnOfCapitalGainKrw = excessReturnOfCapitalGainKrw,
+                accruedDistributionPerUnitBeforeEx = financialState.accruedDistributionPerUnit,
+                navPerUnitBeforeEx = financialState.navPerUnit,
+                navPerUnitAfterEx = nextFinancialState.navPerUnit,
+                accountingSequence = plannedNextSequence++,
+            )
+            require(plannedOrigins.none { existing -> existing.id == origin.id }) {
+                "Duplicate distribution origin: ${origin.id}"
+            }
+            val entitlement = PendingDistributionEntitlement(
+                id = "distribution-entitlement:${stock.id}:${schedule.exDate}",
+                originId = origin.id,
+                stockId = stock.id,
+                exDate = schedule.exDate,
+                recordDate = schedule.recordDate,
+                payDate = schedule.payDate,
+                currency = stock.currency,
+                grossPerUnit = grossPerUnit,
+                entitledQuantity = entitledQuantity,
+                taxableCoverageRatio = taxableCoverageRatio,
+            )
+            require(plannedPending.none { existing -> existing.id == entitlement.id }) {
+                "Duplicate distribution entitlement: ${entitlement.id}"
+            }
+            plannedOrigins += origin
+            plannedPending += entitlement
+        }
+
+        // Cash and tax are booked only when the frozen entitlement reaches its pay date.
+        val paidEntitlementIds = linkedSetOf<String>()
+        for (entitlement in plannedPending) {
+            val stock = stockById[entitlement.stockId] ?: continue
+            val origin = plannedOrigins.single { candidate -> candidate.id == entitlement.originId }
+            val fromDate = marketDate(stock.market, from)
+            val payDate = marketDate(stock.market, to)
+            if (fromDate == payDate || payDate != entitlement.payDate) continue
+            val ledgerId = "dividend:${stock.id}:${entitlement.exDate}:$payDate"
+            if (dividends.any { it.id == ledgerId } || plannedDividends.any { it.id == ledgerId }) {
+                paidEntitlementIds += entitlement.id
+                continue
+            }
+            val roundedGross = entitlement.grossReceivableAmount()
+            val canonicalTaxableCoverageRatio =
+                DistributionReturnOfCapitalPolicy.modeledTaxableCoverageRatio(stock)
+            require(
+                entitlement.taxableCoverageRatio.toBits() ==
+                    canonicalTaxableCoverageRatio.toBits(),
+            ) { "ETF 분배 권리의 세무 coverage가 상품의 ROC 정책과 다릅니다." }
+            val taxableGross = roundedGross * canonicalTaxableCoverageRatio
+            val result = dividendTaxCalculator.calculate(
+                DividendTaxRequest(
+                    taxClass = if (stock.market.isKorean) {
+                        DividendTaxClass.KOREAN_ETF_DISTRIBUTION
+                    } else {
+                        DividendTaxClass.US_RIC_ETF_DISTRIBUTION
+                    },
+                    grossAmount = money(taxableGross, stock.currency),
+                    paidOn = payDate,
+                    taxExchangeRateToKrw = if (stock.currency == Currency.USD) macro.usdKrw else 1.0,
+                    w8BenValid = true,
+                    otherFinancialIncomeGrossKrw = CheckedMonetaryArithmetic.sum(
+                        (dividends.asSequence() + plannedDividends.asSequence())
+                            .filter { gameDate(it.paidAt).year == payDate.year }
+                            .map { entry ->
+                                CheckedMonetaryArithmetic.roundedToLong(
+                                    entry.financialIncomeAmountKrw,
+                                    "Dividend financial income",
+                                )
+                            },
+                        "Annual dividend financial income",
+                    ),
+                ),
+            )
+            val roundedTaxableGross = result.breakdown.taxableBase.amount
+            val returnOfCapital = (roundedGross - roundedTaxableGross).coerceAtLeast(0.0)
+            require(returnOfCapital.toBits() == origin.returnOfCapitalAmount.toBits()) {
+                "ETF 분배의 지급일 ROC가 ex-date 확정 금액과 다릅니다."
+            }
+            val tax = result.breakdown.totalTax.amount
+            val net = roundCurrency(result.netCash.amount + returnOfCapital, stock.currency)
+            val exchangeRate = if (stock.currency == Currency.USD) macro.usdKrw else 1.0
+            plannedCash[stock.currency] = roundCurrency(
+                plannedCash.getValue(stock.currency) + net,
+                stock.currency,
+            )
+            plannedDividends += DividendLedgerEntry(
+                id = ledgerId,
+                stockId = stock.id,
+                exDate = entitlement.exDate,
+                recordDate = entitlement.recordDate,
+                paidAt = to,
+                currency = stock.currency,
+                grossPerUnit = entitlement.grossPerUnit,
+                entitledQuantity = entitlement.entitledQuantity,
+                grossAmount = roundedGross,
+                withholdingTax = tax,
+                netAmount = net,
+                exchangeRateToKrw = exchangeRate,
+                taxBreakdown = result.breakdown,
+                taxableIncomeAmount = roundedTaxableGross,
+                returnOfCapitalAmount = origin.returnOfCapitalAmount,
+                excessReturnOfCapitalGainKrw = origin.excessReturnOfCapitalGainKrw,
+                accountingSequence = plannedNextSequence++,
+            )
+            affectedTaxYears += payDate.year
+            paidEntitlementIds += entitlement.id
+        }
+
+        val plannedDividendSnapshot = dividends + plannedDividends
+        val plannedTaxProjections = affectedTaxYears.associateWith { year ->
+            requireNotNull(calculateAnnualTaxProjection(year, plannedDividendSnapshot, realizedGains))
+        }
+        commits.forEach { commit -> commit() }
+        lastEvaluatedDistributionDateByStock.clear()
+        lastEvaluatedDistributionDateByStock.putAll(plannedLastEvaluated)
+        pendingDistributionEntitlements.clear()
+        pendingDistributionEntitlements += plannedPending.filterNot { it.id in paidEntitlementIds }
+        distributionEntitlementOrigins.clear()
+        distributionEntitlementOrigins += plannedOrigins
+        fifoCostBasisBook = plannedFifoCostBasisBook
+        cash.clear()
+        cash.putAll(plannedCash)
+        dividends += plannedDividends
+        nextSequence = plannedNextSequence
+        plannedTaxProjections.forEach { (year, projection) -> applyAnnualTaxProjection(year, projection) }
     }
 
     private fun processScheduledDividends(from: Instant, to: Instant) {
@@ -7543,6 +8014,7 @@ internal class SimulatorRuntime(
         val affectedTaxYears = linkedSetOf<Int>()
 
         for (stock in stocks) {
+            if (stock.instrumentType == InstrumentType.ETF) continue
             if (isInstrumentMatured(stock, to)) continue
             if (listingLifecycleStates[stock.id]?.isSettlementPending == true) continue
             val fromDate = marketDate(stock.market, from)
@@ -7724,21 +8196,15 @@ internal class SimulatorRuntime(
             }
 
             val holding = holdings[stock.id] ?: continue
-            val ledgerId = "dividend:${stock.id}:$payDate"
+            val ledgerId = "dividend:${stock.id}:$payDate:$payDate"
             if (dividends.any { it.id == ledgerId } || plannedDividends.any { it.id == ledgerId }) continue
 
             val gross = holding.quantity * grossPerUnit
-            val rocEligible = stock.market.isUnitedStates && stock.instrumentType in setOf(
-                InstrumentType.ETF,
-                InstrumentType.CLOSED_END_FUND,
+            val taxableCoverage = DistributionReturnOfCapitalPolicy.taxableCoverageRatio(
+                stock = stock,
+                grossPerUnit = grossPerUnit,
+                classifiedReturnOfCapitalPerUnit = classifiedReturnOfCapitalPerUnit,
             )
-            val taxableCoverage = classifiedReturnOfCapitalPerUnit?.let { returnOfCapitalPerUnit ->
-                ((grossPerUnit - returnOfCapitalPerUnit) / grossPerUnit).coerceIn(0.0, 1.0)
-            } ?: if (rocEligible) {
-                stock.behavior.distributionCoverageRatio.coerceIn(0.0, 1.0)
-            } else {
-                1.0
-            }
             val taxableGross = gross * taxableCoverage
             val result = dividendTaxCalculator.calculate(
                 DividendTaxRequest(
@@ -7789,8 +8255,12 @@ internal class SimulatorRuntime(
             plannedDividends += DividendLedgerEntry(
                 id = ledgerId,
                 stockId = stock.id,
+                exDate = payDate,
+                recordDate = payDate,
                 paidAt = to,
                 currency = stock.currency,
+                grossPerUnit = grossPerUnit,
+                entitledQuantity = holding.quantity,
                 grossAmount = roundedGross,
                 withholdingTax = tax,
                 netAmount = net,
@@ -7870,34 +8340,25 @@ internal class SimulatorRuntime(
         }
     }
 
+    /** KOFR의 시작 전 carry는 표시 수익률이 아니라 공식 시작 published rate로 복원한다. */
+    private fun openingAnnualDistributionYield(stock: StockDefinition): Double {
+        val benchmarkRef = stock.fundProductProfile?.benchmarkRef ?: return stock.dividendYield
+        return kofrIndexBenchmarkDefinitions.singleOrNull { definition ->
+            definition.ref == benchmarkRef
+        }?.kofrIndexProfile?.initialPublishedRateAnnual?.coerceAtLeast(0.0)
+            ?: stock.dividendYield
+    }
+
     private fun expireDayOrders(time: Instant) {
         for (index in orders.indices) {
             val order = orders[index]
             if (!order.isOpen || order.timeInForce != TimeInForce.DAY) continue
             val stock = stockById.getValue(order.stockId)
-            val created = GameCalendar.marketLocalDateTime(stock.market, order.createdAt)
-            val now = GameCalendar.marketLocalDateTime(stock.market, time)
-            val close = if (stock.market.isKorean) LocalTime(15, 30) else LocalTime(16, 0)
-            val targetTradingDate = dayOrderTargetTradingDate(stock.market, created.date, created.time, close)
-            if (now.date > targetTradingDate || (now.date == targetTradingDate && now.time >= close)) {
+            val targetClose = canonicalDayOrderSessionClose(stock.market, order.createdAt)
+            if (targetClose == null || time >= targetClose) {
                 orders[index] = order.copy(status = OrderStatus.EXPIRED, updatedAt = time)
             }
         }
-    }
-
-    private fun dayOrderTargetTradingDate(
-        market: Market,
-        createdDate: LocalDate,
-        createdTime: LocalTime,
-        close: LocalTime,
-    ): LocalDate {
-        val createdIsTradingDay = isTradingDate(market, createdDate)
-        if (createdIsTradingDay && createdTime < close) return createdDate
-        var candidate = createdDate.plus(1, DateTimeUnit.DAY)
-        while (!isTradingDate(market, candidate) && candidate <= LocalDate(2040, 12, 31)) {
-            candidate = candidate.plus(1, DateTimeUnit.DAY)
-        }
-        return candidate
     }
 
     private fun isTradingDate(market: Market, date: LocalDate): Boolean {
@@ -8295,11 +8756,16 @@ internal class SimulatorRuntime(
                     quote.price,
                     at,
                     local.time,
+                    regularSessionCloseTime(stock.market, local.date),
                 )
             } else {
                 var transition = TradingProtectionEngine.evaluateUsLuld(
                     luld,
-                    UsLuldObservation(at, local.time),
+                    UsLuldObservation(
+                        observedAt = at,
+                        easternTime = local.time,
+                        regularSessionClose = regularSessionCloseTime(stock.market, local.date),
+                    ),
                 )
                 luld = transition.state
                 if (luld.phase == UsLuldPhase.REOPENING_AUCTION &&
@@ -8312,11 +8778,14 @@ internal class SimulatorRuntime(
                         quote.price,
                         reopensAt,
                         GameCalendar.marketLocalDateTime(stock.market, reopensAt).time,
+                        regularSessionCloseTime(stock.market, luld.tradingDate),
                     )
                     luld = completion.state
                     recordUsLuldTransition(stock, completion.event, luld, reopensAt, beforeReopening)
                 }
-                if (luld.phase == UsLuldPhase.CLOSING_AUCTION_ONLY && local.time >= LocalTime(16, 0)) {
+                if (luld.phase !in setOf(UsLuldPhase.NORMAL, UsLuldPhase.CLOSED_FOR_DAY) &&
+                    at >= regularSessionCloseAt(stock.market, local.date)
+                ) {
                     luld = TradingProtectionEngine.closeUsLuldSession(luld).state
                 }
             }
@@ -8709,6 +9178,9 @@ internal class SimulatorRuntime(
                 tradingDate = local.date,
                 observedAt = observedAt,
                 easternTime = local.time,
+                regularSessionClose = requireNotNull(
+                    regularSessionCloseTime(Market.NYSE, local.date),
+                ),
                 sp500Value = if (crossing == null) snapshot.value else requireNotNull(thresholdValue),
                 previousClose = snapshot.previousClose,
             ),
@@ -8785,6 +9257,7 @@ internal class SimulatorRuntime(
                     referencePrice = bar.close,
                     referencePriceEffectiveAt = to,
                     easternTime = local.time,
+                    regularSessionClose = regularSessionCloseTime(stock.market, local.date),
                 )
             }
             tradingProtectionSnapshot = tradingProtectionSnapshot.copy(usLuldStates = states)
@@ -8864,6 +9337,7 @@ internal class SimulatorRuntime(
                     UsLuldObservation(
                         crossing,
                         GameCalendar.marketLocalDateTime(stock.market, crossing).time,
+                        regularSessionCloseTime(stock.market, state.tradingDate),
                         limitSide = side,
                     ),
                 )
@@ -8874,7 +9348,11 @@ internal class SimulatorRuntime(
                 val beforeTransition = state
                 val transition = TradingProtectionEngine.evaluateUsLuld(
                     state,
-                    UsLuldObservation(deadline, GameCalendar.marketLocalDateTime(stock.market, deadline).time),
+                    UsLuldObservation(
+                        observedAt = deadline,
+                        easternTime = GameCalendar.marketLocalDateTime(stock.market, deadline).time,
+                        regularSessionClose = regularSessionCloseTime(stock.market, state.tradingDate),
+                    ),
                 )
                 state = transition.state
                 recordUsLuldTransition(stock, transition.event, state, deadline, beforeTransition)
@@ -8895,7 +9373,11 @@ internal class SimulatorRuntime(
                 val beforeTransition = state
                 val transition = TradingProtectionEngine.evaluateUsLuld(
                     state,
-                    UsLuldObservation(pauseEnd, GameCalendar.marketLocalDateTime(stock.market, pauseEnd).time),
+                    UsLuldObservation(
+                        observedAt = pauseEnd,
+                        easternTime = GameCalendar.marketLocalDateTime(stock.market, pauseEnd).time,
+                        regularSessionClose = regularSessionCloseTime(stock.market, state.tradingDate),
+                    ),
                 )
                 state = transition.state
                 recordUsLuldTransition(stock, transition.event, state, pauseEnd, beforeTransition)
@@ -8913,6 +9395,7 @@ internal class SimulatorRuntime(
                         reopeningPrice,
                         reopensAt,
                         GameCalendar.marketLocalDateTime(stock.market, reopensAt).time,
+                        regularSessionCloseTime(stock.market, state.tradingDate),
                     )
                     state = transition.state
                     recordUsLuldTransition(stock, transition.event, state, reopensAt, beforeReopening)
@@ -8927,6 +9410,7 @@ internal class SimulatorRuntime(
                     sessionInterval.startsAt,
                     sessionInterval.endsAt,
                     GameCalendar.marketLocalDateTime(stock.market, sessionInterval.endsAt).time,
+                    regularSessionCloseTime(stock.market, state.tradingDate),
                 ).state
             }
             states[stock.id] = state
@@ -9316,8 +9800,10 @@ internal class SimulatorRuntime(
             UsLuldEvent.CLOSING_AUCTION_ONLY -> sessionCloseAt
             UsLuldEvent.TRADING_PAUSE_STARTED -> {
                 val pauseEndsAt = requireNotNull(state.pauseEndsAt)
-                if (GameCalendar.marketLocalDateTime(stock.market, pauseEndsAt).time >=
-                    TradingProtectionRules.US_LULD_CLOSE_ONLY_FROM
+                val regularClose = regularSessionCloseTime(stock.market, state.tradingDate)
+                if (regularClose != null &&
+                    GameCalendar.marketLocalDateTime(stock.market, pauseEndsAt).time >=
+                    TradingProtectionRules.usLuldCloseOnlyFrom(regularClose)
                 ) {
                     sessionCloseAt
                 } else {
@@ -9358,6 +9844,15 @@ internal class SimulatorRuntime(
 
     private fun regularSessionCloseAt(market: Market, tradingDate: LocalDate): Instant =
         regularSessionAt(market, tradingDate).closesAt
+
+    private fun regularSessionCloseTime(market: Market, tradingDate: LocalDate): LocalTime? =
+        GameCalendar.regularSessionWindow(
+            market,
+            tradingDate,
+            runtimeClosedDates(market, tradingDate),
+        )?.let { session ->
+            GameCalendar.marketLocalDateTime(market, session.closesAt).time
+        }
 
     private fun addProtectionNews(
         id: String,
@@ -9405,19 +9900,11 @@ internal class SimulatorRuntime(
         if (returns.isNotEmpty()) benchmarkValue *= 1.0 + returns.average()
     }
 
-    private fun updateDrawdown() {
-        val assets = totalAssetsKrw()
-        peakAssetsKrw = maxOf(peakAssetsKrw, assets)
-        val drawdown = if (peakAssetsKrw == 0.0) 0.0 else (peakAssetsKrw - assets) / peakAssetsKrw
-        maximumDrawdown = maxOf(maximumDrawdown, drawdown)
-    }
-
     private fun recordDailySnapshot(date: LocalDate, timestamp: Instant) {
         val snapshot = portfolioSnapshot(timestamp)
-        // [timestamp] is the boundary at which the completed logical [date] is recorded. At a
-        // midnight boundary its calendar date is therefore the following day, so timestamp-based
-        // replacement would keep deleting the previous day's point. The explicitly stored daily
-        // date is the canonical key for all three aligned histories.
+        // [date] is the canonical replacement key. Normal daily closure records the last
+        // representable instant before the following midnight; debug/final snapshots can instead
+        // replace the same logical date at their exact observation time.
         val replacesExistingDate = dailyStatistics.lastOrNull()?.date == date
         if (replacesExistingDate) {
             require(portfolioSnapshots.isNotEmpty() && benchmarkHistory.isNotEmpty())
@@ -9425,6 +9912,14 @@ internal class SimulatorRuntime(
             benchmarkHistory.removeLast()
         }
         portfolioSnapshots += snapshot
+        dailyClosePerformanceExtrema = if (replacesExistingDate) {
+            PortfolioPerformanceExtrema.derive(
+                initialCapitalKrw = options.initialCapitalKrw,
+                orderedAssetsKrw = portfolioSnapshots.map { point -> point.totalAssetValueKrw },
+            )
+        } else {
+            dailyClosePerformanceExtrema.observe(snapshot.totalAssetValueKrw)
+        }
 
         val previous = dailyStatistics.lastOrNull { it.date != date }
         val dailyReturn = if (previous == null || previous.totalAssetsKrw == 0.0) {
@@ -9439,7 +9934,7 @@ internal class SimulatorRuntime(
             cashValueKrw = snapshot.cashValueKrw,
             stockValueKrw = snapshot.stockValueKrw,
             dailyReturn = dailyReturn,
-            drawdown = if (peakAssetsKrw == 0.0) 0.0 else (peakAssetsKrw - snapshot.totalAssetValueKrw) / peakAssetsKrw,
+            drawdown = dailyClosePerformanceExtrema.drawdownAt(snapshot.totalAssetValueKrw),
             benchmarkValue = benchmarkValue,
             usdKrw = macro.usdKrw,
         )
@@ -9452,17 +9947,29 @@ internal class SimulatorRuntime(
 
     private fun portfolioSnapshot(timestamp: Instant): PortfolioSnapshot = PortfolioSnapshot(
         timestamp = timestamp,
+        accountingSequenceExclusiveUpperBound = nextSequence,
         cashByCurrency = cash.toMap(),
         holdings = holdings.values.toList(),
+        distributionReceivableByCurrency =
+            pendingDistributionEntitlements.distributionReceivableByCurrency(),
         exchangeRatesToKrw = mapOf(Currency.USD to macro.usdKrw),
         initialCapitalKrw = options.initialCapitalKrw,
-        realizedProfitKrw = realizedGains.sumOf(RealizedGainRecord::gainKrw),
+        realizedProfitKrw = CanonicalPortfolioAccountingTotals.realizedProfitKrw(
+            realizedGains.asSequence().map(RealizedGainRecord::taxGainKrw),
+        ),
         cumulativeCommissionKrw = transactionCosts.sumOf(TransactionCostRecord::commissionKrw),
-        cumulativeTaxKrw = transactionCosts.sumOf(TransactionCostRecord::saleTaxKrw) +
-            dividends.sumOf(DividendLedgerEntry::withholdingTaxKrw) +
-            taxPaymentNotices.filter {
-                it.status == com.amond.kmpbook.domain.tax.liability.TaxLiabilityStatus.PAID
-            }.sumOf { it.amountKrw.toDouble() },
+        cumulativeTaxKrw = CanonicalPortfolioAccountingTotals.cumulativeTaxKrw(
+            saleTaxesKrw = transactionCosts.asSequence()
+                .map(TransactionCostRecord::saleTaxKrw),
+            dividendWithholdingTaxesKrw = dividends.asSequence()
+                .map(DividendLedgerEntry::withholdingTaxKrw),
+            paidAnnualTaxesKrw = taxPaymentNotices.asSequence()
+                .filter { notice ->
+                    notice.status ==
+                        com.amond.kmpbook.domain.tax.liability.TaxLiabilityStatus.PAID
+                }
+                .map { notice -> notice.amountKrw.toDouble() },
+        ),
         holdingCostBasisKrw = fifoCostBasisBook.lots.groupBy { it.stockId }
             .mapValues { (_, lots) -> lots.sumOf { it.remainingCostBasisKrw }.toDouble() },
     )
@@ -9472,7 +9979,13 @@ internal class SimulatorRuntime(
         val stockValue = holdings.values.sumOf { holding ->
             holding.marketValue * if (holding.currency == Currency.USD) macro.usdKrw else 1.0
         }
-        return cashValue + stockValue
+        val distributionReceivableValue = pendingDistributionEntitlements
+            .distributionReceivableByCurrency()
+            .entries
+            .sumOf { (currency, amount) ->
+                amount * if (currency == Currency.USD) macro.usdKrw else 1.0
+            }
+        return cashValue + stockValue + distributionReceivableValue
     }
 
     private fun assessStockGainTreatment(
@@ -9480,59 +9993,26 @@ internal class SimulatorRuntime(
         assessedOn: LocalDate,
         preSaleHolding: Holding,
     ): Pair<StockGainTaxTreatment, List<String>> {
-        if (stock.market.isUnitedStates) {
-            return StockGainTaxTreatment.FOREIGN_STANDARD to listOf(
-                "${stock.instrumentType.displayName} 구조로 분류하고 대한민국 거주자의 국외주식 양도소득 규칙을 적용했습니다.",
-            )
-        }
-        stock.etfProfile?.let { profile ->
-            return when (profile.taxCategory) {
-                EtfTaxCategory.KOREAN_DOMESTIC_EQUITY -> StockGainTaxTreatment.DOMESTIC_EXEMPT_SMALL_ON_EXCHANGE to
-                    listOf("국내주식형 ETF 장내 매매차익 비과세와 ETF 증권거래세 면제를 적용했습니다.")
-                EtfTaxCategory.KOREAN_OTHER -> StockGainTaxTreatment.DOMESTIC_ETF_HOLDING_PERIOD_WITHHELD to
-                    listOf("매매차익과 게임 과표기준가격 증가분 중 작은 금액에 15.4%를 원천징수했습니다.")
-                EtfTaxCategory.FOREIGN_LISTED -> error("한국 시장 ETF에 국외상장 세무 분류가 지정되었습니다.")
-            }
-        }
-
-        val priorYear = assessedOn.year - 1
-        val priorSnapshot = portfolioSnapshots
-            .asReversed()
-            .firstOrNull { gameDate(it.timestamp).year == priorYear }
-        val priorHolding = priorSnapshot?.holdings?.firstOrNull { it.stockId == stock.id }
-        val priorQuantity = priorHolding?.quantity ?: 0.0
-        val priorMarketValue = (priorHolding?.marketValue ?: 0.0).coerceAtLeast(0.0).toLong()
-        val currentSharesOutstanding = stockById.getValue(stock.id).sharesOutstanding
-        val priorSharesOutstanding = priorSnapshot?.let { sharesOutstandingAt(stock.id, it.timestamp) }
-            ?: baseStockById.getValue(stock.id).sharesOutstanding
-        val currentOwnershipRatio = (preSaleHolding.quantity / currentSharesOutstanding.toDouble())
-            .coerceIn(0.0, 1.0)
-        val assessment = majorShareholderCalculator.assess(
-            MajorShareholderAssessmentRequest(
-                market = stock.market,
-                assessedOn = assessedOn,
-                priorBusinessYearEndHoldings = listOf(
-                    ShareholderHoldingSnapshot(
-                        ownerId = "game-player",
-                        relation = ShareholderRelation.SELF,
-                        ownershipRatio = (priorQuantity / priorSharesOutstanding.toDouble()).coerceIn(0.0, 1.0),
-                        marketValueKrw = priorMarketValue,
-                    ),
-                ),
-                isLargestShareholderGroup = false,
-                ownershipRatioAfterCurrentYearAcquisition = currentOwnershipRatio,
-            ),
+        val canonicalSnapshotQuantities = CanonicalHoldingQuantityHistory.replay(
+            stocksById = stockById,
+            trades = trades,
+            corporateActions = corporateActionLedger,
+            observationBoundaries = portfolioSnapshots.map { snapshot ->
+                AccountingObservationBoundary(
+                    snapshot.timestamp,
+                    snapshot.accountingSequenceExclusiveUpperBound,
+                )
+            },
         )
-        val treatment = if (assessment.isMajorShareholder) {
-            StockGainTaxTreatment.DOMESTIC_MAJOR_GENERAL
-        } else {
-            StockGainTaxTreatment.DOMESTIC_EXEMPT_SMALL_ON_EXCHANGE
-        }
-        val notes = assessment.notes + listOf(
-            "외부 증권계좌와 친족·경영지배관계인 보유분이 없는 게임 계좌 기준 추정입니다.",
-            "직전 연말 스냅샷과 당해연도 취득 후 게임 계좌 지분율만 반영했습니다.",
+        return StockGainTaxTreatmentResolver.resolve(
+            stock = stockById.getValue(stock.id),
+            assessedOn = assessedOn,
+            assessedAt = currentTime,
+            preSaleQuantity = preSaleHolding.quantity,
+            portfolioSnapshots = portfolioSnapshots,
+            canonicalSnapshotQuantities = canonicalSnapshotQuantities,
+            corporateActions = corporateActionLedger,
         )
-        return treatment to notes
     }
 
     private fun fifoBookMatchesHoldings(): Boolean {
@@ -9561,14 +10041,22 @@ internal class SimulatorRuntime(
             "세무 환율은 유한한 양수여야 합니다."
         }
         taxExchangeRatesByTradeId.putAll(savedRates)
-        pendingTaxSettlementTradeIds += state.pendingTaxSettlementTradeIds
-
-        val tradesById = trades.associateBy(Trade::id)
-        require(pendingTaxSettlementTradeIds.all { tradeId ->
-            val trade = tradesById[tradeId] ?: return@all false
-            stockById.getValue(trade.stockId).market.isUnitedStates &&
-                tradeId in taxExchangeRatesByTradeId
-        }) { "미결제 세무 환율 원장에는 해외 체결만 들어갈 수 있습니다." }
+        val canonicalPendingSettlements = canonicalPendingTaxSettlementTradeIds(
+            trades = trades,
+            stocksById = stockById,
+            currentTime = currentTime,
+        )
+        require(state.pendingTaxSettlementTradeIds == canonicalPendingSettlements) {
+            "미결제 세무 환율 원장이 미국 거래소 체결의 canonical 결제 일정과 다릅니다."
+        }
+        require(
+            pendingTaxSettlementRatesMatchExecutionFacts(
+                pendingTradeIds = canonicalPendingSettlements,
+                transactionCosts = transactionCosts,
+                taxExchangeRatesByTradeId = savedRates,
+            ),
+        ) { "미결제 미국 체결의 세무 환율이 실행 시점 환율 사실과 다릅니다." }
+        pendingTaxSettlementTradeIds += canonicalPendingSettlements
         require(trades.filter { it.currency == Currency.KRW }.all { trade ->
             abs(taxExchangeRatesByTradeId.getValue(trade.id) - 1.0) < TAX_RATE_EPSILON
         }) { "국내 체결의 세무 환율은 1.0이어야 합니다." }
@@ -9578,132 +10066,84 @@ internal class SimulatorRuntime(
      * 체결 원장을 원래 순서 그대로 다시 재생한다. 해외 미결제 체결도 임시 환율로 lot 수량을
      * 유지하고, 결제일에 환율이 확정되면 같은 재생으로 취득가액과 양도가액을 함께 고친다.
      */
-    private fun replayTaxAccountingLedger(): Set<Int> {
-        val gainTemplates = realizedGains.associateBy(RealizedGainRecord::tradeId)
-        val saleIds = trades.filter { it.side == OrderSide.SELL }.map(Trade::id).toSet()
-        require(gainTemplates.keys == saleIds) { "매도 체결과 실현손익 원장이 일치하지 않습니다." }
-
-        var rebuiltBook = FifoCostBasisBook()
-        val rebuiltGains = mutableListOf<RealizedGainRecord>()
-        val actionsById = corporateActionLedger.associateBy(CorporateActionRecord::id)
-        val tradesById = trades.associateBy(Trade::id)
-        val rocById = dividends.filter { it.rocAmount > 0.0 }.associateBy(DividendLedgerEntry::id)
-        val dividendIndexById = dividends.mapIndexed { index, dividend -> dividend.id to index }.toMap()
-        val replayEntries = buildList {
-            corporateActionLedger.forEach { action ->
-                add(
-                    ReplayEntry(
-                        priority = 0,
-                        accountingSequence = action.accountingSequence,
-                        id = action.id,
-                    ),
-                )
+    private fun replayTaxAccountingLedger(requireExistingCanonical: Boolean = false): Set<Int> {
+        val replay = CanonicalTaxAccountingReplay.replay(
+            stocksById = stockById,
+            orders = orders,
+            trades = trades,
+            transactionCosts = transactionCosts,
+            taxExchangeRatesByTradeId = taxExchangeRatesByTradeId,
+            corporateActions = corporateActionLedger,
+            distributionOrigins = distributionEntitlementOrigins,
+            dividendEntries = dividends,
+            portfolioSnapshots = portfolioSnapshots,
+        )
+        require(holdings.keys == replay.nativeHoldingsByStockId.keys &&
+            holdings.all { (stockId, holding) ->
+                val canonical = replay.nativeHoldingsByStockId.getValue(stockId)
+                holding.stockId == canonical.stockId &&
+                    holding.quantity.toBits() == canonical.quantity.toBits() &&
+                    holding.averagePrice.toBits() == canonical.averagePrice.toBits() &&
+                    holding.currency == canonical.currency &&
+                    holding.realizedProfit.toBits() == canonical.realizedProfit.toBits()
             }
-            trades.forEach { trade ->
-                add(
-                    ReplayEntry(
-                        priority = 1,
-                        accountingSequence = trade.accountingSequence,
-                        id = trade.id,
-                    ),
-                )
+        ) { "보유 수량·평균원가·통화·실현손익이 canonical 체결 재생 결과와 다릅니다." }
+        if (requireExistingCanonical) {
+            require(fifoCostBasisBook == replay.fifoCostBasisBook) {
+                "저장된 FIFO 세무원장이 canonical 거래·기업행동·ROC 재생 결과와 다릅니다."
             }
-            dividends.filter { it.rocAmount > 0.0 }.forEach { dividend ->
-                add(
-                    ReplayEntry(
-                        priority = 2,
-                        accountingSequence = dividend.accountingSequence,
-                        id = dividend.id,
-                    ),
-                )
+            require(realizedGains == replay.realizedGains) {
+                "저장된 실현손익 원장이 canonical 거래·FIFO 재생 결과와 다릅니다."
             }
-        }.sortedBy(ReplayEntry::accountingSequence)
-
-        for (entry in replayEntries) {
-            when (entry.priority) {
-                0 -> {
-                    val action = actionsById.getValue(entry.id)
-                    rebuiltBook = rebuiltBook.applyQuantityMultiplier(action.stockId, action.quantityMultiplier)
-                }
-
-                1 -> {
-                    val trade = tradesById.getValue(entry.id)
-                    val stock = stockById.getValue(trade.stockId)
-                    val rate = taxExchangeRatesByTradeId.getValue(trade.id)
-                    val settledOn = trade.settlementDateOverride
-                        ?: settlementDate(stock.market, marketDate(stock.market, trade.executedAt))
-                    val roundedGross = roundCurrency(trade.grossAmount, trade.currency)
-                    if (trade.side == OrderSide.BUY) {
-                        rebuiltBook = rebuiltBook.addPurchase(
-                            lotId = trade.id,
-                            stockId = stock.id,
-                            acquiredOn = settledOn,
-                            quantity = trade.quantity,
-                            purchasePriceKrw = round(roundedGross * rate).toLong(),
-                            directPurchaseCostsKrw = round(trade.commission * rate).toLong(),
-                        )
-                    } else {
-                        val template = gainTemplates.getValue(trade.id)
-                        val sale = rebuiltBook.sell(
-                            stockId = stock.id,
-                            soldOn = settledOn,
-                            quantity = trade.quantity,
-                            grossProceedsKrw = round(roundedGross * rate).toLong(),
-                            directSellingCostsKrw = round((trade.commission + trade.tax) * rate).toLong(),
-                        )
-                        rebuiltBook = sale.updatedBook
-                        rebuiltGains += template.copy(
-                            settlementDate = settledOn,
-                            exchangeRateToKrw = rate,
-                            taxGrossProceedsKrw = sale.grossProceedsKrw,
-                            taxCostBasisKrw = sale.allocatedCostBasisKrw,
-                            taxDirectSellingCostsKrw = sale.directSellingCostsKrw,
-                            taxGainKrw = sale.realizedGainKrw,
-                        )
-                    }
-                }
-
-                2 -> {
-                    val dividend = rocById.getValue(entry.id)
-                    val rocKrw = round(dividend.rocAmount * dividend.exchangeRateToKrw).toLong()
-                    val (updatedBook, excessGainKrw) = rebuiltBook.applyReturnOfCapital(
-                        dividend.stockId,
-                        rocKrw,
-                    )
-                    rebuiltBook = updatedBook
-                    val index = dividendIndexById.getValue(dividend.id)
-                    dividends[index] = dividends[index].copy(
-                        excessReturnOfCapitalGainKrw = excessGainKrw,
-                    )
-                }
-
-                else -> error("지원하지 않는 세무 원장 재생 항목입니다.")
+            require(distributionEntitlementOrigins.all { origin ->
+                replay.originExcessReturnOfCapitalGainKrw.getValue(origin.id) ==
+                    origin.excessReturnOfCapitalGainKrw
+            }) { "저장된 ETF ex-date 초과 ROC 원장이 canonical FIFO 재생 결과와 다릅니다." }
+            require(dividends.all { dividend ->
+                replay.dividendExcessReturnOfCapitalGainKrw.getValue(dividend.id) ==
+                    dividend.excessReturnOfCapitalGainKrw
+            }) { "저장된 분배 초과 ROC 원장이 canonical FIFO 재생 결과와 다릅니다." }
+        } else {
+            for (index in distributionEntitlementOrigins.indices) {
+                val origin = distributionEntitlementOrigins[index]
+                distributionEntitlementOrigins[index] = origin.copy(
+                    excessReturnOfCapitalGainKrw =
+                        replay.originExcessReturnOfCapitalGainKrw.getValue(origin.id),
+                )
             }
         }
-        fifoCostBasisBook = rebuiltBook
+        fifoCostBasisBook = replay.fifoCostBasisBook
         realizedGains.clear()
-        realizedGains += rebuiltGains
-        return buildSet {
-            realizedGains.mapTo(this) { it.settlementDate.year }
-            dividends.filter { it.rocAmount > 0.0 }.mapTo(this) { gameDate(it.paidAt).year }
+        realizedGains += replay.realizedGains
+        for (index in dividends.indices) {
+            val dividend = dividends[index]
+            dividends[index] = dividend.copy(
+                excessReturnOfCapitalGainKrw =
+                    replay.dividendExcessReturnOfCapitalGainKrw.getValue(dividend.id),
+            )
         }
+        return replay.affectedTaxYears
     }
 
     private fun processTaxExchangeRateSettlements(at: Instant) {
-        if (pendingTaxSettlementTradeIds.isEmpty()) return
-        val tradesById = trades.associateBy(Trade::id)
-        val dueTradeIds = pendingTaxSettlementTradeIds.filter { tradeId ->
-            val trade = tradesById.getValue(tradeId)
-            val stock = stockById.getValue(trade.stockId)
-            val settledOn = trade.settlementDateOverride
-                ?: settlementDate(stock.market, marketDate(stock.market, trade.executedAt))
-            marketDate(stock.market, at) >= settledOn
+        val canonicalPendingSettlements = canonicalPendingTaxSettlementTradeIds(
+            trades = trades,
+            stocksById = stockById,
+            currentTime = at,
+        )
+        require(pendingTaxSettlementTradeIds.containsAll(canonicalPendingSettlements)) {
+            "미결제 세무 환율 원장에서 결제 전 미국 거래소 체결이 누락되었습니다."
         }
+        if (pendingTaxSettlementTradeIds.isEmpty()) return
+        val dueTradeIds = pendingTaxSettlementTradeIds - canonicalPendingSettlements
         if (dueTradeIds.isEmpty()) return
 
         for (tradeId in dueTradeIds) {
             taxExchangeRatesByTradeId[tradeId] = macro.usdKrw
             pendingTaxSettlementTradeIds.remove(tradeId)
+        }
+        check(pendingTaxSettlementTradeIds == canonicalPendingSettlements) {
+            "세무 환율 결제 후 미결제 체결 집합이 canonical 일정과 다릅니다."
         }
         val replayedTaxYears = replayTaxAccountingLedger()
         (replayedTaxYears.asSequence() + realizedGains.asSequence()
@@ -9717,114 +10157,25 @@ internal class SimulatorRuntime(
         year: Int,
         dividendEntries: List<DividendLedgerEntry>,
         gainEntries: List<RealizedGainRecord>,
-    ): Pair<AnnualTaxLedger, List<TaxPaymentNotice>>? {
-        if (year !in 2026..2040) return null
-        val tradeGains = gainEntries.filter { it.settlementDate.year == year }.map { record ->
-            RealizedStockGain(
-                id = record.tradeId,
-                stockId = record.stockId,
-                realizedOn = record.settlementDate,
-                gainKrw = record.taxGainKrw,
-                treatment = record.taxTreatment,
-                instrumentTaxClass = if (record.market.isUnitedStates) {
-                    stockById[record.stockId]?.let(::foreignInstrumentTaxClass)
-                        ?: ForeignInstrumentTaxClass.OTHER_FOREIGN_EQUITY
-                } else {
-                    null
-                },
-            )
-        }
-        val yearDividends = dividendEntries.filter { gameDate(it.paidAt).year == year }
-        val rocGains = yearDividends.mapNotNull { entry ->
-            val gain = entry.excessReturnOfCapitalGainKrw
-            if (gain <= 0L) return@mapNotNull null
-            val stock = stockById[entry.stockId] ?: return@mapNotNull null
-            RealizedStockGain(
-                id = "${entry.id}:excess-roc",
-                stockId = entry.stockId,
-                realizedOn = gameDate(entry.paidAt),
-                gainKrw = gain,
-                treatment = StockGainTaxTreatment.FOREIGN_STANDARD,
-                instrumentTaxClass = foreignInstrumentTaxClass(stock),
-            )
-        }
-        val gains = tradeGains + rocGains
-        val dividendFinancialIncomeKrw = CheckedMonetaryArithmetic.sum(
-            yearDividends.asSequence().map { entry ->
-                CheckedMonetaryArithmetic.roundedToLong(
-                    entry.financialIncomeAmountKrw,
-                    "Dividend financial income",
-                )
-            },
-            "Annual dividend financial income",
-        )
-        val domesticEtfFinancialIncomeKrw = CheckedMonetaryArithmetic.sum(
-            gainEntries.asSequence()
-                .filter {
-                    it.settlementDate.year == year &&
-                        it.taxTreatment == StockGainTaxTreatment.DOMESTIC_ETF_HOLDING_PERIOD_WITHHELD
-                }
-                .map(RealizedGainRecord::taxableFinancialIncomeKrw),
-            "Annual domestic ETF financial income",
-        )
-        val financialIncomeGrossKrw = CheckedMonetaryArithmetic.add(
-            dividendFinancialIncomeKrw,
-            domesticEtfFinancialIncomeKrw,
-            "Annual gross financial income",
-        )
-        val foreignTaxPaidKrw = CheckedMonetaryArithmetic.sum(
-            yearDividends.asSequence()
-                .filter { it.currency == Currency.USD }
-                .map { entry ->
-                    CheckedMonetaryArithmetic.roundedToLong(
-                        entry.withholdingTaxKrw,
-                        "Foreign dividend withholding tax",
-                    )
-                },
-            "Annual foreign tax paid",
-        )
-        val withholdingCreditsKrw = CheckedMonetaryArithmetic.sum(
-            gainEntries.asSequence()
-                .filter {
-                    it.settlementDate.year == year &&
-                        it.taxTreatment == StockGainTaxTreatment.DOMESTIC_ETF_HOLDING_PERIOD_WITHHELD
-                }
-                .map { gain ->
-                    CheckedMonetaryArithmetic.roundedToLong(
-                        gain.saleTax * gain.exchangeRateToKrw,
-                        "Domestic ETF withholding credit",
-                    )
-                },
-            "Annual withholding credits",
-        )
-        val ledger = annualStockTaxCalculator.calculate(
-            AnnualStockTaxRequest(
-                taxYear = year,
-                gains = gains,
-                financialIncomeGrossKrw = financialIncomeGrossKrw,
-                foreignTaxPaidKrw = foreignTaxPaidKrw,
-                withholdingCreditsKrw = withholdingCreditsKrw,
-            ),
-        )
-        val notices = ledger.liabilities.map { liability ->
-            TaxPaymentNotice(
-                id = liability.id,
-                taxYear = year,
-                dueDate = liability.dueDate ?: LocalDate(year + 1, 5, 31),
-                amountKrw = liability.payableKrw,
-                status = liability.status,
-                message = "${year}년 ${liability.label} ${liability.payableKrw}원은 " +
-                    "${liability.dueDate ?: LocalDate(year + 1, 5, 31)}까지 납부 예정입니다.",
-            )
-        }
-        return ledger to notices
-    }
+    ): Pair<AnnualTaxLedger, List<TaxPaymentNotice>>? = AnnualTaxProjectionEngine.calculate(
+        year = year,
+        stocksById = stockById,
+        dividendEntries = dividendEntries,
+        gainEntries = gainEntries,
+    )
 
     private fun applyAnnualTaxProjection(
         year: Int,
         projection: Pair<AnnualTaxLedger, List<TaxPaymentNotice>>,
     ) {
-        val (ledger, notices) = projection
+        val paidFacts = taxPaymentNotices.filter { notice ->
+            notice.taxYear == year && notice.status == TaxLiabilityStatus.PAID
+        }
+        val (ledger, notices) = AnnualTaxProjectionEngine.mergeCanonicalProjectionWithPaidFacts(
+            projection = projection,
+            paidFacts = paidFacts,
+            currentTime = currentTime,
+        )
         annualTaxLedgers[year] = ledger
         taxPaymentNotices.removeAll { it.taxYear == year }
         taxPaymentNotices += notices
@@ -9835,16 +10186,6 @@ internal class SimulatorRuntime(
         applyAnnualTaxProjection(year, projection)
     }
 
-    private fun foreignInstrumentTaxClass(stock: StockDefinition): ForeignInstrumentTaxClass =
-        when (stock.instrumentType) {
-            InstrumentType.STOCK -> ForeignInstrumentTaxClass.US_COMMON_STOCK
-            InstrumentType.ETF -> ForeignInstrumentTaxClass.US_ETF_RIC
-            InstrumentType.CLOSED_END_FUND -> ForeignInstrumentTaxClass.US_CLOSED_END_FUND_RIC
-            InstrumentType.ETN -> ForeignInstrumentTaxClass.US_ETN_DEBT_SECURITY
-            InstrumentType.REIT -> ForeignInstrumentTaxClass.US_REIT_USRPI
-            InstrumentType.ADR -> ForeignInstrumentTaxClass.ADR
-        }
-
     private fun processDueTaxPayments(currentDate: LocalDate) {
         for (index in taxPaymentNotices.indices) {
             val notice = taxPaymentNotices[index]
@@ -9854,16 +10195,18 @@ internal class SimulatorRuntime(
                 continue
             }
             val required = notice.amountKrw.toDouble()
-            if (cash.getValue(Currency.KRW) + CASH_EPSILON < required) continue
+            if (cash.getValue(Currency.KRW) < required) continue
             cash[Currency.KRW] = roundCurrency(cash.getValue(Currency.KRW) - required, Currency.KRW)
             taxPaymentNotices[index] = notice.copy(
-                status = com.amond.kmpbook.domain.tax.liability.TaxLiabilityStatus.PAID,
-                message = "${notice.taxYear}년 귀속 세금 ${notice.amountKrw}원을 ${currentDate}에 납부했습니다.",
+                status = TaxLiabilityStatus.PAID,
+                paidAt = currentTime,
+                accountingSequence = nextSequence++,
+                message = AnnualTaxProjectionEngine.paidMessage(notice, currentTime),
             )
             annualTaxLedgers[notice.taxYear]?.let { ledger ->
                 annualTaxLedgers[notice.taxYear] = ledger.copy(
                     liabilities = ledger.liabilities.map { liability ->
-                        if (liability.id == notice.id) liability.copy(status = com.amond.kmpbook.domain.tax.liability.TaxLiabilityStatus.PAID)
+                        if (liability.id == notice.id) liability.copy(status = TaxLiabilityStatus.PAID)
                         else liability
                     },
                 )
@@ -9872,17 +10215,8 @@ internal class SimulatorRuntime(
         }
     }
 
-    private fun settlementDate(market: Market, tradedOn: LocalDate): LocalDate {
-        var date = tradedOn
-        var days = 0
-        val requiredBusinessDays = if (market.isUnitedStates) 1 else 2
-        while (days < requiredBusinessDays) {
-            date = date.plus(1, DateTimeUnit.DAY)
-            val holidays = runtimeClosedDates(market, date)
-            if (date.dayOfWeek !in WEEKEND && date !in holidays) days += 1
-        }
-        return date
-    }
+    private fun settlementDate(market: Market, tradedOn: LocalDate): LocalDate =
+        SecuritiesSettlementCalendar.settlementDate(market, tradedOn)
 
     private fun enterSettlement() {
         currentTime = GameCalendar.endInstant
@@ -9894,24 +10228,13 @@ internal class SimulatorRuntime(
             if (order.isOpen) orders[index] = order.copy(status = OrderStatus.EXPIRED, updatedAt = currentTime)
         }
         updateHoldingPrices()
-        updateDrawdown()
         recalculateAnnualTax(2040)
         recordDailySnapshot(GameCalendar.CAMPAIGN_END_DATE, currentTime)
         lastMessage = GameEndReason.DATE_LIMIT.displayName
     }
 
     private fun marketSessionAtCurrentTime(market: Market): MarketSession {
-        val calendarSession = marketSession(market, currentTime)
-        val protected = if (market.isKorean) {
-            tradingProtectionSnapshot.krxCircuitBreakers[market]?.phase
-                ?.let { it != KrxCircuitBreakerPhase.NORMAL } == true
-        } else {
-            tradingProtectionSnapshot.usMarketWideCircuitBreaker?.let { state ->
-                state.tradingDate == marketDate(market, currentTime) && state.phase != UsMwcbPhase.NORMAL &&
-                    state.venueStatuses[market]?.phase != UsMwcbVenuePhase.REOPENED
-            } == true
-        }
-        return if (protected) MarketSession.CLOSED else calendarSession
+        return canonicalSimulatorMarketSession(market, currentTime, tradingProtectionSnapshot)
     }
 
     private fun marketSession(market: Market, time: Instant): MarketSession {
@@ -10004,36 +10327,15 @@ internal class SimulatorRuntime(
         quote: Quote,
         session: MarketSession,
     ): OrderBookSnapshot {
-        val tracker = dailyTrackers.getValue(stock.id)
         val scheduledActive = scheduledEventEngine.activeImpactEventsAt(currentTime, stocks)
-        val liquidity = EventShockCalculator.liquidityMultiplierAt(
-            activeEvents + scheduledActive,
-            stock,
-            currentTime,
-        )
-        // Negative means a liquidity-providing event. Preserve that sign so positive liquidity
-        // news can thicken the book instead of being erased by a one-sided stress clamp.
-        val eventLiquidityStress = (-ln(liquidity) / ln(5.0)).coerceIn(-1.0, 1.0)
-        val combinedLiquidityStress = if (eventLiquidityStress >= 0.0) {
-            1.0 - (1.0 - macro.liquidityStress) * (1.0 - eventLiquidityStress)
-        } else {
-            macro.liquidityStress * (1.0 + eventLiquidityStress)
-        }.coerceIn(0.0, 1.0)
-        return orderBookEngine.generate(
-            OrderBookGenerationInput(
-                stock = stock,
-                timestamp = currentTime,
-                lastPrice = quote.price,
-                dailyBasePrice = tracker.basePrice,
-                session = session,
-                buyPressure = (
-                    macro.retailOrderFlow * 0.42 + macro.institutionalOrderFlow * 0.58
-                    ).coerceIn(-1.0, 1.0),
-                marketStress = (
-                    combinedLiquidityStress * 0.68 +
-                        ((macro.volatilityRegime - 1.0) / 3.0).coerceAtLeast(0.0) * 0.32
-                    ).coerceIn(0.0, 1.0),
-            ),
+        return canonicalSimulatorOrderBook(
+            campaignSeed = options.seed,
+            stock = stock,
+            quote = quote,
+            session = session,
+            macro = macro,
+            activeEvents = activeEvents + scheduledActive,
+            at = currentTime,
         )
     }
 
@@ -10045,10 +10347,8 @@ internal class SimulatorRuntime(
     private fun money(amount: Double, currency: Currency): MoneyAmount =
         MoneyRoundingPolicy.MINOR_UNIT_HALF_UP.fromMajorUnits(amount.coerceAtLeast(0.0), currency)
 
-    private fun roundCurrency(amount: Double, currency: Currency): Double {
-        val factor = if (currency == Currency.KRW) 1.0 else 100.0
-        return round(amount * factor) / factor
-    }
+    private fun roundCurrency(amount: Double, currency: Currency): Double =
+        roundCurrencyForAccounting(amount, currency)
 
     private fun nextId(prefix: String): String = "$prefix-${options.seed}-${nextSequence++}"
 
@@ -10058,10 +10358,10 @@ internal class SimulatorRuntime(
     }
 
     companion object {
-        /** 장외·거래정지 봉을 제외한 최근 거래 시간봉을 종목별로 보존한다. */
-        const val MAX_RECENT_BARS = 256
-        /** 각 캔들 주기별로 같은 화면 밀도를 유지하는 OHLCV 보존 한도. */
-        const val MAX_CHART_BARS_PER_INTERVAL = 84
+        /** 최근 256개 정규장 구간과 시장감시의 마지막 16개 양(+)거래일을 함께 보존한다. */
+        const val MAX_RECENT_BARS = CanonicalPriceHistoryRetention.MAX_HOURLY_BARS
+        /** 일봉 의사결정 tail을 포함한 주기별 OHLCV 최대 보존 한도. */
+        const val MAX_CHART_BARS_PER_INTERVAL = CanonicalPriceHistoryRetention.MAX_ONE_DAY_BARS
         private const val PRICE_CALCULATION_CHUNK_SIZE = 32
         private val EMPTY_PRICE_IMPULSE = PriceImpulse()
         val CHART_INTERVALS = setOf(
@@ -10072,6 +10372,7 @@ internal class SimulatorRuntime(
         )
         const val MAX_INDEX_BARS = 256
         const val MAX_DAILY_SURVEILLANCE_POINTS = 140
+        private const val MAX_SAFE_PERSISTED_SEQUENCE = Long.MAX_VALUE - 1_000_000L
         const val INVESTMENT_ALERT_NOTICE_TRADING_DAYS = 10
         const val MAX_NEWS_EVENTS = 1_000
         const val MAX_DEBUG_CASH_KRW = 1.0e15
@@ -10095,9 +10396,9 @@ internal class SimulatorRuntime(
         const val DAILY_RESET_STRESS_BORROW_SPREAD = 0.04
         /** 미국 10년 명목곡선 위 게임용 주택담보대출 스프레드 가정이다. */
         const val MODEL_MORTGAGE_SPREAD_ANNUAL = 0.0175
+        const val INITIAL_US_POLICY_RATE = 0.0375
         const val INITIAL_KOREAN_POLICY_RATE = 0.0275
         const val BUY_RESERVE_MULTIPLIER = 1.003
-        const val FX_SPREAD_RATE = 0.001
         const val FX_MEAN_REVERSION = 0.00025
         const val FX_HOURLY_VOLATILITY = 0.0015
         const val FX_CROSS_HOURLY_VOLATILITY = 0.00055
@@ -10168,7 +10469,6 @@ internal class SimulatorRuntime(
         const val MACRO_STREAM_ID = 0x4D4143524FL
         const val DYNAMICS_STREAM_ID = 0x44594E414D494353L
         const val PRICE_STREAM_ID = 0x5052494345L
-        const val KOFR_STREAM_ID = 0x4B4F4652L
         const val BOOK_STREAM_ID = 0x424F4F4BL
         const val EVENT_STREAM_ID = 0x4556454E54L
         val WEEKEND = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
@@ -10177,8 +10477,11 @@ internal class SimulatorRuntime(
         fun restore(
             state: SimulatorUiState,
             catalog: InstrumentCatalogSnapshot,
-        ): SimulatorRuntime? = runCatching {
-            SimulatorRuntime(state.options, catalog).apply { restoreFrom(state) }
-        }.getOrNull()
+        ): SimulatorRuntime? {
+            if (validateSimulatorUiState(state, catalog) != null) return null
+            return runCatching {
+                SimulatorRuntime(state.options, catalog).apply { restoreFrom(state) }
+            }.getOrNull()
+        }
     }
 }

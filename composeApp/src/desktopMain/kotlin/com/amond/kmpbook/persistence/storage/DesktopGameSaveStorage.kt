@@ -73,6 +73,7 @@ import com.amond.kmpbook.domain.model.fundstructure.EtnSettlementValuationMethod
 import com.amond.kmpbook.domain.model.fundstructure.FundStructureModelParameterOrigin
 import com.amond.kmpbook.domain.model.fundstructure.FundStructureTermsProvenance
 import com.amond.kmpbook.domain.model.instrument.EtfExposureRegion
+import com.amond.kmpbook.domain.model.instrument.DistributionAmountBasis
 import com.amond.kmpbook.domain.model.instrument.InstrumentType
 import com.amond.kmpbook.domain.model.instrument.MAX_FUND_REFERENCE_VALUE
 import com.amond.kmpbook.domain.model.instrument.MIN_FUND_REFERENCE_VALUE
@@ -84,6 +85,8 @@ import com.amond.kmpbook.domain.model.market.IndustrySegment
 import com.amond.kmpbook.domain.model.market.Market
 import com.amond.kmpbook.domain.model.market.Currency
 import com.amond.kmpbook.domain.model.market.ReferenceCurrency
+import com.amond.kmpbook.domain.tax.liability.TaxLiabilityStatus
+import com.amond.kmpbook.domain.tax.liability.StockGainTaxTreatment
 import com.amond.kmpbook.domain.model.market.Sector
 import com.amond.kmpbook.domain.model.reference.CreditQuality
 import com.amond.kmpbook.domain.model.reference.AlternativeRiskPremiaState
@@ -114,6 +117,8 @@ import com.amond.kmpbook.domain.model.protection.core.TradingHaltStatus
 import com.amond.kmpbook.domain.model.schedule.ScheduledEventKind
 import com.amond.kmpbook.domain.tax.core.TaxCategory
 import com.amond.kmpbook.domain.tax.core.TaxJurisdiction
+import com.amond.kmpbook.domain.tax.fee.FeeCategory
+import com.amond.kmpbook.domain.tax.fee.FeeJurisdiction
 import com.amond.kmpbook.modding.model.ActiveModConfiguration
 import com.amond.kmpbook.persistence.model.GameSaveEnvelope
 import com.amond.kmpbook.persistence.model.GameSaveError
@@ -134,6 +139,7 @@ import com.amond.kmpbook.persistence.result.GameSaveResult
 import com.amond.kmpbook.persistence.result.GameSaveSuccess
 import com.amond.kmpbook.persistence.validation.validateSimulatorUiStateIntrinsic
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
+import com.amond.kmpbook.presentation.portfolio.roundCurrencyForAccounting
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -356,6 +362,7 @@ actual class GameSaveStorage actual constructor() {
             )
         }
         var rawTemporaryPath: Path? = null
+        var typedStructureTemporaryPath: Path? = null
         try {
             if (!Files.exists(targetPath, LinkOption.NOFOLLOW_LINKS)) {
                 return@withContext GameLoadNotFound(targetPath.toString())
@@ -422,6 +429,10 @@ actual class GameSaveStorage actual constructor() {
                 }
                 header
             }
+            val rawStructureDigest = readStrictRawJson(
+                rawPath,
+                GameSaveJsonStructureDigest::fromJsonReader,
+            )
             val validatedMetadata = readStrictRawJson(rawPath, ::validateEnvelopeJson)
             if (!header.matches(validatedMetadata)) {
                 throw JsonParseException("저장 프레임 metadata와 JSON envelope가 일치하지 않습니다.")
@@ -439,11 +450,25 @@ actual class GameSaveStorage actual constructor() {
                     .onUnmappableCharacter(CodingErrorAction.REPORT)
                 JsonReader(InputStreamReader(input, decoder)).use(::parseTypedEnvelope)
             }
+            val typedStructurePath = createPrivateTemporaryFile(
+                targetDirectory,
+                ".market-ledger-shape-",
+                ".tmp",
+            )
+            typedStructureTemporaryPath = typedStructurePath
+            writeTypedEnvelopeForStructure(envelope, typedStructurePath)
+            val typedStructureDigest = readStrictRawJson(
+                typedStructurePath,
+                GameSaveJsonStructureDigest::fromJsonReader,
+            )
             if (secondPassRaw.count != header.rawLength ||
                 !MessageDigest.isEqual(secondPassRaw.digest(), header.rawSha256) ||
+                !MessageDigest.isEqual(rawStructureDigest, typedStructureDigest) ||
                 envelope.metadata() != validatedMetadata || !header.matches(envelope.metadata())
             ) {
-                throw JsonParseException("검증·복원 pass 사이에 raw payload 또는 metadata가 달라졌습니다.")
+                throw JsonParseException(
+                    "검증·복원 pass 사이에 raw payload, JSON 구조 또는 metadata가 달라졌습니다.",
+                )
             }
             val validationError = validateSimulatorUiStateIntrinsic(envelope.state)
             if (validationError != null) {
@@ -495,6 +520,7 @@ actual class GameSaveStorage actual constructor() {
             } ?: corrupted(targetPath, "저장 상태를 복원하지 못했습니다: ${safeMessage(error)}", error)
         } finally {
             rawTemporaryPath?.let { path -> runCatching { Files.deleteIfExists(path) } }
+            typedStructureTemporaryPath?.let { path -> runCatching { Files.deleteIfExists(path) } }
         }
     }
 
@@ -671,6 +697,29 @@ actual class GameSaveStorage actual constructor() {
             throw JsonParseException("JSON 뒤에 추가 데이터가 있습니다.")
         }
         return envelope
+    }
+
+    private fun writeTypedEnvelopeForStructure(
+        envelope: GameSaveEnvelope,
+        path: Path,
+    ) {
+        val limited = LimitedCountingOutputStream(
+            BufferedOutputStream(
+                Files.newOutputStream(
+                    path,
+                    StandardOpenOption.WRITE,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                ),
+                SAVE_STREAM_BUFFER_BYTES,
+            ),
+            MAX_UNCOMPRESSED_GAME_SAVE_BYTES,
+        )
+        OutputStreamWriter(limited, StandardCharsets.UTF_8).use { writer ->
+            gson.newJsonWriter(writer).use { jsonWriter ->
+                jsonWriter.strictness = Strictness.STRICT
+                gson.toJson(envelope, GameSaveEnvelope::class.java, jsonWriter)
+            }
+        }
     }
 
     private fun <T> readStrictRawJson(path: Path, block: (JsonReader) -> T): T =
@@ -928,11 +977,14 @@ actual class GameSaveStorage actual constructor() {
             return true
         }
 
-        fun JsonObject.requireReferencePortfolioCorporateAction(field: String, path: String) {
+        fun JsonObject.requireReferencePortfolioCorporateAction(
+            field: String,
+            path: String,
+        ): LocalDate? {
             requireMember(field)
             val element = get(field)
-            if (element.isJsonNull) return
-            element.requireObject(path).apply {
+            if (element.isJsonNull) return null
+            return element.requireObject(path).run {
                 requireExactFields(REFERENCE_PORTFOLIO_CORPORATE_ACTION_FIELDS, path)
                 val eventId = requiredStrictString("eventId", "$path.eventId")
                 if (!REFERENCE_EVENT_ID.matches(eventId)) {
@@ -1010,6 +1062,7 @@ actual class GameSaveStorage actual constructor() {
                 if (!validKindStructure) {
                     throw JsonParseException("필드 '$path'의 기업행동 종류별 구조가 유효하지 않습니다.")
                 }
+                effectiveDate
             }
         }
 
@@ -1222,6 +1275,18 @@ actual class GameSaveStorage actual constructor() {
 
         state.requiredObject("options").apply {
             requireExactFields(NEW_GAME_OPTIONS_FIELDS, "state.options")
+            val initialCapitalKrw = requiredFiniteDouble(
+                "initialCapitalKrw",
+                "state.options.initialCapitalKrw",
+            )
+            if (initialCapitalKrw < NewGameOptions.MIN_INITIAL_CAPITAL_KRW ||
+                initialCapitalKrw.toBits() !=
+                roundCurrencyForAccounting(initialCapitalKrw, Currency.KRW).toBits()
+            ) {
+                throw JsonParseException(
+                    "필드 'state.options.initialCapitalKrw'는 최소 자금 이상의 원 단위여야 합니다.",
+                )
+            }
             val scenarioName = requiredString("scenarioName")
             if (scenarioName.isBlank() || scenarioName.length > NewGameOptions.MAX_GAME_LABEL_LENGTH) {
                 throw JsonParseException("필드 'state.options.scenarioName'의 길이가 올바르지 않습니다.")
@@ -1391,6 +1456,16 @@ actual class GameSaveStorage actual constructor() {
                     throw JsonParseException("필드 '$path.unitsOrNotesOutstanding'는 0보다 커야 합니다.")
                 }
                 requiredFiniteDouble("lastNetFlow", "$path.lastNetFlow")
+                val accruedDistribution = requiredFiniteDouble(
+                    "accruedDistributionPerUnit",
+                    "$path.accruedDistributionPerUnit",
+                )
+                if (accruedDistribution !in 0.0..MAX_FUND_REFERENCE_VALUE) {
+                    throw JsonParseException(
+                        "필드 '$path.accruedDistributionPerUnit'는 0과 " +
+                            "${MAX_FUND_REFERENCE_VALUE} 사이여야 합니다.",
+                    )
+                }
                 requireUnitAdjustmentMarker(path)
                 requiredStrictString("asOf", "$path.asOf")
             }
@@ -1511,7 +1586,8 @@ actual class GameSaveStorage actual constructor() {
                         )
                         if (hasTransitionBaselineWeights !=
                             (kind == ReferencePortfolioActionKind
-                                .SCHEDULED_RECONSTITUTION_TRANSITION)
+                                .SCHEDULED_RECONSTITUTION_TRANSITION ||
+                                kind == ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION)
                         ) {
                             throw JsonParseException(
                                 "필드 '$planPath.transitionBaselineWeights'가 행동 종류와 맞지 않습니다.",
@@ -1526,6 +1602,10 @@ actual class GameSaveStorage actual constructor() {
                             "$planPath.addedAssetIds",
                         )
                         requireReferenceAssetIdArray("removedAssetIds", "$planPath.removedAssetIds")
+                        val corporateEventEffectiveDate = requireReferencePortfolioCorporateAction(
+                            "corporateAction",
+                            "$planPath.corporateAction",
+                        )
                         val hasWeightReferenceMarketValues = requireWeightReferenceMarketValues(
                             "weightReferenceMarketValues",
                             "$planPath.weightReferenceMarketValues",
@@ -1538,11 +1618,16 @@ actual class GameSaveStorage actual constructor() {
                             ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
                             ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
                             -> true
-                            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION_TRANSITION -> false
+                            ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION_TRANSITION,
+                            ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION,
+                            -> false
                             ReferencePortfolioActionKind.CONSTITUENT_MERGER,
                             ReferencePortfolioActionKind.SPIN_OFF_ADDITION,
                             ReferencePortfolioActionKind.TERMINAL_REMOVAL,
-                            -> addedAssetIds.isNotEmpty()
+                            -> addedAssetIds.isNotEmpty() ||
+                                corporateEventEffectiveDate?.let { eventDate ->
+                                    effectiveDate > eventDate
+                                } == true
                             ReferencePortfolioActionKind.EXTRAORDINARY_REMOVAL,
                             ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
                             -> false
@@ -1552,10 +1637,6 @@ actual class GameSaveStorage actual constructor() {
                                 "필드 '$planPath.weightReferenceMarketValues'가 행동 종류와 맞지 않습니다.",
                             )
                         }
-                        requireReferencePortfolioCorporateAction(
-                            "corporateAction",
-                            "$planPath.corporateAction",
-                        )
                     }
                 }
                 listOf("lastTurnoverRate", "estimatedAnnualIncomeYield").forEach { field ->
@@ -3047,13 +3128,204 @@ actual class GameSaveStorage actual constructor() {
             requiredInt("usCircuitBreakerLevel")
         }
         state.requiredArray("portfolioSnapshots").forEachIndexed { index, element ->
-            element.requireObject("state.portfolioSnapshots[$index]")
-                .requiredObject("holdingCostBasisKrw")
+            val path = "state.portfolioSnapshots[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(PORTFOLIO_SNAPSHOT_FIELDS, path)
+                requiredInstant("timestamp", "$path.timestamp")
+                if (requiredLong(
+                        "accountingSequenceExclusiveUpperBound",
+                        "$path.accountingSequenceExclusiveUpperBound",
+                    ) < 0L
+                ) {
+                    throw JsonParseException(
+                        "필드 '$path.accountingSequenceExclusiveUpperBound'는 0 이상이어야 합니다.",
+                    )
+                }
+                val cash = requiredEnumFiniteDoubleMap<Currency>(
+                    "cashByCurrency",
+                    "$path.cashByCurrency",
+                )
+                if (cash.values.any { amount -> amount < 0.0 }) {
+                    throw JsonParseException("필드 '$path.cashByCurrency'의 금액이 유효하지 않습니다.")
+                }
+                requiredArray("holdings")
+                val receivables = requiredEnumFiniteDoubleMap<Currency>(
+                    "distributionReceivableByCurrency",
+                    "$path.distributionReceivableByCurrency",
+                )
+                if (receivables.values.any { amount ->
+                        amount <= 0.0 || amount > MAX_FUND_REFERENCE_VALUE
+                    }
+                ) {
+                    throw JsonParseException(
+                        "필드 '$path.distributionReceivableByCurrency'의 금액이 유효하지 않습니다.",
+                    )
+                }
+                val exchangeRates = requiredEnumFiniteDoubleMap<Currency>(
+                    "exchangeRatesToKrw",
+                    "$path.exchangeRatesToKrw",
+                )
+                if (exchangeRates.values.any { rate -> rate <= 0.0 }) {
+                    throw JsonParseException("필드 '$path.exchangeRatesToKrw'의 환율이 유효하지 않습니다.")
+                }
+                listOf(
+                    "initialCapitalKrw",
+                    "cumulativeCommissionKrw",
+                    "cumulativeTaxKrw",
+                ).forEach { field ->
+                    if (requiredFiniteDouble(field, "$path.$field") < 0.0) {
+                        throw JsonParseException("필드 '$path.$field'는 0 이상이어야 합니다.")
+                    }
+                }
+                requiredFiniteDouble("realizedProfitKrw", "$path.realizedProfitKrw")
+                val holdingCosts = requiredObject("holdingCostBasisKrw")
+                holdingCosts.entrySet().forEach { (stockId, _) ->
+                    if (stockId.isBlank() ||
+                        holdingCosts.requiredFiniteDouble(
+                            stockId,
+                            "$path.holdingCostBasisKrw.$stockId",
+                        ) < 0.0
+                    ) {
+                        throw JsonParseException("필드 '$path.holdingCostBasisKrw'의 원가가 유효하지 않습니다.")
+                    }
+                }
+            }
+        }
+        state.requiredArray("dailyStatistics").forEachIndexed { index, element ->
+            val path = "state.dailyStatistics[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(DAILY_PORTFOLIO_STAT_FIELDS, path)
+                requiredLocalDate("date", "$path.date")
+                listOf(
+                    "totalAssetsKrw",
+                    "cashValueKrw",
+                    "stockValueKrw",
+                    "dailyReturn",
+                    "drawdown",
+                    "benchmarkValue",
+                    "usdKrw",
+                ).forEach { field -> requiredFiniteDouble(field, "$path.$field") }
+            }
+        }
+        state.requiredArray("orders").forEachIndexed { index, element ->
+            val path = "state.orders[$index]"
+            element.requireObject(path).requireExactFields(ORDER_FIELDS, path)
         }
         state.requiredArray("trades").forEachIndexed { index, element ->
-            element.requireObject("state.trades[$index]").apply {
+            val path = "state.trades[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(TRADE_FIELDS, path)
                 required("settlementKind")
                 required("accountingSequence")
+            }
+        }
+        state.requiredArray("transactionCosts").forEachIndexed { index, element ->
+            val path = "state.transactionCosts[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(TRANSACTION_COST_FIELDS, path)
+                requiredBoundedNonBlankString("tradeId", "$path.tradeId", 200)
+                requiredBoundedNonBlankString("stockId", "$path.stockId", 200)
+                requiredEnum<Market>("market", "$path.market")
+                requiredInstant("paidAt", "$path.paidAt")
+                requiredEnum<Currency>("currency", "$path.currency")
+                listOf("commission", "saleTax").forEach { field ->
+                    if (requiredFiniteDouble(field, "$path.$field") < 0.0) {
+                        throw JsonParseException("필드 '$path.$field'는 0 이상이어야 합니다.")
+                    }
+                }
+                if (requiredFiniteDouble("exchangeRateToKrw", "$path.exchangeRateToKrw") <= 0.0) {
+                    throw JsonParseException("필드 '$path.exchangeRateToKrw'는 0보다 커야 합니다.")
+                }
+                requireMember("feeBreakdown")
+                get("feeBreakdown").takeUnless(JsonElement::isJsonNull)?.requireObject(
+                    "$path.feeBreakdown",
+                )?.requireFeeBreakdown("$path.feeBreakdown")
+                requireMember("taxBreakdown")
+                get("taxBreakdown").takeUnless(JsonElement::isJsonNull)?.requireObject(
+                    "$path.taxBreakdown",
+                )?.requireTaxBreakdown("$path.taxBreakdown")
+            }
+        }
+        state.requiredArray("realizedGains").forEachIndexed { index, element ->
+            val path = "state.realizedGains[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(REALIZED_GAIN_RECORD_FIELDS, path)
+                requiredBoundedNonBlankString("tradeId", "$path.tradeId", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                requiredBoundedNonBlankString("stockId", "$path.stockId", MAX_REFERENCE_ASSET_ID_LENGTH)
+                requiredEnum<Market>("market", "$path.market")
+                requiredInstant("soldAt", "$path.soldAt")
+                requiredLocalDate("settlementDate", "$path.settlementDate")
+                listOf(
+                    "quantity",
+                    "proceeds",
+                    "costBasis",
+                    "commission",
+                    "saleTax",
+                    "exchangeRateToKrw",
+                ).forEach { field ->
+                    val value = requiredFiniteDouble(field, "$path.$field")
+                    if (value < 0.0 || field in setOf("quantity", "exchangeRateToKrw") && value == 0.0) {
+                        throw JsonParseException("필드 '$path.$field'의 금액·수량이 유효하지 않습니다.")
+                    }
+                }
+                requiredEnum<Currency>("currency", "$path.currency")
+                requiredEnum<StockGainTaxTreatment>("taxTreatment", "$path.taxTreatment")
+                requiredArray("assessmentNotes").forEachIndexed { noteIndex, noteElement ->
+                    val notePath = "$path.assessmentNotes[$noteIndex]"
+                    val note = noteElement.requireStrictString(notePath)
+                    if (note.length > MAX_TAX_WARNING_LENGTH || note.any(Char::isISOControl)) {
+                        throw JsonParseException("필드 '$notePath'의 길이·문자가 유효하지 않습니다.")
+                    }
+                }
+                listOf(
+                    "taxGrossProceedsKrw",
+                    "taxCostBasisKrw",
+                    "taxDirectSellingCostsKrw",
+                    "taxableFinancialIncomeKrw",
+                ).forEach { field ->
+                    if (requiredLong(field, "$path.$field") < 0L) {
+                        throw JsonParseException("필드 '$path.$field'는 음수일 수 없습니다.")
+                    }
+                }
+                requiredLong("taxGainKrw", "$path.taxGainKrw")
+            }
+        }
+        state.requiredObject("fifoCostBasisBook").apply {
+            val path = "state.fifoCostBasisBook"
+            requireExactFields(FIFO_COST_BASIS_BOOK_FIELDS, path)
+            val lotIds = requiredArray("lots").mapIndexed { index, element ->
+                val lotPath = "$path.lots[$index]"
+                element.requireObject(lotPath).apply {
+                    requireExactFields(TAX_LOT_FIELDS, lotPath)
+                    requiredBoundedNonBlankString(
+                        "lotId",
+                        "$lotPath.lotId",
+                        MAX_REFERENCE_LEDGER_ID_LENGTH,
+                    )
+                    requiredBoundedNonBlankString(
+                        "stockId",
+                        "$lotPath.stockId",
+                        MAX_REFERENCE_ASSET_ID_LENGTH,
+                    )
+                    requiredLocalDate("acquiredOn", "$lotPath.acquiredOn")
+                    if (requiredFiniteDouble(
+                            "remainingQuantity",
+                            "$lotPath.remainingQuantity",
+                        ) <= 0.0
+                    ) {
+                        throw JsonParseException("필드 '$lotPath.remainingQuantity'는 양수여야 합니다.")
+                    }
+                    if (requiredLong(
+                            "remainingCostBasisKrw",
+                            "$lotPath.remainingCostBasisKrw",
+                        ) < 0L
+                    ) {
+                        throw JsonParseException("필드 '$lotPath.remainingCostBasisKrw'는 음수일 수 없습니다.")
+                    }
+                }.requiredStrictString("lotId", "$lotPath.lotId")
+            }
+            if (lotIds.distinct().size != lotIds.size) {
+                throw JsonParseException("필드 '$path.lots'의 lot ID가 중복되었습니다.")
             }
         }
         state.requiredObject("lastEvaluatedDistributionDateByStock").entrySet().forEach { (stockId, element) ->
@@ -3063,15 +3335,127 @@ actual class GameSaveStorage actual constructor() {
             gson.fromJson(element, LocalDate::class.java)
                 ?: throw JsonParseException("분배 평가 날짜 맵의 날짜를 복원할 수 없습니다.")
         }
+        state.requiredArray("pendingDistributionEntitlements").forEachIndexed { index, element ->
+            val path = "state.pendingDistributionEntitlements[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(PENDING_DISTRIBUTION_ENTITLEMENT_FIELDS, path)
+                requiredBoundedNonBlankString("id", "$path.id", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                requiredBoundedNonBlankString("originId", "$path.originId", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                requiredBoundedNonBlankString("stockId", "$path.stockId", MAX_REFERENCE_ASSET_ID_LENGTH)
+                val exDate = requiredLocalDate("exDate", "$path.exDate")
+                val recordDate = requiredLocalDate("recordDate", "$path.recordDate")
+                val payDate = requiredLocalDate("payDate", "$path.payDate")
+                if (exDate > recordDate || recordDate > payDate) {
+                    throw JsonParseException(
+                        "필드 '$path.exDate/$path.recordDate/$path.payDate'의 날짜 순서가 유효하지 않습니다.",
+                    )
+                }
+                val currency = requiredEnum<Currency>("currency", "$path.currency")
+                fun requiredPositiveFundValue(field: String): Double {
+                    val value = requiredFiniteDouble(field, "$path.$field")
+                    if (value <= 0.0 || value > MAX_FUND_REFERENCE_VALUE) {
+                        throw JsonParseException(
+                            "필드 '$path.$field'는 0보다 크고 ${MAX_FUND_REFERENCE_VALUE} 이하여야 합니다.",
+                        )
+                    }
+                    return value
+                }
+                val grossPerUnit = requiredPositiveFundValue("grossPerUnit")
+                val entitledQuantity = requiredPositiveFundValue("entitledQuantity")
+                val grossClaim = grossPerUnit * entitledQuantity
+                val minorUnitFactor = if (currency == Currency.KRW) 1.0 else 100.0
+                val roundedGrossClaim = kotlin.math.round(grossClaim * minorUnitFactor) /
+                    minorUnitFactor
+                if (!grossClaim.isFinite() || roundedGrossClaim <= 0.0 ||
+                    roundedGrossClaim > MAX_FUND_REFERENCE_VALUE
+                ) {
+                    throw JsonParseException(
+                        "필드 '$path.grossPerUnit/$path.entitledQuantity'의 gross 청구액이 유효하지 않습니다.",
+                    )
+                }
+                val taxableCoverage = requiredFiniteDouble(
+                    "taxableCoverageRatio",
+                    "$path.taxableCoverageRatio",
+                )
+                if (taxableCoverage !in 0.0..1.0) {
+                    throw JsonParseException("필드 '$path.taxableCoverageRatio'는 0과 1 사이여야 합니다.")
+                }
+            }
+        }
+        state.requiredArray("distributionEntitlementOrigins").forEachIndexed { index, element ->
+            val path = "state.distributionEntitlementOrigins[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(DISTRIBUTION_ENTITLEMENT_ORIGIN_FIELDS, path)
+                requiredBoundedNonBlankString("id", "$path.id", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                requiredBoundedNonBlankString("stockId", "$path.stockId", MAX_REFERENCE_ASSET_ID_LENGTH)
+                requiredLocalDate("exDate", "$path.exDate")
+                requiredInstant("establishedAt", "$path.establishedAt")
+                requiredEnum<DistributionAmountBasis>("amountBasis", "$path.amountBasis")
+                fun requiredFundValue(field: String, allowZero: Boolean): Double {
+                    val value = requiredFiniteDouble(field, "$path.$field")
+                    if (value < 0.0 || !allowZero && value == 0.0 || value > MAX_FUND_REFERENCE_VALUE) {
+                        throw JsonParseException(
+                            "필드 '$path.$field'가 허용된 펀드 기준값 범위를 벗어났습니다.",
+                        )
+                    }
+                    return value
+                }
+                val grossPerUnit = requiredFundValue("grossPerUnit", allowZero = false)
+                requiredFundValue("entitledQuantity", allowZero = false)
+                val taxableCoverageRatio = requiredFiniteDouble(
+                    "taxableCoverageRatio",
+                    "$path.taxableCoverageRatio",
+                )
+                if (taxableCoverageRatio !in 0.0..1.0) {
+                    throw JsonParseException("필드 '$path.taxableCoverageRatio'는 0과 1 사이여야 합니다.")
+                }
+                if (requiredFiniteDouble(
+                        "taxBasisExchangeRateToKrw",
+                        "$path.taxBasisExchangeRateToKrw",
+                    ) <= 0.0
+                ) {
+                    throw JsonParseException("필드 '$path.taxBasisExchangeRateToKrw'는 양수여야 합니다.")
+                }
+                requiredFundValue("returnOfCapitalAmount", allowZero = true)
+                if (requiredLong(
+                        "excessReturnOfCapitalGainKrw",
+                        "$path.excessReturnOfCapitalGainKrw",
+                    ) < 0L
+                ) {
+                    throw JsonParseException(
+                        "필드 '$path.excessReturnOfCapitalGainKrw'는 음수일 수 없습니다.",
+                    )
+                }
+                requiredFundValue(
+                    "accruedDistributionPerUnitBeforeEx",
+                    allowZero = true,
+                )
+                val navBeforeEx = requiredFundValue("navPerUnitBeforeEx", allowZero = false)
+                val navAfterEx = requiredFundValue("navPerUnitAfterEx", allowZero = false)
+                if (navAfterEx.toBits() !=
+                    (navBeforeEx - grossPerUnit).coerceAtLeast(MIN_FUND_REFERENCE_VALUE).toBits()
+                ) {
+                    throw JsonParseException("필드 '$path'의 분배 금액 source·NAV 전이가 유효하지 않습니다.")
+                }
+                val accountingSequence = requiredLong("accountingSequence", "$path.accountingSequence")
+                if (accountingSequence <= 0L) {
+                    throw JsonParseException("필드 '$path.accountingSequence'는 양수여야 합니다.")
+                }
+            }
+        }
         state.requiredArray("dividendLedger").forEachIndexed { index, element ->
             val path = "state.dividendLedger[$index]"
             element.requireObject(path).apply {
                 requireExactFields(DIVIDEND_LEDGER_FIELDS, path)
                 requiredBoundedNonBlankString("id", "$path.id", MAX_REFERENCE_LEDGER_ID_LENGTH)
                 requiredBoundedNonBlankString("stockId", "$path.stockId", MAX_REFERENCE_ASSET_ID_LENGTH)
+                requiredLocalDate("exDate", "$path.exDate")
+                requiredLocalDate("recordDate", "$path.recordDate")
                 requiredInstant("paidAt", "$path.paidAt")
                 requiredEnum<Currency>("currency", "$path.currency")
                 listOf(
+                    "grossPerUnit",
+                    "entitledQuantity",
                     "grossAmount",
                     "withholdingTax",
                     "netAmount",
@@ -3082,6 +3466,86 @@ actual class GameSaveStorage actual constructor() {
                 requiredLong("excessReturnOfCapitalGainKrw", "$path.excessReturnOfCapitalGainKrw")
                 requiredLong("accountingSequence", "$path.accountingSequence")
                 requiredObject("taxBreakdown").requireTaxBreakdown("$path.taxBreakdown")
+            }
+        }
+        state.requiredArray("foreignExchangeLedger").forEachIndexed { index, element ->
+            val path = "state.foreignExchangeLedger[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(FOREIGN_EXCHANGE_RECORD_FIELDS, path)
+                requiredBoundedNonBlankString("id", "$path.id", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                requiredInstant("executedAt", "$path.executedAt")
+                val from = requiredEnum<Currency>("fromCurrency", "$path.fromCurrency")
+                val to = requiredEnum<Currency>("toCurrency", "$path.toCurrency")
+                if (from == to) throw JsonParseException("필드 '$path'의 환전 통화쌍이 유효하지 않습니다.")
+                listOf("sourceAmount", "receivedAmount", "usdKrwRate").forEach { field ->
+                    if (requiredFiniteDouble(field, "$path.$field") <= 0.0) {
+                        throw JsonParseException("필드 '$path.$field'는 유한한 양수여야 합니다.")
+                    }
+                }
+                if (requiredFiniteDouble("spreadCostKrw", "$path.spreadCostKrw") < 0.0) {
+                    throw JsonParseException("필드 '$path.spreadCostKrw'는 음수일 수 없습니다.")
+                }
+                requiredBoolean("automatic", "$path.automatic")
+                if (requiredLong("accountingSequence", "$path.accountingSequence") <= 0L) {
+                    throw JsonParseException("필드 '$path.accountingSequence'는 양수여야 합니다.")
+                }
+            }
+        }
+        state.requiredArray("cashAdjustmentLedger").forEachIndexed { index, element ->
+            val path = "state.cashAdjustmentLedger[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(CASH_ADJUSTMENT_RECORD_FIELDS, path)
+                requiredBoundedNonBlankString("id", "$path.id", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                requiredInstant("adjustedAt", "$path.adjustedAt")
+                requiredEnum<Currency>("currency", "$path.currency")
+                listOf("balanceBefore", "balanceAfter").forEach { field ->
+                    if (requiredFiniteDouble(field, "$path.$field") < 0.0) {
+                        throw JsonParseException("필드 '$path.$field'는 음수일 수 없습니다.")
+                    }
+                }
+                val reason = requiredBoundedNonBlankString("reason", "$path.reason", 64)
+                if (reason != "DEBUG_SET_CASH") {
+                    throw JsonParseException("필드 '$path.reason'은 지원하는 디버그 조정 사유가 아닙니다.")
+                }
+                if (requiredLong("accountingSequence", "$path.accountingSequence") <= 0L) {
+                    throw JsonParseException("필드 '$path.accountingSequence'는 양수여야 합니다.")
+                }
+            }
+        }
+        state.requiredArray("taxPaymentNotices").forEachIndexed { index, element ->
+            val path = "state.taxPaymentNotices[$index]"
+            element.requireObject(path).apply {
+                requireExactFields(TAX_PAYMENT_NOTICE_FIELDS, path)
+                requiredBoundedNonBlankString("id", "$path.id", MAX_REFERENCE_LEDGER_ID_LENGTH)
+                val taxYear = requiredInt("taxYear")
+                if (taxYear !in 2026..2040) {
+                    throw JsonParseException("필드 '$path.taxYear'가 지원 세무 연도를 벗어났습니다.")
+                }
+                requiredLocalDate("dueDate", "$path.dueDate")
+                if (requiredEnum<Currency>("currency", "$path.currency") != Currency.KRW) {
+                    throw JsonParseException("필드 '$path.currency'는 KRW여야 합니다.")
+                }
+                if (requiredLong("amountKrw", "$path.amountKrw") <= 0L) {
+                    throw JsonParseException("필드 '$path.amountKrw'는 양수여야 합니다.")
+                }
+                val status = requiredEnum<TaxLiabilityStatus>("status", "$path.status")
+                val paidAt = nullableInstant("paidAt", "$path.paidAt")
+                val accountingSequence = nullableLong(
+                    "accountingSequence",
+                    "$path.accountingSequence",
+                )
+                if (status == TaxLiabilityStatus.PAID) {
+                    if (paidAt == null || accountingSequence == null || accountingSequence <= 0L) {
+                        throw JsonParseException(
+                            "필드 '$path'의 납부 시각·회계 순번이 PAID 상태와 맞지 않습니다.",
+                        )
+                    }
+                } else if (paidAt != null || accountingSequence != null) {
+                    throw JsonParseException(
+                        "필드 '$path'의 미납 상태에는 납부 시각·회계 순번이 없어야 합니다.",
+                    )
+                }
+                requiredBoundedNonBlankString("message", "$path.message", MAX_TAX_TEXT_LENGTH)
             }
         }
         state.requiredArray("pendingCorporateActions").forEachIndexed { index, element ->
@@ -3489,6 +3953,32 @@ actual class GameSaveStorage actual constructor() {
                     "activeReturnModelSupport",
                     "$operationPath.activeReturnModelSupport",
                 )
+                val hasActiveSyntheticSwapParameters =
+                    !get("activeSyntheticSwapModelParameters").isJsonNull
+                if (hasActiveSyntheticSwapParameters) {
+                    val modelPath = "$operationPath.activeSyntheticSwapModelParameters"
+                    getAsJsonObject("activeSyntheticSwapModelParameters").apply {
+                        requireExactFields(ACTIVE_SYNTHETIC_SWAP_MODEL_PARAMETER_FIELDS, modelPath)
+                        val assumptionId = requiredStrictString("assumptionId", "$modelPath.assumptionId")
+                        if (!OPTION_ASSUMPTION_ID.matches(assumptionId)) {
+                            throw JsonParseException("필드 '$modelPath.assumptionId'의 형식이 유효하지 않습니다.")
+                        }
+                        val alphaMean = requiredFiniteDouble(
+                            "activeAlphaAnnualMean",
+                            "$modelPath.activeAlphaAnnualMean",
+                        )
+                        val valuesInUnitInterval = listOf(
+                            "activeAlphaAnnualVolatility",
+                            "annualSwapFundingSpread",
+                            "counterpartyDefaultHazardRateAnnual",
+                            "counterpartyRecoveryRate",
+                            "counterpartyExposureFraction",
+                        ).all { field -> requiredFiniteDouble(field, "$modelPath.$field") in 0.0..1.0 }
+                        if (alphaMean !in -1.0..1.0 || !valuesInUnitInterval) {
+                            throw JsonParseException("필드 '$modelPath'의 연율·회수율·노출 가정이 유효하지 않습니다.")
+                        }
+                    }
+                }
                 val provenance = requiredEnum<FundOperationProvenance>(
                     "provenance",
                     "$operationPath.provenance",
@@ -3509,9 +3999,15 @@ actual class GameSaveStorage actual constructor() {
                 }
                 val managementValid = when (managementStyle) {
                     FundManagementStyle.PASSIVE ->
-                        activeReturnSupport == ActiveReturnModelSupport.NOT_APPLICABLE
-                    FundManagementStyle.ACTIVE ->
-                        activeReturnSupport == ActiveReturnModelSupport.UNMODELED
+                        activeReturnSupport == ActiveReturnModelSupport.NOT_APPLICABLE &&
+                            !hasActiveSyntheticSwapParameters
+                    FundManagementStyle.ACTIVE -> when (activeReturnSupport) {
+                        ActiveReturnModelSupport.UNMODELED -> !hasActiveSyntheticSwapParameters
+                        ActiveReturnModelSupport.DETERMINISTIC_ASSUMPTION ->
+                            hasActiveSyntheticSwapParameters &&
+                                syntheticSwapFunding == SyntheticSwapFunding.FULLY_FUNDED
+                        ActiveReturnModelSupport.NOT_APPLICABLE -> false
+                    }
                 }
                 val provenanceValid = when (provenance) {
                     FundOperationProvenance.VERIFIED_PRODUCT_DISCLOSURE -> sourceUrls.isNotEmpty()
@@ -4401,9 +4897,38 @@ actual class GameSaveStorage actual constructor() {
         }
     }
 
+    private fun JsonObject.requireFeeBreakdown(path: String) {
+        requireExactFields(FEE_BREAKDOWN_FIELDS, path)
+        requiredLocalDate("calculatedOn", "$path.calculatedOn")
+        requiredEnum<Currency>("currency", "$path.currency")
+        requiredArray("items").forEachIndexed { index, element ->
+            val itemPath = "$path.items[$index]"
+            element.requireObject(itemPath).apply {
+                requireExactFields(FEE_LINE_ITEM_FIELDS, itemPath)
+                requiredBoundedNonBlankString("id", "$itemPath.id", MAX_TAX_TEXT_LENGTH)
+                requiredBoundedNonBlankString("label", "$itemPath.label", MAX_TAX_TEXT_LENGTH)
+                requiredObject("amount").requireMoneyAmount("$itemPath.amount")
+                requiredEnum<FeeJurisdiction>("jurisdiction", "$itemPath.jurisdiction")
+                requiredEnum<FeeCategory>("category", "$itemPath.category")
+                requiredObject("source").requireRuleSource("$itemPath.source")
+                requiredObject("effectiveRange").requireEffectiveDateRange(
+                    "$itemPath.effectiveRange",
+                )
+            }
+        }
+        requiredArray("warnings").forEachIndexed { index, element ->
+            val warning = element.requireStrictString("$path.warnings[$index]")
+            if (warning.length > MAX_TAX_WARNING_LENGTH || warning.any(Char::isISOControl)) {
+                throw JsonParseException("필드 '$path.warnings[$index]'의 길이·문자가 유효하지 않습니다.")
+            }
+        }
+    }
+
     private fun JsonObject.requireMoneyAmount(path: String) {
         requireExactFields(MONEY_AMOUNT_FIELDS, path)
-        requiredLong("minorUnits", "$path.minorUnits")
+        if (requiredLong("minorUnits", "$path.minorUnits") < 0L) {
+            throw JsonParseException("필드 '$path.minorUnits'는 음수일 수 없습니다.")
+        }
         requiredEnum<Currency>("currency", "$path.currency")
     }
 
@@ -4416,8 +4941,11 @@ actual class GameSaveStorage actual constructor() {
 
     private fun JsonObject.requireEffectiveDateRange(path: String) {
         requireExactFields(EFFECTIVE_DATE_RANGE_FIELDS, path)
-        requiredLocalDate("validFrom", "$path.validFrom")
-        nullableLocalDate("validThrough", "$path.validThrough")
+        val validFrom = requiredLocalDate("validFrom", "$path.validFrom")
+        val validThrough = nullableLocalDate("validThrough", "$path.validThrough")
+        if (validThrough != null && validThrough < validFrom) {
+            throw JsonParseException("필드 '$path'의 유효기간 순서가 올바르지 않습니다.")
+        }
     }
 
     private fun JsonObject.requireClosedEndFundMarketModel(path: String) {
@@ -4694,8 +5222,11 @@ actual class GameSaveStorage actual constructor() {
             "realizedGains",
             "fifoCostBasisBook",
             "lastEvaluatedDistributionDateByStock",
+            "pendingDistributionEntitlements",
+            "distributionEntitlementOrigins",
             "dividendLedger",
             "foreignExchangeLedger",
+            "cashAdjustmentLedger",
             "annualTaxLedgers",
             "taxPaymentNotices",
             "peakAssetsKrw",
@@ -4729,8 +5260,12 @@ actual class GameSaveStorage actual constructor() {
         val DIVIDEND_LEDGER_FIELDS: Set<String> = setOf(
             "id",
             "stockId",
+            "exDate",
+            "recordDate",
             "paidAt",
             "currency",
+            "grossPerUnit",
+            "entitledQuantity",
             "grossAmount",
             "withholdingTax",
             "netAmount",
@@ -4742,6 +5277,175 @@ actual class GameSaveStorage actual constructor() {
             "accountingSequence",
         )
 
+        val TAX_PAYMENT_NOTICE_FIELDS: Set<String> = setOf(
+            "id",
+            "taxYear",
+            "dueDate",
+            "currency",
+            "amountKrw",
+            "status",
+            "paidAt",
+            "accountingSequence",
+            "message",
+        )
+
+        val PORTFOLIO_SNAPSHOT_FIELDS: Set<String> = setOf(
+            "timestamp",
+            "accountingSequenceExclusiveUpperBound",
+            "cashByCurrency",
+            "holdings",
+            "distributionReceivableByCurrency",
+            "exchangeRatesToKrw",
+            "initialCapitalKrw",
+            "realizedProfitKrw",
+            "cumulativeCommissionKrw",
+            "cumulativeTaxKrw",
+            "holdingCostBasisKrw",
+        )
+
+        val DAILY_PORTFOLIO_STAT_FIELDS: Set<String> = setOf(
+            "date",
+            "totalAssetsKrw",
+            "cashValueKrw",
+            "stockValueKrw",
+            "dailyReturn",
+            "drawdown",
+            "benchmarkValue",
+            "usdKrw",
+        )
+
+        val ORDER_FIELDS: Set<String> = setOf(
+            "id",
+            "stockId",
+            "side",
+            "type",
+            "quantity",
+            "createdAt",
+            "limitPrice",
+            "status",
+            "filledQuantity",
+            "averageFilledPrice",
+            "updatedAt",
+            "timeInForce",
+            "rejectionReason",
+            "isNonMarketDisposition",
+        )
+
+        val TRADE_FIELDS: Set<String> = setOf(
+            "id",
+            "orderId",
+            "stockId",
+            "side",
+            "quantity",
+            "price",
+            "currency",
+            "executedAt",
+            "commission",
+            "tax",
+            "settlementKind",
+            "settlementDateOverride",
+            "accountingSequence",
+        )
+
+        val TRANSACTION_COST_FIELDS: Set<String> = setOf(
+            "tradeId",
+            "stockId",
+            "market",
+            "paidAt",
+            "currency",
+            "commission",
+            "saleTax",
+            "exchangeRateToKrw",
+            "feeBreakdown",
+            "taxBreakdown",
+        )
+
+        val REALIZED_GAIN_RECORD_FIELDS: Set<String> = setOf(
+            "tradeId",
+            "stockId",
+            "market",
+            "soldAt",
+            "settlementDate",
+            "quantity",
+            "proceeds",
+            "costBasis",
+            "commission",
+            "saleTax",
+            "currency",
+            "exchangeRateToKrw",
+            "taxTreatment",
+            "assessmentNotes",
+            "taxGrossProceedsKrw",
+            "taxCostBasisKrw",
+            "taxDirectSellingCostsKrw",
+            "taxGainKrw",
+            "taxableFinancialIncomeKrw",
+        )
+
+        val FIFO_COST_BASIS_BOOK_FIELDS: Set<String> = setOf("lots")
+
+        val TAX_LOT_FIELDS: Set<String> = setOf(
+            "lotId",
+            "stockId",
+            "acquiredOn",
+            "remainingQuantity",
+            "remainingCostBasisKrw",
+        )
+
+        val PENDING_DISTRIBUTION_ENTITLEMENT_FIELDS: Set<String> = setOf(
+            "id",
+            "originId",
+            "stockId",
+            "exDate",
+            "recordDate",
+            "payDate",
+            "currency",
+            "grossPerUnit",
+            "entitledQuantity",
+            "taxableCoverageRatio",
+        )
+
+        val DISTRIBUTION_ENTITLEMENT_ORIGIN_FIELDS: Set<String> = setOf(
+            "id",
+            "stockId",
+            "exDate",
+            "establishedAt",
+            "amountBasis",
+            "grossPerUnit",
+            "entitledQuantity",
+            "taxableCoverageRatio",
+            "taxBasisExchangeRateToKrw",
+            "returnOfCapitalAmount",
+            "excessReturnOfCapitalGainKrw",
+            "accruedDistributionPerUnitBeforeEx",
+            "navPerUnitBeforeEx",
+            "navPerUnitAfterEx",
+            "accountingSequence",
+        )
+
+        val FOREIGN_EXCHANGE_RECORD_FIELDS: Set<String> = setOf(
+            "id",
+            "executedAt",
+            "fromCurrency",
+            "toCurrency",
+            "sourceAmount",
+            "receivedAmount",
+            "usdKrwRate",
+            "spreadCostKrw",
+            "automatic",
+            "accountingSequence",
+        )
+
+        val CASH_ADJUSTMENT_RECORD_FIELDS: Set<String> = setOf(
+            "id",
+            "adjustedAt",
+            "currency",
+            "balanceBefore",
+            "balanceAfter",
+            "reason",
+            "accountingSequence",
+        )
+
         val TAX_BREAKDOWN_FIELDS: Set<String> = setOf(
             "policyId",
             "calculatedOn",
@@ -4750,9 +5454,26 @@ actual class GameSaveStorage actual constructor() {
             "warnings",
         )
 
+        val FEE_BREAKDOWN_FIELDS: Set<String> = setOf(
+            "calculatedOn",
+            "currency",
+            "items",
+            "warnings",
+        )
+
         val MONEY_AMOUNT_FIELDS: Set<String> = setOf("minorUnits", "currency")
 
         val TAX_LINE_ITEM_FIELDS: Set<String> = setOf(
+            "id",
+            "label",
+            "amount",
+            "jurisdiction",
+            "category",
+            "source",
+            "effectiveRange",
+        )
+
+        val FEE_LINE_ITEM_FIELDS: Set<String> = setOf(
             "id",
             "label",
             "amount",
@@ -4846,8 +5567,19 @@ actual class GameSaveStorage actual constructor() {
             "managementStyle",
             "syntheticSwapFunding",
             "activeReturnModelSupport",
+            "activeSyntheticSwapModelParameters",
             "provenance",
             "officialSourceUrls",
+        )
+
+        val ACTIVE_SYNTHETIC_SWAP_MODEL_PARAMETER_FIELDS: Set<String> = setOf(
+            "assumptionId",
+            "activeAlphaAnnualMean",
+            "activeAlphaAnnualVolatility",
+            "annualSwapFundingSpread",
+            "counterpartyDefaultHazardRateAnnual",
+            "counterpartyRecoveryRate",
+            "counterpartyExposureFraction",
         )
 
         val DAILY_RESET_TERMS_FIELDS: Set<String> = setOf(
@@ -5164,6 +5896,7 @@ actual class GameSaveStorage actual constructor() {
             "indicativeValuePerUnit",
             "unitsOrNotesOutstanding",
             "lastNetFlow",
+            "accruedDistributionPerUnit",
             "cumulativeUnitAdjustmentFactor",
             "lastCorporateActionAccountingSequence",
             "asOf",
@@ -5931,6 +6664,11 @@ private fun JsonObject.requiredInstant(name: String, path: String): Instant {
         if (error is JsonParseException) throw error
         throw JsonParseException("필드 '$path'는 ISO-8601 시각이어야 합니다.", error)
     }
+}
+
+private fun JsonObject.nullableInstant(name: String, path: String): Instant? {
+    requireMember(name)
+    return if (get(name).isJsonNull) null else requiredInstant(name, path)
 }
 
 private fun JsonObject.nullableStrictString(name: String, path: String): String? {

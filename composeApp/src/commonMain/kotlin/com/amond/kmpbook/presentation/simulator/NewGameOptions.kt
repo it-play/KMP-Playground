@@ -2,6 +2,8 @@ package com.amond.kmpbook.presentation.simulator
 
 import com.amond.kmpbook.modding.model.ActiveModConfiguration
 import com.amond.kmpbook.domain.simulation.market.ExternalMarketForces
+import com.amond.kmpbook.domain.model.market.Currency
+import com.amond.kmpbook.presentation.portfolio.roundCurrencyForAccounting
 
 data class NewGameOptions(
     val scenarioName: String = DEFAULT_SCENARIO_NAME,
@@ -27,6 +29,10 @@ data class NewGameOptions(
         require(initialCapitalKrw >= MIN_INITIAL_CAPITAL_KRW && initialCapitalKrw.isFinite()) {
             "초기 자금은 100만원 이상이어야 합니다."
         }
+        require(
+            initialCapitalKrw.toBits() ==
+                roundCurrencyForAccounting(initialCapitalKrw, Currency.KRW).toBits(),
+        ) { "초기 원화 자금은 원 단위여야 합니다." }
         require(initialUsdKrw > 0.0 && initialUsdKrw.isFinite()) {
             "초기 원·달러 환율은 0보다 커야 합니다."
         }
@@ -43,7 +49,7 @@ data class NewGameOptions(
         const val DEFAULT_DIFFICULTY_NAME: String = "혼조"
         const val MAX_GAME_LABEL_LENGTH: Int = 24
         const val MIN_INITIAL_CAPITAL_KRW: Double = 1_000_000.0
-        const val DEFAULT_SEED: Long = 20_260_807L
+        const val DEFAULT_SEED: Long = 20_260_801L
         const val MAX_ACTIVE_MODS: Int = com.amond.kmpbook.modding.model.MAX_ACTIVE_MODS
     }
 }

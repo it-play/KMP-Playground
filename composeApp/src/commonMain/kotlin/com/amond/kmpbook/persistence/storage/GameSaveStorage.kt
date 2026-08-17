@@ -6,7 +6,7 @@ import com.amond.kmpbook.persistence.result.GameSaveResult
 import com.amond.kmpbook.persistence.model.GameSaveCatalog
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
 
-const val CURRENT_GAME_SAVE_SCHEMA_VERSION: Int = 45
+const val CURRENT_GAME_SAVE_SCHEMA_VERSION: Int = 49
 const val GAME_SAVE_FORMAT_ID: String = "market-ledger-2040.game-save"
 
 /**

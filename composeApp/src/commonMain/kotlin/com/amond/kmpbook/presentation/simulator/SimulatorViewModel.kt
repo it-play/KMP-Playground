@@ -57,6 +57,14 @@ class SimulatorViewModel(
     internal val currentStateChangeSequence: Long get() = stateChangeSequence
     val currentState: SimulatorUiState get() = _uiState.value
 
+    /**
+     * Validates the exact snapshot that will be handed to persistence against the active catalog.
+     * The storage layer can only enforce intrinsic wire invariants because it does not own the
+     * executable catalog; canonical methodology checks therefore belong at this boundary.
+     */
+    fun validateStateForPersistence(state: SimulatorUiState): String? =
+        validateSimulatorUiState(state, lastCatalog)
+
     fun newGame(
         options: NewGameOptions = NewGameOptions(),
         catalog: InstrumentCatalogSnapshot = lastCatalog,
@@ -99,15 +107,13 @@ class SimulatorViewModel(
             return false
         }
         val candidate = state.withDetachedActiveMods()
-        val validationError = validateSimulatorUiState(candidate, catalog)
-        if (validationError != null) {
-            _uiState.value = _uiState.value.copy(
-                lastMessage = "저장 데이터가 유효하지 않습니다: $validationError",
-            )
-            return false
-        }
         val restored = SimulatorRuntime.restore(candidate, catalog) ?: run {
-            _uiState.value = _uiState.value.copy(lastMessage = "저장 데이터를 복원할 수 없습니다.")
+            val validationError = validateSimulatorUiState(candidate, catalog)
+            _uiState.value = _uiState.value.copy(
+                lastMessage = validationError?.let { problem ->
+                    "저장 데이터가 유효하지 않습니다: $problem"
+                } ?: "저장 데이터를 복원할 수 없습니다.",
+            )
             return false
         }
         cancelBackgroundCommands()

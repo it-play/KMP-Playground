@@ -305,7 +305,14 @@ fun App(
         isSavingGame = true
         scope.launch {
             try {
-                when (val result = storage.save(viewModel.currentState, name)) {
+                val stateToSave = viewModel.currentState
+                val validationError = viewModel.validateStateForPersistence(stateToSave)
+                if (validationError != null) {
+                    saveStatus = "현재 게임 상태가 종목 방법론과 일치하지 않아 저장하지 않았습니다: " +
+                        validationError
+                    return@launch
+                }
+                when (val result = storage.save(stateToSave, name)) {
                     is GameSaveSuccess -> {
                         saveStatus = "${result.path.substringAfterLast('/').substringAfterLast('\\')} 파일로 저장했습니다."
                         refreshSaves()
