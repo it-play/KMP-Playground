@@ -187,6 +187,7 @@ fun App(
     var activeModMutations by remember { mutableStateOf(0) }
     var isStartingNewGame by remember { mutableStateOf(false) }
     var isDebugConsoleVisible by remember { mutableStateOf(false) }
+    var isMarketFilterDialogVisible by remember { mutableStateOf(false) }
     val modMutationMutex = remember { Mutex() }
     val isModCatalogBusy = isScanningMods || activeModMutations > 0 || isStartingNewGame
     val areModControlsBusy = isScanningMods || activeModMutations > 0
@@ -278,7 +279,9 @@ fun App(
     }
     LaunchedEffect(escapeRequest) {
         if (escapeRequest <= 0) return@LaunchedEffect
-        if (isDebugConsoleVisible) {
+        if (isMarketFilterDialogVisible) {
+            isMarketFilterDialogVisible = false
+        } else if (isDebugConsoleVisible) {
             isDebugConsoleVisible = false
         } else if (
             escapeRequest > 0 &&
@@ -286,6 +289,12 @@ fun App(
             state.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED)
         ) {
             viewModel.selectScreen(Screen.SETTINGS)
+        }
+    }
+    LaunchedEffect(state.phase, state.screen) {
+        val isMarketScreen = state.screen == Screen.MARKET || state.screen == Screen.STOCK_DETAIL
+        if (state.phase !in setOf(GamePhase.PLAYING, GamePhase.PAUSED) || !isMarketScreen) {
+            isMarketFilterDialogVisible = false
         }
     }
     LaunchedEffect(appSettingsStorage, audioSettings) {
@@ -556,6 +565,10 @@ fun App(
                 else -> RunningGame(
                     state = state,
                     viewModel = viewModel,
+                    isMarketFilterDialogVisible = isMarketFilterDialogVisible,
+                    onMarketFilterDialogVisibilityChange = { isVisible ->
+                        isMarketFilterDialogVisible = isVisible
+                    },
                     saves = saves,
                     saveDirectory = storage.saveDirectory,
                     saveStatus = saveStatus,
@@ -584,6 +597,19 @@ fun App(
                 },
                 onDismiss = { isDebugConsoleVisible = false },
             )
+
+            if (isMarketFilterDialogVisible) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(MarketColors.Scrim)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { isMarketFilterDialogVisible = false },
+                        ),
+                )
+            }
 
             if (isSavingGame || isLoadingGame) {
                 GameSaveLoadingDialog(isSaving = isSavingGame)
@@ -632,6 +658,8 @@ private fun GameSaveLoadingDialog(isSaving: Boolean) {
 private fun RunningGame(
     state: SimulatorUiState,
     viewModel: SimulatorViewModel,
+    isMarketFilterDialogVisible: Boolean,
+    onMarketFilterDialogVisibilityChange: (Boolean) -> Unit,
     saves: List<GameSaveEntry>,
     saveDirectory: String,
     saveStatus: String,
@@ -713,6 +741,8 @@ private fun RunningGame(
                         state = state,
                         viewModel = viewModel,
                         protectionProjection = protectionProjection,
+                        isMarketFilterDialogVisible = isMarketFilterDialogVisible,
+                        onMarketFilterDialogVisibilityChange = onMarketFilterDialogVisibilityChange,
                         saves = saves,
                         saveDirectory = saveDirectory,
                         saveStatus = saveStatus,
@@ -840,6 +870,8 @@ private fun ScreenContent(
     state: SimulatorUiState,
     viewModel: SimulatorViewModel,
     protectionProjection: ProtectionUiProjection,
+    isMarketFilterDialogVisible: Boolean,
+    onMarketFilterDialogVisibilityChange: (Boolean) -> Unit,
     saves: List<GameSaveEntry>,
     saveDirectory: String,
     saveStatus: String,
@@ -896,6 +928,8 @@ private fun ScreenContent(
                 chartPriceHistory = state.chartPriceHistory,
                 trades = state.trades,
                 isAdvancing = state.isAdvancing,
+                isFilterDialogVisible = isMarketFilterDialogVisible,
+                onFilterDialogVisibilityChange = onMarketFilterDialogVisibilityChange,
                 selectedStockId = state.selectedStockId,
                 holding = state.selectedHolding,
                 orderBook = state.selectedOrderBook?.toOrderBook(),

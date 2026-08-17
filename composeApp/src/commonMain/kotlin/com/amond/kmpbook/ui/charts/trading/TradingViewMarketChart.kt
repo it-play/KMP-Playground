@@ -2,6 +2,7 @@ package com.amond.kmpbook.ui.charts.trading
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -81,6 +82,8 @@ internal fun TradingViewMarketChart(
     relatedNews: List<NewsStoryUi>,
     onOpenEvent: (String) -> Unit,
     onShowAll: () -> Unit,
+    isObscured: Boolean = false,
+    onObscuredClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val orderedBars = remember(bars) { bars.sortedBy(PriceBar::startTime) }
@@ -239,6 +242,17 @@ internal fun TradingViewMarketChart(
         webViewJsBridge = jsBridge,
     ) {
         when {
+            isObscured -> Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(MarketColors.Scrim)
+                    .consumeNativeChartOverlayPointerEvents()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onObscuredClick,
+                    ),
+            )
             readinessTimedOut -> ChartMessage(
                 text = "네이티브 차트 엔진을 시작하지 못했습니다. WebView2 Runtime 설치 상태를 확인해 주세요.",
                 modifier = Modifier.fillMaxSize(),

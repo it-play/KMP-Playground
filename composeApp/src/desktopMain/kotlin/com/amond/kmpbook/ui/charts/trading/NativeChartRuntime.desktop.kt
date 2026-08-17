@@ -1,5 +1,7 @@
 package com.amond.kmpbook.ui.charts.trading
 
+import androidx.compose.ui.Modifier
+import dev.nucleusframework.window.tao.consumeOverlayPointerEvents
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -30,6 +32,9 @@ internal actual fun nativeChartDataDirectory(): String? {
     return preferred?.let(::createWritableDirectory)
         ?: fallback?.let(::createWritableDirectory)
 }
+
+internal actual fun Modifier.consumeNativeChartOverlayPointerEvents(): Modifier =
+    consumeOverlayPointerEvents()
 
 private fun isWindows(): Boolean =
     System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)

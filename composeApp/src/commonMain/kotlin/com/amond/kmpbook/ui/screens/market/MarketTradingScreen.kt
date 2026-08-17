@@ -9,6 +9,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,10 +24,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
@@ -37,9 +41,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -84,6 +90,7 @@ import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
 import com.amond.kmpbook.ui.components.MarketButton
 import com.amond.kmpbook.ui.components.MarketButtonTone
+import com.amond.kmpbook.ui.components.MarketButtonVariant
 import com.amond.kmpbook.ui.components.MarketProtectionDetailSurface
 import com.amond.kmpbook.ui.components.Metric
 import com.amond.kmpbook.ui.components.ProtectionStatusBadge
@@ -112,6 +119,8 @@ fun MarketTradingScreen(
     chartPriceHistory: Map<String, Map<PriceBarInterval, List<PriceBar>>>,
     trades: List<Trade>,
     isAdvancing: Boolean,
+    isFilterDialogVisible: Boolean,
+    onFilterDialogVisibilityChange: (Boolean) -> Unit,
     selectedStockId: String?,
     holding: Holding?,
     orderBook: OrderBook?,
@@ -167,6 +176,8 @@ fun MarketTradingScreen(
             watchlistedStockIds = watchlistedStockIds,
             onToggleWatchlist = onToggleWatchlist,
             protectionBadges = protectionBadges,
+            isFilterDialogVisible = isFilterDialogVisible,
+            onFilterDialogVisibilityChange = onFilterDialogVisibilityChange,
             modifier = Modifier.width(MarketLayout.marketExplorerWidth).fillMaxHeight(),
         )
         if (selectedStock != null && quote != null) {
@@ -185,6 +196,8 @@ fun MarketTradingScreen(
                 chartBars = chartBars,
                 trades = selectedTrades,
                 isAdvancing = isAdvancing,
+                isFilterDialogVisible = isFilterDialogVisible,
+                onFilterDialogDismiss = { onFilterDialogVisibilityChange(false) },
                 holding = holding,
                 relatedNews = selectedNews,
                 readRelatedNewsEventIds = readStockNewsEventIds[selectedStock.id].orEmpty(),
@@ -406,13 +419,14 @@ private fun WatchlistPanel(
     watchlistedStockIds: Set<String>,
     onToggleWatchlist: (String) -> Unit,
     protectionBadges: Map<String, ProtectionStatusBadgeUi>,
+    isFilterDialogVisible: Boolean,
+    onFilterDialogVisibilityChange: (Boolean) -> Unit,
     modifier: Modifier,
 ) {
     var query by remember { mutableStateOf("") }
     var venueFilter by remember { mutableStateOf(VenueFilter.ALL) }
     var instrumentFilter by remember { mutableStateOf(InstrumentFilter.ALL) }
     var watchlistOnly by remember { mutableStateOf(false) }
-    var filtersExpanded by remember { mutableStateOf(false) }
     val activeFilterCount = listOf(
         watchlistOnly,
         instrumentFilter != InstrumentFilter.ALL,
@@ -472,28 +486,9 @@ private fun WatchlistPanel(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    FilterDisclosureButton(
-                        expanded = filtersExpanded,
+                    FilterDialogButton(
                         activeFilterCount = activeFilterCount,
-                        onClick = { filtersExpanded = !filtersExpanded },
-                    )
-                }
-                if (filtersExpanded) {
-                    Spacer(Modifier.height(8.dp))
-                    WatchlistFilterPanel(
-                        watchlistOnly = watchlistOnly,
-                        watchlistedCount = watchlistedStockIds.size,
-                        onWatchlistOnlyChange = { watchlistOnly = it },
-                        instrumentFilter = instrumentFilter,
-                        onInstrumentFilterChange = { instrumentFilter = it },
-                        venueFilter = venueFilter,
-                        onVenueFilterChange = { venueFilter = it },
-                        showReset = activeFilterCount > 0,
-                        onReset = {
-                            watchlistOnly = false
-                            instrumentFilter = InstrumentFilter.ALL
-                            venueFilter = VenueFilter.ALL
-                        },
+                        onClick = { onFilterDialogVisibilityChange(true) },
                     )
                 }
             }
@@ -526,23 +521,40 @@ private fun WatchlistPanel(
             }
         }
     }
+    if (isFilterDialogVisible) {
+        WatchlistFilterDialog(
+            watchlistOnly = watchlistOnly,
+            watchlistedCount = watchlistedStockIds.size,
+            instrumentFilter = instrumentFilter,
+            venueFilter = venueFilter,
+            onApply = { nextWatchlistOnly, nextInstrumentFilter, nextVenueFilter ->
+                watchlistOnly = nextWatchlistOnly
+                instrumentFilter = nextInstrumentFilter
+                venueFilter = nextVenueFilter
+                onFilterDialogVisibilityChange(false)
+            },
+            onDismiss = { onFilterDialogVisibilityChange(false) },
+        )
+    }
 }
 
 @Composable
-private fun FilterDisclosureButton(
-    expanded: Boolean,
+private fun FilterDialogButton(
     activeFilterCount: Int,
     onClick: () -> Unit,
 ) {
-    val active = expanded || activeFilterCount > 0
     Box(
         Modifier
             .clip(RoundedCornerShape(MarketRadii.pill))
-            .background(if (expanded) MarketColors.Navy else MarketColors.PaperMuted)
+            .background(if (activeFilterCount > 0) MarketColors.PrimaryWeak else MarketColors.PaperMuted)
             .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
             .clickable(role = Role.Button, onClick = onClick)
             .semantics {
-                contentDescription = if (expanded) "종목 필터 접기" else "종목 필터 펼치기"
+                contentDescription = if (activeFilterCount == 0) {
+                    "종목 필터 열기, 활성 조건 없음"
+                } else {
+                    "종목 필터 열기, 활성 조건 ${activeFilterCount}개"
+                }
             }
             .padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center,
@@ -551,21 +563,150 @@ private fun FilterDisclosureButton(
             buildString {
                 append("필터")
                 if (activeFilterCount > 0) append(" $activeFilterCount")
-                append(if (expanded) " ▴" else " ▾")
             },
             style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
-            color = when {
-                expanded -> Color.White
-                active -> MarketColors.Primary
-                else -> MarketColors.InkMuted
-            },
+            color = if (activeFilterCount > 0) MarketColors.Primary else MarketColors.InkMuted,
             maxLines = 1,
         )
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun WatchlistFilterPanel(
+private fun WatchlistFilterDialog(
+    watchlistOnly: Boolean,
+    watchlistedCount: Int,
+    instrumentFilter: InstrumentFilter,
+    venueFilter: VenueFilter,
+    onApply: (Boolean, InstrumentFilter, VenueFilter) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var draftWatchlistOnly by remember { mutableStateOf(watchlistOnly) }
+    var draftInstrumentFilter by remember { mutableStateOf(instrumentFilter) }
+    var draftVenueFilter by remember { mutableStateOf(venueFilter) }
+    val draftActiveFilterCount = listOf(
+        draftWatchlistOnly,
+        draftInstrumentFilter != InstrumentFilter.ALL,
+        draftVenueFilter != VenueFilter.ALL,
+    ).count { it }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false,
+            scrimColor = Color.Transparent,
+            animateTransition = false,
+        ),
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss,
+                    ),
+            )
+            LedgerPanel(
+                modifier = Modifier
+                    .widthIn(max = 720.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 640.dp)
+                    .pointerInput(Unit) { detectTapGestures(onTap = {}) },
+                padding = 0.dp,
+            ) {
+                Column(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 24.dp, end = 14.dp, top = 18.dp, bottom = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "종목 필터",
+                            style = MarketType.display.copy(fontSize = 22.sp),
+                            color = MarketColors.Ink,
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            "목록에 표시할 상품과 시장 범위를 선택하세요.",
+                            style = MarketType.label,
+                            color = MarketColors.InkMuted,
+                        )
+                    }
+                    Text(
+                        "닫기  ×",
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(MarketRadii.small))
+                            .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
+                            .clickable(role = Role.Button, onClick = onDismiss)
+                            .padding(horizontal = 8.dp, vertical = 12.dp),
+                        style = MarketType.label,
+                        color = MarketColors.InkMuted,
+                    )
+                }
+                LedgerDivider()
+                WatchlistFilterContent(
+                    watchlistOnly = draftWatchlistOnly,
+                    watchlistedCount = watchlistedCount,
+                    onWatchlistOnlyChange = { draftWatchlistOnly = it },
+                    instrumentFilter = draftInstrumentFilter,
+                    onInstrumentFilterChange = { draftInstrumentFilter = it },
+                    venueFilter = draftVenueFilter,
+                    onVenueFilterChange = { draftVenueFilter = it },
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 24.dp, vertical = 18.dp),
+                )
+                LedgerDivider()
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        if (draftActiveFilterCount == 0) "전체 상품 표시" else "조건 ${draftActiveFilterCount}개 선택",
+                        modifier = Modifier.weight(1f),
+                        style = MarketType.label,
+                        color = if (draftActiveFilterCount == 0) MarketColors.InkMuted else MarketColors.Primary,
+                    )
+                    if (draftActiveFilterCount > 0) {
+                        MarketButton(
+                            text = "초기화",
+                            onClick = {
+                                draftWatchlistOnly = false
+                                draftInstrumentFilter = InstrumentFilter.ALL
+                                draftVenueFilter = VenueFilter.ALL
+                            },
+                            modifier = Modifier.width(104.dp),
+                            variant = MarketButtonVariant.Weak,
+                        )
+                    }
+                    MarketButton(
+                        text = "취소",
+                        onClick = onDismiss,
+                        modifier = Modifier.width(104.dp),
+                        variant = MarketButtonVariant.Weak,
+                    )
+                    MarketButton(
+                        text = "필터 적용",
+                        onClick = {
+                            onApply(draftWatchlistOnly, draftInstrumentFilter, draftVenueFilter)
+                        },
+                        modifier = Modifier.width(132.dp),
+                    )
+                }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WatchlistFilterContent(
     watchlistOnly: Boolean,
     watchlistedCount: Int,
     onWatchlistOnlyChange: (Boolean) -> Unit,
@@ -573,57 +714,64 @@ private fun WatchlistFilterPanel(
     onInstrumentFilterChange: (InstrumentFilter) -> Unit,
     venueFilter: VenueFilter,
     onVenueFilterChange: (VenueFilter) -> Unit,
-    showReset: Boolean,
-    onReset: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.medium))
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "필터 조건",
-                modifier = Modifier.weight(1f),
-                style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
-                color = MarketColors.InkMuted,
-            )
-            if (showReset) {
-                Text(
-                    "초기화",
-                    modifier = Modifier
-                        .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
-                        .clickable(role = Role.Button, onClick = onReset)
-                        .padding(horizontal = 6.dp, vertical = 12.dp),
-                    style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
-                    color = MarketColors.Primary,
-                    maxLines = 1,
-                )
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.medium))
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterGroupLabel("목록")
+                Row(
+                    Modifier.selectableGroup(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    FilterCell("전체 종목", !watchlistOnly) { onWatchlistOnlyChange(false) }
+                    FilterCell("★ 관심 $watchlistedCount", watchlistOnly) { onWatchlistOnlyChange(true) }
+                }
             }
-        }
-        FilterGroupLabel("목록")
-        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            FilterCell("전체 종목", !watchlistOnly) { onWatchlistOnlyChange(false) }
-            FilterCell("★ 관심 $watchlistedCount", watchlistOnly) { onWatchlistOnlyChange(true) }
-        }
-        FilterGroupLabel("상품")
-        InstrumentFilter.entries.chunked(2).forEach { filters ->
-            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                filters.forEach { filter ->
-                    FilterCell(filter.label, instrumentFilter == filter) {
-                        onInstrumentFilterChange(filter)
+            Column(
+                Modifier
+                    .weight(1f)
+                    .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.medium))
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterGroupLabel("상품")
+                Row(
+                    Modifier.selectableGroup(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    InstrumentFilter.entries.forEach { filter ->
+                        FilterCell(filter.label, instrumentFilter == filter) {
+                            onInstrumentFilterChange(filter)
+                        }
                     }
                 }
             }
         }
-        FilterGroupLabel("시장")
-        VenueFilter.entries.chunked(3).forEach { filters ->
-            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                filters.forEach { filter ->
-                    FilterCell(filter.label, venueFilter == filter) {
-                        onVenueFilterChange(filter)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.medium))
+                .selectableGroup()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterGroupLabel("시장")
+            VenueFilter.entries.chunked(5).forEach { filters ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    filters.forEach { filter ->
+                        FilterCell(filter.label, venueFilter == filter) {
+                            onVenueFilterChange(filter)
+                        }
                     }
                 }
             }
@@ -645,6 +793,7 @@ private fun FilterGroupLabel(text: String) {
 private fun FilterCell(
     text: String,
     selected: Boolean,
+    role: Role = Role.RadioButton,
     onClick: () -> Unit,
 ) {
     Box(
@@ -654,14 +803,14 @@ private fun FilterCell(
             .heightIn(min = MarketComponentSize.minimumInteractiveTarget)
             .selectable(
                 selected = selected,
-                role = Role.Button,
+                role = role,
                 onClick = onClick,
             )
             .padding(horizontal = 7.dp, vertical = 5.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            if (selected) "✓ $text" else text,
+            text,
             style = MarketType.caption,
             color = if (selected) Color.White else MarketColors.InkMuted,
             maxLines = 1,
@@ -751,6 +900,8 @@ private fun StockChartPanel(
     chartBars: Map<PriceBarInterval, List<PriceBar>>,
     trades: List<Trade>,
     isAdvancing: Boolean,
+    isFilterDialogVisible: Boolean,
+    onFilterDialogDismiss: () -> Unit,
     holding: Holding?,
     relatedNews: List<NewsStoryUi>,
     readRelatedNewsEventIds: Set<String>,
@@ -1010,6 +1161,8 @@ private fun StockChartPanel(
                     relatedNews = relatedNews,
                     onOpenEvent = onOpenEvent,
                     onShowAll = { chartPeriod = MarketChartPeriod.ALL },
+                    isObscured = isFilterDialogVisible,
+                    onObscuredClick = onFilterDialogDismiss,
                     modifier = chartModifier,
                 )
             }
@@ -1750,7 +1903,7 @@ private fun SideRailTab(
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = if (selected) "✓ $label" else label,
+            text = label,
             style = MarketType.label,
             color = if (selected) Color.White else MarketColors.InkMuted,
             maxLines = 1,
@@ -2241,7 +2394,7 @@ private fun OrderTicketPanel(
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(0.1, 0.25, 0.5, 1.0).forEach { ratio ->
                     val label = if (ratio == 1.0) "최대" else "${(ratio * 100).toInt()}%"
-                    FilterCell(label, false) {
+                    FilterCell(label, false, role = Role.Button) {
                         val maxQuantity = if (side == OrderSide.BUY) {
                             (availableCash / expectedPrice).coerceAtLeast(0.0)
                         } else {
@@ -2349,7 +2502,7 @@ private fun SideTab(text: String, selected: Boolean, color: Color, modifier: Mod
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            if (selected) "✓ $text" else text,
+            text,
             style = MarketType.label.copy(fontWeight = FontWeight.Bold),
             color = if (selected) Color.White else MarketColors.InkMuted,
             maxLines = 1,

@@ -120,7 +120,7 @@ private fun TabCell(text: String, selected: Boolean, onClick: () -> Unit) {
             .padding(horizontal = 12.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(if (selected) "✓ $text" else text, style = MarketType.label, color = if (selected) Color.White else MarketColors.InkMuted)
+        Text(text, style = MarketType.label, color = if (selected) Color.White else MarketColors.InkMuted)
     }
 }
 
