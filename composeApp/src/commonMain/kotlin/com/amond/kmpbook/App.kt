@@ -70,7 +70,6 @@ import com.amond.kmpbook.presentation.news.NewsUiProjection
 import com.amond.kmpbook.presentation.news.buildNewsUiProjection
 import com.amond.kmpbook.presentation.protection.ProtectionUiProjection
 import com.amond.kmpbook.presentation.protection.buildProtectionUiProjection
-import com.amond.kmpbook.presentation.settings.AppSettingsStorage
 import com.amond.kmpbook.presentation.settings.AudioSettings
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
@@ -114,7 +113,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.datetime.toLocalDateTime
 
 private const val GAME_MESSAGE_DISPLAY_MILLIS = 3_000L
-private const val APP_SETTINGS_SAVE_DEBOUNCE_MILLIS = 250L
 
 private fun activeModCompatibilityError(
     required: List<ActiveModConfiguration>,
@@ -166,6 +164,9 @@ private fun resolveInstrumentCatalog(
 fun App(
     baseInstrumentCatalog: InstrumentCatalogSnapshot,
     viewModel: SimulatorViewModel,
+    audioSettings: AudioSettings,
+    areAudioSettingsLoaded: Boolean,
+    onAudioSettingsChange: (AudioSettings) -> Unit,
     onExitRequest: () -> Unit = {},
     onExitBlockedChanged: (Boolean) -> Unit = {},
     escapeRequest: Int = 0,
@@ -177,7 +178,6 @@ fun App(
     val debugConsoleProcessor = remember(viewModel) { DebugConsoleCommandProcessor(viewModel) }
     val debugConsoleSession = remember { DebugConsoleSession() }
     val storage = remember { GameSaveStorage() }
-    val appSettingsStorage = remember { AppSettingsStorage() }
     val modStorage = remember { ModStorage() }
     val scope = rememberCoroutineScope()
     val state by viewModel.uiState.collectAsState()
@@ -212,8 +212,6 @@ fun App(
         activeModMutations > 0 ||
         isScanningMods ||
         state.isAdvancing
-    var audioSettings by remember(appSettingsStorage) { mutableStateOf(AudioSettings()) }
-    var areAudioSettingsLoaded by remember(appSettingsStorage) { mutableStateOf(false) }
     val activeDebugMod = state.options.activeMods.firstOrNull { activeMod ->
         DebugMod.isCompatible(activeMod.id, activeMod.version)
     }
@@ -298,12 +296,6 @@ fun App(
     LaunchedEffect(modStorage) {
         refreshMods()
     }
-    LaunchedEffect(appSettingsStorage) {
-        audioSettings = withContext(Dispatchers.IO) {
-            appSettingsStorage.loadAudioSettings()
-        }
-        areAudioSettingsLoaded = true
-    }
     val isInitialLoadingComplete = !isLoadingSaves && !isScanningMods && areAudioSettingsLoaded
     LaunchedEffect(isInitialLoadingComplete) {
         if (isInitialLoadingComplete) onInitialLoadingComplete()
@@ -340,14 +332,6 @@ fun App(
             isMarketFilterDialogVisible = false
         }
     }
-    LaunchedEffect(appSettingsStorage, audioSettings, areAudioSettingsLoaded) {
-        if (!areAudioSettingsLoaded) return@LaunchedEffect
-        delay(APP_SETTINGS_SAVE_DEBOUNCE_MILLIS)
-        withContext(Dispatchers.IO) {
-            appSettingsStorage.saveAudioSettings(audioSettings)
-        }
-    }
-
     val refreshSaves: suspend () -> Unit = {
         isLoadingSaves = true
         try {
@@ -677,7 +661,7 @@ fun App(
                         saveDirectory = storage.saveDirectory,
                         saveCount = saves.size,
                         audioSettings = audioSettings,
-                        onAudioSettingsChanged = { audioSettings = it },
+                        onAudioSettingsChanged = onAudioSettingsChange,
                         onOpenSaveDirectory = openSaveDirectory,
                         onBack = { entryDestination = GameEntryDestination.LOBBY },
                     )
@@ -714,7 +698,7 @@ fun App(
                     isLoadingGame = isLoadingGame,
                     deletingSaveFileName = deletingSaveFileName,
                     audioSettings = audioSettings,
-                    onAudioSettingsChanged = { audioSettings = it },
+                    onAudioSettingsChanged = onAudioSettingsChange,
                     onSaveGame = saveGame,
                     onLoadGame = loadGame,
                     onDeleteSave = deleteSave,

@@ -1,7 +1,7 @@
 package com.amond.kmpbook
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,11 +15,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,9 +38,12 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
+import com.amond.kmpbook.audio.DesktopBackgroundMusicPlayer
 import com.amond.kmpbook.domain.data.DesktopInstrumentPackParser
 import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.data.InstrumentPack
+import com.amond.kmpbook.presentation.settings.AudioSettings
+import com.amond.kmpbook.presentation.settings.DesktopAudioSettingsPersistence
 import com.amond.kmpbook.presentation.simulator.SimulatorViewModel
 import com.amond.kmpbook.ui.components.LoadingFinancialFact
 import com.amond.kmpbook.ui.screens.opening.OpeningScreen
@@ -54,11 +59,19 @@ import kmpbook.composeapp.generated.resources.Res
 import kmpbook.composeapp.generated.resources.market_ledger_icon
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.painterResource
 
 private const val BASE_INSTRUMENT_CATALOG_PATH: String = "files/instruments/base-catalog.json"
 private const val BASE_INSTRUMENT_SOURCE_ID: String = "builtin:base"
+private const val BACKGROUND_MUSIC_RECOVERY_DELAY_MILLIS: Long = 3_000L
+private const val BACKGROUND_MUSIC_RECOVERY_RESET_MILLIS: Long = 60_000L
+private const val MAX_BACKGROUND_MUSIC_RECOVERY_ATTEMPTS: Int = 3
+
+private fun backgroundMusicErrorMessage(error: Throwable): String =
+    error.message?.take(300)?.takeIf(String::isNotBlank)
+        ?: "배경음악 재생 장치를 준비하지 못했습니다."
 
 private suspend fun loadBaseInstrumentCatalog(): InstrumentCatalogSnapshot {
     val bytes = withContext(Dispatchers.IO) {
@@ -90,11 +103,144 @@ fun main() {
         var simulatorViewModel by remember { mutableStateOf<SimulatorViewModel?>(null) }
         var appInitialReady by remember { mutableStateOf(false) }
         var openingComplete by remember { mutableStateOf(false) }
+        var hasEnteredSlideshow by remember { mutableStateOf(false) }
+        var backgroundMusicAttempt by remember { mutableIntStateOf(0) }
+        var isBackgroundMusicReady by remember { mutableStateOf(false) }
+        var backgroundMusicError by remember { mutableStateOf<String?>(null) }
+        var isBackgroundMusicSkipped by remember { mutableStateOf(false) }
+        var backgroundMusicRecoveryAttempts by remember { mutableIntStateOf(0) }
+        val audioSettingsPersistence = remember { DesktopAudioSettingsPersistence() }
+        var audioSettings by remember { mutableStateOf(AudioSettings()) }
+        var areAudioSettingsLoaded by remember { mutableStateOf(false) }
+        val effectiveMusicVolume = if (!areAudioSettingsLoaded) {
+            null
+        } else if (audioSettings.muted) {
+            0f
+        } else {
+            (audioSettings.masterVolume * audioSettings.musicVolume)
+                .toFloat()
+                .coerceIn(0f, 1f)
+        }
+        val latestEffectiveMusicVolume by rememberUpdatedState(effectiveMusicVolume)
+        val backgroundMusicPlayer = remember { DesktopBackgroundMusicPlayer() }
         val windowState = rememberWindowState(
             width = MarketLayout.defaultWindowWidth,
             height = MarketLayout.defaultWindowHeight,
             position = WindowPosition(Alignment.Center),
         )
+        DisposableEffect(backgroundMusicPlayer) {
+            onDispose(backgroundMusicPlayer::close)
+        }
+        DisposableEffect(audioSettingsPersistence) {
+            onDispose(audioSettingsPersistence::close)
+        }
+        LaunchedEffect(audioSettingsPersistence) {
+            audioSettings = audioSettingsPersistence.load()
+            areAudioSettingsLoaded = true
+        }
+        LaunchedEffect(audioSettingsPersistence, audioSettings, areAudioSettingsLoaded) {
+            if (!areAudioSettingsLoaded) return@LaunchedEffect
+            audioSettingsPersistence.scheduleSave(audioSettings)
+        }
+        LaunchedEffect(backgroundMusicPlayer) {
+            backgroundMusicPlayer.playbackErrors.collect { error ->
+                isBackgroundMusicReady = false
+                backgroundMusicError = error
+            }
+        }
+        LaunchedEffect(
+            hasEnteredSlideshow,
+            backgroundMusicAttempt,
+            areAudioSettingsLoaded,
+            isBackgroundMusicSkipped,
+        ) {
+            if (
+                !hasEnteredSlideshow ||
+                !areAudioSettingsLoaded ||
+                isBackgroundMusicSkipped
+            ) {
+                return@LaunchedEffect
+            }
+            isBackgroundMusicReady = false
+            backgroundMusicError = null
+            try {
+                backgroundMusicPlayer.prepare()
+                if (isBackgroundMusicSkipped) {
+                    backgroundMusicPlayer.reset()
+                    return@LaunchedEffect
+                }
+                val initialVolume = checkNotNull(latestEffectiveMusicVolume) {
+                    "오디오 설정이 아직 준비되지 않았습니다."
+                }
+                backgroundMusicPlayer.startOrUpdateVolume(initialVolume)
+                if (isBackgroundMusicSkipped) {
+                    backgroundMusicPlayer.reset()
+                    return@LaunchedEffect
+                }
+                isBackgroundMusicReady = true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: LinkageError) {
+                backgroundMusicError = backgroundMusicErrorMessage(error)
+            } catch (error: Exception) {
+                backgroundMusicError = backgroundMusicErrorMessage(error)
+            }
+        }
+        LaunchedEffect(backgroundMusicPlayer, isBackgroundMusicSkipped) {
+            if (!isBackgroundMusicSkipped) return@LaunchedEffect
+            isBackgroundMusicReady = false
+            try {
+                backgroundMusicPlayer.reset()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: LinkageError) {
+                // The user chose to continue without audio, so teardown errors stay non-fatal.
+            } catch (_: Exception) {
+                // The user chose to continue without audio, so teardown errors stay non-fatal.
+            }
+        }
+        LaunchedEffect(
+            isBackgroundMusicReady,
+            effectiveMusicVolume,
+        ) {
+            val volume = effectiveMusicVolume ?: return@LaunchedEffect
+            if (!isBackgroundMusicReady) return@LaunchedEffect
+            try {
+                backgroundMusicPlayer.startOrUpdateVolume(volume)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: LinkageError) {
+                isBackgroundMusicReady = false
+                backgroundMusicError = backgroundMusicErrorMessage(error)
+            } catch (error: Exception) {
+                isBackgroundMusicReady = false
+                backgroundMusicError = backgroundMusicErrorMessage(error)
+            }
+        }
+        LaunchedEffect(
+            openingComplete,
+            backgroundMusicError,
+            isBackgroundMusicSkipped,
+            backgroundMusicRecoveryAttempts,
+        ) {
+            if (
+                !openingComplete ||
+                backgroundMusicError == null ||
+                isBackgroundMusicSkipped ||
+                backgroundMusicRecoveryAttempts >= MAX_BACKGROUND_MUSIC_RECOVERY_ATTEMPTS
+            ) {
+                return@LaunchedEffect
+            }
+            delay(BACKGROUND_MUSIC_RECOVERY_DELAY_MILLIS)
+            backgroundMusicError = null
+            backgroundMusicRecoveryAttempts += 1
+            backgroundMusicAttempt += 1
+        }
+        LaunchedEffect(openingComplete, isBackgroundMusicReady) {
+            if (!openingComplete || !isBackgroundMusicReady) return@LaunchedEffect
+            delay(BACKGROUND_MUSIC_RECOVERY_RESET_MILLIS)
+            backgroundMusicRecoveryAttempts = 0
+        }
         DecoratedWindow(
             onCloseRequest = { if (!isExitBlocked) exitApplication() },
             title = "${MarketDesignSystem.NAME} · Stock Simulator",
@@ -139,6 +285,35 @@ fun main() {
             },
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
+                val openingLoadingStatus = when {
+                    hasEnteredSlideshow &&
+                        !isBackgroundMusicReady &&
+                        backgroundMusicError == null ->
+                        "배경음악과 재생 장치를 준비하고 있습니다."
+                    else -> bootstrapStatus
+                }
+                val visibleBackgroundMusicError = backgroundMusicError
+                    ?.takeUnless { isBackgroundMusicSkipped }
+                val openingLoadingError = bootstrapError ?: visibleBackgroundMusicError
+                val isBackgroundMusicSettled =
+                    isBackgroundMusicReady || isBackgroundMusicSkipped
+                val retryLoading = {
+                    var retried = false
+                    if (bootstrapError != null) {
+                        bootstrapAttempt += 1
+                        retried = true
+                    }
+                    if (backgroundMusicError != null) {
+                        isBackgroundMusicSkipped = false
+                        backgroundMusicRecoveryAttempts = 0
+                        backgroundMusicAttempt += 1
+                        retried = true
+                    }
+                    if (!retried) {
+                        bootstrapAttempt += 1
+                        if (hasEnteredSlideshow) backgroundMusicAttempt += 1
+                    }
+                }
                 LaunchedEffect(bootstrapAttempt) {
                     bootstrapStage = 0
                     bootstrapStatus = "기본 종목 카탈로그를 읽고 있습니다."
@@ -171,6 +346,9 @@ fun main() {
                     App(
                         baseInstrumentCatalog = readyCatalog,
                         viewModel = readyViewModel,
+                        audioSettings = audioSettings,
+                        areAudioSettingsLoaded = areAudioSettingsLoaded,
+                        onAudioSettingsChange = { settings -> audioSettings = settings },
                         onExitRequest = ::exitApplication,
                         onExitBlockedChanged = { blocked -> isExitBlocked = blocked },
                         escapeRequest = escapeRequest,
@@ -187,7 +365,7 @@ fun main() {
                         stage = bootstrapStage,
                         status = bootstrapStatus,
                         error = bootstrapError,
-                        onRetry = { bootstrapAttempt++ },
+                        onRetry = retryLoading,
                     )
                 }
 
@@ -195,12 +373,102 @@ fun main() {
                     OpeningScreen(
                         isLoadingComplete = readyCatalog != null &&
                             readyViewModel != null &&
-                            appInitialReady,
-                        loadingStatus = bootstrapStatus,
-                        loadingError = bootstrapError,
-                        onRetry = { bootstrapAttempt++ },
+                            appInitialReady &&
+                            isBackgroundMusicSettled,
+                        loadingStatus = openingLoadingStatus,
+                        loadingError = openingLoadingError,
+                        loadingErrorTitle = if (bootstrapError == null) {
+                            "배경음악을 준비하지 못했습니다"
+                        } else {
+                            "시뮬레이션을 준비하지 못했습니다"
+                        },
+                        loadingErrorSecondaryActionLabel = if (
+                            bootstrapError == null && visibleBackgroundMusicError != null
+                        ) {
+                            "음악 없이 계속"
+                        } else {
+                            null
+                        },
+                        onLoadingErrorSecondaryAction = {
+                            isBackgroundMusicSkipped = true
+                        },
+                        onRetry = retryLoading,
+                        onSlideshowEntered = { hasEnteredSlideshow = true },
                         onFinished = { openingComplete = true },
                     )
+                }
+                if (openingComplete && visibleBackgroundMusicError != null) {
+                    BackgroundMusicErrorBanner(
+                        error = visibleBackgroundMusicError,
+                        recoveryAttempt = backgroundMusicRecoveryAttempts,
+                        onRetry = {
+                            backgroundMusicRecoveryAttempts = 0
+                            isBackgroundMusicSkipped = false
+                            backgroundMusicAttempt += 1
+                        },
+                        onContinueWithoutMusic = {
+                            isBackgroundMusicSkipped = true
+                        },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackgroundMusicErrorBanner(
+    error: String,
+    recoveryAttempt: Int,
+    onRetry: () -> Unit,
+    onContinueWithoutMusic: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.width(440.dp),
+        color = MarketColors.NavyRaised,
+        shape = RoundedCornerShape(10.dp),
+        shadowElevation = 8.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "배경음악 재생이 중단되었습니다",
+                style = MarketType.label,
+                color = Color.White,
+            )
+            Text(
+                text = error,
+                style = MarketType.body,
+                color = MarketColors.Grey200,
+            )
+            if (recoveryAttempt > 0) {
+                Text(
+                    text = if (recoveryAttempt >= MAX_BACKGROUND_MUSIC_RECOVERY_ATTEMPTS) {
+                        "자동 복구에 실패했습니다"
+                    } else {
+                        "자동 복구 $recoveryAttempt/$MAX_BACKGROUND_MUSIC_RECOVERY_ATTEMPTS"
+                    },
+                    style = MarketType.caption,
+                    color = if (recoveryAttempt >= MAX_BACKGROUND_MUSIC_RECOVERY_ATTEMPTS) {
+                        MarketColors.Rise
+                    } else {
+                        MarketColors.SignalLine
+                    },
+                )
+            }
+            Row(
+                modifier = Modifier.align(Alignment.End),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TextButton(onClick = onContinueWithoutMusic) {
+                    Text("음악 없이 계속", style = MarketType.label, color = MarketColors.Grey200)
+                }
+                TextButton(onClick = onRetry) {
+                    Text("다시 시도", style = MarketType.label, color = MarketColors.SignalLine)
                 }
             }
         }
