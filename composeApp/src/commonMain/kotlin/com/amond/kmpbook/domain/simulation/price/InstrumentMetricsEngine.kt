@@ -11,12 +11,18 @@ import com.amond.kmpbook.domain.model.market.Sector
 import com.amond.kmpbook.domain.model.schedule.ScheduledEventEmission
 import com.amond.kmpbook.domain.model.schedule.ScheduledEventKind
 import com.amond.kmpbook.domain.model.schedule.ScheduledEventMetricKind
+import com.amond.kmpbook.domain.simulation.schedule.DistributionSchedule
+import com.amond.kmpbook.domain.time.DefaultMarketHolidays
+import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.presentation.metrics.InstrumentMetricsProjection
 import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.sqrt
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Instant
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
 
 /**
  * 느린 원시 회계 상태를 갱신하며 시장가격과 화면용 파생 지표는 소유하지 않는다.
@@ -60,16 +66,75 @@ class InstrumentMetricsEngine(private val seed: Long) {
         )
     }
 
-    fun initialFundState(stock: StockDefinition, at: Instant): FundFinancialState {
+    fun initialFundState(
+        stock: StockDefinition,
+        at: Instant,
+        openingAnnualDistributionYield: Double = stock.dividendYield,
+    ): FundFinancialState {
         require(stock.isFundLike)
+        require(openingAnnualDistributionYield.isFinite() && openingAnnualDistributionYield in 0.0..1.0)
         return FundFinancialState(
             stockId = stock.id,
             navPerUnit = stock.initialPrice,
             indicativeValuePerUnit = stock.initialPrice,
             unitsOrNotesOutstanding = stock.sharesOutstanding.toDouble(),
             lastNetFlow = 0.0,
+            accruedDistributionPerUnit = openingDistributionAccrualPerUnit(
+                stock,
+                at,
+                openingAnnualDistributionYield,
+            ),
             asOf = at,
         )
+    }
+
+    /**
+     * 기준가격은 시작 전일까지의 earned income을 이미 포함한다. 첫 미래 분배가 캠페인
+     * 시작 뒤 carry만 지급하지 않도록 직전 canonical ex-date부터 완료된 정규장 시간만
+     * 좌당 분배재원 메모 계정에 복원한다.
+     */
+    private fun openingDistributionAccrualPerUnit(
+        stock: StockDefinition,
+        at: Instant,
+        openingAnnualDistributionYield: Double,
+    ): Double {
+        if (stock.instrumentType != InstrumentType.ETF ||
+            stock.behavior.distributionFrequency.periodsPerYear <= 0 ||
+            openingAnnualDistributionYield <= 0.0
+        ) return 0.0
+        val localDate = GameCalendar.marketLocalDateTime(stock.market, at).date
+        var previousExDate = localDate
+        var searchedDays = 0
+        while (searchedDays++ <= MAX_OPENING_DISTRIBUTION_LOOKBACK_DAYS) {
+            val window = GameCalendar.regularSessionWindow(
+                stock.market,
+                previousExDate,
+                DefaultMarketHolidays.closedDates(stock.market, previousExDate.year),
+            )
+            val event = DistributionSchedule.eventOnExDate(stock, previousExDate)
+            if (window != null && window.closesAt <= at && event != null && !event.skip) break
+            previousExDate = previousExDate.minus(1, DateTimeUnit.DAY)
+        }
+        if (searchedDays > MAX_OPENING_DISTRIBUTION_LOOKBACK_DAYS) return 0.0
+
+        var candidate = previousExDate
+        var completedTradingHours = 0.0
+        while (candidate <= localDate) {
+            GameCalendar.regularSessionWindow(
+                stock.market,
+                candidate,
+                DefaultMarketHolidays.closedDates(stock.market, candidate.year),
+            )
+                ?.takeIf { window -> window.closesAt <= at }
+                ?.let { window ->
+                    completedTradingHours += (window.closesAt - window.opensAt).inWholeMinutes / 60.0
+                }
+            candidate = candidate.plus(1, DateTimeUnit.DAY)
+        }
+        return (stock.initialPrice * openingAnnualDistributionYield *
+            stock.behavior.distributionCoverageRatio *
+            completedTradingHours / FUND_TRADING_HOURS_PER_YEAR)
+            .coerceIn(0.0, MAX_FUND_REFERENCE_VALUE)
     }
 
     /** 발생 ID가 이미 원장에 있으면 아무것도 하지 않아 저장 직후 재진입도 정확히 한 번만 반영한다. */
@@ -137,6 +202,8 @@ class InstrumentMetricsEngine(private val seed: Long) {
         tradingFraction: Double,
         riskSentiment: Double,
         externalFlowRate: Double,
+        annualDistributionYield: Double,
+        distributionAccrualFraction: Double = tradingFraction,
         at: Instant,
     ): FundFinancialState {
         require(state.stockId == stock.id && stock.isFundLike)
@@ -145,6 +212,8 @@ class InstrumentMetricsEngine(private val seed: Long) {
         require(tradingFraction in 0.0..1.0)
         require(riskSentiment in -1.0..1.0)
         require(externalFlowRate.isFinite())
+        require(annualDistributionYield.isFinite() && annualDistributionYield in 0.0..1.0)
+        require(distributionAccrualFraction in 0.0..1.0)
         require(at >= state.asOf)
 
         val isEtn = stock.instrumentType == InstrumentType.ETN
@@ -157,6 +226,9 @@ class InstrumentMetricsEngine(private val seed: Long) {
         // 시장가격에는 미시구조·추적오차가 섞인다. 이를 NAV/지표가치에 역산하면 괴리가
         // 공정가치로 누적되므로, 기준가 계층은 분리된 fair-value attribution만 소비한다.
         val nextReference = exp(boundedReferenceLog)
+        val distributionAccrual = state.navPerUnit * annualDistributionYield *
+            stock.behavior.distributionCoverageRatio / FUND_TRADING_HOURS_PER_YEAR *
+            distributionAccrualFraction
 
         val previousAssets = previousReference * state.unitsOrNotesOutstanding
         val anchorAssets = stock.marketCap
@@ -166,8 +238,8 @@ class InstrumentMetricsEngine(private val seed: Long) {
         val leverage = stock.etfProfile?.leverage ?: 1.0
         val riskLoading = if (leverage < 0.0) -0.35 else stock.beta.coerceIn(0.1, 1.8)
         val sentimentFlow = riskSentiment * riskLoading * SENTIMENT_FLOW_SCALE
-        val expenseRatio = requireNotNull(stock.etfProfile).annualExpenseRatio
-        val feeAttractiveness = (FEE_NEUTRAL_RATE - expenseRatio) * FEE_FLOW_LOADING
+        val annualTotalCostRate = requireNotNull(stock.etfProfile).annualTotalCostRate
+        val feeAttractiveness = (FEE_NEUTRAL_RATE - annualTotalCostRate) * FEE_FLOW_LOADING
         val keyed = DeterministicRandom.keyed(seed, "fund-flow:${stock.id}:${at.epochSeconds}")
         val noise = keyed.nextGaussian() * FLOW_NOISE * sqrt(tradingFraction)
         val organicRate = if (
@@ -196,8 +268,36 @@ class InstrumentMetricsEngine(private val seed: Long) {
             indicativeValuePerUnit = if (isEtn) nextReference else nextReference,
             unitsOrNotesOutstanding = nextUnits,
             lastNetFlow = netFlow,
+            accruedDistributionPerUnit = (state.accruedDistributionPerUnit + distributionAccrual)
+                .coerceIn(0.0, MAX_FUND_REFERENCE_VALUE),
             cumulativeUnitAdjustmentFactor = state.cumulativeUnitAdjustmentFactor,
             lastCorporateActionAccountingSequence = state.lastCorporateActionAccountingSequence,
+            asOf = at,
+        )
+    }
+
+    /**
+     * 상장 거래정지 중에도 기초자산에서 발생해 PriceEngine의 opening carry에 보관된
+     * 소득과 같은 시계로 분배재원 memo를 적립한다. NAV 반영은 재개 시 fair-value carry가 맡는다.
+     */
+    fun advanceFundDistributionAccrual(
+        state: FundFinancialState,
+        stock: StockDefinition,
+        annualDistributionYield: Double,
+        distributionAccrualFraction: Double,
+        at: Instant,
+    ): FundFinancialState {
+        require(state.stockId == stock.id && stock.isFundLike)
+        require(annualDistributionYield.isFinite() && annualDistributionYield in 0.0..1.0)
+        require(distributionAccrualFraction in 0.0..1.0)
+        require(at >= state.asOf)
+        val distributionAccrual = state.navPerUnit * annualDistributionYield *
+            stock.behavior.distributionCoverageRatio / FUND_TRADING_HOURS_PER_YEAR *
+            distributionAccrualFraction
+        return state.copy(
+            lastNetFlow = 0.0,
+            accruedDistributionPerUnit = (state.accruedDistributionPerUnit + distributionAccrual)
+                .coerceIn(0.0, MAX_FUND_REFERENCE_VALUE),
             asOf = at,
         )
     }
@@ -221,6 +321,7 @@ class InstrumentMetricsEngine(private val seed: Long) {
             indicativeValuePerUnit = state.indicativeValuePerUnit / quantityMultiplier,
             unitsOrNotesOutstanding = state.unitsOrNotesOutstanding * quantityMultiplier,
             lastNetFlow = 0.0,
+            accruedDistributionPerUnit = state.accruedDistributionPerUnit / quantityMultiplier,
             cumulativeUnitAdjustmentFactor =
                 state.cumulativeUnitAdjustmentFactor * quantityMultiplier,
             lastCorporateActionAccountingSequence = corporateActionAccountingSequence,
@@ -240,6 +341,8 @@ class InstrumentMetricsEngine(private val seed: Long) {
             navPerUnit = (state.navPerUnit - grossPerUnit).coerceAtLeast(MIN_FUND_REFERENCE_VALUE),
             indicativeValuePerUnit = (state.indicativeValuePerUnit - grossPerUnit)
                 .coerceAtLeast(MIN_FUND_REFERENCE_VALUE),
+            accruedDistributionPerUnit = (state.accruedDistributionPerUnit - grossPerUnit)
+                .coerceAtLeast(0.0),
             asOf = at,
         )
     }
@@ -274,6 +377,8 @@ class InstrumentMetricsEngine(private val seed: Long) {
         private const val MAX_PAYOUT_RATIO: Double = 0.85
         private const val MIN_EQUITY_TO_INITIAL_MARKET_CAP: Double = 0.03
         private const val MAX_REFERENCE_LOG_MOVE: Double = 0.35
+        private const val FUND_TRADING_HOURS_PER_YEAR: Double = 252.0 * 6.5
+        private const val MAX_OPENING_DISTRIBUTION_LOOKBACK_DAYS: Int = 400
         private const val SIZE_REVERSION_PER_TRADING_HOUR: Double = 0.00020
         private const val NAV_MOMENTUM_FLOW_LOADING: Double = 0.030
         private const val SENTIMENT_FLOW_SCALE: Double = 0.00006

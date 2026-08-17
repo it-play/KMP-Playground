@@ -14,15 +14,27 @@ data class EtfProfile(
     val assetClass: EtfAssetClass,
     val taxCategory: EtfTaxCategory,
     val annualExpenseRatio: Double,
+    /** 최근 공시된 증권·파생 거래비용을 연율로 환산한 결정론적 비용 calibration이다. */
+    val annualTransactionCostRate: Double = 0.0,
     /** 상장통화 대비 기초자산의 구조화된 다중통화 환노출. */
     val fxProfile: EtfFxProfile,
     val leverage: Double = 1.0,
     val taxablePriceGainRatio: Double = 1.0,
     val exposureRegion: EtfExposureRegion = EtfExposureRegion.KOREA,
 ) {
+    /** 가격/NAV 경로에서 일할 차감하는 보수·거래비용·환헤지 비용의 합계다. */
+    val annualTotalCostRate: Double
+        get() = annualExpenseRatio + annualTransactionCostRate + fxProfile.annualHedgeCostRate
+
     init {
         require(benchmark.isNotBlank()) { "ETF 기초지수·전략은 비어 있을 수 없습니다." }
         require(annualExpenseRatio in 0.0..0.05) { "ETF 연 보수는 0% 이상 5% 이하여야 합니다." }
+        require(annualTransactionCostRate in 0.0..0.05) {
+            "ETF 연환산 거래비용은 0% 이상 5% 이하여야 합니다."
+        }
+        require(annualTotalCostRate in 0.0..0.15) {
+            "ETF 연환산 총 비용은 0% 이상 15% 이하여야 합니다."
+        }
         require(leverage in -3.0..3.0 && leverage != 0.0) { "ETF 배율은 -3배 이상 3배 이하의 0이 아닌 값이어야 합니다." }
         require(taxablePriceGainRatio in 0.0..1.0) { "ETF 게임 과표 반영률은 0 이상 1 이하여야 합니다." }
     }

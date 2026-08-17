@@ -388,7 +388,7 @@ class PriceEngine(private val seed: Long) {
         val annualIncomeYield = annualIncomeYieldOverride ?: stock.dividendYield
         val earnedDistributionCarry = annualIncomeYield * behavior.distributionCoverageRatio /
             hoursPerTradingYear * fairValueFraction
-        val annualFundCosts = profile.annualExpenseRatio + profile.fxProfile.annualHedgeCostRate
+        val annualFundCosts = profile.annualTotalCostRate
         return earnedDistributionCarry - (
             annualFundCosts + behavior.annualStructuralDrag
             ) / hoursPerTradingYear * fairValueFraction +

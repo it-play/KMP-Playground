@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "benchmarks": [
     {
       "benchmarkId": "alternative.ialt-credit-relative-value",
@@ -1787,7 +1787,7 @@
           "decimals": {
             "eligibleYieldFraction": 0.5,
             "individualWeightCap": 0.04,
-            "minimumAverageDailyValueTraded": 1000000000.0,
+            "minimumMedianDailyValueTraded": 1000000000.0,
             "minimumTotalCompanyMarketCap": 1000000000000.0
           },
           "booleans": {},
@@ -1873,8 +1873,8 @@
         },
         "effectiveFrom": "2026-06-16",
         "referenceUniverse": "KOREA_BROAD_EQUITY",
-        "decisionModel": "RULE_BASED",
-        "modelAssumptionId": null,
+        "decisionModel": "DISCRETIONARY_PROXY",
+        "modelAssumptionId": "krx-financial-top10-reserve-discretion-proxy-2026-08-v1",
         "parameters": {
           "integers": {
             "minimumDividendPaymentYears": 3,
@@ -5174,11 +5174,13 @@
       "displayName": "Korea Overnight Financing Repo Rate Index",
       "administrator": "Korea Securities Depository",
       "officialSourceUrls": [
+        "https://www.bok.or.kr/portal/bbs/P0000559/view.do?menuNo=200788&nttId=11062942",
         "https://www.bok.or.kr/portal/main/contents.do?menuNo=201069",
         "https://www.kofr.kr/intro/RFRinfo.jsp?sMenuId=001001&sLangCd=01",
         "https://www.kofr.kr/resource/file/20220216103446488.pdf",
         "https://www.kofr.kr/resource/file/20230413140034482.pdf",
-        "https://www.kofr.kr/resource/file/20260722140901204.pdf"
+        "https://www.kofr.kr/resource/file/20260722140901204.pdf",
+        "https://www.kofr.kr/websquare/engine/proworks/callServletService.jsp"
       ],
       "baseCurrency": "KRW",
       "engineKind": "OVERNIGHT_RATE_INDEX",
@@ -5199,20 +5201,22 @@
         "indexBaseDate": "2018-01-02",
         "indexBaseValue": 1000,
         "indexDecimalPlaces": 5,
-        "initialPublishedRateAnnual": 0.02771,
-        "initialPublishedRateObservationDate": "2026-08-05",
-        "initialIndexLevel": 1194.83221,
-        "initialIndexPublicationDate": "2026-08-06",
-        "initialPendingRateAnnual": 0.02754,
-        "initialPendingRateObservationDate": "2026-08-06",
+        "initialPublishedRateAnnual": 0.02781,
+        "initialPublishedRateObservationDate": "2026-07-30",
+        "initialIndexLevel": 1194.28656,
+        "initialIndexPublicationDate": "2026-07-31",
+        "initialPendingRateAnnual": 0.02786,
+        "initialPendingRateObservationDate": "2026-07-31",
         "supportLevel": "VERIFIED_RULES",
-        "modelAssumptionId": "kofr-policy-anchor-trimmed-repo-transactions-v1",
+        "modelAssumptionId": "kofr-canonical-policy-path-trimmed-repo-transactions-2026-08-v2",
         "officialSourceUrls": [
+          "https://www.bok.or.kr/portal/bbs/P0000559/view.do?menuNo=200788&nttId=11062942",
           "https://www.bok.or.kr/portal/main/contents.do?menuNo=201069",
           "https://www.kofr.kr/intro/RFRinfo.jsp?sMenuId=001001&sLangCd=01",
           "https://www.kofr.kr/resource/file/20220216103446488.pdf",
           "https://www.kofr.kr/resource/file/20230413140034482.pdf",
-          "https://www.kofr.kr/resource/file/20260722140901204.pdf"
+          "https://www.kofr.kr/resource/file/20260722140901204.pdf",
+          "https://www.kofr.kr/websquare/engine/proworks/callServletService.jsp"
         ]
       },
       "fundOfFundsMethodologyProfile": null,
@@ -29283,11 +29287,11 @@
       "market": "KOSPI",
       "sector": "OTHER",
       "instrumentType": "ETF",
-      "initialPrice": 11600,
+      "initialPrice": 110665,
       "volatility": 0.0004,
-      "dividendYield": 0.02771,
-      "marketCap": 19300000000000,
-      "sharesOutstanding": 1663793103,
+      "dividendYield": 0.02584,
+      "marketCap": 3620294810000,
+      "sharesOutstanding": 32714000,
       "description": "국채·통안채 담보 익일물 RP금리인 KOFR를 스왑으로 추종해 초과수익을 노리는 ETF입니다.",
       "beta": 0,
       "quantityStep": 1,
@@ -29327,9 +29331,20 @@
         "operationProfile": {
           "managementStyle": "ACTIVE",
           "syntheticSwapFunding": "FULLY_FUNDED",
-          "activeReturnModelSupport": "UNMODELED",
+          "activeReturnModelSupport": "DETERMINISTIC_ASSUMPTION",
+          "activeSyntheticSwapModelParameters": {
+            "assumptionId": "kodex-kofr-active-fully-funded-overlay-2026-08-v1",
+            "activeAlphaAnnualMean": 0.00118,
+            "activeAlphaAnnualVolatility": 0.0005,
+            "annualSwapFundingSpread": 0.00008,
+            "counterpartyDefaultHazardRateAnnual": 0.001,
+            "counterpartyRecoveryRate": 0.4,
+            "counterpartyExposureFraction": 0.01
+          },
           "provenance": "VERIFIED_PRODUCT_DISCLOSURE",
           "officialSourceUrls": [
+            "https://m.samsungfund.com/api/v1/kodex/product/2ETFG6.do",
+            "https://m.samsungfund.com/etf/product/view.do?id=2ETFG6",
             "https://www.samsungfund.com/etf/product/view.do?id=2ETFG6",
             "https://www.samsungfund.com/upload/invest/2ETFG6-A.pdf"
           ]
@@ -29346,6 +29361,63 @@
         "strategy": "MONEY_MARKET",
         "distributionFrequency": "MONTHLY",
         "distributionCalendar": "KRX_MONTH_END",
+        "distributionPolicy": {
+          "projectedPaymentLagBusinessDays": 2,
+          "projectionAssumption": "krx-month-end-dates-and-deterministic-manager-amount-v2",
+          "projectedAnnualNominalGrowthRate": 0,
+          "projectedAmountVariationRate": 0.15,
+          "announcedDistributions": [
+            {
+              "exDate": "2026-01-29",
+              "recordDate": "2026-01-30",
+              "payDate": "2026-02-03",
+              "declaredGrossPerUnit": 252,
+              "skip": false
+            },
+            {
+              "exDate": "2026-02-26",
+              "recordDate": "2026-02-27",
+              "payDate": "2026-03-04",
+              "declaredGrossPerUnit": 248,
+              "skip": false
+            },
+            {
+              "exDate": "2026-03-30",
+              "recordDate": "2026-03-31",
+              "payDate": "2026-04-02",
+              "declaredGrossPerUnit": 221,
+              "skip": false
+            },
+            {
+              "exDate": "2026-04-29",
+              "recordDate": "2026-04-30",
+              "payDate": "2026-05-06",
+              "declaredGrossPerUnit": 240,
+              "skip": false
+            },
+            {
+              "exDate": "2026-05-28",
+              "recordDate": "2026-05-29",
+              "payDate": "2026-06-02",
+              "declaredGrossPerUnit": 237,
+              "skip": false
+            },
+            {
+              "exDate": "2026-06-29",
+              "recordDate": "2026-06-30",
+              "payDate": "2026-07-02",
+              "declaredGrossPerUnit": 246,
+              "skip": false
+            },
+            {
+              "exDate": "2026-07-30",
+              "recordDate": "2026-07-31",
+              "payDate": "2026-08-04",
+              "declaredGrossPerUnit": 242,
+              "skip": false
+            }
+          ]
+        },
         "upsideParticipation": 0,
         "downsideParticipation": 0,
         "durationYears": 0,
@@ -29364,8 +29436,12 @@
         "aliases": [],
         "issuerOrManager": "삼성자산운용",
         "strategySummary": "국채·통안채 담보 익일물 RP금리인 KOFR를 스왑으로 추종해 초과수익을 노리는 ETF입니다.",
-        "officialSourceUrl": "https://www.samsungfund.com/etf/product/view.do?id=2ETFG6",
+        "officialSourceUrl": "https://m.samsungfund.com/etf/product/view.do?id=2ETFG6",
         "supportingSourceUrls": [
+          "https://kind.krx.co.kr/external/2026/07/29/000803/20260729001849/68656.htm",
+          "https://m.samsungfund.com/api/v1/kodex/divid-info.do?id=2ETFG6",
+          "https://m.samsungfund.com/etf/lounge/notice-view.do?no=78273",
+          "https://m.samsungfund.com/excel_standar.do?fId=2ETFG6&gijunYMD=20260814",
           "https://www.samsungfund.com/upload/core/2ETFG6-Aa.pdf"
         ],
         "eventRiskTags": [
@@ -36834,11 +36910,11 @@
       "market": "NYSE_ARCA",
       "sector": "OTHER",
       "instrumentType": "ETF",
-      "initialPrice": 706.4,
+      "initialPrice": 686.65,
       "volatility": 0.1306,
       "dividendYield": 0.012,
-      "marketCap": 978960000276,
-      "sharesOutstanding": 1385843715,
+      "marketCap": 997400000000,
+      "sharesOutstanding": 1452559528,
       "description": "미국 S&P 500 대형주를 시가총액 비중으로 보유해 시장수익률을 추구하는 ETF입니다.",
       "beta": 1,
       "quantityStep": 1,
@@ -36898,6 +36974,42 @@
         "strategy": "BROAD_EQUITY",
         "distributionFrequency": "QUARTERLY",
         "distributionCalendar": "VANGUARD_VOO_EX_DATE",
+        "distributionPolicy": {
+          "projectedPaymentLagBusinessDays": 2,
+          "projectionAssumption": "vanguard-calendar-and-deterministic-manager-amount-v2",
+          "projectedAnnualNominalGrowthRate": 0.02,
+          "projectedAmountVariationRate": 0.05,
+          "announcedDistributions": [
+            {
+              "exDate": "2026-03-27",
+              "recordDate": "2026-03-27",
+              "payDate": "2026-03-31",
+              "declaredGrossPerUnit": 1.8724,
+              "skip": false
+            },
+            {
+              "exDate": "2026-06-26",
+              "recordDate": "2026-06-26",
+              "payDate": "2026-06-30",
+              "declaredGrossPerUnit": 1.9622,
+              "skip": false
+            },
+            {
+              "exDate": "2026-09-28",
+              "recordDate": "2026-09-28",
+              "payDate": "2026-09-30",
+              "declaredGrossPerUnit": null,
+              "skip": false
+            },
+            {
+              "exDate": "2026-12-21",
+              "recordDate": "2026-12-21",
+              "payDate": "2026-12-23",
+              "declaredGrossPerUnit": null,
+              "skip": false
+            }
+          ]
+        },
         "upsideParticipation": 1,
         "downsideParticipation": 1,
         "durationYears": 0,
@@ -37457,11 +37569,11 @@
       "market": "NYSE_ARCA",
       "sector": "OTHER",
       "instrumentType": "ETF",
-      "initialPrice": 227.51,
+      "initialPrice": 219.95,
       "volatility": 0.1155,
       "dividendYield": 0.0181,
       "marketCap": 187800000000,
-      "sharesOutstanding": 825458222,
+      "sharesOutstanding": 853830416,
       "description": "미국 대형주를 가치·성장 점수로 분류하고 50% 패킷 이동과 5거래일 전환을 적용하는 ETF입니다.",
       "beta": 1,
       "quantityStep": 1,
@@ -37521,6 +37633,42 @@
         "strategy": "BROAD_EQUITY",
         "distributionFrequency": "QUARTERLY",
         "distributionCalendar": "VANGUARD_VTV_EX_DATE",
+        "distributionPolicy": {
+          "projectedPaymentLagBusinessDays": 2,
+          "projectionAssumption": "vanguard-calendar-and-deterministic-manager-amount-v2",
+          "projectedAnnualNominalGrowthRate": 0.02,
+          "projectedAmountVariationRate": 0.05,
+          "announcedDistributions": [
+            {
+              "exDate": "2026-03-27",
+              "recordDate": "2026-03-27",
+              "payDate": "2026-03-31",
+              "declaredGrossPerUnit": 1.0792,
+              "skip": false
+            },
+            {
+              "exDate": "2026-06-26",
+              "recordDate": "2026-06-26",
+              "payDate": "2026-06-30",
+              "declaredGrossPerUnit": 1.0818,
+              "skip": false
+            },
+            {
+              "exDate": "2026-09-28",
+              "recordDate": "2026-09-28",
+              "payDate": "2026-09-30",
+              "declaredGrossPerUnit": null,
+              "skip": false
+            },
+            {
+              "exDate": "2026-12-22",
+              "recordDate": "2026-12-22",
+              "payDate": "2026-12-24",
+              "declaredGrossPerUnit": null,
+              "skip": false
+            }
+          ]
+        },
         "upsideParticipation": 1,
         "downsideParticipation": 1,
         "durationYears": 0,
@@ -67525,11 +67673,11 @@
       "market": "KOSPI",
       "sector": "FINANCIALS",
       "instrumentType": "ETF",
-      "initialPrice": 13330,
+      "initialPrice": 13220,
       "volatility": 0.3269,
       "dividendYield": 0.0446,
-      "marketCap": 246148567470,
-      "sharesOutstanding": 18465759,
+      "marketCap": 207400000000,
+      "sharesOutstanding": 15688351,
       "description": "KOSPI 200 금융주에서 고ROE·고배당·주주환원 기준으로 10종목을 선별하는 국내주식 패시브 ETF.",
       "beta": 0.95,
       "quantityStep": 1,
@@ -67539,6 +67687,7 @@
         "assetClass": "SECTOR_EQUITY",
         "taxCategory": "KOREAN_DOMESTIC_EQUITY",
         "annualExpenseRatio": 0.003367,
+        "annualTransactionCostRate": 0.000932,
         "fxProfile": {
           "legs": [
             {
@@ -67588,6 +67737,63 @@
         "strategy": "DIVIDEND_EQUITY",
         "distributionFrequency": "MONTHLY",
         "distributionCalendar": "KRX_PRECEDING_BUSINESS_DAY_15",
+        "distributionPolicy": {
+          "projectedPaymentLagBusinessDays": 2,
+          "projectionAssumption": "krx-monthly-15-dates-and-deterministic-manager-amount-v2",
+          "projectedAnnualNominalGrowthRate": 0.02,
+          "projectedAmountVariationRate": 0.05,
+          "announcedDistributions": [
+            {
+              "exDate": "2026-01-14",
+              "recordDate": "2026-01-15",
+              "payDate": "2026-01-19",
+              "declaredGrossPerUnit": 27,
+              "skip": false
+            },
+            {
+              "exDate": "2026-02-12",
+              "recordDate": "2026-02-13",
+              "payDate": "2026-02-20",
+              "declaredGrossPerUnit": 27,
+              "skip": false
+            },
+            {
+              "exDate": "2026-03-12",
+              "recordDate": "2026-03-13",
+              "payDate": "2026-03-17",
+              "declaredGrossPerUnit": 62,
+              "skip": false
+            },
+            {
+              "exDate": "2026-04-14",
+              "recordDate": "2026-04-15",
+              "payDate": "2026-04-17",
+              "declaredGrossPerUnit": 66,
+              "skip": false
+            },
+            {
+              "exDate": "2026-05-14",
+              "recordDate": "2026-05-15",
+              "payDate": "2026-05-19",
+              "declaredGrossPerUnit": 67,
+              "skip": false
+            },
+            {
+              "exDate": "2026-06-12",
+              "recordDate": "2026-06-15",
+              "payDate": "2026-06-17",
+              "declaredGrossPerUnit": 64,
+              "skip": false
+            },
+            {
+              "exDate": "2026-07-14",
+              "recordDate": "2026-07-15",
+              "payDate": "2026-07-20",
+              "declaredGrossPerUnit": 66,
+              "skip": false
+            }
+          ]
+        },
         "upsideParticipation": 1,
         "downsideParticipation": 1,
         "durationYears": 0,
@@ -67636,11 +67842,11 @@
       "market": "KOSPI",
       "sector": "OTHER",
       "instrumentType": "ETF",
-      "initialPrice": 15910,
+      "initialPrice": 15300,
       "volatility": 0.2981,
       "dividendYield": 0.04075,
-      "marketCap": 346116624690,
-      "sharesOutstanding": 21754659,
+      "marketCap": 339220000000,
+      "sharesOutstanding": 22171242,
       "description": "재무건전성·ROE·배당수익률·배당성장을 반영해 국내 품질 배당주 30종목을 담는 패시브 ETF.",
       "beta": 0.95,
       "quantityStep": 1,
@@ -67650,6 +67856,7 @@
         "assetClass": "BROAD_EQUITY",
         "taxCategory": "KOREAN_DOMESTIC_EQUITY",
         "annualExpenseRatio": 0.003,
+        "annualTransactionCostRate": 0.00085,
         "fxProfile": {
           "legs": [
             {
@@ -67699,6 +67906,63 @@
         "strategy": "DIVIDEND_EQUITY",
         "distributionFrequency": "MONTHLY",
         "distributionCalendar": "KRX_PRECEDING_BUSINESS_DAY_15",
+        "distributionPolicy": {
+          "projectedPaymentLagBusinessDays": 2,
+          "projectionAssumption": "krx-monthly-15-dates-and-deterministic-manager-amount-v2",
+          "projectedAnnualNominalGrowthRate": 0.02,
+          "projectedAmountVariationRate": 0.05,
+          "announcedDistributions": [
+            {
+              "exDate": "2026-01-14",
+              "recordDate": "2026-01-15",
+              "payDate": "2026-01-19",
+              "declaredGrossPerUnit": 51,
+              "skip": false
+            },
+            {
+              "exDate": "2026-02-12",
+              "recordDate": "2026-02-13",
+              "payDate": "2026-02-20",
+              "declaredGrossPerUnit": 51,
+              "skip": false
+            },
+            {
+              "exDate": "2026-03-12",
+              "recordDate": "2026-03-13",
+              "payDate": "2026-03-17",
+              "declaredGrossPerUnit": 58,
+              "skip": false
+            },
+            {
+              "exDate": "2026-04-14",
+              "recordDate": "2026-04-15",
+              "payDate": "2026-04-17",
+              "declaredGrossPerUnit": 58,
+              "skip": false
+            },
+            {
+              "exDate": "2026-05-14",
+              "recordDate": "2026-05-15",
+              "payDate": "2026-05-19",
+              "declaredGrossPerUnit": 58,
+              "skip": false
+            },
+            {
+              "exDate": "2026-06-12",
+              "recordDate": "2026-06-15",
+              "payDate": "2026-06-17",
+              "declaredGrossPerUnit": 58,
+              "skip": false
+            },
+            {
+              "exDate": "2026-07-14",
+              "recordDate": "2026-07-15",
+              "payDate": "2026-07-20",
+              "declaredGrossPerUnit": 58,
+              "skip": false
+            }
+          ]
+        },
         "upsideParticipation": 1,
         "downsideParticipation": 1,
         "durationYears": 0,
@@ -72978,11 +73242,11 @@
       "market": "NYSE_ARCA",
       "sector": "OTHER",
       "instrumentType": "ETF",
-      "initialPrice": 33.94,
+      "initialPrice": 33.47,
       "volatility": 0.1332,
       "dividendYield": 0.033,
-      "marketCap": 104754277041.23,
-      "sharesOutstanding": 3092400000,
+      "marketCap": 103978269500,
+      "sharesOutstanding": 3106850000,
       "description": "배당의 질과 지속성 기준을 적용한 미국 배당주 지수 ETF입니다.",
       "beta": 1,
       "quantityStep": 1,
@@ -73019,6 +73283,16 @@
           "PLAIN"
         ],
         "trackingErrorAnnualVolatility": 0.002,
+        "operationProfile": {
+          "managementStyle": "PASSIVE",
+          "syntheticSwapFunding": null,
+          "activeReturnModelSupport": "NOT_APPLICABLE",
+          "provenance": "VERIFIED_PRODUCT_DISCLOSURE",
+          "officialSourceUrls": [
+            "https://www.schwabassetmanagement.com/products/schd",
+            "https://www.schwabassetmanagement.com/prospectus?combine=SCHD"
+          ]
+        },
         "dailyResetTerms": null,
         "etnProductTerms": null,
         "closedEndFundTerms": null,
@@ -73030,8 +73304,45 @@
       "behaviorProfile": {
         "strategy": "DIVIDEND_EQUITY",
         "distributionFrequency": "QUARTERLY",
-        "upsideParticipation": 0.92,
-        "downsideParticipation": 0.96,
+        "distributionCalendar": "SCHWAB_EQUITY_ETF_EX_DATE",
+        "distributionPolicy": {
+          "projectedPaymentLagBusinessDays": 3,
+          "projectionAssumption": "schwab-calendar-and-deterministic-manager-amount-v2",
+          "projectedAnnualNominalGrowthRate": 0.02,
+          "projectedAmountVariationRate": 0.05,
+          "announcedDistributions": [
+            {
+              "exDate": "2026-03-25",
+              "recordDate": "2026-03-25",
+              "payDate": "2026-03-30",
+              "declaredGrossPerUnit": 0.2569,
+              "skip": false
+            },
+            {
+              "exDate": "2026-06-24",
+              "recordDate": "2026-06-24",
+              "payDate": "2026-06-29",
+              "declaredGrossPerUnit": 0.2525,
+              "skip": false
+            },
+            {
+              "exDate": "2026-09-23",
+              "recordDate": "2026-09-23",
+              "payDate": "2026-09-28",
+              "declaredGrossPerUnit": null,
+              "skip": false
+            },
+            {
+              "exDate": "2026-12-09",
+              "recordDate": "2026-12-09",
+              "payDate": "2026-12-14",
+              "declaredGrossPerUnit": null,
+              "skip": false
+            }
+          ]
+        },
+        "upsideParticipation": 1,
+        "downsideParticipation": 1,
         "durationYears": 0,
         "creditSpreadSensitivity": 0,
         "cashRateAccrual": 0,

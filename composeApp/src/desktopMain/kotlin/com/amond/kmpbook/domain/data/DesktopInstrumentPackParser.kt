@@ -63,6 +63,7 @@ import com.amond.kmpbook.domain.model.fund.FundReplicationMode
 import com.amond.kmpbook.domain.model.fund.FundReturnTransform
 import com.amond.kmpbook.domain.model.fund.FundReturnVariant
 import com.amond.kmpbook.domain.model.fund.ActiveReturnModelSupport
+import com.amond.kmpbook.domain.model.fund.ActiveSyntheticSwapModelParameters
 import com.amond.kmpbook.domain.model.fund.MethodologyEquitySector
 import com.amond.kmpbook.domain.model.fund.KofrIndexProfile
 import com.amond.kmpbook.domain.model.fund.MbsInterestOnlyModelParameterOrigin
@@ -108,6 +109,8 @@ import com.amond.kmpbook.domain.model.fundstructure.FundStructureTermsProvenance
 import com.amond.kmpbook.domain.model.instrument.CurrencyExposureLeg
 import com.amond.kmpbook.domain.model.instrument.DistributionFrequency
 import com.amond.kmpbook.domain.model.instrument.DistributionCalendar
+import com.amond.kmpbook.domain.model.instrument.DistributionAnnouncement
+import com.amond.kmpbook.domain.model.instrument.DistributionPolicy
 import com.amond.kmpbook.domain.model.instrument.EtfAssetClass
 import com.amond.kmpbook.domain.model.instrument.EtfExposureRegion
 import com.amond.kmpbook.domain.model.instrument.EtfFxProfile
@@ -2012,10 +2015,16 @@ object DesktopInstrumentPackParser {
             var managementStyle: FundManagementStyle? = null
             var syntheticSwapFunding: SyntheticSwapFunding? = null
             var activeReturnModelSupport: ActiveReturnModelSupport? = null
+            var activeSyntheticSwapModelParameters: ActiveSyntheticSwapModelParameters? = null
             var provenance: FundOperationProvenance? = null
             var officialSourceUrls: Set<String>? = null
             var syntheticSwapFundingSeen = false
-            readObject("operationProfile", FUND_OPERATION_PROFILE_FIELDS) { field ->
+            readObject(
+                label = "operationProfile",
+                allowedFields = FUND_OPERATION_PROFILE_FIELDS,
+                requiredFields = FUND_OPERATION_PROFILE_FIELDS -
+                    "activeSyntheticSwapModelParameters",
+            ) { field ->
                 when (field) {
                     "managementStyle" -> managementStyle = readEnum<FundManagementStyle>(field)
                     "syntheticSwapFunding" -> {
@@ -2024,6 +2033,8 @@ object DesktopInstrumentPackParser {
                     }
                     "activeReturnModelSupport" -> activeReturnModelSupport =
                         readEnum<ActiveReturnModelSupport>(field)
+                    "activeSyntheticSwapModelParameters" -> activeSyntheticSwapModelParameters =
+                        readNullableObject(field, ::readActiveSyntheticSwapModelParameters)
                     "provenance" -> provenance = readEnum<FundOperationProvenance>(field)
                     "officialSourceUrls" -> officialSourceUrls = readSortedUniqueHttpsUrlSet(
                         field,
@@ -2037,8 +2048,57 @@ object DesktopInstrumentPackParser {
                 syntheticSwapFunding = syntheticSwapFunding,
                 activeReturnModelSupport = activeReturnModelSupport
                     ?: missing("activeReturnModelSupport"),
+                activeSyntheticSwapModelParameters = activeSyntheticSwapModelParameters,
                 provenance = provenance ?: missing("provenance"),
                 officialSourceUrls = officialSourceUrls ?: missing("officialSourceUrls"),
+            )
+        }
+
+        private fun readActiveSyntheticSwapModelParameters(): ActiveSyntheticSwapModelParameters {
+            var assumptionId: String? = null
+            var activeAlphaAnnualMean: Double? = null
+            var activeAlphaAnnualVolatility: Double? = null
+            var annualSwapFundingSpread: Double? = null
+            var counterpartyDefaultHazardRateAnnual: Double? = null
+            var counterpartyRecoveryRate: Double? = null
+            var counterpartyExposureFraction: Double? = null
+            readObject(
+                "activeSyntheticSwapModelParameters",
+                ACTIVE_SYNTHETIC_SWAP_MODEL_PARAMETER_FIELDS,
+            ) { field ->
+                when (field) {
+                    "assumptionId" -> assumptionId = readString(
+                        field,
+                        ActiveSyntheticSwapModelParameters.MAX_ASSUMPTION_ID_LENGTH,
+                        allowBlank = false,
+                    )
+                    "activeAlphaAnnualMean" -> activeAlphaAnnualMean =
+                        readFiniteDoubleInRange(field, -1.0, 1.0)
+                    "activeAlphaAnnualVolatility" -> activeAlphaAnnualVolatility =
+                        readFiniteDoubleInRange(field, 0.0, 1.0)
+                    "annualSwapFundingSpread" -> annualSwapFundingSpread =
+                        readFiniteDoubleInRange(field, 0.0, 1.0)
+                    "counterpartyDefaultHazardRateAnnual" -> counterpartyDefaultHazardRateAnnual =
+                        readFiniteDoubleInRange(field, 0.0, 1.0)
+                    "counterpartyRecoveryRate" -> counterpartyRecoveryRate =
+                        readFiniteDoubleInRange(field, 0.0, 1.0)
+                    "counterpartyExposureFraction" -> counterpartyExposureFraction =
+                        readFiniteDoubleInRange(field, 0.0, 1.0)
+                }
+            }
+            return ActiveSyntheticSwapModelParameters(
+                assumptionId = assumptionId ?: missing("assumptionId"),
+                activeAlphaAnnualMean = activeAlphaAnnualMean ?: missing("activeAlphaAnnualMean"),
+                activeAlphaAnnualVolatility = activeAlphaAnnualVolatility
+                    ?: missing("activeAlphaAnnualVolatility"),
+                annualSwapFundingSpread = annualSwapFundingSpread
+                    ?: missing("annualSwapFundingSpread"),
+                counterpartyDefaultHazardRateAnnual = counterpartyDefaultHazardRateAnnual
+                    ?: missing("counterpartyDefaultHazardRateAnnual"),
+                counterpartyRecoveryRate = counterpartyRecoveryRate
+                    ?: missing("counterpartyRecoveryRate"),
+                counterpartyExposureFraction = counterpartyExposureFraction
+                    ?: missing("counterpartyExposureFraction"),
             )
         }
 
@@ -2918,16 +2978,23 @@ object DesktopInstrumentPackParser {
             var assetClass: EtfAssetClass? = null
             var taxCategory: EtfTaxCategory? = null
             var annualExpenseRatio: Double? = null
+            var annualTransactionCostRate = 0.0
             var fxProfile: EtfFxProfile? = null
             var leverage: Double? = null
             var taxablePriceGainRatio: Double? = null
             var exposureRegion: EtfExposureRegion? = null
-            readObject("etfProfile", ETF_PROFILE_FIELDS) { field ->
+            readObject(
+                "etfProfile",
+                ETF_PROFILE_FIELDS,
+                ETF_PROFILE_FIELDS - "annualTransactionCostRate",
+            ) { field ->
                 when (field) {
                     "benchmark" -> benchmark = readString("benchmark", MAX_BENCHMARK_LENGTH, allowBlank = false)
                     "assetClass" -> assetClass = readEnum<EtfAssetClass>("assetClass")
                     "taxCategory" -> taxCategory = readEnum<EtfTaxCategory>("taxCategory")
                     "annualExpenseRatio" -> annualExpenseRatio = readFiniteDouble("annualExpenseRatio")
+                    "annualTransactionCostRate" -> annualTransactionCostRate =
+                        readFiniteDoubleInRange("annualTransactionCostRate", 0.0, 0.05)
                     "fxProfile" -> fxProfile = readEtfFxProfile()
                     "leverage" -> leverage = readFiniteDouble("leverage")
                     "taxablePriceGainRatio" -> taxablePriceGainRatio = readFiniteDouble("taxablePriceGainRatio")
@@ -2939,6 +3006,7 @@ object DesktopInstrumentPackParser {
                 assetClass = assetClass ?: missing("assetClass"),
                 taxCategory = taxCategory ?: missing("taxCategory"),
                 annualExpenseRatio = annualExpenseRatio ?: missing("annualExpenseRatio"),
+                annualTransactionCostRate = annualTransactionCostRate,
                 fxProfile = fxProfile ?: missing("fxProfile"),
                 leverage = leverage ?: missing("leverage"),
                 taxablePriceGainRatio = taxablePriceGainRatio ?: missing("taxablePriceGainRatio"),
@@ -3003,6 +3071,7 @@ object DesktopInstrumentPackParser {
             var strategy: InstrumentStrategy? = null
             var distributionFrequency: DistributionFrequency? = null
             var distributionCalendar: DistributionCalendar = DistributionCalendar.FIXED_DAY_15
+            var distributionPolicy: DistributionPolicy = DistributionPolicy.DEFAULT
             var upsideParticipation: Double? = null
             var downsideParticipation: Double? = null
             var durationYears: Double? = null
@@ -3023,6 +3092,7 @@ object DesktopInstrumentPackParser {
                         readEnum<DistributionFrequency>("distributionFrequency")
                     "distributionCalendar" -> distributionCalendar =
                         readEnum<DistributionCalendar>("distributionCalendar")
+                    "distributionPolicy" -> distributionPolicy = readDistributionPolicy()
                     "upsideParticipation" -> upsideParticipation = readFiniteDouble("upsideParticipation")
                     "downsideParticipation" -> downsideParticipation = readFiniteDouble("downsideParticipation")
                     "durationYears" -> durationYears = readFiniteDouble("durationYears")
@@ -3048,6 +3118,7 @@ object DesktopInstrumentPackParser {
                 strategy = strategy ?: missing("strategy"),
                 distributionFrequency = distributionFrequency ?: missing("distributionFrequency"),
                 distributionCalendar = distributionCalendar,
+                distributionPolicy = distributionPolicy,
                 upsideParticipation = upsideParticipation ?: missing("upsideParticipation"),
                 downsideParticipation = downsideParticipation ?: missing("downsideParticipation"),
                 durationYears = durationYears ?: missing("durationYears"),
@@ -3063,6 +3134,72 @@ object DesktopInstrumentPackParser {
                     ?: missing("commodityFactorSensitivity"),
                 cryptoFactorSensitivity = cryptoFactorSensitivity ?: missing("cryptoFactorSensitivity"),
                 principalRisk = principalRisk ?: missing("principalRisk"),
+            )
+        }
+
+        private fun readDistributionPolicy(): DistributionPolicy {
+            var projectedPaymentLagBusinessDays: Int? = null
+            var projectionAssumption: String? = null
+            var projectedAnnualNominalGrowthRate: Double? = null
+            var projectedAmountVariationRate: Double? = null
+            var announcedDistributions: List<DistributionAnnouncement>? = null
+            readObject("distributionPolicy", DISTRIBUTION_POLICY_FIELDS) { field ->
+                when (field) {
+                    "projectedPaymentLagBusinessDays" -> projectedPaymentLagBusinessDays =
+                        readExactIntInRange(field, 0, 10)
+                    "projectionAssumption" -> projectionAssumption =
+                        readString(field, 120, allowBlank = false)
+                    "projectedAnnualNominalGrowthRate" -> projectedAnnualNominalGrowthRate =
+                        readFiniteDouble(field)
+                    "projectedAmountVariationRate" -> projectedAmountVariationRate =
+                        readFiniteDouble(field)
+                    "announcedDistributions" -> announcedDistributions = readDistributionAnnouncements()
+                }
+            }
+            return DistributionPolicy(
+                projectedPaymentLagBusinessDays = projectedPaymentLagBusinessDays
+                    ?: missing("projectedPaymentLagBusinessDays"),
+                projectionAssumption = projectionAssumption ?: missing("projectionAssumption"),
+                projectedAnnualNominalGrowthRate = projectedAnnualNominalGrowthRate
+                    ?: missing("projectedAnnualNominalGrowthRate"),
+                projectedAmountVariationRate = projectedAmountVariationRate
+                    ?: missing("projectedAmountVariationRate"),
+                announcedDistributions = announcedDistributions ?: missing("announcedDistributions"),
+            )
+        }
+
+        private fun readDistributionAnnouncements(): List<DistributionAnnouncement> {
+            beginArray("announcedDistributions")
+            val announcements = ArrayList<DistributionAnnouncement>()
+            while (reader.hasNext()) {
+                if (announcements.size >= 128) fail("announcedDistributions 배열 항목이 너무 많습니다.")
+                announcements += readDistributionAnnouncement()
+            }
+            endArray()
+            return announcements
+        }
+
+        private fun readDistributionAnnouncement(): DistributionAnnouncement {
+            var exDate: LocalDate? = null
+            var recordDate: LocalDate? = null
+            var payDate: LocalDate? = null
+            var declaredGrossPerUnit: Double? = null
+            var skip: Boolean? = null
+            readObject("distributionAnnouncement", DISTRIBUTION_ANNOUNCEMENT_FIELDS) { field ->
+                when (field) {
+                    "exDate" -> exDate = readLocalDate(field)
+                    "recordDate" -> recordDate = readLocalDate(field)
+                    "payDate" -> payDate = readLocalDate(field)
+                    "declaredGrossPerUnit" -> declaredGrossPerUnit = readNullableFiniteDouble(field)
+                    "skip" -> skip = readBoolean(field)
+                }
+            }
+            return DistributionAnnouncement(
+                exDate = exDate ?: missing("exDate"),
+                recordDate = recordDate ?: missing("recordDate"),
+                payDate = payDate ?: missing("payDate"),
+                declaredGrossPerUnit = declaredGrossPerUnit,
+                skip = skip ?: missing("skip"),
             )
         }
 
@@ -3540,7 +3677,7 @@ object DesktopInstrumentPackParser {
         )
 
         private companion object {
-            const val SCHEMA_VERSION: Int = 5
+            const val SCHEMA_VERSION: Int = 6
             const val MAX_JSON_DEPTH: Int = 12
             const val MAX_JSON_NODES: Int = 750_000
             const val MAX_FIELD_NAME_LENGTH: Int = 64
@@ -3909,8 +4046,18 @@ object DesktopInstrumentPackParser {
                 "managementStyle",
                 "syntheticSwapFunding",
                 "activeReturnModelSupport",
+                "activeSyntheticSwapModelParameters",
                 "provenance",
                 "officialSourceUrls",
+            )
+            val ACTIVE_SYNTHETIC_SWAP_MODEL_PARAMETER_FIELDS: Set<String> = setOf(
+                "assumptionId",
+                "activeAlphaAnnualMean",
+                "activeAlphaAnnualVolatility",
+                "annualSwapFundingSpread",
+                "counterpartyDefaultHazardRateAnnual",
+                "counterpartyRecoveryRate",
+                "counterpartyExposureFraction",
             )
             val CASH_COLLATERALIZED_PUT_SPREAD_TERMS_FIELDS: Set<String> = setOf(
                 "productId",
@@ -4097,6 +4244,7 @@ object DesktopInstrumentPackParser {
                 "assetClass",
                 "taxCategory",
                 "annualExpenseRatio",
+                "annualTransactionCostRate",
                 "fxProfile",
                 "leverage",
                 "taxablePriceGainRatio",
@@ -4112,6 +4260,7 @@ object DesktopInstrumentPackParser {
                 "strategy",
                 "distributionFrequency",
                 "distributionCalendar",
+                "distributionPolicy",
                 "upsideParticipation",
                 "downsideParticipation",
                 "durationYears",
@@ -4127,7 +4276,21 @@ object DesktopInstrumentPackParser {
                 "principalRisk",
             )
             val BEHAVIOR_PROFILE_REQUIRED_FIELDS: Set<String> =
-                BEHAVIOR_PROFILE_FIELDS - "distributionCalendar"
+                BEHAVIOR_PROFILE_FIELDS - setOf("distributionCalendar", "distributionPolicy")
+            val DISTRIBUTION_POLICY_FIELDS: Set<String> = setOf(
+                "projectedPaymentLagBusinessDays",
+                "projectionAssumption",
+                "projectedAnnualNominalGrowthRate",
+                "projectedAmountVariationRate",
+                "announcedDistributions",
+            )
+            val DISTRIBUTION_ANNOUNCEMENT_FIELDS: Set<String> = setOf(
+                "exDate",
+                "recordDate",
+                "payDate",
+                "declaredGrossPerUnit",
+                "skip",
+            )
             val IDENTITY_PROFILE_FIELDS: Set<String> = setOf(
                 "aliases",
                 "issuerOrManager",
