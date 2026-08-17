@@ -21,8 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,18 +34,16 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.amond.kmpbook.ui.components.LoadingFinancialFact
+import com.amond.kmpbook.ui.components.MarketHistorySlideFrame
+import com.amond.kmpbook.ui.components.MarketHistorySlideStatus
 import com.amond.kmpbook.ui.theme.MarketType
 import com.amond.kmpbook.ui.theme.MarketSimulatorTheme
 import kmpbook.composeapp.generated.resources.Res
@@ -67,7 +63,11 @@ fun OpeningScreen(
     isLoadingComplete: Boolean,
     loadingStatus: String,
     loadingError: String?,
+    loadingErrorTitle: String = "시뮬레이션을 준비하지 못했습니다",
+    loadingErrorSecondaryActionLabel: String? = null,
+    onLoadingErrorSecondaryAction: () -> Unit = {},
     onRetry: () -> Unit,
+    onSlideshowEntered: () -> Unit = {},
     onFinished: () -> Unit,
 ) {
     var phase by remember { mutableStateOf(OpeningSequencePhase.IT_PLAY) }
@@ -76,6 +76,7 @@ fun OpeningScreen(
     val overlayAlpha = remember { Animatable(1f) }
     val latestLoadingComplete by rememberUpdatedState(isLoadingComplete)
     val latestLoadingError by rememberUpdatedState(loadingError)
+    val latestOnSlideshowEntered by rememberUpdatedState(onSlideshowEntered)
     val latestOnFinished by rememberUpdatedState(onFinished)
     val interactionSource = remember { MutableInteractionSource() }
     val slides = remember { openingSlides.shuffled() }
@@ -102,6 +103,7 @@ fun OpeningScreen(
     }
     LaunchedEffect(phase) {
         if (phase != OpeningSequencePhase.SLIDESHOW) return@LaunchedEffect
+        latestOnSlideshowEntered()
         var displayedSlideCount = 1
         while (!finishRequested) {
             delay(SLIDE_HOLD_MILLIS)
@@ -156,7 +158,6 @@ fun OpeningScreen(
                         OpeningSequencePhase.SLIDESHOW -> SlideshowFrame(
                             slides = slides,
                             currentSlideIndex = currentSlideIndex,
-                            isLoadingComplete = isLoadingComplete,
                             loadingStatus = loadingStatus,
                         )
                         else -> Box(Modifier.fillMaxSize().background(Color.Black))
@@ -171,8 +172,11 @@ fun OpeningScreen(
                     exit = fadeOut(tween(ERROR_PANEL_FADE_MILLIS)),
                 ) {
                     OpeningErrorPanel(
+                        title = loadingErrorTitle,
                         error = errorMessage.orEmpty(),
                         onRetry = onRetry,
+                        secondaryActionLabel = loadingErrorSecondaryActionLabel,
+                        onSecondaryAction = onLoadingErrorSecondaryAction,
                     )
                 }
             }
@@ -285,7 +289,6 @@ private fun WhiteLogo(
 private fun SlideshowFrame(
     slides: List<OpeningSlide>,
     currentSlideIndex: Int,
-    isLoadingComplete: Boolean,
     loadingStatus: String,
 ) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -294,117 +297,36 @@ private fun SlideshowFrame(
             modifier = Modifier.fillMaxSize(),
             animationSpec = tween(durationMillis = SLIDE_CROSSFADE_MILLIS),
         ) { visibleSlideIndex ->
-            Image(
-                painter = painterResource(slides[visibleSlideIndex].image),
-                contentDescription = slides[visibleSlideIndex].market,
+            val slide = slides[visibleSlideIndex]
+            MarketHistorySlideFrame(
+                image = slide.image,
+                market = slide.market,
+                year = slide.year,
+                credit = slide.credit,
+                factKey = "opening:$visibleSlideIndex",
+                statusLabel = "로딩 중",
+                statusDescription = loadingStatus,
+                showProgress = true,
+                showStatus = false,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
             )
         }
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0f to Color.Black.copy(alpha = 0.66f),
-                            0.24f to Color.Transparent,
-                            0.48f to Color.Transparent,
-                            1f to Color.Black.copy(alpha = 0.94f),
-                        ),
-                    ),
-                ),
-        )
-        SlideshowCaption(
-            slide = slides[currentSlideIndex],
-            currentSlideIndex = currentSlideIndex,
-            modifier = Modifier.align(Alignment.BottomStart),
-        )
-        SlideshowLoadingStatus(
-            isLoadingComplete = isLoadingComplete,
-            loadingStatus = loadingStatus,
+        MarketHistorySlideStatus(
+            label = "로딩 중",
+            description = loadingStatus,
+            showProgress = true,
             modifier = Modifier.align(Alignment.BottomEnd),
         )
     }
 }
 
 @Composable
-private fun SlideshowLoadingStatus(
-    isLoadingComplete: Boolean,
-    loadingStatus: String,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier.padding(end = 54.dp, bottom = 54.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (!isLoadingComplete) {
-            CircularProgressIndicator(
-                modifier = Modifier
-                    .size(18.dp)
-                    .semantics { contentDescription = loadingStatus },
-                color = Color.White,
-                strokeWidth = 1.5.dp,
-            )
-        }
-        Text(
-            text = if (isLoadingComplete) "준비 완료" else "로딩 중",
-            style = MarketType.caption.copy(
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 1.4.sp,
-            ),
-            color = Color.White.copy(alpha = 0.82f),
-        )
-    }
-}
-
-@Composable
-private fun SlideshowCaption(
-    slide: OpeningSlide,
-    currentSlideIndex: Int,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.padding(start = 54.dp, end = 54.dp, bottom = 44.dp),
-        verticalArrangement = Arrangement.spacedBy(13.dp),
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = slide.market,
-                style = MarketType.caption.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 1.8.sp,
-                ),
-                color = Color.White,
-            )
-            Box(Modifier.width(36.dp).height(1.dp).background(Color.White.copy(alpha = 0.46f)))
-            Text(
-                text = slide.year,
-                style = MarketType.number.copy(letterSpacing = 1.4.sp),
-                color = Color.White,
-            )
-        }
-        LoadingFinancialFact(
-            factKey = "opening:$currentSlideIndex",
-            modifier = Modifier.widthIn(max = 760.dp),
-            dark = true,
-        )
-        Text(
-            text = slide.credit,
-            style = MarketType.caption.copy(fontSize = 10.sp, letterSpacing = 0.15.sp),
-            color = Color.White.copy(alpha = 0.48f),
-        )
-    }
-}
-
-@Composable
 private fun OpeningErrorPanel(
+    title: String,
     error: String,
     onRetry: () -> Unit,
+    secondaryActionLabel: String?,
+    onSecondaryAction: () -> Unit,
 ) {
     Surface(
         modifier = Modifier
@@ -418,7 +340,7 @@ private fun OpeningErrorPanel(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                text = "시뮬레이션을 준비하지 못했습니다",
+                text = title,
                 style = MarketType.heading,
                 color = Color.White,
                 textAlign = TextAlign.Center,
@@ -431,12 +353,26 @@ private fun OpeningErrorPanel(
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis,
             )
-            TextButton(onClick = onRetry) {
-                Text(
-                    text = "다시 시도",
-                    style = MarketType.label.copy(letterSpacing = 1.sp),
-                    color = Color.White,
-                )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (secondaryActionLabel != null) {
+                    TextButton(onClick = onSecondaryAction) {
+                        Text(
+                            text = secondaryActionLabel,
+                            style = MarketType.label.copy(letterSpacing = 1.sp),
+                            color = Color.White.copy(alpha = 0.72f),
+                        )
+                    }
+                }
+                TextButton(onClick = onRetry) {
+                    Text(
+                        text = "다시 시도",
+                        style = MarketType.label.copy(letterSpacing = 1.sp),
+                        color = Color.White,
+                    )
+                }
             }
         }
     }
@@ -446,10 +382,10 @@ private const val IT_PLAY_HOLD_MILLIS: Long = 3_200L
 private const val BLACKOUT_MILLIS: Long = 500L
 private const val EXCHANGES_HOLD_MILLIS: Long = 4_200L
 private const val TECHNOLOGY_HOLD_MILLIS: Long = 3_600L
-private const val SLIDE_HOLD_MILLIS: Long = 3_200L
+private const val SLIDE_HOLD_MILLIS: Long = 6_500L
 private const val MINIMUM_SLIDESHOW_SLIDES: Int = 3
 private const val MAXIMUM_SLIDESHOW_SLIDES: Int = 7
 private const val FRAME_CROSSFADE_MILLIS: Int = 350
-private const val SLIDE_CROSSFADE_MILLIS: Int = 620
+private const val SLIDE_CROSSFADE_MILLIS: Int = 900
 private const val ERROR_PANEL_FADE_MILLIS: Int = 240
 private const val OPENING_FADE_OUT_MILLIS: Int = 700

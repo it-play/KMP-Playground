@@ -27,11 +27,13 @@ fun LoadingFinancialFact(
     modifier: Modifier = Modifier,
     dark: Boolean = false,
     compact: Boolean = false,
+    autoRotate: Boolean = true,
 ) {
     var factIndex by remember(factKey) {
         mutableIntStateOf((factKey.hashCode() and Int.MAX_VALUE) % LOADING_FINANCIAL_FACTS.size)
     }
-    LaunchedEffect(factKey) {
+    LaunchedEffect(factKey, autoRotate) {
+        if (!autoRotate) return@LaunchedEffect
         while (true) {
             delay(LOADING_FACT_ROTATION_MILLIS)
             factIndex = (factIndex + 1) % LOADING_FINANCIAL_FACTS.size
