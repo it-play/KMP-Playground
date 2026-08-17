@@ -41,6 +41,7 @@ import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.data.InstrumentPack
 import com.amond.kmpbook.presentation.simulator.SimulatorViewModel
 import com.amond.kmpbook.ui.components.LoadingFinancialFact
+import com.amond.kmpbook.ui.screens.opening.OpeningScreen
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketDesignSystem
 import com.amond.kmpbook.ui.theme.MarketLayout
@@ -87,6 +88,8 @@ fun main() {
         var bootstrapError by remember { mutableStateOf<String?>(null) }
         var baseCatalog by remember { mutableStateOf<InstrumentCatalogSnapshot?>(null) }
         var simulatorViewModel by remember { mutableStateOf<SimulatorViewModel?>(null) }
+        var appInitialReady by remember { mutableStateOf(false) }
+        var openingComplete by remember { mutableStateOf(false) }
         val windowState = rememberWindowState(
             width = MarketLayout.defaultWindowWidth,
             height = MarketLayout.defaultWindowHeight,
@@ -135,53 +138,70 @@ fun main() {
                 }
             },
         ) {
-            LaunchedEffect(bootstrapAttempt) {
-                bootstrapStage = 0
-                bootstrapStatus = "기본 종목 카탈로그를 읽고 있습니다."
-                bootstrapError = null
-                baseCatalog = null
-                simulatorViewModel = null
-                try {
-                    val catalog = loadBaseInstrumentCatalog()
-                    bootstrapStage = 1
-                    bootstrapStatus = "시장 엔진과 거래 원장을 준비하고 있습니다."
-                    val viewModel = withContext(Dispatchers.Default) {
-                        SimulatorViewModel(catalog)
+            Box(modifier = Modifier.fillMaxSize()) {
+                LaunchedEffect(bootstrapAttempt) {
+                    bootstrapStage = 0
+                    bootstrapStatus = "기본 종목 카탈로그를 읽고 있습니다."
+                    bootstrapError = null
+                    baseCatalog = null
+                    simulatorViewModel = null
+                    appInitialReady = false
+                    try {
+                        val catalog = loadBaseInstrumentCatalog()
+                        bootstrapStage = 1
+                        bootstrapStatus = "시장 엔진과 거래 원장을 준비하고 있습니다."
+                        val viewModel = withContext(Dispatchers.Default) {
+                            SimulatorViewModel(catalog)
+                        }
+                        bootstrapStage = 2
+                        bootstrapStatus = "화면을 준비하고 있습니다."
+                        baseCatalog = catalog
+                        simulatorViewModel = viewModel
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        bootstrapError = error.message?.take(300)?.takeIf(String::isNotBlank)
+                            ?: "원인을 확인할 수 없는 초기화 오류가 발생했습니다."
                     }
-                    bootstrapStage = 2
-                    bootstrapStatus = "화면을 준비하고 있습니다."
-                    baseCatalog = catalog
-                    simulatorViewModel = viewModel
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    bootstrapError = error.message?.take(300)?.takeIf(String::isNotBlank)
-                        ?: "원인을 확인할 수 없는 초기화 오류가 발생했습니다."
                 }
-            }
 
-            val readyCatalog = baseCatalog
-            val readyViewModel = simulatorViewModel
-            if (readyCatalog != null && readyViewModel != null) {
-                App(
-                    baseInstrumentCatalog = readyCatalog,
-                    viewModel = readyViewModel,
-                    onExitRequest = ::exitApplication,
-                    onExitBlockedChanged = { blocked -> isExitBlocked = blocked },
-                    escapeRequest = escapeRequest,
-                    debugConsoleToggleRequest = debugConsoleToggleRequest,
-                    onDebugConsoleAvailabilityChanged = { available ->
-                        isDebugConsoleAvailable = available
-                        if (!available) isGravePressed = false
-                    },
-                )
-            } else {
-                BootstrapLoadingScreen(
-                    stage = bootstrapStage,
-                    status = bootstrapStatus,
-                    error = bootstrapError,
-                    onRetry = { bootstrapAttempt++ },
-                )
+                val readyCatalog = baseCatalog
+                val readyViewModel = simulatorViewModel
+                if (readyCatalog != null && readyViewModel != null) {
+                    App(
+                        baseInstrumentCatalog = readyCatalog,
+                        viewModel = readyViewModel,
+                        onExitRequest = ::exitApplication,
+                        onExitBlockedChanged = { blocked -> isExitBlocked = blocked },
+                        escapeRequest = escapeRequest,
+                        debugConsoleToggleRequest = debugConsoleToggleRequest,
+                        onDebugConsoleAvailabilityChanged = { available ->
+                            isDebugConsoleAvailable = available
+                            if (!available) isGravePressed = false
+                        },
+                        onInitialLoadingComplete = { appInitialReady = true },
+                        isLaunchOverlayVisible = !openingComplete,
+                    )
+                } else {
+                    BootstrapLoadingScreen(
+                        stage = bootstrapStage,
+                        status = bootstrapStatus,
+                        error = bootstrapError,
+                        onRetry = { bootstrapAttempt++ },
+                    )
+                }
+
+                if (!openingComplete) {
+                    OpeningScreen(
+                        isLoadingComplete = readyCatalog != null &&
+                            readyViewModel != null &&
+                            appInitialReady,
+                        loadingStatus = bootstrapStatus,
+                        loadingError = bootstrapError,
+                        onRetry = { bootstrapAttempt++ },
+                        onFinished = { openingComplete = true },
+                    )
+                }
             }
         }
     }

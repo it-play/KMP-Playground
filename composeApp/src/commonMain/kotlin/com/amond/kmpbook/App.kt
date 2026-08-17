@@ -171,6 +171,8 @@ fun App(
     escapeRequest: Int = 0,
     debugConsoleToggleRequest: Int = 0,
     onDebugConsoleAvailabilityChanged: (Boolean) -> Unit = {},
+    onInitialLoadingComplete: () -> Unit = {},
+    isLaunchOverlayVisible: Boolean = false,
 ) {
     val debugConsoleProcessor = remember(viewModel) { DebugConsoleCommandProcessor(viewModel) }
     val debugConsoleSession = remember { DebugConsoleSession() }
@@ -301,6 +303,10 @@ fun App(
             appSettingsStorage.loadAudioSettings()
         }
         areAudioSettingsLoaded = true
+    }
+    val isInitialLoadingComplete = !isLoadingSaves && !isScanningMods && areAudioSettingsLoaded
+    LaunchedEffect(isInitialLoadingComplete) {
+        if (isInitialLoadingComplete) onInitialLoadingComplete()
     }
     LaunchedEffect(debugConsoleToggleRequest) {
         if (debugConsoleToggleRequest > 0 && isDebugConsoleAvailable) {
@@ -743,39 +749,41 @@ fun App(
                 )
             }
 
-            when {
-                isSavingGame -> GameOperationLoadingDialog(
-                    title = "게임 저장 중",
-                    detail = persistenceOperationDetail
-                        ?: "현재 게임 상태를 파일에 기록하고 있습니다.",
-                )
-                isLoadingGame -> GameOperationLoadingDialog(
-                    title = "게임 불러오는 중",
-                    detail = persistenceOperationDetail
-                        ?: "저장된 게임 상태를 확인하고 복원하고 있습니다.",
-                )
-                deletingSaveFileName != null -> GameOperationLoadingDialog(
-                    title = "저장 파일 삭제 중",
-                    detail = "${deletingSaveFileName.orEmpty()} 파일을 안전하게 삭제하고 목록을 갱신하고 있습니다.",
-                )
-                isStartingNewGame -> GameOperationLoadingDialog(
-                    title = "새 게임 준비 중",
-                    detail = newGameOperationDetail
-                        ?: "새 시장 시뮬레이션을 준비하고 있습니다.",
-                )
-                isResettingGame -> GameOperationLoadingDialog(
-                    title = "장부 초기화 중",
-                    detail = resetOperationDetail
-                        ?: "초기 시장 상태를 다시 구성하고 있습니다.",
-                )
-                activeModMutations > 0 -> GameOperationLoadingDialog(
-                    title = "모드 변경 저장 중",
-                    detail = modStatusMessage,
-                )
-                isScanningMods -> GameOperationLoadingDialog(
-                    title = "모드 카탈로그 확인 중",
-                    detail = modStatusMessage,
-                )
+            if (!isLaunchOverlayVisible) {
+                when {
+                    isSavingGame -> GameOperationLoadingDialog(
+                        title = "게임 저장 중",
+                        detail = persistenceOperationDetail
+                            ?: "현재 게임 상태를 파일에 기록하고 있습니다.",
+                    )
+                    isLoadingGame -> GameOperationLoadingDialog(
+                        title = "게임 불러오는 중",
+                        detail = persistenceOperationDetail
+                            ?: "저장된 게임 상태를 확인하고 복원하고 있습니다.",
+                    )
+                    deletingSaveFileName != null -> GameOperationLoadingDialog(
+                        title = "저장 파일 삭제 중",
+                        detail = "${deletingSaveFileName.orEmpty()} 파일을 안전하게 삭제하고 목록을 갱신하고 있습니다.",
+                    )
+                    isStartingNewGame -> GameOperationLoadingDialog(
+                        title = "새 게임 준비 중",
+                        detail = newGameOperationDetail
+                            ?: "새 시장 시뮬레이션을 준비하고 있습니다.",
+                    )
+                    isResettingGame -> GameOperationLoadingDialog(
+                        title = "장부 초기화 중",
+                        detail = resetOperationDetail
+                            ?: "초기 시장 상태를 다시 구성하고 있습니다.",
+                    )
+                    activeModMutations > 0 -> GameOperationLoadingDialog(
+                        title = "모드 변경 저장 중",
+                        detail = modStatusMessage,
+                    )
+                    isScanningMods -> GameOperationLoadingDialog(
+                        title = "모드 카탈로그 확인 중",
+                        detail = modStatusMessage,
+                    )
+                }
             }
         }
     }
