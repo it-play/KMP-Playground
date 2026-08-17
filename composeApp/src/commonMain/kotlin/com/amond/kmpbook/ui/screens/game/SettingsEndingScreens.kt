@@ -255,6 +255,13 @@ fun SettingsScreen(
                             Spacer(Modifier.weight(1f))
                             Text("${saves.size}개", style = MarketType.caption, color = MarketColors.InkMuted)
                         }
+                        if (isLoadingSaves && saves.isNotEmpty()) {
+                            Spacer(Modifier.height(6.dp))
+                            LoadingFinancialFact(
+                                factKey = "settings-save-refresh",
+                                compact = true,
+                            )
+                        }
                         Spacer(Modifier.height(7.dp))
                         if (saves.isEmpty()) {
                             Box(

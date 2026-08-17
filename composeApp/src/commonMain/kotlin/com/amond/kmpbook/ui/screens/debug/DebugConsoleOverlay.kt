@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import com.amond.kmpbook.debug.console.DebugConsoleLine
 import com.amond.kmpbook.debug.console.DebugConsoleLineTone
 import com.amond.kmpbook.debug.console.DebugConsoleSession
+import com.amond.kmpbook.ui.components.LoadingFinancialFact
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketMotion
 import com.amond.kmpbook.ui.theme.MarketRadii
@@ -189,41 +190,51 @@ private fun DebugConsoleHeader(
     onClear: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 10.dp, top = 12.dp, bottom = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .size(9.dp)
-                .background(
-                    if (isExecuting) MarketColors.Amber else MarketColors.Positive,
-                    RoundedCornerShape(MarketRadii.pill),
-                ),
-        )
-        Spacer(Modifier.width(10.dp))
-        Column {
-            Text(
-                text = "RUNTIME / DEBUG CONSOLE",
-                style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
-                color = Color.White,
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 10.dp, top = 12.dp, bottom = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(9.dp)
+                    .background(
+                        if (isExecuting) MarketColors.Amber else MarketColors.Positive,
+                        RoundedCornerShape(MarketRadii.pill),
+                    ),
             )
-            Text(
-                text = if (isExecuting) "명령을 적용하는 중" else "개발 모드 연결됨 · 로그 ${lineCount}줄",
-                style = MarketType.caption,
-                color = if (isExecuting) MarketColors.Amber else MarketColors.SignalLine,
-            )
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(
+                    text = "RUNTIME / DEBUG CONSOLE",
+                    style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                    color = Color.White,
+                )
+                Text(
+                    text = if (isExecuting) "명령을 적용하는 중" else "개발 모드 연결됨 · 로그 ${lineCount}줄",
+                    style = MarketType.caption,
+                    color = if (isExecuting) MarketColors.Amber else MarketColors.SignalLine,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onClear, enabled = lineCount > 0 && !isExecuting) {
+                Text(
+                    "기록 지우기",
+                    style = MarketType.label,
+                    color = if (lineCount > 0 && !isExecuting) MarketColors.Grey200 else MarketColors.Grey600,
+                )
+            }
+            TextButton(onClick = onDismiss) {
+                Text("닫기  ×", style = MarketType.label, color = MarketColors.Grey200)
+            }
         }
-        Spacer(Modifier.weight(1f))
-        TextButton(onClick = onClear, enabled = lineCount > 0 && !isExecuting) {
-            Text(
-                "기록 지우기",
-                style = MarketType.label,
-                color = if (lineCount > 0 && !isExecuting) MarketColors.Grey200 else MarketColors.Grey600,
+        if (isExecuting) {
+            LoadingFinancialFact(
+                factKey = "debug-command",
+                modifier = Modifier.padding(start = 37.dp, end = 18.dp, bottom = 10.dp),
+                dark = true,
+                compact = true,
             )
-        }
-        TextButton(onClick = onDismiss) {
-            Text("닫기  ×", style = MarketType.label, color = MarketColors.Grey200)
         }
     }
 }

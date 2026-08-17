@@ -291,6 +291,13 @@ private fun SaveOverview(
                 Text(statusMessage, style = MarketType.body, color = MarketColors.PrimaryText)
             }
         }
+        if (isLoading && saves.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            LoadingFinancialFact(
+                factKey = "lobby-save-refresh",
+                compact = true,
+            )
+        }
         if (saves.isEmpty() && isLoading) {
             Column(
                 Modifier.fillMaxSize(),
