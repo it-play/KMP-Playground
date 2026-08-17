@@ -81,6 +81,8 @@ fun GameLobbyScreen(
 ) {
     val latest = saves.firstOrNull()
     var selectedPanel by remember { mutableStateOf(LobbyPanel.MARKET) }
+    val marketCarouselState = rememberLobbyMarketCarouselState()
+    LobbyMarketIndexLoader(marketCarouselState)
 
     Row(modifier.fillMaxSize().background(MarketColors.Ledger)) {
         Column(
@@ -155,7 +157,10 @@ fun GameLobbyScreen(
 
         Box(Modifier.weight(1f).fillMaxHeight().padding(58.dp)) {
             when (selectedPanel) {
-                LobbyPanel.MARKET -> LobbyMarketCarousel(Modifier.fillMaxSize())
+                LobbyPanel.MARKET -> LobbyMarketCarousel(
+                    state = marketCarouselState,
+                    modifier = Modifier.fillMaxSize(),
+                )
                 LobbyPanel.LOAD_GAME -> SaveOverview(
                     title = "저장 파일",
                     saves = saves,
