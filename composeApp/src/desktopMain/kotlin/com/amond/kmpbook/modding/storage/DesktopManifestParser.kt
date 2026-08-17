@@ -42,6 +42,7 @@ internal object DesktopManifestParser {
     private const val MAX_VERSION_LENGTH: Int = ActiveModConfiguration.MAX_VERSION_LENGTH
     private const val MAX_COVER_NAME_LENGTH: Int = 128
     private const val MAX_INSTRUMENT_CONTENT_NAME_LENGTH: Int = 128
+    private const val MAX_RUNTIME_JAR_PATH_LENGTH: Int = 160
     private const val MAX_PERMISSIONS: Int = 16
     private const val MAX_SETTINGS: Int = ActiveModConfiguration.MAX_SETTINGS
     private const val MAX_SETTING_NAME_LENGTH: Int = 120
@@ -201,6 +202,7 @@ internal object DesktopManifestParser {
         var lastModifiedText: String? = null
         var explicitCover: String? = null
         var instrumentContentPath: Path? = null
+        var runtimeJarPath: Path? = null
         var capabilities: Set<ModCapability> = emptySet()
         var settings: List<ModSettingDefinition> = emptyList()
 
@@ -219,6 +221,7 @@ internal object DesktopManifestParser {
                         "lastModified" -> lastModifiedText = readSimpleText(reader, 10, allowBlank = false)
                         "cover" -> explicitCover = readSimpleText(reader, MAX_COVER_NAME_LENGTH, allowBlank = false)
                         "content" -> instrumentContentPath = parseContent(reader, modDirectory)
+                        "runtime" -> runtimeJarPath = parseRuntime(reader, modDirectory)
                         "permissions" -> capabilities = parsePermissions(reader)
                         "settings" -> settings = parseSettings(reader)
                         else -> throw ModManifestException(
@@ -260,6 +263,7 @@ internal object DesktopManifestParser {
                             instrumentPack = null,
                             settings = settings,
                             requestedCapabilities = capabilities,
+                            runtimeJarPath = runtimeJarPath?.toAbsolutePath()?.normalize()?.toString(),
                             configuration = emptyMap(),
                             enabled = false,
                         ),
@@ -315,6 +319,58 @@ internal object DesktopManifestParser {
             }
         }
         throw ModManifestException("content 요소가 닫히지 않았습니다.")
+    }
+
+    private fun parseRuntime(reader: XMLStreamReader, modDirectory: Path): Path {
+        requireElement(reader, "runtime")
+        requireAttributes(reader, emptySet())
+        var runtimeJarPath: Path? = null
+        while (reader.hasNext()) {
+            when (reader.next()) {
+                XMLStreamConstants.START_ELEMENT -> {
+                    requireElement(reader, "jvmJar")
+                    if (runtimeJarPath != null) {
+                        throw ModManifestException("runtime의 jvmJar 요소가 중복되었습니다.")
+                    }
+                    val relativePath = readSimpleText(
+                        reader,
+                        MAX_RUNTIME_JAR_PATH_LENGTH,
+                        allowBlank = false,
+                    )
+                    validateRuntimeJarPath(relativePath)
+                    val candidate = modDirectory.resolve(relativePath).normalize()
+                    if (!candidate.startsWith(modDirectory.normalize()) || candidate == modDirectory.normalize()) {
+                        throw ModManifestException("실행 JAR는 모드 폴더 안에 있어야 합니다.")
+                    }
+                    if (Files.isSymbolicLink(candidate) ||
+                        !Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS)
+                    ) {
+                        throw ModManifestException("실행 JAR가 안전한 일반 파일이 아닙니다.")
+                    }
+                    if (Files.size(candidate) !in 1..MAX_RUNTIME_JAR_BYTES) {
+                        throw ModManifestException("실행 JAR 크기는 32 MiB 이하여야 합니다.")
+                    }
+                    runtimeJarPath = candidate
+                }
+
+                XMLStreamConstants.END_ELEMENT -> {
+                    if (reader.localName != "runtime") {
+                        throw ModManifestException("runtime 요소 구조가 올바르지 않습니다.")
+                    }
+                    return runtimeJarPath
+                        ?: throw ModManifestException("runtime에는 jvmJar 요소가 필요합니다.")
+                }
+
+                XMLStreamConstants.CHARACTERS,
+                XMLStreamConstants.SPACE,
+                XMLStreamConstants.CDATA,
+                -> requireWhitespace(reader.text)
+
+                XMLStreamConstants.COMMENT -> Unit
+                else -> rejectNestedXml(reader)
+            }
+        }
+        throw ModManifestException("runtime 요소가 닫히지 않았습니다.")
     }
 
     private fun parseInstruments(reader: XMLStreamReader, modDirectory: Path): Path {
@@ -722,6 +778,24 @@ internal object DesktopManifestParser {
             value.any { it == '/' || it == '\\' || it.isISOControl() || it in forbiddenWindowsCharacters }
         ) {
             throw ModManifestException("instruments file은 모드 루트의 단일 JSON 파일 이름이어야 합니다.")
+        }
+    }
+
+    private fun validateRuntimeJarPath(value: String) {
+        val fileName = value.substringAfter("lib/", missingDelimiterValue = "")
+        val forbiddenWindowsCharacters = setOf(':', '*', '?', '"', '<', '>', '|')
+        if (value.length > MAX_RUNTIME_JAR_PATH_LENGTH ||
+            !value.startsWith("lib/") ||
+            fileName.isBlank() ||
+            fileName.contains('/') ||
+            !fileName.endsWith(".jar", ignoreCase = true) ||
+            fileName == "." ||
+            fileName == ".." ||
+            fileName.endsWith('.') ||
+            fileName.endsWith(' ') ||
+            value.any { it == '\\' || it.isISOControl() || it in forbiddenWindowsCharacters }
+        ) {
+            throw ModManifestException("jvmJar는 lib 폴더 안의 단일 JAR 경로여야 합니다.")
         }
     }
 

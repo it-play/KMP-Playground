@@ -1,10 +1,11 @@
 package com.amond.kmpbook.modding.storage
 
 import com.amond.kmpbook.domain.data.DesktopInstrumentPackParser
-import com.amond.kmpbook.modding.builtin.debug.DebugMod
 import com.amond.kmpbook.modding.model.InstalledMod
 import com.amond.kmpbook.modding.model.ModCatalog
 import com.amond.kmpbook.modding.model.ModLoadIssue
+import com.amond.kmpbook.modding.runtime.BundleTrustException
+import com.amond.kmpbook.modding.runtime.DesktopExecutableBundleVerifier
 import java.awt.Desktop
 import java.io.IOException
 import java.nio.file.Files
@@ -20,11 +21,7 @@ actual class ModStorage actual constructor() {
     private val appDataDirectory: Path = defaultModAppDataDirectory()
     private val targetDirectory: Path = defaultModsDirectory()
     private val stateStorage = DesktopModStateStorage(appDataDirectory)
-    private val bundledModInstaller = DesktopBundledModInstaller(
-        appDataDirectory = appDataDirectory,
-        modsDirectory = targetDirectory,
-        stateStorage = stateStorage,
-    )
+    private val executableBundleVerifier = DesktopExecutableBundleVerifier()
 
     actual val modsDirectory: String = targetDirectory.toString()
 
@@ -39,7 +36,14 @@ actual class ModStorage actual constructor() {
             }
             try {
                 ensureSafeDirectories()?.let { return@withLock it }
-                val mod = loadCurrentMod(modId)
+                val mod = try {
+                    loadCurrentMod(modId)
+                } catch (error: Exception) {
+                    if (!enabled) {
+                        return@withLock disableAfterTrustFailure(modId, error)
+                    }
+                    throw error
+                }
                 stateStorage.update { storedStates ->
                     val retainedStates = withoutRemovedModStates(storedStates)
                     val currentState = retainedStates[modId]
@@ -149,11 +153,6 @@ actual class ModStorage actual constructor() {
                 issues = listOf(ModLoadIssue(directoryName = "mods", message = error)),
             )
         }
-        val bundledInstallError = bundledModInstaller.ensureInstalled()
-        bundledInstallError?.let { error ->
-            issues += ModLoadIssue(directoryName = DebugMod.ID, message = error)
-        }
-        val bundledDebugValid = bundledModInstaller.isManagedInstallValid()
         val (storedStates, stateError) = stateStorage.read()
         if (stateError != null) {
             issues += ModLoadIssue(directoryName = "mods-state.json", message = stateError)
@@ -208,24 +207,12 @@ actual class ModStorage actual constructor() {
             directories.forEach { directory ->
                 val rawDirectoryName = directory.fileName.toString()
                 val displayName = safeDirectoryName(rawDirectoryName)
-                if (rawDirectoryName == DebugMod.ID && !bundledDebugValid) {
-                    if (bundledInstallError == null) {
-                        issues += ModLoadIssue(
-                            directoryName = displayName,
-                            message = "모드 파일의 무결성을 확인하지 못해 불러오지 않았습니다.",
-                        )
-                    }
-                    return@forEach
-                }
                 try {
-                    val parsed = loadInstrumentPack(DesktopManifestParser.parse(directory, rawDirectoryName))
-                    if (parsed.id == DebugMod.ID && !bundledModInstaller.isManagedInstallValid()) {
-                        issues += ModLoadIssue(
-                            directoryName = displayName,
-                            message = "모드 파일이 검사 중 변경되어 불러오지 않았습니다.",
-                        )
-                        return@forEach
-                    }
+                    val parsed = verifyExecutableBundle(
+                        directory = directory,
+                        mod = loadInstrumentPack(DesktopManifestParser.parse(directory, rawDirectoryName)),
+                        performRandomChallenge = false,
+                    )
                     val stored = storedStates[parsed.id]
                         ?.takeIf { state -> state.version == parsed.version }
                     add(
@@ -252,9 +239,6 @@ actual class ModStorage actual constructor() {
     }
 
     private fun loadCurrentMod(modId: String): InstalledMod {
-        if (modId == DebugMod.ID && !bundledModInstaller.isManagedInstallValid()) {
-            throw ModManifestException("모드 파일의 무결성을 확인할 수 없습니다.")
-        }
         val directory = targetDirectory.resolve(modId).normalize()
         if (directory.parent != targetDirectory ||
             Files.isSymbolicLink(directory) ||
@@ -262,11 +246,53 @@ actual class ModStorage actual constructor() {
         ) {
             throw ModManifestException("설치된 모드를 찾을 수 없습니다.")
         }
-        val parsed = loadInstrumentPack(DesktopManifestParser.parse(directory, modId))
-        if (modId == DebugMod.ID && !bundledModInstaller.isManagedInstallValid()) {
-            throw ModManifestException("모드 파일이 검사 중 변경되어 요청을 완료하지 못했습니다.")
+        return verifyExecutableBundle(
+            directory = directory,
+            mod = loadInstrumentPack(DesktopManifestParser.parse(directory, modId)),
+            performRandomChallenge = true,
+        )
+    }
+
+    private fun verifyExecutableBundle(
+        directory: Path,
+        mod: InstalledMod,
+        performRandomChallenge: Boolean,
+    ): InstalledMod {
+        if (mod.runtimeJarPath == null) return mod
+        val verified = try {
+            executableBundleVerifier.verify(
+                modDirectory = directory,
+                mod = mod,
+                performRandomChallenge = performRandomChallenge,
+            )
+        } catch (error: BundleTrustException) {
+            throw ModManifestException(error.message ?: "실행 모드의 신뢰 정보를 확인하지 못했습니다.")
         }
-        return parsed
+        return mod.copy(
+            executableFingerprint = verified.executableFingerprint,
+            grantedCapabilities = verified.grantedCapabilities,
+        )
+    }
+
+    private fun disableAfterTrustFailure(modId: String, trustError: Exception): String? {
+        val updateError = stateStorage.update { storedStates ->
+            val current = storedStates[modId]
+            if (current == null || !current.enabled) {
+                storedStates to null
+            } else {
+                storedStates.toMutableMap().apply {
+                    put(modId, current.copy(enabled = false))
+                } to null
+            }
+        }
+        if (updateError != null) return updateError
+        val reason = when (trustError) {
+            is ModManifestException -> trustError.message
+            is SecurityException -> "모드 파일에 접근할 권한이 없습니다."
+            is IOException -> "모드 파일을 읽지 못했습니다."
+            else -> null
+        }
+        return "${reason ?: "모드 신뢰 대조에 실패했습니다."} 안전을 위해 비활성 상태는 저장했습니다."
     }
 
     private fun validConfiguration(mod: InstalledMod, settings: Map<String, String>): Map<String, String> {
