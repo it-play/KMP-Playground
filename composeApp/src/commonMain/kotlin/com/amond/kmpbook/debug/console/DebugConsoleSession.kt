@@ -5,7 +5,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.amond.kmpbook.modding.builtin.debug.DebugMod
+import com.amond.kmpbook.modding.api.runtime.ModConsoleCommandHandler
+import com.amond.kmpbook.modding.api.runtime.ModConsolePresentationOptions
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -69,18 +70,15 @@ class DebugConsoleSession {
         mutableLines.clear()
     }
 
-    fun configure(settings: Map<String, String>) {
-        echoCommands = settings[DebugMod.ECHO_COMMANDS_SETTING]?.toBooleanStrictOrNull() ?: true
-        maxOutputLines = settings[DebugMod.MAX_HISTORY_SETTING]
-            ?.toIntOrNull()
-            ?.coerceIn(MIN_OUTPUT_LINES, MAX_OUTPUT_LINES)
-            ?: DEFAULT_MAX_OUTPUT_LINES
-        showWarnings = settings[DebugMod.SHOW_WARNINGS_SETTING]?.toBooleanStrictOrNull() ?: true
+    fun configure(options: ModConsolePresentationOptions) {
+        echoCommands = options.echoCommands
+        maxOutputLines = options.maxHistory.coerceIn(MIN_OUTPUT_LINES, MAX_OUTPUT_LINES)
+        showWarnings = options.showWarnings
         if (!showWarnings) mutableLines.removeAll { it.tone == DebugConsoleLineTone.WARNING }
         trimOutput()
     }
 
-    suspend fun execute(processor: DebugConsoleCommandProcessor) {
+    suspend fun execute(handler: ModConsoleCommandHandler) {
         executionMutex.withLock {
             val commandLine = input.trim()
             if (commandLine.isEmpty() || isExecuting) return@withLock
@@ -98,7 +96,7 @@ class DebugConsoleSession {
             if (echoCommands) appendLine("> $commandLine", DebugConsoleLineTone.COMMAND)
             isExecuting = true
             try {
-                val result = processor.execute(commandLine)
+                val result = handler.execute(commandLine)
                 val outputLines = result.lines.ifEmpty {
                     listOf(if (result.success) "명령을 실행했습니다." else "명령을 실행하지 못했습니다.")
                 }

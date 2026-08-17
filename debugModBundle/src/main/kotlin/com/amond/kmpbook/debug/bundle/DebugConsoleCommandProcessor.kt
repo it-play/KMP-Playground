@@ -1,6 +1,5 @@
-package com.amond.kmpbook.debug.console
+package com.amond.kmpbook.debug.bundle
 
-import com.amond.kmpbook.domain.model.game.GamePhase
 import com.amond.kmpbook.domain.model.instrument.StockDefinition
 import com.amond.kmpbook.domain.model.market.Currency
 import com.amond.kmpbook.domain.simulation.event.DebugEventGuide
@@ -8,31 +7,33 @@ import com.amond.kmpbook.domain.simulation.market.ExternalMarketForces
 import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.presentation.simulator.DebugPriceCurrency
 import com.amond.kmpbook.presentation.simulator.DebugRuntimeResult
-import com.amond.kmpbook.presentation.simulator.SimulatorViewModel
+import com.amond.kmpbook.modding.api.TrustedDebugGameApi
+import com.amond.kmpbook.modding.api.runtime.ModConsoleCommandHandler
+import com.amond.kmpbook.modding.api.runtime.ModConsoleCommandResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** Parser and typed command router for the trusted bundled developer console. */
-class DebugConsoleCommandProcessor(
-    private val viewModel: SimulatorViewModel,
-) {
-    suspend fun execute(commandLine: String): DebugConsoleCommandResult = try {
+internal class DebugConsoleCommandProcessor(
+    private val viewModel: TrustedDebugGameApi,
+) : ModConsoleCommandHandler {
+    override suspend fun execute(commandLine: String): ModConsoleCommandResult = try {
         withContext(Dispatchers.Main.immediate) { executeOnMain(commandLine) }
     } catch (exception: CancellationException) {
         throw exception
     } catch (_: RuntimeException) {
-        DebugConsoleCommandResult.failure("명령 처리 중 예기치 못한 오류가 발생했습니다.")
+        ModConsoleCommandResult.failure("명령 처리 중 예기치 못한 오류가 발생했습니다.")
     }
 
-    private fun executeOnMain(commandLine: String): DebugConsoleCommandResult {
+    private fun executeOnMain(commandLine: String): ModConsoleCommandResult {
         if (!viewModel.isDebugConsoleEnabled()) {
-            return DebugConsoleCommandResult.failure("현재 캠페인에 호환되는 디버그 모드가 활성화되지 않았습니다.")
+            return ModConsoleCommandResult.failure("현재 캠페인에 호환되는 디버그 모드가 활성화되지 않았습니다.")
         }
-        val tokens = tokenize(commandLine) ?: return DebugConsoleCommandResult.failure(
+        val tokens = tokenize(commandLine) ?: return ModConsoleCommandResult.failure(
             "따옴표가 닫히지 않았거나 명령 형식이 올바르지 않습니다.",
         )
-        if (tokens.isEmpty()) return DebugConsoleCommandResult.success()
+        if (tokens.isEmpty()) return ModConsoleCommandResult.success()
         return when (tokens.first().lowercase()) {
             "help", "?" -> help(tokens.drop(1))
             "status" -> if (tokens.size == 1) status() else usage("status")
@@ -55,32 +56,32 @@ class DebugConsoleCommandProcessor(
             } else {
                 usage("save-check")
             }
-            "clear" -> if (tokens.size == 1) DebugConsoleCommandResult.success() else usage("clear")
-            else -> DebugConsoleCommandResult.failure(
+            "clear" -> if (tokens.size == 1) ModConsoleCommandResult.success() else usage("clear")
+            else -> ModConsoleCommandResult.failure(
                 "알 수 없는 명령 '${tokens.first()}'입니다. 'help'로 명령 목록을 확인하세요.",
             )
         }
     }
 
-    private fun help(arguments: List<String>): DebugConsoleCommandResult {
+    private fun help(arguments: List<String>): ModConsoleCommandResult {
         val query = arguments.joinToString(" ").trim()
         val lines = if (query.isEmpty()) HELP_LINES else HELP_LINES.filter {
             it.contains(query, ignoreCase = true)
         }
         return if (lines.isEmpty()) {
-            DebugConsoleCommandResult.failure("'$query'에 해당하는 도움말이 없습니다.")
+            ModConsoleCommandResult.failure("'$query'에 해당하는 도움말이 없습니다.")
         } else {
-            DebugConsoleCommandResult(
+            ModConsoleCommandResult(
                 success = true,
                 lines = listOf("사용 가능한 디버그 명령 (${lines.size}개)") + lines,
             )
         }
     }
 
-    private fun status(): DebugConsoleCommandResult {
+    private fun status(): ModConsoleCommandResult {
         val state = viewModel.currentState
         val maxTurn = GameCalendar.turnAt(GameCalendar.endInstant)
-        return DebugConsoleCommandResult(
+        return ModConsoleCommandResult(
             success = true,
             lines = listOf(
                 "단계=${state.phase.name}, 턴=${state.turn}/$maxTurn, 시각=${state.currentTime}",
@@ -91,29 +92,29 @@ class DebugConsoleCommandProcessor(
         )
     }
 
-    private fun stocks(query: String?): DebugConsoleCommandResult {
+    private fun stocks(query: String?): ModConsoleCommandResult {
         val normalized = query?.trim().orEmpty()
         val matches = viewModel.currentState.stocks.filter { stock ->
             normalized.isEmpty() || stock.matches(normalized, partial = true)
         }
-        if (matches.isEmpty()) return DebugConsoleCommandResult.failure("조건에 맞는 종목이 없습니다.")
+        if (matches.isEmpty()) return ModConsoleCommandResult.failure("조건에 맞는 종목이 없습니다.")
         val shown = matches.take(MAX_LIST_RESULTS)
         val lines = shown.map { stock ->
             val price = viewModel.currentState.quotes[stock.id]?.price
             "${stock.id} | ${stock.name} | ${stock.currency.name} | price=$price"
         }.toMutableList()
         if (matches.size > shown.size) lines += "... ${matches.size - shown.size}개 결과 생략"
-        return DebugConsoleCommandResult(success = true, lines = lines)
+        return ModConsoleCommandResult(success = true, lines = lines)
     }
 
-    private fun stock(query: String): DebugConsoleCommandResult {
+    private fun stock(query: String): ModConsoleCommandResult {
         val resolved = resolveInstrument(query)
-        if (resolved.error != null) return DebugConsoleCommandResult.failure(resolved.error)
+        if (resolved.error != null) return ModConsoleCommandResult.failure(resolved.error)
         val stock = requireNotNull(resolved.stock)
         val state = viewModel.currentState
         val quote = state.quotes.getValue(stock.id)
         val holding = state.holdings[stock.id]
-        return DebugConsoleCommandResult(
+        return ModConsoleCommandResult(
             success = true,
             lines = listOf(
                 "${stock.id} | ${stock.name} (${stock.englishName})",
@@ -123,7 +124,7 @@ class DebugConsoleCommandProcessor(
         )
     }
 
-    private fun turn(tokens: List<String>): DebugConsoleCommandResult {
+    private fun turn(tokens: List<String>): ModConsoleCommandResult {
         if (tokens.size == 1) return status()
         return when (tokens[1].lowercase()) {
             "cancel" -> if (tokens.size == 2) {
@@ -150,7 +151,7 @@ class DebugConsoleCommandProcessor(
         }
     }
 
-    private fun price(tokens: List<String>): DebugConsoleCommandResult {
+    private fun price(tokens: List<String>): ModConsoleCommandResult {
         if (tokens.size < 2) return usage("price set <instrument> <amount> <native|krw|usd> | price change <instrument> <percent>")
         return when (tokens[1].lowercase()) {
             "set" -> {
@@ -177,7 +178,7 @@ class DebugConsoleCommandProcessor(
         }
     }
 
-    private fun cash(tokens: List<String>): DebugConsoleCommandResult {
+    private fun cash(tokens: List<String>): ModConsoleCommandResult {
         if (tokens.size != 4) return usage("cash add|set <krw|usd> <amount>")
         val currency = parseCurrency(tokens[2]) ?: return usage("통화는 krw 또는 usd여야 합니다.")
         val amount = parseNumber(tokens[3]) ?: return invalidNumber(tokens[3])
@@ -188,21 +189,21 @@ class DebugConsoleCommandProcessor(
         }
     }
 
-    private fun fx(tokens: List<String>): DebugConsoleCommandResult {
-        if (tokens.size == 1) return DebugConsoleCommandResult.success("USD/KRW=${viewModel.currentState.macro.usdKrw}")
+    private fun fx(tokens: List<String>): ModConsoleCommandResult {
+        if (tokens.size == 1) return ModConsoleCommandResult.success("USD/KRW=${viewModel.currentState.macro.usdKrw}")
         if (tokens.size != 3) return usage("fx set <usdKrw> | fx change <percent>")
         val value = parseNumber(tokens[2]) ?: return invalidNumber(tokens[2])
         return when (tokens[1].lowercase()) {
             "set" -> fromRuntime(viewModel.debugSetUsdKrw(value))
             "change", "percent" -> {
-                if (value <= -100.0) return DebugConsoleCommandResult.failure("환율 변화율은 -100%보다 커야 합니다.")
+                if (value <= -100.0) return ModConsoleCommandResult.failure("환율 변화율은 -100%보다 커야 합니다.")
                 fromRuntime(viewModel.debugSetUsdKrw(viewModel.currentState.macro.usdKrw * (1.0 + value / 100.0)))
             }
             else -> usage("fx set <usdKrw> | fx change <percent>")
         }
     }
 
-    private fun ending(tokens: List<String>): DebugConsoleCommandResult {
+    private fun ending(tokens: List<String>): ModConsoleCommandResult {
         if (tokens.size != 2) return usage("ending settle|finish")
         val target = GameCalendar.turnAt(GameCalendar.endInstant)
         val command = tokens.getOrNull(1)?.lowercase() ?: return usage("ending settle|finish")
@@ -219,10 +220,10 @@ class DebugConsoleCommandProcessor(
         }
     }
 
-    private fun rule(tokens: List<String>): DebugConsoleCommandResult {
+    private fun rule(tokens: List<String>): ModConsoleCommandResult {
         val state = viewModel.currentState
         if (tokens.size == 1 || tokens.getOrNull(1).equals("list", ignoreCase = true)) {
-            return DebugConsoleCommandResult(
+            return ModConsoleCommandResult(
                 success = true,
                 lines = listOf(
                     "fractional=${state.options.usFractionalTrading} — 미국 종목 소수점 거래",
@@ -244,10 +245,10 @@ class DebugConsoleCommandProcessor(
         return fromRuntime(result, warnings = listOf("규칙 변경은 현재 캠페인 저장 데이터에 유지됩니다."))
     }
 
-    private fun force(tokens: List<String>): DebugConsoleCommandResult {
+    private fun force(tokens: List<String>): ModConsoleCommandResult {
         val current = viewModel.currentState.externalMarketForcesTarget
         if (tokens.size == 1 || tokens.getOrNull(1).equals("list", ignoreCase = true)) {
-            return DebugConsoleCommandResult(
+            return ModConsoleCommandResult(
                 success = true,
                 lines = FORCE_NAMES.map { name -> "$name=${forceValue(current, name)}" },
             )
@@ -256,13 +257,13 @@ class DebugConsoleCommandProcessor(
             return usage("force list | force set <name> <0..1>")
         }
         val value = parseNumber(tokens[3]) ?: return invalidNumber(tokens[3])
-        if (value !in 0.0..1.0) return DebugConsoleCommandResult.failure("시장 환경 값은 0..1 범위여야 합니다.")
+        if (value !in 0.0..1.0) return ModConsoleCommandResult.failure("시장 환경 값은 0..1 범위여야 합니다.")
         val updated = copyForce(current, tokens[2], value)
             ?: return usage("지원 값: ${FORCE_NAMES.joinToString()}")
         return fromRuntime(viewModel.debugSetExternalMarketForces(updated))
     }
 
-    private fun value(tokens: List<String>): DebugConsoleCommandResult {
+    private fun value(tokens: List<String>): ModConsoleCommandResult {
         if (tokens.size < 3) return usage("value get <path> | value set|add <path> <number>")
         val action = tokens[1].lowercase()
         val path = tokens[2]
@@ -276,7 +277,7 @@ class DebugConsoleCommandProcessor(
         return mutateValue(action, path, number)
     }
 
-    private fun getValue(path: String): DebugConsoleCommandResult {
+    private fun getValue(path: String): ModConsoleCommandResult {
         val normalized = path.lowercase()
         val state = viewModel.currentState
         val value = when {
@@ -286,19 +287,19 @@ class DebugConsoleCommandProcessor(
             normalized.startsWith("force.") -> forceValue(
                 state.externalMarketForcesTarget,
                 normalized.removePrefix("force."),
-            ) ?: return DebugConsoleCommandResult.failure("알 수 없는 force 경로 '$path'입니다.")
+            ) ?: return ModConsoleCommandResult.failure("알 수 없는 force 경로 '$path'입니다.")
             normalized.startsWith("price.") -> {
                 val stock = resolvedStock(path.substringAfter('.')) ?: return lastResolutionFailure
                 state.quotes[stock.id]?.price
             }
-            else -> return DebugConsoleCommandResult.failure(
+            else -> return ModConsoleCommandResult.failure(
                 "허용된 경로: cash.krw, cash.usd, fx.usdkrw, price.<instrument>, force.<name>",
             )
         }
-        return DebugConsoleCommandResult.success("$path=$value")
+        return ModConsoleCommandResult.success("$path=$value")
     }
 
-    private fun mutateValue(action: String, path: String, number: Double): DebugConsoleCommandResult {
+    private fun mutateValue(action: String, path: String, number: Double): ModConsoleCommandResult {
         val normalized = path.lowercase()
         val state = viewModel.currentState
         val isAdd = action == "add"
@@ -320,21 +321,21 @@ class DebugConsoleCommandProcessor(
             normalized.startsWith("force.") -> {
                 val name = normalized.removePrefix("force.")
                 val current = forceValue(state.externalMarketForcesTarget, name)
-                    ?: return DebugConsoleCommandResult.failure("알 수 없는 force 경로 '$path'입니다.")
+                    ?: return ModConsoleCommandResult.failure("알 수 없는 force 경로 '$path'입니다.")
                 val next = if (isAdd) current + number else number
-                if (next !in 0.0..1.0) return DebugConsoleCommandResult.failure("시장 환경 값은 0..1 범위여야 합니다.")
+                if (next !in 0.0..1.0) return ModConsoleCommandResult.failure("시장 환경 값은 0..1 범위여야 합니다.")
                 val updated = requireNotNull(copyForce(state.externalMarketForcesTarget, name, next))
                 fromRuntime(viewModel.debugSetExternalMarketForces(updated))
             }
-            else -> DebugConsoleCommandResult.failure(
+            else -> ModConsoleCommandResult.failure(
                 "임의 reflection 경로는 허용하지 않습니다. help value로 허용 목록을 확인하세요.",
             )
         }
     }
 
-    private fun event(tokens: List<String>): DebugConsoleCommandResult {
+    private fun event(tokens: List<String>): ModConsoleCommandResult {
         if (viewModel.currentState.isAdvancing) {
-            return DebugConsoleCommandResult.failure(
+            return ModConsoleCommandResult.failure(
                 "게임 진행 계산 중에는 이벤트 카탈로그를 읽거나 발동할 수 없습니다. help, status, turn cancel은 계속 사용할 수 있습니다.",
             )
         }
@@ -345,16 +346,16 @@ class DebugConsoleCommandProcessor(
             "list", "guide" -> {
                 val query = tokens.drop(2).joinToString(" ").ifBlank { null }
                 val guides = viewModel.debugEventGuide(query)
-                if (guides.isEmpty()) return DebugConsoleCommandResult.failure("조건에 맞는 이벤트 템플릿이 없습니다.")
+                if (guides.isEmpty()) return ModConsoleCommandResult.failure("조건에 맞는 이벤트 템플릿이 없습니다.")
                 val lines = guides.map(::eventSummary)
-                DebugConsoleCommandResult(success = true, lines = lines)
+                ModConsoleCommandResult(success = true, lines = lines)
             }
             "describe", "show" -> {
                 if (tokens.size != 3) return usage("event describe <templateId>")
                 val id = tokens.getOrNull(2) ?: return usage("event describe <templateId>")
                 val guide = viewModel.debugEventGuide(id).firstOrNull { it.templateId == id }
-                    ?: return DebugConsoleCommandResult.failure("이벤트 템플릿 '$id'을(를) 찾을 수 없습니다.")
-                DebugConsoleCommandResult(success = true, lines = eventDetails(guide))
+                    ?: return ModConsoleCommandResult.failure("이벤트 템플릿 '$id'을(를) 찾을 수 없습니다.")
+                ModConsoleCommandResult(success = true, lines = eventDetails(guide))
             }
             "trigger", "fire" -> {
                 if (tokens.size !in 3..4) return usage("event trigger <templateId> [target]")
@@ -366,7 +367,7 @@ class DebugConsoleCommandProcessor(
         }
     }
 
-    private fun orders(tokens: List<String>): DebugConsoleCommandResult = when {
+    private fun orders(tokens: List<String>): ModConsoleCommandResult = when {
         tokens.size == 2 && tokens[1].lowercase() in setOf("cancel-all", "cancel_all") ->
             fromRuntime(viewModel.debugCancelAllOrders())
         else -> usage("orders cancel-all")
@@ -400,7 +401,7 @@ class DebugConsoleCommandProcessor(
 
     private fun resolvedStock(query: String): StockDefinition? {
         val resolved = resolveInstrument(query)
-        lastResolutionFailure = DebugConsoleCommandResult.failure(resolved.error ?: "종목을 찾을 수 없습니다.")
+        lastResolutionFailure = ModConsoleCommandResult.failure(resolved.error ?: "종목을 찾을 수 없습니다.")
         return resolved.stock
     }
 
@@ -430,7 +431,7 @@ class DebugConsoleCommandProcessor(
     private fun fromRuntime(
         result: DebugRuntimeResult,
         warnings: List<String> = emptyList(),
-    ): DebugConsoleCommandResult = DebugConsoleCommandResult(
+    ): ModConsoleCommandResult = ModConsoleCommandResult(
         success = result.success,
         lines = listOf(result.message) + result.value?.let { listOf("result=$it") }.orEmpty(),
         warnings = if (result.success) warnings else emptyList(),
@@ -488,10 +489,10 @@ class DebugConsoleCommandProcessor(
         else -> value.lowercase().replace('-', '_')
     }
 
-    private fun usage(text: String): DebugConsoleCommandResult = DebugConsoleCommandResult.failure("사용법: $text")
+    private fun usage(text: String): ModConsoleCommandResult = ModConsoleCommandResult.failure("사용법: $text")
 
-    private fun invalidNumber(value: String): DebugConsoleCommandResult =
-        DebugConsoleCommandResult.failure("'$value'은(는) 유한한 숫자가 아닙니다.")
+    private fun invalidNumber(value: String): ModConsoleCommandResult =
+        ModConsoleCommandResult.failure("'$value'은(는) 유한한 숫자가 아닙니다.")
 
     private fun tokenize(input: String): List<String>? {
         if (input.length > MAX_COMMAND_LENGTH) return null
@@ -525,8 +526,8 @@ class DebugConsoleCommandProcessor(
         return tokens.takeIf { it.size <= MAX_TOKENS }
     }
 
-    private var lastResolutionFailure: DebugConsoleCommandResult =
-        DebugConsoleCommandResult.failure("종목을 찾을 수 없습니다.")
+    private var lastResolutionFailure: ModConsoleCommandResult =
+        ModConsoleCommandResult.failure("종목을 찾을 수 없습니다.")
 
     private companion object {
         const val MAX_COMMAND_LENGTH = 4_096

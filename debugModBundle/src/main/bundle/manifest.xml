@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mod schemaVersion="3" apiVersion="2" id="market-ledger.debug">
+    <name>Market Ledger 개발자 콘솔</name>
+    <description>현재 캠페인을 점검하고 게임 이벤트와 시장 상태를 제어하는 서명된 기본 제공 디버그 도구입니다.</description>
+    <author>Market Ledger 2040</author>
+    <version>1.0.0</version>
+    <lastModified>2026-08-18</lastModified>
+    <cover>cover.png</cover>
+
+    <runtime>
+        <jvmJar>lib/market-ledger-debug.jar</jvmJar>
+    </runtime>
+
+    <permissions>
+        <permission>game.read</permission>
+        <permission>game.playerCommands</permission>
+        <permission>game.marketControl</permission>
+        <permission>game.debugConsole</permission>
+    </permissions>
+
+    <settings>
+        <setting key="echoCommands" type="boolean">
+            <name>명령 에코</name>
+            <description>실행한 명령을 결과와 함께 콘솔 기록에 표시합니다.</description>
+            <default>true</default>
+        </setting>
+        <setting key="maxHistory" type="integer">
+            <name>콘솔 기록 수</name>
+            <description>콘솔에 유지할 최근 출력 줄 수입니다.</description>
+            <default>500</default>
+            <min>100</min>
+            <max>2000</max>
+        </setting>
+        <setting key="showWarnings" type="boolean">
+            <name>경고 표시</name>
+            <description>위험한 명령의 실행 결과와 함께 주의 문구를 표시합니다.</description>
+            <default>true</default>
+        </setting>
+    </settings>
+</mod>

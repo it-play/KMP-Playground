@@ -1,4 +1,4 @@
-package com.amond.kmpbook.debug.console
+package com.amond.kmpbook.debug.bundle
 
 import com.amond.kmpbook.domain.model.instrument.StockDefinition
 

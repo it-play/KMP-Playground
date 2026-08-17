@@ -19,6 +19,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -33,7 +34,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.amond.kmpbook.debug.console.DebugConsoleCommandProcessor
 import com.amond.kmpbook.debug.console.DebugConsoleSession
 import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.model.game.GamePhase
@@ -49,10 +49,12 @@ import com.amond.kmpbook.domain.simulation.protection.TradingProtectionEngine
 import com.amond.kmpbook.domain.tax.core.TaxCategory
 import com.amond.kmpbook.domain.tax.fee.FeeCategory
 import com.amond.kmpbook.domain.tax.liability.TaxLiabilityStatus
-import com.amond.kmpbook.modding.builtin.debug.DebugMod
+import com.amond.kmpbook.modding.api.runtime.ExecutableModRuntime
+import com.amond.kmpbook.modding.api.runtime.ModConsoleContribution
 import com.amond.kmpbook.modding.model.ActiveModConfiguration
 import com.amond.kmpbook.modding.model.InstalledMod
 import com.amond.kmpbook.modding.model.ModCatalog
+import com.amond.kmpbook.modding.model.ModCapability
 import com.amond.kmpbook.modding.model.ModLoadIssue
 import com.amond.kmpbook.modding.storage.ModStorage
 import com.amond.kmpbook.persistence.model.GameSaveEntry
@@ -138,6 +140,14 @@ private fun activeModCompatibilityError(
     if (changedContent != null) {
         return "${changedContent.id} 모드의 종목 콘텐츠가 저장 게임을 시작할 때와 다릅니다."
     }
+    val changedExecutable = required.firstOrNull { saved ->
+        val current = installedById.getValue(saved.id)
+        saved.executableFingerprint != current.executableFingerprint ||
+            saved.grantedCapabilities != current.grantedCapabilities
+    }
+    if (changedExecutable != null) {
+        return "${changedExecutable.id} 모드의 검증된 실행 코드 또는 부여 권한이 저장 게임과 다릅니다."
+    }
     val invalidConfiguration = required.firstOrNull { saved ->
         val current = installedById.getValue(saved.id)
         val definitions = current.settings.associateBy { it.key }
@@ -175,8 +185,8 @@ fun App(
     onInitialLoadingComplete: () -> Unit = {},
     isLaunchOverlayVisible: Boolean = false,
 ) {
-    val debugConsoleProcessor = remember(viewModel) { DebugConsoleCommandProcessor(viewModel) }
     val debugConsoleSession = remember { DebugConsoleSession() }
+    val executableModRuntime = remember { ExecutableModRuntime() }
     val storage = remember { GameSaveStorage() }
     val modStorage = remember { ModStorage() }
     val scope = rememberCoroutineScope()
@@ -200,6 +210,7 @@ fun App(
     var isResettingGame by remember { mutableStateOf(false) }
     var resetOperationDetail by remember { mutableStateOf<String?>(null) }
     var isDebugConsoleVisible by remember { mutableStateOf(false) }
+    var modConsoleContribution by remember { mutableStateOf<ModConsoleContribution?>(null) }
     var isMarketFilterDialogVisible by remember { mutableStateOf(false) }
     val modMutationMutex = remember { Mutex() }
     val persistenceOperationMutex = remember { Mutex() }
@@ -212,12 +223,23 @@ fun App(
         activeModMutations > 0 ||
         isScanningMods ||
         state.isAdvancing
-    val activeDebugMod = state.options.activeMods.firstOrNull { activeMod ->
-        DebugMod.isCompatible(activeMod.id, activeMod.version)
+    val activeConsoleMod = state.options.activeMods.firstOrNull { activeMod ->
+        activeMod.executableFingerprint != null &&
+            ModCapability.DEBUG_CONSOLE in activeMod.grantedCapabilities
     }
+    val installedConsoleMod = activeConsoleMod
+        ?.takeIf { state.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED) }
+        ?.let { activeMod ->
+            installedMods.firstOrNull { installed ->
+                installed.id == activeMod.id &&
+                    installed.version == activeMod.version &&
+                    installed.executableFingerprint == activeMod.executableFingerprint &&
+                    installed.grantedCapabilities == activeMod.grantedCapabilities
+            }
+        }
     val isDebugConsoleAvailable =
         state.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED) &&
-            activeDebugMod != null &&
+            modConsoleContribution != null &&
             !state.isAdvancing &&
             !isSavingGame &&
             !isLoadingGame &&
@@ -296,6 +318,25 @@ fun App(
     LaunchedEffect(modStorage) {
         refreshMods()
     }
+    LaunchedEffect(executableModRuntime, installedConsoleMod, activeConsoleMod, viewModel) {
+        modConsoleContribution = null
+        executableModRuntime.detach()
+        if (installedConsoleMod != null) {
+            val result = executableModRuntime.attach(
+                installedMod = installedConsoleMod,
+                activeConfiguration = requireNotNull(activeConsoleMod),
+                viewModel = viewModel,
+            )
+            modConsoleContribution = result.contribution
+            result.error?.let { error -> modStatusMessage = error }
+            result.contribution?.let { contribution ->
+                debugConsoleSession.configure(contribution.options)
+            }
+        }
+    }
+    DisposableEffect(executableModRuntime) {
+        onDispose { executableModRuntime.close() }
+    }
     val isInitialLoadingComplete = !isLoadingSaves && !isScanningMods && areAudioSettingsLoaded
     LaunchedEffect(isInitialLoadingComplete) {
         if (isInitialLoadingComplete) onInitialLoadingComplete()
@@ -307,9 +348,6 @@ fun App(
     }
     LaunchedEffect(isDebugConsoleAvailable) {
         if (!isDebugConsoleAvailable) isDebugConsoleVisible = false
-    }
-    LaunchedEffect(activeDebugMod?.settings) {
-        activeDebugMod?.let { debugMod -> debugConsoleSession.configure(debugMod.settings) }
     }
     LaunchedEffect(escapeRequest) {
         if (escapeRequest <= 0) return@LaunchedEffect
@@ -633,6 +671,10 @@ fun App(
                                                     )
                                                 },
                                                 contentFingerprint = mod.instrumentPack?.fingerprint,
+                                                executableFingerprint = mod.executableFingerprint,
+                                                grantedCapabilities = mod.grantedCapabilities
+                                                    .sortedBy { it.ordinal }
+                                                    .toSet(),
                                             )
                                         },
                                     )
@@ -714,7 +756,9 @@ fun App(
                 session = debugConsoleSession,
                 onExecute = {
                     scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                        debugConsoleSession.execute(debugConsoleProcessor)
+                        modConsoleContribution?.handler?.let { handler ->
+                            debugConsoleSession.execute(handler)
+                        }
                     }
                 },
                 onDismiss = { isDebugConsoleVisible = false },
