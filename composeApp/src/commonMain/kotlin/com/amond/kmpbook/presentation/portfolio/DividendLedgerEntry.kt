@@ -3,12 +3,18 @@ package com.amond.kmpbook.presentation.portfolio
 import com.amond.kmpbook.domain.model.market.Currency
 import com.amond.kmpbook.domain.tax.liability.TaxBreakdown
 import kotlin.time.Instant
+import kotlinx.datetime.LocalDate
 
 data class DividendLedgerEntry(
     val id: String,
     val stockId: String,
+    val exDate: LocalDate,
+    val recordDate: LocalDate,
     val paidAt: Instant,
     val currency: Currency,
+    /** 분배락일에 확정된 좌당 금액과 권리 수량이다. */
+    val grossPerUnit: Double,
+    val entitledQuantity: Double,
     val grossAmount: Double,
     val withholdingTax: Double,
     val netAmount: Double,

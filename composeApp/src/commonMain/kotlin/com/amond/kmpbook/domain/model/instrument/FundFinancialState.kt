@@ -24,6 +24,9 @@ data class FundFinancialState(
     val indicativeValuePerUnit: Double,
     val unitsOrNotesOutstanding: Double,
     val lastNetFlow: Double,
+    /** 분배락 전까지 NAV 안에 남아 있는 좌당 이자·배당 재원의 결정론적 대용치다. */
+    /** 미래 지급액 정본이 아니라 분배재원의 income/ROC 성격을 추적하는 좌당 memo reserve다. */
+    val accruedDistributionPerUnit: Double = 0.0,
     val cumulativeUnitAdjustmentFactor: Double = 1.0,
     val lastCorporateActionAccountingSequence: Long? = null,
     val asOf: Instant,
@@ -34,6 +37,7 @@ data class FundFinancialState(
         require(indicativeValuePerUnit in MIN_FUND_REFERENCE_VALUE..MAX_FUND_REFERENCE_VALUE)
         require(unitsOrNotesOutstanding.isFinite() && unitsOrNotesOutstanding > 0.0)
         require(lastNetFlow.isFinite())
+        require(accruedDistributionPerUnit.isFinite() && accruedDistributionPerUnit in 0.0..MAX_FUND_REFERENCE_VALUE)
         require(cumulativeUnitAdjustmentFactor.isFinite() && cumulativeUnitAdjustmentFactor > 0.0)
         require(lastCorporateActionAccountingSequence == null || lastCorporateActionAccountingSequence > 0L)
         if (lastCorporateActionAccountingSequence == null) require(cumulativeUnitAdjustmentFactor == 1.0)

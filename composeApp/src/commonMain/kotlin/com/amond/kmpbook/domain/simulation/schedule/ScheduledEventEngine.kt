@@ -52,6 +52,7 @@ class ScheduledEventEngine(private val seed: Long) {
         (EconomicReleaseCatalog.FIRST_YEAR..EconomicReleaseCatalog.LAST_YEAR)
             .flatMap(EconomicReleaseCatalog::occurrencesForYear)
             .filter { it.kind == ScheduledEventKind.US_FOMC || it.kind == ScheduledEventKind.KR_BOK }
+            .filter { it.scheduledAt >= GameCalendar.startInstant }
             .sortedWith(OCCURRENCE_ORDER)
             .groupBy(ScheduledEventOccurrence::kind)
 
@@ -375,11 +376,7 @@ class ScheduledEventEngine(private val seed: Long) {
      */
     private fun centralBankRateMetric(occurrence: ScheduledEventOccurrence): ScheduledEventMetric {
         val specification = CentralBankRateSpecification.forKind(occurrence.kind)
-        var state = CentralBankRateState(actual = specification.initialRate)
-        for (meeting in centralBankMeetingsByKind.getValue(occurrence.kind)) {
-            if (OCCURRENCE_ORDER.compare(meeting, occurrence) >= 0) break
-            state = applyCentralBankDecision(meeting, state, specification)
-        }
+        val state = centralBankStateBefore(occurrence, specification)
         val consensus = state.actual
         val decided = applyCentralBankDecision(occurrence, state, specification)
         return ScheduledEventMetric(
@@ -389,6 +386,32 @@ class ScheduledEventEngine(private val seed: Long) {
             unit = "%",
             decimalPlaces = 2,
         )
+    }
+
+    /**
+     * 캠페인 시작 당시 공개된 정책금리를 anchor로 하고 그 뒤 실제 게임 회의만 재생한다.
+     * KOFR fixing과 저장 검증이 동일한 미래 금리 계보를 공유하기 위한 순수 조회다.
+     */
+    internal fun centralBankRateAnnualAt(kind: ScheduledEventKind, at: Instant): Double {
+        val specification = CentralBankRateSpecification.forKind(kind)
+        var state = CentralBankRateState(actual = specification.initialRate)
+        for (meeting in centralBankMeetingsByKind.getValue(kind)) {
+            if (meeting.scheduledAt > at) break
+            state = applyCentralBankDecision(meeting, state, specification)
+        }
+        return state.actual / PERCENT_TO_ANNUAL_RATE
+    }
+
+    private fun centralBankStateBefore(
+        occurrence: ScheduledEventOccurrence,
+        specification: CentralBankRateSpecification,
+    ): CentralBankRateState {
+        var state = CentralBankRateState(actual = specification.initialRate)
+        for (meeting in centralBankMeetingsByKind.getValue(occurrence.kind)) {
+            if (OCCURRENCE_ORDER.compare(meeting, occurrence) >= 0) break
+            state = applyCentralBankDecision(meeting, state, specification)
+        }
+        return state
     }
 
     /**
@@ -619,6 +642,7 @@ class ScheduledEventEngine(private val seed: Long) {
         private const val DIRECTION_THRESHOLD: Double = 0.08
         private const val RATE_STEP_PERCENT: Double = 0.25
         private const val DOUBLE_RATE_STEP_PERCENT: Double = 0.50
+        private const val PERCENT_TO_ANNUAL_RATE: Double = 100.0
         private const val BASE_RATE_MOVE_PROBABILITY: Double = 0.34
         private const val DISTANCE_MOVE_PROBABILITY: Double = 0.025
         private const val MAX_RATE_MOVE_PROBABILITY: Double = 0.58

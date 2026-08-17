@@ -8,6 +8,7 @@ data class InstrumentBehaviorProfile(
     val strategy: InstrumentStrategy,
     val distributionFrequency: DistributionFrequency = DistributionFrequency.QUARTERLY,
     val distributionCalendar: DistributionCalendar = DistributionCalendar.FIXED_DAY_15,
+    val distributionPolicy: DistributionPolicy = DistributionPolicy.DEFAULT,
     /** 기초 주식팩터가 양수일 때의 참여율. */
     val upsideParticipation: Double = 1.0,
     /** 기초 주식팩터가 음수일 때의 참여율. */
