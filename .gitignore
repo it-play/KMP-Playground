@@ -3,6 +3,10 @@
 .gradle
 **/build/
 !src/**/build/
+!buildSrc/
+!buildSrc/**
+buildSrc/.gradle/
+buildSrc/build/
 local.properties
 .idea
 .DS_Store
