@@ -304,6 +304,7 @@ import kotlinx.datetime.LocalTime
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
@@ -751,6 +752,9 @@ internal class SimulatorRuntime(
     private val cashAdjustments = mutableListOf<CashAdjustmentRecord>()
     private val activeEvents = mutableListOf<GameEvent>()
     private val newsEvents = mutableListOf<GameEvent>()
+    /** Monotonic additions counter; archive trimming must never make turn progress move backwards. */
+    private var turnProgressNewsRevision = 0L
+    private var turnProgressLatestEventTitle: String? = null
     private val readEventIds = mutableSetOf<String>()
     private val readStockNewsEventIds = linkedMapOf<String, MutableSet<String>>()
     private val watchlistedStockIds = linkedSetOf<String>()
@@ -934,6 +938,26 @@ internal class SimulatorRuntime(
         selectedStockId = stockId
         lastMessage = null
         return true
+    }
+
+    internal fun currentMarketUiProjection(): SimulatorMarketUiProjection {
+        val scheduledActiveEvents = newsEvents.filter { event ->
+            event.recordKind == EventRecordKind.SCHEDULED_RELEASE &&
+                currentTime >= event.effectStartsAt && currentTime < event.effectEndsAt
+        }
+        val publishedActiveEvents = (activeEvents.filter { it.isActiveAt(currentTime) } +
+            scheduledActiveEvents).distinctBy(GameEvent::id)
+        return projectSimulatorMarketUi(
+            campaignSeed = options.seed,
+            currentTime = currentTime,
+            selectedStockId = selectedStockId,
+            stocksById = stockById,
+            quotes = quotes,
+            listingLifecycleStates = listingLifecycleStates,
+            protection = tradingProtectionSnapshot,
+            macro = macro,
+            activeEvents = publishedActiveEvents,
+        )
     }
 
     fun selectTurnStep(value: TurnStep) {
@@ -1221,13 +1245,17 @@ internal class SimulatorRuntime(
         if (newsEvents.any { it.id == eventId }) readEventIds += eventId
     }
 
-    fun markStockNewsListViewed(stockId: String, eventIds: Set<String>) {
-        val stock = stockById[stockId] ?: return
-        if (eventIds.isEmpty()) return
-        val currentEventIds = newsEvents.asSequence()
-            .filter { event -> event.affects(stock) }
-            .mapTo(linkedSetOf()) { event -> event.id }
-        readStockNewsEventIds.getOrPut(stockId, ::linkedSetOf) += eventIds.intersect(currentEventIds)
+    fun markStockNewsListViewed(stockId: String, eventIds: Set<String>): Map<String, Set<String>>? {
+        val stock = stockById[stockId] ?: return null
+        if (eventIds.isNotEmpty()) {
+            val currentEventIds = newsEvents.asSequence()
+                .filter { event -> event.affects(stock) }
+                .mapTo(linkedSetOf()) { event -> event.id }
+            readStockNewsEventIds.getOrPut(stockId, ::linkedSetOf) += eventIds.intersect(currentEventIds)
+        }
+        return readStockNewsEventIds[stockId]
+            ?.let { viewedIds -> mapOf(stockId to viewedIds.toSet()) }
+            .orEmpty()
     }
 
     fun markAllEventsRead() {
@@ -1253,6 +1281,34 @@ internal class SimulatorRuntime(
 
     fun resume() {
         if (phase == GamePhase.PAUSED) phase = GamePhase.PLAYING
+    }
+
+    /** Lightweight observations used by the turn overlay while the runtime gate is exclusively held. */
+    internal val turnProgressTradeCount: Int
+        get() = trades.size
+
+    internal val turnProgressNewsAdditionCount: Long
+        get() = turnProgressNewsRevision
+
+    internal val latestTurnProgressEventTitle: String?
+        get() = turnProgressLatestEventTitle
+
+    internal fun turnProgressMarketSessions(): Map<Market, MarketSession> =
+        Market.entries.associateWith { market ->
+            canonicalSimulatorMarketSession(market, currentTime, tradingProtectionSnapshot)
+        }
+
+    private fun appendNewsEvent(event: GameEvent) {
+        newsEvents += event
+        turnProgressNewsRevision++
+        turnProgressLatestEventTitle = event.title
+    }
+
+    private fun appendNewsEvents(events: Collection<GameEvent>) {
+        if (events.isEmpty()) return
+        newsEvents += events
+        turnProgressNewsRevision += events.size.toLong()
+        turnProgressLatestEventTitle = events.last().title
     }
 
     fun finishSettlement() {
@@ -1286,6 +1342,16 @@ internal class SimulatorRuntime(
             isAdvancing = false
         }
         if (phase == GamePhase.PLAYING) lastMessage = "${advanced}시간 진행했습니다."
+    }
+
+    internal fun rejectAdvanceForCurrentPhase(): String {
+        val message = if (phase == GamePhase.PAUSED) {
+            "게임이 일시 정지되어 있습니다."
+        } else {
+            "종료된 게임은 진행할 수 없습니다."
+        }
+        fail(message)
+        return message
     }
 
     fun placeOrder(request: OrderRequest): Boolean {
@@ -4930,7 +4996,7 @@ internal class SimulatorRuntime(
         }
         if (!alreadyDecided) {
             val cured = decision.status == ListingRemediationDecisionStatus.CURED
-            newsEvents += GameEvent(
+            appendNewsEvent(GameEvent(
                 id = eventId,
                 title = if (cured) {
                     "${stock.name} 개선 심사를 통과했어요"
@@ -4963,7 +5029,7 @@ internal class SimulatorRuntime(
                     listingStatus = state.status,
                 ),
                 listingRecoveryConditions = decision.recoveryCondition?.let(::setOf).orEmpty(),
-            )
+            ))
         }
         return decision.recoveryCondition
     }
@@ -5010,7 +5076,7 @@ internal class SimulatorRuntime(
     ) {
         val id = "listing-lifecycle:${ledgerEvent.id}"
         if (newsEvents.any { it.id == id }) return
-        newsEvents += GameEvent(
+        appendNewsEvent(GameEvent(
             id = id,
             title = "${stock.name} ${ledgerEvent.title}",
             description = ledgerEvent.summary,
@@ -5040,7 +5106,7 @@ internal class SimulatorRuntime(
                 listingLedgerSequence = ledgerEvent.sequence,
                 listingStatus = ledgerEvent.toStatus,
             ),
-        )
+        ))
     }
 
     /**
@@ -6037,7 +6103,7 @@ internal class SimulatorRuntime(
                         InstrumentTerminationValuationMethod.ETN_CONTRACT_SETTLEMENT,
                 ),
             )
-            newsEvents += event
+            appendNewsEvent(event)
         }
     }
 
@@ -6153,7 +6219,7 @@ internal class SimulatorRuntime(
         val unavailableNames = sortedIds.joinToString(", ") { underlyingId ->
             stockById.getValue(underlyingId).name
         }
-        newsEvents += GameEvent(
+        appendNewsEvent(GameEvent(
             id = eventId,
             title = "${stock.name} 기초자산 종료에 따른 청산 절차",
             description =
@@ -6176,7 +6242,7 @@ internal class SimulatorRuntime(
                 effectiveNotBefore = effectiveNotBefore,
                 valuationMethod = InstrumentTerminationValuationMethod.FINAL_NET_ASSET_VALUE,
             ),
-        )
+        ))
     }
 
     private fun hasPublishedDirectUnderlyingLiquidation(productId: String): Boolean =
@@ -6193,7 +6259,7 @@ internal class SimulatorRuntime(
     ) {
         val eventId = "instrument-maturity-notice:${stock.id}:$milestone"
         if (newsEvents.any { it.id == eventId }) return
-        newsEvents += GameEvent(
+        appendNewsEvent(GameEvent(
             id = eventId,
             title = "${stock.name} 만기 $milestone 전",
             description = "계약상 만기일 $maturity 전 사전 안내입니다. ETN은 ETF와 달리 발행사의 무담보 채무이며 만기상환·조기상환·발행사 신용 위험이 있습니다.",
@@ -6208,7 +6274,7 @@ internal class SimulatorRuntime(
             affectedSectors = setOf(stock.sector),
             affectedStockIds = setOf(stock.id),
             sourceLabel = "공식 상품조건 기반 캠페인 일정",
-        )
+        ))
     }
 
     private fun instrumentMaturityDate(stock: StockDefinition): LocalDate? =
@@ -6487,7 +6553,7 @@ internal class SimulatorRuntime(
             replayTaxAccountingLedger().forEach(::recalculateAnnualTax)
         }
         val ratioLabel = corporateActionRatioLabel(action)
-        newsEvents += GameEvent(
+        appendNewsEvent(GameEvent(
             id = "${action.id}:effective",
             title = "${stock.name} ${action.kind.displayName} 효력 발생",
             description = if (settledFraction) {
@@ -6507,7 +6573,7 @@ internal class SimulatorRuntime(
             affectedSectors = setOf(stock.sector),
             affectedStockIds = setOf(stock.id),
             sourceLabel = action.source.displayName,
-        )
+        ))
         lastMessage = "${stock.name} ${action.kind.displayName}($ratioLabel)을 반영했습니다."
     }
 
@@ -6519,7 +6585,7 @@ internal class SimulatorRuntime(
     ) {
         val cancelled = pendingCorporateActions.filter { action -> action.stockId == stock.id }
         cancelled.forEach { action ->
-            newsEvents += GameEvent(
+            appendNewsEvent(GameEvent(
                 id = "${action.id}:cancelled:${listingEvent.sequence}",
                 title = "${stock.name} ${action.kind.displayName} 일정 취소",
                 description = "${listingEvent.title} 조치가 효력을 가져 앞서 공시한 ${action.kind.displayName} 일정을 종료했습니다.",
@@ -6535,7 +6601,7 @@ internal class SimulatorRuntime(
                 affectedSectors = setOf(stock.sector),
                 affectedStockIds = setOf(stock.id),
                 sourceLabel = action.source.displayName,
-            )
+            ))
         }
         pendingCorporateActions.removeAll { action -> action.stockId == stock.id }
     }
@@ -6546,7 +6612,7 @@ internal class SimulatorRuntime(
         stock: StockDefinition,
         cancelledAt: Instant,
     ) {
-        newsEvents += GameEvent(
+        appendNewsEvent(GameEvent(
             id = "${action.id}:cancelled:product-state",
             title = "${stock.name} ${action.kind.displayName} 일정 취소",
             description =
@@ -6563,7 +6629,7 @@ internal class SimulatorRuntime(
             affectedSectors = setOf(stock.sector),
             affectedStockIds = setOf(stock.id),
             sourceLabel = action.source.displayName,
-        )
+        ))
     }
 
     private fun isCorporateActionProductStateEligible(stock: StockDefinition): Boolean {
@@ -6784,7 +6850,7 @@ internal class SimulatorRuntime(
             )
             pendingCorporateActions += action
             val ratioLabel = corporateActionRatioLabel(action)
-            newsEvents += GameEvent(
+            appendNewsEvent(GameEvent(
                 id = "${action.id}:announcement",
                 title = "${stock.name} ${kind.displayName} 결의",
                 description = "$ratioLabel 조정이 ${CORPORATE_ACTION_NOTICE_HOURS / 24}일 후 첫 정규장에서 반영됩니다. $rationale 이 공시는 실제 기업 공시가 아닌 캠페인 규칙상 가상 사건입니다.",
@@ -6800,7 +6866,7 @@ internal class SimulatorRuntime(
                 affectedSectors = setOf(stock.sector),
                 affectedStockIds = setOf(stock.id),
                 sourceLabel = CorporateActionSource.CAMPAIGN_RULE.displayName,
-            )
+            ))
         }
     }
 
@@ -6944,7 +7010,7 @@ internal class SimulatorRuntime(
         val scheduled = scheduledEventEngine.generate(from, to, eligibleStocks)
         if (scheduled.emissions.isNotEmpty()) {
             val existingIds = newsEvents.mapTo(mutableSetOf(), GameEvent::id)
-            newsEvents += scheduled.newEvents.filter { existingIds.add(it.id) }
+            appendNewsEvents(scheduled.newEvents.filter { existingIds.add(it.id) })
             applyScheduledCorporateFundamentals(scheduled.emissions)
             applyScheduledMacro(scheduled.emissions)
         }
@@ -6989,7 +7055,7 @@ internal class SimulatorRuntime(
         activeEvents.clear()
         activeEvents += result.activeEvents
         if (result.newEvents.isEmpty()) return
-        newsEvents += result.newEvents
+        appendNewsEvents(result.newEvents)
         recordFundFlowSignals(result.newEvents)
         trimStochasticNews()
     }
@@ -9866,7 +9932,7 @@ internal class SimulatorRuntime(
     ) {
         val eventId = "market-protection:$id"
         if (newsEvents.any { it.id == eventId }) return
-        newsEvents += GameEvent(
+        appendNewsEvent(GameEvent(
             id = eventId,
             title = title,
             description = description,
@@ -9882,7 +9948,7 @@ internal class SimulatorRuntime(
             affectedStockIds = stock?.let { setOf(it.id) }.orEmpty(),
             sourceLabel = "거래소 시장조치 규칙",
             marketAction = marketAction,
-        )
+        ))
     }
 
     private fun updateBenchmark(
@@ -10481,7 +10547,10 @@ internal class SimulatorRuntime(
             if (validateSimulatorUiState(state, catalog) != null) return null
             return runCatching {
                 SimulatorRuntime(state.options, catalog).apply { restoreFrom(state) }
-            }.getOrNull()
+            }.getOrElse { error ->
+                if (error is CancellationException) throw error
+                null
+            }
         }
     }
 }

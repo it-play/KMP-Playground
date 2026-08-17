@@ -7,9 +7,11 @@ import com.amond.kmpbook.domain.model.game.GamePhase
 import com.amond.kmpbook.domain.model.game.Screen
 import com.amond.kmpbook.domain.model.game.TurnStep
 import com.amond.kmpbook.domain.model.market.Currency
+import com.amond.kmpbook.domain.model.market.Market
 import com.amond.kmpbook.domain.model.trading.OrderSide
 import com.amond.kmpbook.domain.model.trading.OrderType
 import com.amond.kmpbook.domain.model.trading.TimeInForce
+import com.amond.kmpbook.domain.model.venue.MarketSession
 import com.amond.kmpbook.domain.simulation.market.ExternalMarketForces
 import com.amond.kmpbook.domain.simulation.event.DebugEventGuide
 import com.amond.kmpbook.domain.time.GameCalendar
@@ -28,11 +30,15 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Instant
+import kotlin.time.TimeSource
 
 class SimulatorViewModel(
     initialCatalog: InstrumentCatalogSnapshot,
@@ -51,8 +57,12 @@ class SimulatorViewModel(
     private var advanceJob: Job? = null
     private var debugJumpJob: Job? = null
     private var runtimeAccessGate = Mutex()
+    private var turnProcessingSequence: Long = 0L
+    private val _turnProcessingUiState = MutableStateFlow<TurnProcessingUiState?>(null)
 
     val uiState: StateFlow<SimulatorUiState> = _uiState.asStateFlow()
+    val turnProcessingUiState: StateFlow<TurnProcessingUiState?> =
+        _turnProcessingUiState.asStateFlow()
     internal val stateChanges: SharedFlow<SimulatorStateChange> = _stateChanges.asSharedFlow()
     internal val currentStateChangeSequence: Long get() = stateChangeSequence
     val currentState: SimulatorUiState get() = _uiState.value
@@ -65,97 +75,187 @@ class SimulatorViewModel(
     fun validateStateForPersistence(state: SimulatorUiState): String? =
         validateSimulatorUiState(state, lastCatalog)
 
-    fun newGame(
+    suspend fun newGame(
         options: NewGameOptions = NewGameOptions(),
         catalog: InstrumentCatalogSnapshot = lastCatalog,
     ): String? {
         val detachedOptions = options.withDetachedActiveMods()
-        val candidateRuntime = runCatching {
-            SimulatorRuntime(detachedOptions, catalog)
+        val (candidateRuntime, candidateSnapshot) = runCatching {
+            withContext(Dispatchers.Default) {
+                val candidate = SimulatorRuntime(detachedOptions, catalog)
+                candidate to candidate.snapshot()
+            }
         }.getOrElse { error ->
+            if (error is CancellationException) throw error
             val detail = error.message?.take(240)?.takeIf(String::isNotBlank) ?: "알 수 없는 오류"
             return "새 게임의 종목 방법론을 초기화하지 못했습니다: $detail"
         }
-        cancelBackgroundCommands()
-        lastOptions = detachedOptions
-        lastCatalog = catalog
-        runtime = candidateRuntime
-        runtimeAccessGate = Mutex()
-        publish(SimulatorStateChangeKind.GAME_STARTED)
-        return null
+        return withContext(Dispatchers.Main.immediate) {
+            withRuntimeAccess(blocked = { "다른 게임 작업이 끝난 뒤 새 게임을 시작해 주세요." }) {
+                cancelBackgroundCommands()
+                lastOptions = detachedOptions
+                lastCatalog = catalog
+                runtime = candidateRuntime
+                runtimeAccessGate = Mutex()
+                publishSnapshot(candidateSnapshot, SimulatorStateChangeKind.GAME_STARTED)
+                null
+            }
+        }
     }
 
-    fun resetGame() {
-        val resetRuntime = SimulatorRuntime(lastOptions, lastCatalog, startInSetup = true)
-        cancelBackgroundCommands()
-        runtime = resetRuntime
-        runtimeAccessGate = Mutex()
-        publish()
+    suspend fun resetGame(): Boolean {
+        val options = lastOptions
+        val catalog = lastCatalog
+        val (resetRuntime, resetSnapshot) = withContext(Dispatchers.Default) {
+            val candidate = SimulatorRuntime(options, catalog, startInSetup = true)
+            candidate to candidate.snapshot()
+        }
+        return withContext(Dispatchers.Main.immediate) {
+            withRuntimeAccess(blocked = { false }) {
+                cancelBackgroundCommands()
+                runtime = resetRuntime
+                runtimeAccessGate = Mutex()
+                publishSnapshot(resetSnapshot, SimulatorStateChangeKind.STATE_CHANGED)
+                true
+            }
+        }
     }
 
     /** 파일 I/O 없이 저장 계층이 전달한 불변 상태를 검증·복원한다. */
-    fun restoreGame(
+    suspend fun restoreGame(
         state: SimulatorUiState,
         catalog: InstrumentCatalogSnapshot,
     ): Boolean {
-        val previousState = _uiState.value
-        if (
-            _uiState.value.options.ironmanMode &&
-            _uiState.value.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED)
-        ) {
-            _uiState.value = _uiState.value.copy(lastMessage = "철인 모드에서는 게임을 불러올 수 없습니다.")
+        val ironmanBlocked = withContext(Dispatchers.Main.immediate) {
+            val current = _uiState.value
+            if (
+                current.options.ironmanMode &&
+                current.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED)
+            ) {
+                _uiState.value = current.copy(lastMessage = "철인 모드에서는 게임을 불러올 수 없습니다.")
+                true
+            } else {
+                false
+            }
+        }
+        if (ironmanBlocked) {
             return false
         }
         val candidate = state.withDetachedActiveMods()
-        val restored = SimulatorRuntime.restore(candidate, catalog) ?: run {
-            val validationError = validateSimulatorUiState(candidate, catalog)
-            _uiState.value = _uiState.value.copy(
-                lastMessage = validationError?.let { problem ->
-                    "저장 데이터가 유효하지 않습니다: $problem"
-                } ?: "저장 데이터를 복원할 수 없습니다.",
-            )
+        val (restored, restoredSnapshot, validationError) = withContext(Dispatchers.Default) {
+            val preparedRuntime = SimulatorRuntime.restore(candidate, catalog)
+            if (preparedRuntime == null) {
+                Triple(null, null, validateSimulatorUiState(candidate, catalog))
+            } else {
+                Triple(preparedRuntime, preparedRuntime.snapshot(), null)
+            }
+        }
+        if (restored == null || restoredSnapshot == null) {
+            withContext(Dispatchers.Main.immediate) {
+                _uiState.value = _uiState.value.copy(
+                    lastMessage = validationError?.let { problem ->
+                        "저장 데이터가 유효하지 않습니다: $problem"
+                    } ?: "저장 데이터를 복원할 수 없습니다.",
+                )
+            }
             return false
         }
-        cancelBackgroundCommands()
-        runtime = restored
-        runtimeAccessGate = Mutex()
-        publish(
-            if (candidate.startsCampaignComparedWith(previousState)) {
-                SimulatorStateChangeKind.GAME_STARTED
-            } else {
-                SimulatorStateChangeKind.STATE_CHANGED
-            },
-        )
-        lastOptions = _uiState.value.options
-        lastCatalog = catalog
-        return true
+        return withContext(Dispatchers.Main.immediate) {
+            withRuntimeAccess(blocked = { false }) {
+                val previousState = _uiState.value
+                cancelBackgroundCommands()
+                runtime = restored
+                runtimeAccessGate = Mutex()
+                publishSnapshot(
+                    restoredSnapshot,
+                    if (candidate.startsCampaignComparedWith(previousState)) {
+                        SimulatorStateChangeKind.GAME_STARTED
+                    } else {
+                        SimulatorStateChangeKind.STATE_CHANGED
+                    },
+                )
+                lastOptions = restoredSnapshot.options.withDetachedActiveMods()
+                lastCatalog = catalog
+                true
+            }
+        }
     }
 
     fun selectScreen(screen: Screen) = withRuntimeAccess(blocked = {}) {
         runtime.selectScreen(screen)
-        publish()
+        publishSnapshot(
+            _uiState.value.copy(screen = screen, lastMessage = null),
+            SimulatorStateChangeKind.STATE_CHANGED,
+        )
     }
 
     fun selectStock(stockId: String): Boolean = withRuntimeAccess(blocked = { false }) {
+        val current = _uiState.value
         val result = runtime.selectStock(stockId)
-        publish()
+        if (result) {
+            val marketUi = runtime.currentMarketUiProjection()
+            publishSnapshot(
+                current.copy(
+                    selectedStockId = stockId,
+                    quotes = marketUi.quotes,
+                    selectedOrderBook = marketUi.selectedOrderBook,
+                    marketSessions = marketUi.marketSessions,
+                    lastMessage = null,
+                ),
+                SimulatorStateChangeKind.STATE_CHANGED,
+            )
+        } else {
+            publishSnapshot(
+                current.copy(lastMessage = "존재하지 않는 종목입니다."),
+                SimulatorStateChangeKind.STATE_CHANGED,
+            )
+        }
         result
     }
 
     fun selectTurnStep(step: TurnStep) = withRuntimeAccess(blocked = {}) {
         runtime.selectTurnStep(step)
-        publish()
+        publishSnapshot(
+            _uiState.value.copy(selectedTurnStep = step, lastMessage = null),
+            SimulatorStateChangeKind.STATE_CHANGED,
+        )
     }
 
     fun advance(step: TurnStep = _uiState.value.selectedTurnStep) {
+        if (_uiState.value.phase != GamePhase.PLAYING) {
+            withRuntimeAccess(blocked = {}) {
+                val message = runtime.rejectAdvanceForCurrentPhase()
+                publishSnapshot(
+                    _uiState.value.copy(lastMessage = message),
+                    SimulatorStateChangeKind.STATE_CHANGED,
+                )
+            }
+            return
+        }
         val commandGate = runtimeAccessGate
         if (!commandGate.tryLock()) return
+        val processingSequence = ++turnProcessingSequence
         var completionOwnsGate = false
         try {
             val advancingRuntime = runtime
             val commandCatalog = lastCatalog
             val publishedState = _uiState.value
             val previousTurn = publishedState.turn
+            val totalHours = minOf(
+                step.hours.toLong(),
+                GameCalendar.remainingHours(publishedState.currentTime),
+            ).coerceAtLeast(1L).toInt()
+            _turnProcessingUiState.value = TurnProcessingUiState(
+                step = step,
+                startedAt = publishedState.currentTime,
+                targetTime = GameCalendar.advanceHours(publishedState.currentTime, totalHours),
+                currentTime = publishedState.currentTime,
+                completedHours = 0,
+                totalHours = totalHours,
+                stage = processingStage(publishedState, isComplete = false),
+                latestActivity = "거래 세션과 대기 주문을 확인하고 있습니다.",
+                marketSessionSummary = marketSessionSummary(publishedState),
+            )
             publishSnapshot(
                 publishedState.copy(isAdvancing = true, lastMessage = null),
                 SimulatorStateChangeKind.STATE_CHANGED,
@@ -169,28 +269,43 @@ class SimulatorViewModel(
                         // exposed UI collection views as a canonical persistence checkpoint.
                         preCommandState = advancingRuntime.snapshot().withDetachedActiveMods()
                         currentCoroutineContext().ensureActive()
-                        // This suspend variant is the canonical hourly loop with ensureActive() at
-                        // each simulated-hour boundary. A single hour remains atomic for rollback.
-                        advancingRuntime.advance(step)
-                        advancingRuntime.snapshot()
+                        // Runtime owns the canonical atomic-hour transaction. Invoking that same
+                        // transaction once per hour exposes real progress without allowing the UI
+                        // to observe or cancel a partially committed simulated hour.
+                        advanceRuntimeWithProgress(
+                            advancingRuntime = advancingRuntime,
+                            preCommandState = checkNotNull(preCommandState),
+                            totalHours = totalHours,
+                            processingSequence = processingSequence,
+                        )
                     }
                     if (runtime === advancingRuntime) {
-                        if (advancedState.turn > previousTurn) {
+                        val completedHours = (advancedState.turn - previousTurn)
+                            .coerceIn(0L, totalHours.toLong())
+                            .toInt()
+                        val presentedState = if (
+                            advancedState.phase == GamePhase.PLAYING && completedHours > 0
+                        ) {
+                            advancedState.copy(lastMessage = "${completedHours}시간 진행했습니다.")
+                        } else {
+                            advancedState
+                        }
+                        if (presentedState.turn > previousTurn) {
                             publishSnapshot(
-                                advancedState,
+                                presentedState,
                                 SimulatorStateChangeKind.TURN_COMPLETED,
                                 previousTurn = previousTurn,
                             )
                         } else {
-                            publishSnapshot(advancedState, SimulatorStateChangeKind.STATE_CHANGED)
+                            publishSnapshot(presentedState, SimulatorStateChangeKind.STATE_CHANGED)
                         }
-                        when (advancedState.phase) {
+                        when (presentedState.phase) {
                             GamePhase.SETTLEMENT -> publishSnapshot(
-                                advancedState,
+                                presentedState,
                                 SimulatorStateChangeKind.SETTLEMENT_STARTED,
                             )
                             GamePhase.FINISHED -> publishSnapshot(
-                                advancedState,
+                                presentedState,
                                 SimulatorStateChangeKind.GAME_ENDED,
                             )
                             else -> Unit
@@ -224,20 +339,222 @@ class SimulatorViewModel(
                         )
                     }
                 } finally {
-                    if (advanceJob === commandJob) advanceJob = null
+                    if (advanceJob === commandJob) {
+                        advanceJob = null
+                        if (turnProcessingSequence == processingSequence) {
+                            _turnProcessingUiState.value = null
+                        }
+                    }
                 }
             }
             advanceJob = job
             job.invokeOnCompletion {
-                if (advanceJob === job) advanceJob = null
+                if (advanceJob === job) {
+                    advanceJob = null
+                    if (turnProcessingSequence == processingSequence) {
+                        _turnProcessingUiState.value = null
+                    }
+                }
                 commandGate.unlock()
             }
             completionOwnsGate = true
             job.start()
         } finally {
-            if (!completionOwnsGate) commandGate.unlock()
+            if (!completionOwnsGate) {
+                if (turnProcessingSequence == processingSequence) {
+                    _turnProcessingUiState.value = null
+                }
+                commandGate.unlock()
+            }
         }
     }
+
+    private suspend fun advanceRuntimeWithProgress(
+        advancingRuntime: SimulatorRuntime,
+        preCommandState: SimulatorUiState,
+        totalHours: Int,
+        processingSequence: Long,
+    ): SimulatorUiState {
+        val startingTurn = preCommandState.turn
+        var lastNewsAdditionCount = advancingRuntime.turnProgressNewsAdditionCount
+        var lastTradeCount = preCommandState.trades.size
+        var recentEventTitle: String? = null
+        var lastPublishedDate = GameCalendar.campaignDate(preCommandState.currentTime)
+        var lastPublishedAt = TimeSource.Monotonic.markNow()
+
+        while (
+            advancingRuntime.phase == GamePhase.PLAYING &&
+            advancingRuntime.turn - startingTurn < totalHours
+        ) {
+            currentCoroutineContext().ensureActive()
+            advancingRuntime.advance(TurnStep.ONE_HOUR)
+            currentCoroutineContext().ensureActive()
+
+            val completedHours = (advancingRuntime.turn - startingTurn)
+                .coerceIn(0L, totalHours.toLong())
+                .toInt()
+            val currentDate = GameCalendar.campaignDate(advancingRuntime.currentTime)
+            val crossedDateBoundary = currentDate != lastPublishedDate
+            val shouldPublish = completedHours <= 1 ||
+                completedHours >= totalHours ||
+                advancingRuntime.phase != GamePhase.PLAYING ||
+                crossedDateBoundary ||
+                lastPublishedAt.elapsedNow() >= TURN_PROCESSING_UPDATE_INTERVAL
+
+            if (shouldPublish) {
+                val newsAdditionCount = advancingRuntime.turnProgressNewsAdditionCount
+                val tradeCount = advancingRuntime.turnProgressTradeCount
+                val newEventCount = (newsAdditionCount - lastNewsAdditionCount)
+                    .coerceIn(0L, Int.MAX_VALUE.toLong())
+                    .toInt()
+                val newTradeCount = (tradeCount - lastTradeCount).coerceAtLeast(0)
+                if (newEventCount > 0) {
+                    recentEventTitle = advancingRuntime.latestTurnProgressEventTitle ?: recentEventTitle
+                }
+                val sessions = advancingRuntime.turnProgressMarketSessions()
+                val isComplete = completedHours >= totalHours || advancingRuntime.phase != GamePhase.PLAYING
+                publishTurnProcessingProgress(
+                    currentTime = advancingRuntime.currentTime,
+                    phase = advancingRuntime.phase,
+                    marketSessions = sessions,
+                    completedHours = completedHours,
+                    isComplete = isComplete,
+                    latestActivity = processingActivity(
+                        newEventCount = newEventCount,
+                        newTradeCount = newTradeCount,
+                        crossedDateBoundary = crossedDateBoundary,
+                        isComplete = isComplete,
+                    ),
+                    recentEventTitle = recentEventTitle,
+                    processingSequence = processingSequence,
+                )
+                lastNewsAdditionCount = newsAdditionCount
+                lastTradeCount = tradeCount
+                lastPublishedDate = currentDate
+                lastPublishedAt = TimeSource.Monotonic.markNow()
+            }
+        }
+
+        val finalSnapshot = advancingRuntime.snapshot()
+        val finalCompletedHours = (finalSnapshot.turn - startingTurn)
+            .coerceIn(0L, totalHours.toLong())
+            .toInt()
+        if (_turnProcessingUiState.value?.completedHours != finalCompletedHours) {
+            val newEventCount = (
+                advancingRuntime.turnProgressNewsAdditionCount - lastNewsAdditionCount
+            ).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+            val newTradeCount = (finalSnapshot.trades.size - lastTradeCount).coerceAtLeast(0)
+            if (newEventCount > 0) {
+                recentEventTitle = advancingRuntime.latestTurnProgressEventTitle ?: recentEventTitle
+            }
+            publishTurnProcessingProgress(
+                currentTime = finalSnapshot.currentTime,
+                phase = finalSnapshot.phase,
+                marketSessions = finalSnapshot.marketSessions,
+                completedHours = finalCompletedHours,
+                isComplete = true,
+                latestActivity = processingActivity(
+                    newEventCount = newEventCount,
+                    newTradeCount = newTradeCount,
+                    crossedDateBoundary = GameCalendar.campaignDate(finalSnapshot.currentTime) != lastPublishedDate,
+                    isComplete = true,
+                ),
+                recentEventTitle = recentEventTitle,
+                processingSequence = processingSequence,
+            )
+        }
+        return finalSnapshot
+    }
+
+    private fun publishTurnProcessingProgress(
+        currentTime: Instant,
+        phase: GamePhase,
+        marketSessions: Map<Market, MarketSession>,
+        completedHours: Int,
+        isComplete: Boolean,
+        latestActivity: String,
+        recentEventTitle: String?,
+        processingSequence: Long,
+    ) {
+        _turnProcessingUiState.update { current ->
+            if (turnProcessingSequence != processingSequence || current == null) {
+                current
+            } else if (current.cancellationRequested) {
+                current.copy(
+                    currentTime = currentTime,
+                    completedHours = completedHours.coerceIn(0, current.totalHours),
+                    marketSessionSummary = marketSessionSummary(marketSessions),
+                )
+            } else {
+                current.copy(
+                    currentTime = currentTime,
+                    completedHours = completedHours.coerceIn(0, current.totalHours),
+                    stage = processingStage(phase, marketSessions, isComplete),
+                    latestActivity = latestActivity,
+                    recentEventTitle = recentEventTitle,
+                    marketSessionSummary = marketSessionSummary(marketSessions),
+                )
+            }
+        }
+    }
+
+    private fun processingStage(snapshot: SimulatorUiState, isComplete: Boolean): String =
+        processingStage(snapshot.phase, snapshot.marketSessions, isComplete)
+
+    private fun processingStage(
+        phase: GamePhase,
+        marketSessions: Map<Market, MarketSession>,
+        isComplete: Boolean,
+    ): String {
+        if (isComplete) {
+            return if (phase == GamePhase.PLAYING) {
+                "선택 구간 · 시장 장부 확정"
+            } else {
+                "캠페인 마감 · 결산 이관"
+            }
+        }
+        val krxSession = koreanMarketSession(marketSessions)
+        val usSession = unitedStatesMarketSession(marketSessions)
+        return when {
+            krxSession == MarketSession.REGULAR -> "KRX 정규장 · 시세와 주문 체결"
+            usSession == MarketSession.REGULAR -> "미국 정규장 · 시세와 주문 체결"
+            usSession == MarketSession.PRE_MARKET -> "미국 프리마켓 · 대기 주문 확인"
+            usSession == MarketSession.AFTER_HOURS -> "미국 애프터마켓 · 이벤트 반영"
+            else -> "폐장 시간 · 뉴스와 원장 정리"
+        }
+    }
+
+    private fun processingActivity(
+        newEventCount: Int,
+        newTradeCount: Int,
+        crossedDateBoundary: Boolean,
+        isComplete: Boolean,
+    ): String = when {
+        newEventCount > 0 && newTradeCount > 0 ->
+            "시장 이벤트 ${newEventCount}건과 주문 체결 ${newTradeCount}건을 반영했습니다."
+        newEventCount > 0 -> "새 시장 이벤트 ${newEventCount}건을 반영했습니다."
+        newTradeCount > 0 -> "주문 체결 ${newTradeCount}건을 원장에 기록했습니다."
+        isComplete -> "선택한 시간 구간의 시세와 원장을 확정했습니다."
+        crossedDateBoundary -> "일일 장부와 포트폴리오 기준가를 마감했습니다."
+        else -> "시세·지수·대기 주문을 시간 순서대로 반영했습니다."
+    }
+
+    private fun marketSessionSummary(snapshot: SimulatorUiState): String =
+        marketSessionSummary(snapshot.marketSessions)
+
+    private fun marketSessionSummary(marketSessions: Map<Market, MarketSession>): String =
+        "KRX ${koreanMarketSession(marketSessions).displayName}  ·  " +
+            "US ${unitedStatesMarketSession(marketSessions).displayName}"
+
+    private fun koreanMarketSession(marketSessions: Map<Market, MarketSession>): MarketSession =
+        marketSessions[Market.KOSPI]
+            ?: marketSessions[Market.KOSDAQ]
+            ?: MarketSession.CLOSED
+
+    private fun unitedStatesMarketSession(marketSessions: Map<Market, MarketSession>): MarketSession =
+        marketSessions[Market.NASDAQ]
+            ?: marketSessions[Market.NYSE]
+            ?: MarketSession.CLOSED
 
     /** Requests cancellation at the next atomic simulated-hour boundary. */
     fun cancelAdvance(): Boolean {
@@ -246,6 +563,13 @@ class SimulatorViewModel(
         _uiState.value = _uiState.value.copy(
             lastMessage = "현재 시간 계산이 끝나는 즉시 진행을 취소하고 이전 상태로 복원합니다.",
         )
+        _turnProcessingUiState.update { current ->
+            current?.copy(
+                stage = "취소 경계 대기",
+                latestActivity = "현재 1시간 계산을 마치면 시작 전 상태로 복원합니다.",
+                cancellationRequested = true,
+            )
+        }
         jobs.forEach(Job::cancel)
         return true
     }
@@ -289,33 +613,93 @@ class SimulatorViewModel(
 
     fun setAutoExchange(enabled: Boolean) = withRuntimeAccess(blocked = {}) {
         runtime.setAutoExchange(enabled)
-        publish()
+        val current = _uiState.value
+        publishSnapshot(
+            current.copy(
+                options = current.options.copy(autoExchange = enabled),
+                lastMessage = if (enabled) "자동 환전을 켰습니다." else "자동 환전을 껐습니다.",
+            ),
+            SimulatorStateChangeKind.STATE_CHANGED,
+        )
     }
 
     fun setExternalMarketForces(forces: ExternalMarketForces) = withRuntimeAccess(blocked = {}) {
         runtime.setExternalMarketForces(forces)
-        publish()
+        val current = _uiState.value
+        publishSnapshot(
+            if (current.options.ironmanMode) {
+                current.copy(lastMessage = "철인 모드에서는 시장 동역학을 변경할 수 없습니다.")
+            } else {
+                current.copy(
+                    externalMarketForcesTarget = forces.copy(),
+                    lastMessage = "시장 환경 목표를 변경했습니다. 실제 시장에는 시간에 따라 반영됩니다.",
+                )
+            },
+            SimulatorStateChangeKind.STATE_CHANGED,
+        )
     }
 
     fun markEventRead(eventId: String) = withRuntimeAccess(blocked = {}) {
         runtime.markEventRead(eventId)
-        publish()
+        val current = _uiState.value
+        publishSnapshot(
+            current.copy(
+                readEventIds = if (current.newsEvents.any { it.id == eventId }) {
+                    current.readEventIds + eventId
+                } else {
+                    current.readEventIds
+                },
+            ),
+            SimulatorStateChangeKind.STATE_CHANGED,
+        )
     }
 
     fun markStockNewsListViewed(stockId: String, eventIds: Set<String>) =
         withRuntimeAccess(blocked = {}) {
-        runtime.markStockNewsListViewed(stockId, eventIds)
-        publish()
+        val current = _uiState.value
+        val readLedgerUpdate = runtime.markStockNewsListViewed(stockId, eventIds)
+        val updatedReadEventIds = when {
+            readLedgerUpdate == null -> current.readStockNewsEventIds
+            readLedgerUpdate.isEmpty() -> current.readStockNewsEventIds - stockId
+            else -> current.readStockNewsEventIds + readLedgerUpdate
+        }
+        publishSnapshot(
+            current.copy(readStockNewsEventIds = updatedReadEventIds),
+            SimulatorStateChangeKind.STATE_CHANGED,
+        )
     }
 
     fun markAllEventsRead() = withRuntimeAccess(blocked = {}) {
         runtime.markAllEventsRead()
-        publish()
+        val current = _uiState.value
+        publishSnapshot(
+            current.copy(readEventIds = current.readEventIds + current.newsEvents.map { it.id }),
+            SimulatorStateChangeKind.STATE_CHANGED,
+        )
     }
 
     fun toggleWatchlist(stockId: String): Boolean = withRuntimeAccess(blocked = { false }) {
+        val current = _uiState.value
         val added = runtime.toggleWatchlist(stockId)
-        publish()
+        val stockExists = current.stocks.any { it.id == stockId }
+        val updatedWatchlist = when {
+            !stockExists -> current.watchlistedStockIds
+            added -> current.watchlistedStockIds + stockId
+            else -> current.watchlistedStockIds - stockId
+        }
+        publishSnapshot(
+            current.copy(
+                watchlistedStockIds = updatedWatchlist,
+                lastMessage = if (!stockExists) {
+                    "존재하지 않는 종목입니다."
+                } else if (added) {
+                    "관심 종목에 추가했습니다."
+                } else {
+                    "관심 종목에서 해제했습니다."
+                },
+            ),
+            SimulatorStateChangeKind.STATE_CHANGED,
+        )
         added
     }
 
@@ -326,27 +710,49 @@ class SimulatorViewModel(
         }
         withRuntimeAccess(blocked = {}) {
             runtime.clearMessage()
-            publish()
+            publishSnapshot(
+                _uiState.value.copy(lastMessage = null),
+                SimulatorStateChangeKind.STATE_CHANGED,
+            )
         }
     }
 
     fun pause() = withRuntimeAccess(blocked = {}) {
+        val current = _uiState.value
         runtime.pause()
-        publish()
+        publishSnapshot(
+            current.copy(
+                phase = if (current.phase == GamePhase.PLAYING) GamePhase.PAUSED else current.phase,
+            ),
+            SimulatorStateChangeKind.STATE_CHANGED,
+        )
     }
 
     fun resume() = withRuntimeAccess(blocked = {}) {
+        val current = _uiState.value
         runtime.resume()
-        publish()
+        publishSnapshot(
+            current.copy(
+                phase = if (current.phase == GamePhase.PAUSED) GamePhase.PLAYING else current.phase,
+            ),
+            SimulatorStateChangeKind.STATE_CHANGED,
+        )
     }
 
     fun finishSettlement() = withRuntimeAccess(blocked = {}) {
-        val previousPhase = _uiState.value.phase
+        val current = _uiState.value
         runtime.finishSettlement()
-        val snapshot = runtime.snapshot()
+        val snapshot = if (current.phase == GamePhase.SETTLEMENT) {
+            current.copy(
+                phase = GamePhase.FINISHED,
+                lastMessage = "최종 정산을 완료했습니다.",
+            )
+        } else {
+            current
+        }
         publishSnapshot(
             snapshot = snapshot,
-            kind = if (previousPhase != GamePhase.FINISHED && snapshot.phase == GamePhase.FINISHED) {
+            kind = if (current.phase != GamePhase.FINISHED && snapshot.phase == GamePhase.FINISHED) {
                 SimulatorStateChangeKind.GAME_ENDED
             } else {
                 SimulatorStateChangeKind.STATE_CHANGED
@@ -680,6 +1086,8 @@ class SimulatorViewModel(
         debugJumpJob?.cancel()
         advanceJob = null
         debugJumpJob = null
+        turnProcessingSequence++
+        _turnProcessingUiState.value = null
     }
 
     /** Serializes every access to the mutable Runtime while a background command owns it. */
@@ -752,6 +1160,7 @@ class SimulatorViewModel(
     private companion object {
         const val MOD_EVENT_BUFFER_CAPACITY: Int = 64
         const val MOD_EVENT_REPLAY_CAPACITY: Int = MOD_EVENT_BUFFER_CAPACITY
+        val TURN_PROCESSING_UPDATE_INTERVAL = 120.milliseconds
         val PLAYABLE_GAME_PHASES: Set<GamePhase> = setOf(GamePhase.PLAYING, GamePhase.PAUSED)
     }
 }
