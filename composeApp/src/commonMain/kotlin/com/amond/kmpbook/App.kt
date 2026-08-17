@@ -757,7 +757,7 @@ fun App(
                     detail = "${deletingSaveFileName.orEmpty()} 파일을 안전하게 삭제하고 목록을 갱신하고 있습니다.",
                 )
                 isStartingNewGame -> GameOperationLoadingDialog(
-                    title = "새 장부 준비 중",
+                    title = "새 게임 준비 중",
                     detail = newGameOperationDetail
                         ?: "새 시장 시뮬레이션을 준비하고 있습니다.",
                 )
