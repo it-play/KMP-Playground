@@ -245,7 +245,7 @@ class MarketIndexEngine {
 
     companion object {
         /**
-         * 2026-08-07 스냅샷. Alphabet(GOOGL)이 2026-06-29 Verizon(VZ)를 대체한 변경을 포함한다.
+         * 2026-07-31 스냅샷. Alphabet(GOOGL)이 2026-06-29 Verizon(VZ)를 대체한 변경을 포함한다.
          * 실제 지수는 변경 시 제수를 조정하지만, 게임은 해당 시점 유니버스와의 교집합 수익률로
          * 이어 붙인다.
          */

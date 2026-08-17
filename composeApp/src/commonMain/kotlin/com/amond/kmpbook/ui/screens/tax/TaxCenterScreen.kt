@@ -179,7 +179,7 @@ private fun AnnualTaxLedger(years: List<TaxYearDisplay>, modifier: Modifier) {
 private fun TaxPolicyCards(data: TaxCenterData, modifier: Modifier) {
     LedgerPanel(modifier, padding = 0.dp) {
         Column(Modifier.fillMaxSize()) {
-            SectionHeading("적용 규칙", eyebrow = "POLICY PACK 2026-08-07", modifier = Modifier.padding(12.dp))
+            SectionHeading("적용 규칙", eyebrow = "POLICY PACK 2026-08-01", modifier = Modifier.padding(12.dp))
             LedgerDivider()
             LazyColumn(Modifier.weight(1f)) {
                 item {

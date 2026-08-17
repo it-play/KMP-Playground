@@ -60,7 +60,7 @@ class BrokerFeeCalculator(
             items = items,
             warnings = listOf(
                 "수수료·환전 스프레드·미국 규제기관 fee는 세금이 아니며 증권사별 실제 부과 여부가 다릅니다.",
-                "2026-08-07에 확인한 fee를 동결했으므로 이후 SEC·FINRA 변경은 정책팩 갱신이 필요합니다.",
+                "2026-08-01에 확인한 fee를 동결했으므로 이후 SEC·FINRA 변경은 정책팩 갱신이 필요합니다.",
             ),
         )
     }

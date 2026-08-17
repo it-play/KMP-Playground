@@ -46,7 +46,7 @@ data class ExternalMarketForces(
         const val MIN_VALUE: Double = 0.0
         const val MAX_VALUE: Double = 1.0
 
-        // 2026-08-07의 기본 캠페인은 불안정한 반등 국면이지만 즉시 위기인 상태는 아니다.
+        // 2026-08-01의 기본 캠페인은 불안정한 반등 국면이지만 즉시 위기인 상태는 아니다.
         const val AUGUST_2026_BASELINE_CHAOS: Double = 0.56
         const val AUGUST_2026_BASELINE_WORLD_TENSION: Double = 0.67
         const val AUGUST_2026_BASELINE_RETAIL_BUYING_POWER: Double = 0.54

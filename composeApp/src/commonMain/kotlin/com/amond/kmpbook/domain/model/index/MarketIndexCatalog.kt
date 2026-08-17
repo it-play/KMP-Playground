@@ -31,8 +31,8 @@ object MarketIndexCatalog {
             officialMethodologySummary = "DJIA는 30개 미국 블루칩 기업으로 구성된 주가가중 지수다.",
             officialMethodologyUrl = "https://www.spglobal.com/spdji/en/methodology/article/dow-jones-averages-methodology/",
             simulationFormula = "Fₓ=Σpriceᵢ,ₓ/ΣpreviousCloseᵢ; Iₓ=I(t-1)×[1+f×(Fₓ-1)] (x=O/H/L/C)",
-            constituentRule = "2026-08-07 DJIA 30종목과 게임 개별주 유니버스의 교집합. ETF는 제외한다.",
-            constituentSnapshotDate = "2026-08-07",
+            constituentRule = "2026-07-31 DJIA 30종목과 게임 개별주 유니버스의 교집합. ETF는 제외한다.",
+            constituentSnapshotDate = "2026-07-31",
         ),
         MarketIndexId.VIX to MarketIndexFormulaMetadata(
             id = MarketIndexId.VIX,
@@ -53,4 +53,3 @@ object MarketIndexCatalog {
 
     operator fun get(id: MarketIndexId): MarketIndexFormulaMetadata = requireNotNull(all[id])
 }
-

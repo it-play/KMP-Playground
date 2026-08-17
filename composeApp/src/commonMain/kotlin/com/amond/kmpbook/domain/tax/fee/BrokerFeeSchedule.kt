@@ -29,7 +29,7 @@ data class BrokerFeeSchedule(
     companion object {
         /** Commissions and FX spread deliberately remain zero until a real broker schedule is chosen. */
         val REGULATORY_ONLY_2026 = BrokerFeeSchedule(
-            id = "us-regulatory-only-2026-08-07",
+            id = "us-regulatory-only-2026-08-01",
             brokerName = "사용자 지정 증권사",
         )
     }

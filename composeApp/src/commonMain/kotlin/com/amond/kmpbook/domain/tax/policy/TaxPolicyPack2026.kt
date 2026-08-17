@@ -14,12 +14,12 @@ import com.amond.kmpbook.domain.tax.shareholder.MajorShareholderThresholdRule
 import kotlinx.datetime.LocalDate
 
 /**
- * Korean resident individual, ordinary brokerage account, law frozen on 2026-08-07.
+ * Korean resident individual, ordinary brokerage account, law frozen at campaign start 2026-08-01.
  * Rules without a statutory sunset are intentionally held constant through 2040 for gameplay;
  * that is a simulation assumption, not a statement that future law will remain unchanged.
  */
 object TaxPolicyPack2026 {
-    val FROZEN_AS_OF: LocalDate = LocalDate(2026, 8, 7)
+    val FROZEN_AS_OF: LocalDate = LocalDate(2026, 8, 1)
 
     val SECURITIES_TRANSACTION_TAX_SOURCE = RuleSource(
         title = "증권거래세법 시행령 제5조 (2026 시행)",
@@ -58,8 +58,8 @@ object TaxPolicyPack2026 {
     private const val MAJOR_SHAREHOLDER_MARKET_VALUE_KRW = 5_000_000_000L
 
     val POLICY: TaxPolicyPack = TaxPolicyPack(
-        id = "kr-resident-ordinary-account-2026-08-07-frozen",
-        title = "대한민국 거주 개인 일반계좌 세법 2026-08-07 동결",
+        id = "kr-resident-ordinary-account-2026-08-01-frozen",
+        title = "대한민국 거주 개인 일반계좌 세법 2026-08-01 동결",
         frozenAsOf = FROZEN_AS_OF,
         frozenScenarioRange = EffectiveDateRange(
             validFrom = LocalDate(2026, 1, 1),

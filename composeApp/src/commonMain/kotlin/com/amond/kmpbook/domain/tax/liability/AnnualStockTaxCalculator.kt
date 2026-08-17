@@ -78,7 +78,7 @@ class AnnualStockTaxCalculator(
             if (request.financialIncomeGrossKrw > policy.financialIncomeComprehensiveThresholdKrw) {
                 add("금융소득이 2,000만원을 초과했습니다. 다른 종합소득 정보가 없어 종합과세는 추정입니다.")
             }
-            add("2026-08-07 세법 동결 시나리오이며 2027년 이후 실제 개정은 자동 반영되지 않습니다.")
+            add("2026-08-01 세법 동결 시나리오이며 2027년 이후 실제 개정은 자동 반영되지 않습니다.")
         }
 
         return AnnualTaxLedger(

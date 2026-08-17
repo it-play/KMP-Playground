@@ -723,7 +723,7 @@ fun EndingScreen(
             }
             LedgerPanel(Modifier.width(480.dp).fillMaxHeight(), padding = 22.dp) {
                 Column(Modifier.fillMaxSize()) {
-                    SectionHeading("최종 정산표", eyebrow = "2026.08.07 — 2040.12.31")
+                    SectionHeading("최종 정산표", eyebrow = "2026.08.01 — 2040.12.31")
                     Spacer(Modifier.height(18.dp))
                     Row {
                         Metric("총 손익", formatMoney(snapshot.totalProfitKrw, Currency.KRW), Modifier.weight(1f), deltaColor(snapshot.totalProfitKrw))
@@ -733,7 +733,7 @@ fun EndingScreen(
                     Row {
                         Metric("체결", "${tradeCount}회", Modifier.weight(1f))
                         Metric("시장 이벤트", "${eventCount}건", Modifier.weight(1f))
-                        Metric("최대 낙폭", formatPercent(maxDrawdown, false), Modifier.weight(1f), MarketColors.Fall)
+                        Metric("일별 최대 낙폭", formatPercent(maxDrawdown, false), Modifier.weight(1f), MarketColors.Fall)
                     }
                     Spacer(Modifier.height(16.dp))
                     LedgerDivider()

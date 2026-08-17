@@ -22,7 +22,7 @@ internal data class CentralBankRateSpecification(
             )
             ScheduledEventKind.KR_BOK -> CentralBankRateSpecification(
                 metricLabel = "한국 기준금리",
-                initialRate = 2.50,
+                initialRate = 2.75,
                 neutralRate = 2.50,
                 minimumRate = 0.50,
                 maximumRate = 5.0,
