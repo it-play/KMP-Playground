@@ -14,7 +14,8 @@ import com.amond.kmpbook.domain.model.fundstructure.EtnProductTerms
  * 상장 상품 자체의 법적 구조와 벤치마크 수익률 위 운용 오버레이를 정의한다.
  *
  * 구성종목 선정 규칙은 [benchmarkRef]가 가리키는 [BenchmarkDefinition]에만 둔다.
- * null 추적오차는 0이 아니라 아직 공식 수치로 검증하지 않았다는 뜻이다.
+ * null 추적오차는 0이 아니라 아직 공식 수치로 검증하지 않았다는 뜻이다. 실행 엔진은 이때
+ * 복제 방식별 보수적 기본 모형을 사용하며, 명시적인 0만 상품 고유 추적오차를 끈다.
  *
  * @property benchmarkRef 검증된 상품-벤치마크 연결은 이름 유사성이 아니라 명시적 출처 근거가
  * 있어야 한다. 연결을 검증했더라도 벤치마크의 지원 수준과 provenance는 provisional일 수 있다.

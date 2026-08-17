@@ -20,12 +20,15 @@ data class KofrIndexState(
 ) {
     init {
         require(publishedRateAnnual.isFinite() && publishedRateAnnual in MIN_RATE..MAX_RATE)
-        require(isCanonicalRate(publishedRateAnnual))
+        require(isCanonicalRate(publishedRateAnnual, PUBLISHED_ANNUAL_RATE_SCALE))
         require(indexLevel.isFinite() && indexLevel > 0.0)
         require(publishedRateObservationDate < indexPublicationDate)
         require((pendingRateAnnual == null) == (pendingRateObservationDate == null))
         require(pendingRateAnnual == null || pendingRateAnnual.isFinite() && pendingRateAnnual in MIN_RATE..MAX_RATE)
-        require(pendingRateAnnual == null || isCanonicalRate(pendingRateAnnual))
+        require(
+            pendingRateAnnual == null ||
+                isCanonicalRate(pendingRateAnnual, CALCULATED_ANNUAL_RATE_SCALE),
+        )
         require(pendingRateObservationDate == null || pendingRateObservationDate > publishedRateObservationDate)
         require(revision >= 0L)
     }
@@ -36,10 +39,12 @@ data class KofrIndexState(
         const val MIN_RATE: Double = -0.05
         const val MAX_RATE: Double = 1.0
         const val PUBLISHED_ANNUAL_RATE_DECIMAL_PLACES: Int = 5
-        private const val ANNUAL_RATE_SCALE: Double = 100_000.0
+        const val CALCULATED_ANNUAL_RATE_DECIMAL_PLACES: Int = 7
+        private const val PUBLISHED_ANNUAL_RATE_SCALE: Double = 100_000.0
+        private const val CALCULATED_ANNUAL_RATE_SCALE: Double = 10_000_000.0
 
-        private fun isCanonicalRate(value: Double): Boolean =
-            abs(value * ANNUAL_RATE_SCALE - round(value * ANNUAL_RATE_SCALE)) <= 1e-6
+        private fun isCanonicalRate(value: Double, scale: Double): Boolean =
+            abs(value * scale - round(value * scale)) <= 1e-6
 
         fun referenceIdFor(ref: BenchmarkRef): String = "kofr-index:${ref.benchmarkId}:v${ref.version}"
     }

@@ -10,6 +10,7 @@ class FundOperationProfile(
     val managementStyle: FundManagementStyle,
     val syntheticSwapFunding: SyntheticSwapFunding?,
     val activeReturnModelSupport: ActiveReturnModelSupport,
+    val activeSyntheticSwapModelParameters: ActiveSyntheticSwapModelParameters? = null,
     val provenance: FundOperationProvenance,
     officialSourceUrls: Set<String>,
 ) {
@@ -21,11 +22,25 @@ class FundOperationProfile(
     init {
         when (managementStyle) {
             FundManagementStyle.PASSIVE -> require(
-                activeReturnModelSupport == ActiveReturnModelSupport.NOT_APPLICABLE,
-            ) { "패시브 상품에는 액티브 수익률 모델 지원 상태를 지정할 수 없습니다." }
-            FundManagementStyle.ACTIVE -> require(
-                activeReturnModelSupport == ActiveReturnModelSupport.UNMODELED,
-            ) { "액티브 수익률 모델이 없는 동안에는 UNMODELED로 명시해야 합니다." }
+                activeReturnModelSupport == ActiveReturnModelSupport.NOT_APPLICABLE &&
+                    activeSyntheticSwapModelParameters == null,
+            ) { "패시브 상품에는 액티브 수익률 모델을 지정할 수 없습니다." }
+            FundManagementStyle.ACTIVE -> when (activeReturnModelSupport) {
+                ActiveReturnModelSupport.UNMODELED -> require(
+                    activeSyntheticSwapModelParameters == null,
+                ) { "UNMODELED 액티브 상품에는 합성 수익률 가정을 지정할 수 없습니다." }
+                ActiveReturnModelSupport.DETERMINISTIC_ASSUMPTION -> {
+                    require(activeSyntheticSwapModelParameters != null) {
+                        "결정론적 액티브 합성 모델에는 명시적인 수치 가정이 필요합니다."
+                    }
+                    require(syntheticSwapFunding == SyntheticSwapFunding.FULLY_FUNDED) {
+                        "액티브 합성 스왑 가정은 fully-funded 상품에만 적용합니다."
+                    }
+                }
+                ActiveReturnModelSupport.NOT_APPLICABLE -> error(
+                    "액티브 상품에는 NOT_APPLICABLE을 지정할 수 없습니다.",
+                )
+            }
         }
         require(this.officialSourceUrls.size <= MAX_OFFICIAL_SOURCE_URLS)
         require(this.officialSourceUrls.all(::isValidHttpsUrl)) {
@@ -47,6 +62,7 @@ class FundOperationProfile(
             managementStyle == other.managementStyle &&
             syntheticSwapFunding == other.syntheticSwapFunding &&
             activeReturnModelSupport == other.activeReturnModelSupport &&
+            activeSyntheticSwapModelParameters == other.activeSyntheticSwapModelParameters &&
             provenance == other.provenance &&
             officialSourceUrls == other.officialSourceUrls
 
@@ -54,6 +70,7 @@ class FundOperationProfile(
         var result = managementStyle.hashCode()
         result = 31 * result + (syntheticSwapFunding?.hashCode() ?: 0)
         result = 31 * result + activeReturnModelSupport.hashCode()
+        result = 31 * result + (activeSyntheticSwapModelParameters?.hashCode() ?: 0)
         result = 31 * result + provenance.hashCode()
         result = 31 * result + officialSourceUrls.hashCode()
         return result
@@ -62,7 +79,9 @@ class FundOperationProfile(
     override fun toString(): String =
         "FundOperationProfile(managementStyle=$managementStyle, " +
             "syntheticSwapFunding=$syntheticSwapFunding, " +
-            "activeReturnModelSupport=$activeReturnModelSupport, provenance=$provenance, " +
+            "activeReturnModelSupport=$activeReturnModelSupport, " +
+            "activeSyntheticSwapModelParameters=$activeSyntheticSwapModelParameters, " +
+            "provenance=$provenance, " +
             "officialSourceUrls=$officialSourceUrls)"
 
     private fun isValidHttpsUrl(value: String): Boolean =

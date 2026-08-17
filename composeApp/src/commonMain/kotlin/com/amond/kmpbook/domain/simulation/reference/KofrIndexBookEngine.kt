@@ -7,12 +7,9 @@ import com.amond.kmpbook.domain.model.fund.KofrIndexProfile
 import com.amond.kmpbook.domain.model.reference.KofrIndexBook
 import com.amond.kmpbook.domain.model.reference.KofrIndexBookAdvance
 import com.amond.kmpbook.domain.model.reference.KofrIndexState
-import com.amond.kmpbook.domain.simulation.market.MacroEnvironment
 import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.domain.time.KofrBusinessCalendar
 import kotlin.math.ln
-import kotlin.math.pow
-import kotlin.math.round
 import kotlin.time.Instant
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
@@ -56,7 +53,7 @@ class KofrIndexBookEngine(private val rateModel: KofrRateModel) {
     fun advance(
         book: KofrIndexBook,
         definitions: Collection<BenchmarkDefinition>,
-        macro: MacroEnvironment,
+        koreanPolicyRateAnnualAt: (Instant) -> Double,
         from: Instant,
         to: Instant,
     ): KofrIndexBookAdvance {
@@ -73,7 +70,12 @@ class KofrIndexBookEngine(private val rateModel: KofrRateModel) {
             eventsBetween(profile, from, to).forEach { event ->
                 next = when (event.kind) {
                     KofrEventKind.PUBLICATION -> publish(next, profile, event.date)
-                    KofrEventKind.OBSERVATION_CAPTURE -> capture(next, profile, event.date, macro)
+                    KofrEventKind.OBSERVATION_CAPTURE -> capture(
+                        state = next,
+                        profile = profile,
+                        observationDate = event.date,
+                        koreanPolicyRateAnnual = koreanPolicyRateAnnualAt(event.at),
+                    )
                 }
             }
             next = next.copy(asOf = to)
@@ -86,6 +88,27 @@ class KofrIndexBookEngine(private val rateModel: KofrRateModel) {
             grossReferenceLogReturns = returns,
             publishedAnnualRates = rates,
         )
+    }
+
+    /**
+     * 공식 anchor에서 [at]까지 fixing·공표를 재생한다. 저장 검증도 runtime과 같은 시드와
+     * 중앙은행 경로를 넣어 이 함수를 사용하므로 공개 상태나 대기 fixing을 따로 변조할 수 없다.
+     */
+    fun canonicalBook(
+        definitions: Collection<BenchmarkDefinition>,
+        at: Instant,
+        koreanPolicyRateAnnualAt: (Instant) -> Double,
+    ): KofrIndexBook {
+        require(at >= GameCalendar.startInstant)
+        val initial = initialBook(definitions, GameCalendar.startInstant)
+        if (at == GameCalendar.startInstant) return initial
+        return advance(
+            book = initial,
+            definitions = definitions,
+            koreanPolicyRateAnnualAt = koreanPolicyRateAnnualAt,
+            from = GameCalendar.startInstant,
+            to = at,
+        ).book
     }
 
     private fun publish(
@@ -105,7 +128,9 @@ class KofrIndexBookEngine(private val rateModel: KofrRateModel) {
         )
         val elapsedCalendarDays = publicationDate.toEpochDays() - state.indexPublicationDate.toEpochDays()
         require(elapsedCalendarDays > 0)
-        val factor = 1.0 + publishedRate * elapsedCalendarDays / profile.dayCountBasis
+        // The index published today accrues the previously published fixing through today;
+        // today's newly published fixing starts the next index accrual interval.
+        val factor = 1.0 + state.publishedRateAnnual * elapsedCalendarDays / profile.dayCountBasis
         require(factor > 0.0)
         return state.copy(
             publishedRateAnnual = publishedRate,
@@ -122,19 +147,16 @@ class KofrIndexBookEngine(private val rateModel: KofrRateModel) {
         state: KofrIndexState,
         profile: KofrIndexProfile,
         observationDate: LocalDate,
-        macro: MacroEnvironment,
+        koreanPolicyRateAnnual: Double,
     ): KofrIndexState {
         if (observationDate <= state.publishedRateObservationDate) return state
         return state.copy(
-            pendingRateAnnual = roundedAnnualRate(
-                rateModel.fixingRateAnnual(
-                    benchmarkRef = state.benchmarkRef,
-                    observationDate = observationDate,
-                    macro = macro,
-                    volumeTrimFractionPerTail = profile.volumeTrimFractionPerTail,
-                    calculationRatePercentDecimalPlaces = profile.calculationRatePercentDecimalPlaces,
-                ),
-                profile.publicationRatePercentDecimalPlaces,
+            pendingRateAnnual = rateModel.fixingRateAnnual(
+                benchmarkRef = state.benchmarkRef,
+                observationDate = observationDate,
+                koreanPolicyRateAnnual = koreanPolicyRateAnnual,
+                volumeTrimFractionPerTail = profile.volumeTrimFractionPerTail,
+                calculationRatePercentDecimalPlaces = profile.calculationRatePercentDecimalPlaces,
             ),
             pendingRateObservationDate = observationDate,
         )
@@ -192,13 +214,14 @@ class KofrIndexBookEngine(private val rateModel: KofrRateModel) {
     }
 
     private fun roundedIndex(value: Double, decimalPlaces: Int): Double {
-        val scale = 10.0.pow(decimalPlaces)
-        return round(value * scale) / scale
+        return KofrOfficialRounding.halfUp(value, decimalPlaces)
     }
 
     private fun roundedAnnualRate(value: Double, percentDecimalPlaces: Int): Double {
-        val scale = 10.0.pow(percentDecimalPlaces + PERCENT_TO_ANNUAL_DECIMAL_PLACES)
-        return round(value * scale) / scale
+        return KofrOfficialRounding.halfUp(
+            value,
+            percentDecimalPlaces + PERCENT_TO_ANNUAL_DECIMAL_PLACES,
+        )
     }
 
     private fun validatedDefinitions(
