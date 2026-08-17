@@ -234,21 +234,28 @@ fun buildNewsUiProjection(
             .thenBy { it.event.id },
     ).take(HOME_STORY_LIMIT)
 
-    val storiesByStockId = stockById.keys.sorted().mapNotNull { stockId ->
-        val relatedStories = stories.filter { story ->
-            story.relatedStocks.any { related -> related.stockId == stockId }
-        }.sortedWith(
-            compareByDescending<NewsStoryUi> { story ->
-                story.relatedStocks.first { it.stockId == stockId }.directTarget
-            }.thenByDescending { story ->
-                story.relatedStocks.first { it.stockId == stockId }.specificity
-            }.thenByDescending { story -> story.activityPriority > 0 }
-                .thenByDescending(NewsStoryUi::activityPriority)
-                .thenByDescending { it.event.startsAt }
-                .thenBy { it.event.id },
-        )
-        relatedStories.takeIf(List<NewsStoryUi>::isNotEmpty)?.let { stockId to it }
-    }.toMap(linkedMapOf())
+    // Index each story once while its resolved relation is already available. The former
+    // stock-by-story scan revisited every story (and then searched its relations again) for all
+    // catalog instruments, which made opening news-heavy screens scale with the entire catalog.
+    val storiesWithRelationByStockId = linkedMapOf<String, MutableList<Pair<NewsStoryUi, NewsRelatedStockUi>>>()
+    stories.forEach { story ->
+        story.relatedStocks.forEach { relation ->
+            storiesWithRelationByStockId.getOrPut(relation.stockId, ::mutableListOf) += story to relation
+        }
+    }
+    val storiesByStockId = storiesWithRelationByStockId.keys.sorted().associateTo(linkedMapOf()) { stockId ->
+        stockId to storiesWithRelationByStockId.getValue(stockId)
+            .sortedWith(
+                compareByDescending<Pair<NewsStoryUi, NewsRelatedStockUi>> { (_, relation) ->
+                    relation.directTarget
+                }.thenByDescending { (_, relation) -> relation.specificity }
+                    .thenByDescending { (story, _) -> story.activityPriority > 0 }
+                    .thenByDescending { (story, _) -> story.activityPriority }
+                    .thenByDescending { (story, _) -> story.event.startsAt }
+                    .thenBy { (story, _) -> story.event.id },
+            )
+            .map { (story, _) -> story }
+    }
 
     return NewsUiProjection(
         stories = stories,
