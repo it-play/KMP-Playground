@@ -66,8 +66,8 @@ import kotlin.math.round
 
 private const val READY_TITLE = "market-ledger-chart-ready"
 private const val LIGHTWEIGHT_CHARTS_RESOURCE =
-    "files/charts/lightweight-charts-5.2.1.standalone.production.js"
-private const val CHART_HOST_RESOURCE = "files/charts/trading-chart-host.js"
+    "files/charts/tradingview_lightweight_charts_library.js"
+private const val CHART_HOST_RESOURCE = "files/charts/market_chart_host.js"
 private val chartAssetMutex = Mutex()
 private var cachedChartHtml: String? = null
 private val chartJson = Json {

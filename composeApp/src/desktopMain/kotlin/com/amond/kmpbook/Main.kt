@@ -56,14 +56,15 @@ import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
 import kmpbook.composeapp.generated.resources.Res
-import kmpbook.composeapp.generated.resources.market_ledger_icon
+import kmpbook.composeapp.generated.resources.app_icon_market_ledger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.painterResource
 
-private const val BASE_INSTRUMENT_CATALOG_PATH: String = "files/instruments/base-catalog.json"
+private const val BASE_INSTRUMENT_CATALOG_PATH: String =
+    "files/instruments/market_instrument_catalog_v6.json"
 private const val BASE_INSTRUMENT_SOURCE_ID: String = "builtin:base"
 private const val BACKGROUND_MUSIC_RECOVERY_DELAY_MILLIS: Long = 3_000L
 private const val BACKGROUND_MUSIC_RECOVERY_RESET_MILLIS: Long = 60_000L
@@ -244,7 +245,7 @@ fun main() {
         DecoratedWindow(
             onCloseRequest = { if (!isExitBlocked) exitApplication() },
             title = "${MarketDesignSystem.NAME} · Stock Simulator",
-            icon = painterResource(Res.drawable.market_ledger_icon),
+            icon = painterResource(Res.drawable.app_icon_market_ledger),
             state = windowState,
             minimumSize = DpSize(
                 MarketLayout.minimumWindowWidthPx.dp,

@@ -70,7 +70,7 @@ import com.composables.icons.lucide.Lucide
 import kotlin.math.roundToInt
 import kotlin.random.Random
 import kmpbook.composeapp.generated.resources.Res
-import kmpbook.composeapp.generated.resources.jpmorgan_taegeukgi_july_2026
+import kmpbook.composeapp.generated.resources.news_image_jpmorgan_korea_flag_2026_07
 import org.jetbrains.compose.resources.painterResource
 
 private val seedMoneyAmounts = listOf(10_000_000.0, 100_000_000.0, 500_000_000.0)
@@ -684,7 +684,7 @@ private fun ScenarioSelectionCard(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Image(
-            painter = painterResource(Res.drawable.jpmorgan_taegeukgi_july_2026),
+            painter = painterResource(Res.drawable.news_image_jpmorgan_korea_flag_2026_07),
             contentDescription = "태극기가 걸린 JP모건 사옥",
             modifier = Modifier
                 .width(if (compact) 220.dp else 360.dp)
@@ -745,7 +745,7 @@ private fun ScenarioBackgroundPanel(onDismiss: () -> Unit) {
                 .padding(end = 13.dp),
         ) {
         Image(
-            painter = painterResource(Res.drawable.jpmorgan_taegeukgi_july_2026),
+            painter = painterResource(Res.drawable.news_image_jpmorgan_korea_flag_2026_07),
             contentDescription = "태극기가 걸린 JP모건 사옥",
             modifier = Modifier.fillMaxWidth().height(238.dp),
             contentScale = ContentScale.Crop,
