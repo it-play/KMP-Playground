@@ -38,14 +38,32 @@ object TradingProtectionRules {
     const val US_MWCB_LEVEL_2_DECLINE = 0.13
     const val US_MWCB_LEVEL_3_DECLINE = 0.20
     val US_MWCB_HALT = 15.minutes
-    val US_MWCB_LEVEL_1_2_CUTOFF = LocalTime(15, 25)
     val US_REGULAR_OPEN = LocalTime(9, 30)
+
+    /** NYSE Rule 7.12: Level 1/2 halts stop 35 minutes before that date's scheduled close. */
+    fun usMwcbLevel12Cutoff(regularSessionClose: LocalTime): LocalTime =
+        minutesBefore(regularSessionClose, 35)
 
     val US_LULD_LIMIT_STATE = 15.seconds
     val US_LULD_PAUSE = 5.minutes
     val US_LULD_OPTIONAL_EXTENSION = 5.minutes
     val US_LULD_REFERENCE_MINIMUM_AGE = 30.seconds
     const val US_LULD_REFERENCE_MINIMUM_CHANGE = 0.01
-    val US_LULD_DOUBLED_BANDS_FROM = LocalTime(15, 35)
-    val US_LULD_CLOSE_ONLY_FROM = LocalTime(15, 50)
+
+    /** The LULD Plan doubles applicable bands for the final 25 minutes of the session. */
+    fun usLuldDoubledBandsFrom(regularSessionClose: LocalTime): LocalTime =
+        minutesBefore(regularSessionClose, 25)
+
+    /** A Limit State entering the final ten minutes remains in the closing-auction path. */
+    fun usLuldCloseOnlyFrom(regularSessionClose: LocalTime): LocalTime =
+        minutesBefore(regularSessionClose, 10)
+
+    private fun minutesBefore(close: LocalTime, minutes: Int): LocalTime {
+        require(close.second == 0 && close.nanosecond == 0) {
+            "정규장 마감 시각은 분 단위여야 합니다."
+        }
+        val targetMinute = close.hour * 60 + close.minute - minutes
+        require(targetMinute >= 0) { "정규장 마감 전 규제 경계가 전날로 넘어갈 수 없습니다." }
+        return LocalTime(targetMinute / 60, targetMinute % 60)
+    }
 }

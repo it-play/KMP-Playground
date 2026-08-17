@@ -1,6 +1,5 @@
 package com.amond.kmpbook.domain.model.protection.us
 
-import com.amond.kmpbook.domain.model.protection.us.UsMwcbObservation
 import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
@@ -9,6 +8,7 @@ data class UsMwcbObservation(
     val tradingDate: LocalDate,
     val observedAt: Instant,
     val easternTime: LocalTime,
+    val regularSessionClose: LocalTime,
     val sp500Value: Double,
     val previousClose: Double,
 ) {

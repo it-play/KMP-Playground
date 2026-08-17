@@ -553,7 +553,9 @@ object TradingProtectionEngine {
 
         val decline = observation.declineRate
         val beforeCutoff = observation.easternTime >= TradingProtectionRules.US_REGULAR_OPEN &&
-            observation.easternTime < TradingProtectionRules.US_MWCB_LEVEL_1_2_CUTOFF
+            observation.easternTime < TradingProtectionRules.usMwcbLevel12Cutoff(
+                observation.regularSessionClose,
+            )
         val candidate = when {
             decline + RATE_EPSILON >= TradingProtectionRules.US_MWCB_LEVEL_3_DECLINE -> UsMwcbLevel.LEVEL_3
             beforeCutoff && UsMwcbLevel.LEVEL_1 !in current.triggeredLevels &&
@@ -643,6 +645,7 @@ object TradingProtectionEngine {
         referencePrice: Double,
         referencePriceEffectiveAt: Instant,
         easternTime: LocalTime,
+        regularSessionClose: LocalTime?,
     ): UsLuldState {
         val canonicalPreviousClose = canonicalUsLuldPreviousClose(previousClose)
         val bands = calculateUsLuldBands(
@@ -650,6 +653,7 @@ object TradingProtectionEngine {
             canonicalPreviousClose,
             referencePrice,
             easternTime,
+            regularSessionClose,
         )
         return UsLuldState(
             stockId = stockId,
@@ -663,19 +667,22 @@ object TradingProtectionEngine {
         )
     }
 
-    /** Official LULD tier/price buckets, including the 15:35 ET band-doubling window. */
+    /** Official LULD tier/price buckets, including the scheduled close's final 25 minutes. */
     fun calculateUsLuldBands(
         tier: UsLuldTier,
         previousClose: Double,
         referencePrice: Double,
         easternTime: LocalTime,
+        regularSessionClose: LocalTime?,
     ): UsLuldBands {
         val minimumPrice = MarketMicrostructure.minimumPrice(Market.NYSE)
         require(previousClose >= minimumPrice && previousClose.isFinite())
         require(referencePrice >= minimumPrice && referencePrice.isFinite())
         val canonicalPreviousClose = canonicalUsLuldPreviousClose(previousClose)
         val canonicalReferencePrice = canonicalUsLuldReferencePrice(referencePrice)
-        val closingWindow = easternTime >= TradingProtectionRules.US_LULD_DOUBLED_BANDS_FROM
+        val closingWindow = regularSessionClose?.let { close ->
+            easternTime >= TradingProtectionRules.usLuldDoubledBandsFrom(close)
+        } == true
         val baseAmount = when {
             canonicalPreviousClose < 0.75 -> min(0.15, canonicalReferencePrice * 0.75)
             canonicalPreviousClose <= 3.0 -> canonicalReferencePrice * 0.20
@@ -722,30 +729,33 @@ object TradingProtectionEngine {
         candidateWindowStartsAt: Instant,
         at: Instant,
         easternTime: LocalTime,
+        regularSessionClose: LocalTime?,
     ): UsLuldTransition {
         require(
             candidateFiveMinuteMean >= MarketMicrostructure.minimumPrice(Market.NYSE) &&
                 candidateFiveMinuteMean.isFinite(),
         )
         require(candidateWindowStartsAt <= at)
-        if (state.phase != UsLuldPhase.NORMAL) return UsLuldTransition(state)
-        if (candidateWindowStartsAt < state.referencePriceEffectiveAt) return UsLuldTransition(state)
-        if (at - state.referencePriceEffectiveAt < TradingProtectionRules.US_LULD_REFERENCE_MINIMUM_AGE) {
-            return UsLuldTransition(state)
+        val current = state.withUsLuldBandsFor(easternTime, regularSessionClose)
+        if (current.phase != UsLuldPhase.NORMAL) return UsLuldTransition(current)
+        if (candidateWindowStartsAt < current.referencePriceEffectiveAt) return UsLuldTransition(current)
+        if (at - current.referencePriceEffectiveAt < TradingProtectionRules.US_LULD_REFERENCE_MINIMUM_AGE) {
+            return UsLuldTransition(current)
         }
         val nextBands = calculateUsLuldBands(
-            state.tier,
-            state.previousClose,
+            current.tier,
+            current.previousClose,
             candidateFiveMinuteMean,
             easternTime,
+            regularSessionClose,
         )
         val canonicalCandidate = nextBands.referencePrice
-        val change = abs(canonicalCandidate / state.referencePrice - 1.0)
+        val change = abs(canonicalCandidate / current.referencePrice - 1.0)
         if (change + RATE_EPSILON < TradingProtectionRules.US_LULD_REFERENCE_MINIMUM_CHANGE) {
-            return UsLuldTransition(state)
+            return UsLuldTransition(current)
         }
         return UsLuldTransition(
-            state.copy(
+            current.copy(
                 referencePrice = canonicalCandidate,
                 referencePriceEffectiveAt = at,
                 bands = nextBands,
@@ -754,67 +764,74 @@ object TradingProtectionEngine {
         )
     }
 
-    fun evaluateUsLuld(state: UsLuldState, observation: UsLuldObservation): UsLuldTransition = when (state.phase) {
-        UsLuldPhase.NORMAL -> {
-            val side = observation.limitSide
-            if (side == null) UsLuldTransition(state) else {
-                UsLuldTransition(
-                    state.copy(
-                        phase = UsLuldPhase.LIMIT_STATE,
-                        limitSide = side,
-                        limitStateStartedAt = observation.observedAt,
-                        limitStateDeadline = observation.observedAt + TradingProtectionRules.US_LULD_LIMIT_STATE,
-                    ),
-                    UsLuldEvent.LIMIT_STATE_ENTERED,
-                )
-            }
-        }
-        UsLuldPhase.LIMIT_STATE -> {
-            val deadline = requireNotNull(state.limitStateDeadline)
-            if (observation.allLimitStateQuotationsCleared && observation.observedAt < deadline) {
-                UsLuldTransition(clearLuldTransientState(state), UsLuldEvent.LIMIT_STATE_CLEARED)
-            } else if (observation.observedAt >= deadline) {
-                if (observation.easternTime >= TradingProtectionRules.US_LULD_CLOSE_ONLY_FROM) {
+    fun evaluateUsLuld(state: UsLuldState, observation: UsLuldObservation): UsLuldTransition {
+        val current = state.withUsLuldBandsFor(
+            easternTime = observation.easternTime,
+            regularSessionClose = observation.regularSessionClose,
+        )
+        return when (current.phase) {
+            UsLuldPhase.NORMAL -> {
+                val side = observation.limitSide
+                if (side == null) UsLuldTransition(current) else {
                     UsLuldTransition(
-                        state.copy(
-                            phase = UsLuldPhase.CLOSING_AUCTION_ONLY,
-                            pauseStartedAt = deadline,
-                            pauseEndsAt = null,
+                        current.copy(
+                            phase = UsLuldPhase.LIMIT_STATE,
+                            limitSide = side,
+                            limitStateStartedAt = observation.observedAt,
+                            limitStateDeadline =
+                                observation.observedAt + TradingProtectionRules.US_LULD_LIMIT_STATE,
                         ),
-                        UsLuldEvent.CLOSING_AUCTION_ONLY,
-                    )
-                } else {
-                    UsLuldTransition(
-                        state.copy(
-                            phase = UsLuldPhase.TRADING_PAUSE,
-                            pauseStartedAt = deadline,
-                            pauseEndsAt = deadline + TradingProtectionRules.US_LULD_PAUSE,
-                        ),
-                        UsLuldEvent.TRADING_PAUSE_STARTED,
+                        UsLuldEvent.LIMIT_STATE_ENTERED,
                     )
                 }
-            } else {
-                UsLuldTransition(state)
             }
+            UsLuldPhase.LIMIT_STATE -> {
+                val deadline = requireNotNull(current.limitStateDeadline)
+                if (observation.allLimitStateQuotationsCleared && observation.observedAt < deadline) {
+                    UsLuldTransition(clearLuldTransientState(current), UsLuldEvent.LIMIT_STATE_CLEARED)
+                } else if (observation.observedAt >= deadline) {
+                    if (observation.isInUsLuldCloseOnlyWindow()) {
+                        UsLuldTransition(
+                            current.copy(
+                                phase = UsLuldPhase.CLOSING_AUCTION_ONLY,
+                                pauseStartedAt = deadline,
+                                pauseEndsAt = null,
+                            ),
+                            UsLuldEvent.CLOSING_AUCTION_ONLY,
+                        )
+                    } else {
+                        UsLuldTransition(
+                            current.copy(
+                                phase = UsLuldPhase.TRADING_PAUSE,
+                                pauseStartedAt = deadline,
+                                pauseEndsAt = deadline + TradingProtectionRules.US_LULD_PAUSE,
+                            ),
+                            UsLuldEvent.TRADING_PAUSE_STARTED,
+                        )
+                    }
+                } else {
+                    UsLuldTransition(current)
+                }
+            }
+            UsLuldPhase.TRADING_PAUSE -> when {
+                observation.isInUsLuldCloseOnlyWindow() -> UsLuldTransition(
+                    current.copy(phase = UsLuldPhase.CLOSING_AUCTION_ONLY, pauseEndsAt = null),
+                    UsLuldEvent.CLOSING_AUCTION_ONLY,
+                )
+                observation.observedAt >= requireNotNull(current.pauseEndsAt) -> UsLuldTransition(
+                    current.copy(
+                        phase = UsLuldPhase.REOPENING_AUCTION,
+                        reopeningStartedAt = current.pauseEndsAt,
+                    ),
+                    UsLuldEvent.REOPENING_AUCTION_STARTED,
+                )
+                else -> UsLuldTransition(current)
+            }
+            UsLuldPhase.REOPENING_AUCTION,
+            UsLuldPhase.CLOSING_AUCTION_ONLY,
+            UsLuldPhase.CLOSED_FOR_DAY,
+            -> UsLuldTransition(current)
         }
-        UsLuldPhase.TRADING_PAUSE -> when {
-            observation.easternTime >= TradingProtectionRules.US_LULD_CLOSE_ONLY_FROM -> UsLuldTransition(
-                state.copy(phase = UsLuldPhase.CLOSING_AUCTION_ONLY, pauseEndsAt = null),
-                UsLuldEvent.CLOSING_AUCTION_ONLY,
-            )
-            observation.observedAt >= requireNotNull(state.pauseEndsAt) -> UsLuldTransition(
-                state.copy(
-                    phase = UsLuldPhase.REOPENING_AUCTION,
-                    reopeningStartedAt = state.pauseEndsAt,
-                ),
-                UsLuldEvent.REOPENING_AUCTION_STARTED,
-            )
-            else -> UsLuldTransition(state)
-        }
-        UsLuldPhase.REOPENING_AUCTION,
-        UsLuldPhase.CLOSING_AUCTION_ONLY,
-        UsLuldPhase.CLOSED_FOR_DAY,
-        -> UsLuldTransition(state)
     }
 
     fun extendUsLuldPause(state: UsLuldState): UsLuldTransition {
@@ -834,6 +851,7 @@ object TradingProtectionEngine {
         reopeningPrice: Double,
         at: Instant,
         easternTime: LocalTime,
+        regularSessionClose: LocalTime?,
     ): UsLuldTransition {
         require(state.phase == UsLuldPhase.REOPENING_AUCTION)
         require(
@@ -845,6 +863,7 @@ object TradingProtectionEngine {
             state.previousClose,
             reopeningPrice,
             easternTime,
+            regularSessionClose,
         )
         return UsLuldTransition(
             clearLuldTransientState(state).copy(
@@ -857,7 +876,7 @@ object TradingProtectionEngine {
     }
 
     fun closeUsLuldSession(state: UsLuldState): UsLuldTransition {
-        require(state.phase == UsLuldPhase.CLOSING_AUCTION_ONLY)
+        require(state.phase !in setOf(UsLuldPhase.NORMAL, UsLuldPhase.CLOSED_FOR_DAY))
         return UsLuldTransition(state.copy(phase = UsLuldPhase.CLOSED_FOR_DAY), UsLuldEvent.SESSION_CLOSED)
     }
 
@@ -871,6 +890,25 @@ object TradingProtectionEngine {
         pauseExtensionCount = 0,
         reopeningStartedAt = null,
     )
+
+    private fun UsLuldObservation.isInUsLuldCloseOnlyWindow(): Boolean =
+        regularSessionClose?.let { close ->
+            easternTime >= TradingProtectionRules.usLuldCloseOnlyFrom(close)
+        } == true
+
+    private fun UsLuldState.withUsLuldBandsFor(
+        easternTime: LocalTime,
+        regularSessionClose: LocalTime?,
+    ): UsLuldState {
+        val canonicalBands = calculateUsLuldBands(
+            tier = tier,
+            previousClose = previousClose,
+            referencePrice = referencePrice,
+            easternTime = easternTime,
+            regularSessionClose = regularSessionClose,
+        )
+        return if (bands == canonicalBands) this else copy(bands = canonicalBands)
+    }
 
     private fun canonicalUsLuldPreviousClose(price: Double): Double {
         val minimumPrice = MarketMicrostructure.minimumPrice(Market.NYSE)
