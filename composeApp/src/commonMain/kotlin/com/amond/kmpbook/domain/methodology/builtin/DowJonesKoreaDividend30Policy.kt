@@ -31,7 +31,7 @@ internal object DowJonesKoreaDividend30Policy : EquityMethodologyPolicy {
     override val requiredDecimalSignalIds: Set<String> = setOf(
         StandardEquityMethodologySignalIds.FLOAT_MARKET_CAP,
         StandardEquityMethodologySignalIds.TOTAL_COMPANY_MARKET_CAP,
-        StandardEquityMethodologySignalIds.AVERAGE_DAILY_VALUE_TRADED,
+        StandardEquityMethodologySignalIds.MEDIAN_DAILY_VALUE_TRADED,
         StandardEquityMethodologySignalIds.INDICATED_DIVIDEND_YIELD,
         StandardEquityMethodologySignalIds.FREE_CASH_FLOW_TO_DEBT,
         StandardEquityMethodologySignalIds.RETURN_ON_EQUITY,
@@ -88,8 +88,8 @@ internal object DowJonesKoreaDividend30Policy : EquityMethodologyPolicy {
             "a KRW 1 trillion total company market cap",
         )
         requireCanonical(
-            abs(minimumAverageDailyValueTraded(profile) - 1_000_000_000.0) <= EPSILON,
-            "KRW 1 billion three-month ADVT",
+            abs(minimumMedianDailyValueTraded(profile) - 1_000_000_000.0) <= EPSILON,
+            "KRW 1 billion three-month MDVT",
         )
         requireCanonical(
             abs(eligibleYieldFraction(profile) - 0.5) <= EPSILON,
@@ -319,8 +319,8 @@ internal object DowJonesKoreaDividend30Policy : EquityMethodologyPolicy {
     ) >= minimumDividendPaymentYears(profile) &&
         decimal(candidate, StandardEquityMethodologySignalIds.TOTAL_COMPANY_MARKET_CAP) >=
         minimumTotalCompanyMarketCap(profile) &&
-        decimal(candidate, StandardEquityMethodologySignalIds.AVERAGE_DAILY_VALUE_TRADED) >=
-        minimumAverageDailyValueTraded(profile)
+        decimal(candidate, StandardEquityMethodologySignalIds.MEDIAN_DAILY_VALUE_TRADED) >=
+        minimumMedianDailyValueTraded(profile)
 
     private fun requireCanonical(condition: Boolean, rule: String) =
         require(condition) {
@@ -351,8 +351,8 @@ internal object DowJonesKoreaDividend30Policy : EquityMethodologyPolicy {
     private fun minimumTotalCompanyMarketCap(profile: EquityMethodologyProfile): Double =
         profile.parameters.decimals.getValue("minimumTotalCompanyMarketCap")
 
-    private fun minimumAverageDailyValueTraded(profile: EquityMethodologyProfile): Double =
-        profile.parameters.decimals.getValue("minimumAverageDailyValueTraded")
+    private fun minimumMedianDailyValueTraded(profile: EquityMethodologyProfile): Double =
+        profile.parameters.decimals.getValue("minimumMedianDailyValueTraded")
 
     private fun eligibleYieldFraction(profile: EquityMethodologyProfile): Double =
         profile.parameters.decimals.getValue("eligibleYieldFraction")
@@ -382,7 +382,7 @@ internal object DowJonesKoreaDividend30Policy : EquityMethodologyPolicy {
     private val DECIMAL_PARAMETER_KEYS = setOf(
         "eligibleYieldFraction",
         "individualWeightCap",
-        "minimumAverageDailyValueTraded",
+        "minimumMedianDailyValueTraded",
         "minimumTotalCompanyMarketCap",
     )
     private val TEXT_PARAMETER_KEYS = setOf(THRESHOLD_POLICY)

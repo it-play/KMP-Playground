@@ -3,6 +3,7 @@ package com.amond.kmpbook.domain.methodology.builtin
 import com.amond.kmpbook.domain.methodology.EquityMethodologyCandidate
 import com.amond.kmpbook.domain.methodology.EquityMethodologyCorporateActionDecision
 import com.amond.kmpbook.domain.methodology.EquityMethodologyCorporateActionInput
+import com.amond.kmpbook.domain.methodology.EquityMethodologyCorporateActionTransitionStep
 import com.amond.kmpbook.domain.methodology.EquityMethodologyPolicy
 import com.amond.kmpbook.domain.methodology.EquityMethodologyPortfolioConstraints
 import com.amond.kmpbook.domain.methodology.EquityMethodologySelection
@@ -18,6 +19,7 @@ import com.amond.kmpbook.domain.model.fund.EquityMethodologyDecisionModel
 import com.amond.kmpbook.domain.model.fund.EquityMethodologyProfile
 import com.amond.kmpbook.domain.model.fund.FundReferenceUniverse
 import com.amond.kmpbook.domain.model.fund.MethodologyEquitySector
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioCorporateAction
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioCorporateActionConsiderationKind
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioCorporateActionKind
 import com.amond.kmpbook.domain.model.methodology.EquityMethodologyRef
@@ -57,8 +59,9 @@ internal object KodexFinancialHighDividendTop10Policy : EquityMethodologyPolicy 
             "the Korea broad-equity reference universe",
         )
         requireCanonical(
-            profile.decisionModel == EquityMethodologyDecisionModel.RULE_BASED,
-            "a rule-based decision model",
+            profile.decisionModel == EquityMethodologyDecisionModel.DISCRETIONARY_PROXY &&
+                profile.modelAssumptionId == MODEL_ASSUMPTION_ID,
+            "verified rules with a versioned reserve-list and exceptional-discretion proxy",
         )
         profile.parameters.requireExactKeys(
             integerKeys = INTEGER_PARAMETER_KEYS,
@@ -190,6 +193,29 @@ internal object KodexFinancialHighDividendTop10Policy : EquityMethodologyPolicy 
                     addedAssetIds = setOf(replacementCandidate(input)),
                 )
         }
+    }
+
+    override fun corporateActionTransitionSteps(
+        profile: EquityMethodologyProfile,
+        event: ReferencePortfolioCorporateAction,
+    ): List<EquityMethodologyCorporateActionTransitionStep> = when (event.kind) {
+        ReferencePortfolioCorporateActionKind.SPIN_OFF -> emptyList()
+        ReferencePortfolioCorporateActionKind.MERGER,
+        ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL,
+        -> listOf(
+            EquityMethodologyCorporateActionTransitionStep(
+                effectiveDate = event.effectiveDate,
+                completionFraction = 0.30,
+            ),
+            EquityMethodologyCorporateActionTransitionStep(
+                effectiveDate = schedule.addTradingDays(event.effectiveDate, 1),
+                completionFraction = 0.70,
+            ),
+            EquityMethodologyCorporateActionTransitionStep(
+                effectiveDate = schedule.addTradingDays(event.effectiveDate, 2),
+                completionFraction = 1.0,
+            ),
+        )
     }
 
     private fun mergerDecision(
@@ -415,6 +441,8 @@ internal object KodexFinancialHighDividendTop10Policy : EquityMethodologyPolicy 
         profile.parameters.decimals.getValue("individualWeightCap")
 
     private const val CURRENT_THRESHOLD_POLICY = "KRX_MAY_2026_RULES"
+    private const val MODEL_ASSUMPTION_ID =
+        "krx-financial-top10-reserve-discretion-proxy-2026-08-v1"
     private const val THRESHOLD_POLICY = "thresholdPolicy"
     private const val ALL_CONSTITUENTS_GROUP = "ALL"
     private const val EPSILON = 1e-12

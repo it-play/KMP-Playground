@@ -74,7 +74,7 @@ internal object KoreaEquityMethodologyCalendar {
         if (date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY) {
             return false
         }
-        return date.year !in HOLIDAY_CALENDAR_START_YEAR..GameCalendar.CAMPAIGN_END_DATE.year ||
+        return !DefaultMarketHolidays.supportsYear(date.year) ||
             date !in DefaultMarketHolidays.closedDates(Market.KOSPI, date.year)
     }
 
@@ -104,7 +104,6 @@ internal object KoreaEquityMethodologyCalendar {
             fromKorea.time < KRX_REGULAR_CLOSE && toKorea.time >= KRX_REGULAR_CLOSE
     }
 
-    private const val HOLIDAY_CALENDAR_START_YEAR: Int = 2026
     private val KRX_REGULAR_OPEN: LocalTime = LocalTime(9, 0)
     private val KRX_REGULAR_CLOSE: LocalTime = LocalTime(15, 30)
 }

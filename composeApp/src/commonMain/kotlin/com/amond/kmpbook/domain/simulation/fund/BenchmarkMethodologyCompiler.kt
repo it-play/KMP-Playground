@@ -18,6 +18,7 @@ internal object BenchmarkMethodologyCompiler {
         StandardEquityMethodologySignalIds.FLOAT_ADJUSTED_LIQUIDITY_RATIO,
         StandardEquityMethodologySignalIds.MINIMUM_SIX_MONTH_MONTHLY_SHARE_VOLUME,
         StandardEquityMethodologySignalIds.AVERAGE_DAILY_VALUE_TRADED,
+        StandardEquityMethodologySignalIds.MEDIAN_DAILY_VALUE_TRADED,
         StandardEquityMethodologySignalIds.TRAILING_125_TRADING_DAY_AVERAGE_DAILY_VALUE_TRADED,
         StandardEquityMethodologySignalIds.INDICATED_DIVIDEND_YIELD,
         StandardEquityMethodologySignalIds.FREE_CASH_FLOW_TO_DEBT,

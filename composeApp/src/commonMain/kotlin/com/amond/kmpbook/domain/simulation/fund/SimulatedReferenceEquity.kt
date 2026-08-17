@@ -24,6 +24,8 @@ internal data class SimulatedReferenceEquity(
     /** 기준일 발행주식 중 공개 투자자가 거래할 수 있다고 모델링한 비율이다. */
     val baseInvestableWeightFactor: Double,
     val baseThreeMonthAverageDailyValueTraded: Double,
+    /** 관찰일 직전 3개월의 일별 거래대금 중앙값을 위한 독립 원천값이다. */
+    val baseThreeMonthMedianDailyValueTraded: Double,
     /** 관찰일 직전 125거래일의 거래대금 평균을 위한 독립 Morningstar 원천값이다. */
     val baseTrailing125TradingDayAverageDailyValueTraded: Double,
     val baseTwelveMonthAverageDailyValueTraded: Double,

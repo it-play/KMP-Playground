@@ -76,7 +76,7 @@ data class ReferencePortfolioState(
             "reference:${ref.benchmarkId}:v${ref.version}"
 
         const val WEIGHT_EPSILON: Double = 1e-8
-        const val MAX_PENDING_PLANS: Int = 8
+        const val MAX_PENDING_PLANS: Int = 32
         private val PORTFOLIO_ID = Regex("[a-z0-9][a-z0-9:._-]{2,199}")
         private val ASSET_ID = Regex("[A-Za-z0-9][A-Za-z0-9:._-]{0,199}")
         private val PLAN_ORDER = compareBy<ReferencePortfolioPlan>(ReferencePortfolioPlan::effectiveDate)
@@ -85,6 +85,7 @@ data class ReferencePortfolioState(
 
         private fun ReferencePortfolioActionKind.executionPriority(): Int = when (this) {
             ReferencePortfolioActionKind.CONSTITUENT_MERGER,
+            ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION,
             ReferencePortfolioActionKind.SPIN_OFF_REMOVAL,
             ReferencePortfolioActionKind.TERMINAL_REMOVAL,
             -> 0

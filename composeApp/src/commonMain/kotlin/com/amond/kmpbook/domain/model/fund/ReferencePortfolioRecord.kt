@@ -40,6 +40,12 @@ data class ReferencePortfolioRecord(
             ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION -> require(corporateAction == null)
             ReferencePortfolioActionKind.SCHEDULED_RECONSTITUTION_TRANSITION ->
                 require(corporateAction == null)
+            ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION -> require(
+                corporateAction?.kind in setOf(
+                    ReferencePortfolioCorporateActionKind.MERGER,
+                    ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL,
+                ) && removedAssetIds.isEmpty(),
+            )
             ReferencePortfolioActionKind.SCHEDULED_REWEIGHT,
             ReferencePortfolioActionKind.CONSTRAINT_REWEIGHT,
             -> require(

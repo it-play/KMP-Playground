@@ -3,6 +3,7 @@ package com.amond.kmpbook.domain.methodology
 import com.amond.kmpbook.domain.model.fund.BenchmarkDefinition
 import com.amond.kmpbook.domain.model.fund.EquityMethodologyPathState
 import com.amond.kmpbook.domain.model.fund.EquityMethodologyProfile
+import com.amond.kmpbook.domain.model.fund.ReferencePortfolioCorporateAction
 import com.amond.kmpbook.domain.model.fund.ReferencePortfolioCorporateActionKind
 
 /**
@@ -100,4 +101,13 @@ interface EquityMethodologyPolicy {
     fun corporateActionDecision(
         input: EquityMethodologyCorporateActionInput,
     ): EquityMethodologyCorporateActionDecision? = null
+
+    /**
+     * Optional provider execution points for a merger or terminal-removal replacement. The final
+     * point must complete at 100%; spin-offs remain atomic and never use this lane.
+     */
+    fun corporateActionTransitionSteps(
+        profile: EquityMethodologyProfile,
+        event: ReferencePortfolioCorporateAction,
+    ): List<EquityMethodologyCorporateActionTransitionStep> = emptyList()
 }

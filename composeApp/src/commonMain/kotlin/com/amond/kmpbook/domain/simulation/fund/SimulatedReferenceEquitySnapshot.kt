@@ -12,6 +12,8 @@ internal data class SimulatedReferenceEquitySnapshot(
     val investableWeightFactor: Double,
     /** 관찰일 직전 3개월의 일별 거래대금 평균이다. */
     val threeMonthAverageDailyValueTraded: Double,
+    /** 관찰일 직전 3개월의 일별 거래대금 중앙값이다. */
+    val threeMonthMedianDailyValueTraded: Double,
     /** 관찰일 직전 125거래일의 일별 거래대금 평균이다. */
     val trailing125TradingDayAverageDailyValueTraded: Double,
     /** 관찰일 직전 12개월의 일별 거래대금 평균이다. */
@@ -57,6 +59,10 @@ internal data class SimulatedReferenceEquitySnapshot(
         require(
             threeMonthAverageDailyValueTraded.isFinite() &&
                 threeMonthAverageDailyValueTraded >= 0.0,
+        )
+        require(
+            threeMonthMedianDailyValueTraded.isFinite() &&
+                threeMonthMedianDailyValueTraded >= 0.0,
         )
         require(
             trailing125TradingDayAverageDailyValueTraded.isFinite() &&

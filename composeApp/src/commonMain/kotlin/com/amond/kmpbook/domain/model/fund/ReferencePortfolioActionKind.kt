@@ -12,4 +12,6 @@ enum class ReferencePortfolioActionKind {
     SPIN_OFF_ADDITION,
     SPIN_OFF_REMOVAL,
     TERMINAL_REMOVAL,
+    /** Partial 30/70 replacement execution before a merger/removal completes. */
+    CORPORATE_ACTION_TRANSITION,
 }

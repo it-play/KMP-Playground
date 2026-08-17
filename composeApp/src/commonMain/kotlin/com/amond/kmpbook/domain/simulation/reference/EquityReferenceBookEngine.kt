@@ -36,11 +36,8 @@ import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.LocalTime
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
-import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 
 /**
@@ -1399,7 +1396,7 @@ class EquityReferenceBookEngine private constructor(
 
     private fun closedDates(market: Market, year: Int): Set<LocalDate> =
         closedDatesCache.getOrPut(market to year) {
-            if (year in FIRST_YEAR..LAST_YEAR) {
+            if (DefaultMarketHolidays.supportsYear(year)) {
                 DefaultMarketHolidays.closedDates(market, year)
             } else {
                 emptySet()
@@ -1407,8 +1404,15 @@ class EquityReferenceBookEngine private constructor(
         }
 
     private fun regularCloseInstant(market: Market, date: LocalDate): Instant {
-        val close = if (market.isKorean) LocalTime(15, 30) else LocalTime(16, 0)
-        return LocalDateTime(date, close).toInstant(GameCalendar.timeZoneFor(market))
+        return requireNotNull(
+            GameCalendar.regularSessionWindow(
+                market = market,
+                localDate = date,
+                closedDates = closedDates(market, date.year),
+            ),
+        ) {
+            "$date 은 $market 정규장 거래일이 아닙니다."
+        }.closesAt
     }
 
     private fun regionalMarketSimpleReturn(

@@ -9,6 +9,7 @@ object StandardEquityMethodologySignalIds {
     const val MINIMUM_SIX_MONTH_MONTHLY_SHARE_VOLUME: String =
         "minimumSixMonthMonthlyShareVolume"
     const val AVERAGE_DAILY_VALUE_TRADED: String = "averageDailyValueTraded"
+    const val MEDIAN_DAILY_VALUE_TRADED: String = "medianDailyValueTraded"
     const val TRAILING_125_TRADING_DAY_AVERAGE_DAILY_VALUE_TRADED: String =
         "trailing125TradingDayAverageDailyValueTraded"
     const val GICS_CLASSIFICATION_CODE: String = "gicsClassificationCode"

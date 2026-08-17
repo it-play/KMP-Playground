@@ -80,7 +80,7 @@ internal object MorningstarLargeCapValueCalendar {
 
     fun isUsTradingDate(date: LocalDate): Boolean {
         if (date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY) return false
-        return date.year !in HOLIDAY_CALENDAR_START_YEAR..GameCalendar.CAMPAIGN_END_DATE.year ||
+        return !DefaultMarketHolidays.supportsYear(date.year) ||
             date !in DefaultMarketHolidays.closedDates(Market.NYSE, date.year)
     }
 
@@ -102,27 +102,36 @@ internal object MorningstarLargeCapValueCalendar {
     }
 
     fun hasReachedUsRegularClose(referenceDate: LocalDate, at: Instant): Boolean {
-        val local = at.toLocalDateTime(GameCalendar.NEW_YORK_TIME_ZONE)
-        return local.date > referenceDate ||
-            local.date == referenceDate && local.time >= US_REGULAR_CLOSE
+        val session = usRegularSession(referenceDate) ?: return false
+        return at >= session.closesAt
     }
 
     fun intersectsUsRegularSession(from: Instant, to: Instant): Boolean {
         val fromNewYork = from.toLocalDateTime(GameCalendar.NEW_YORK_TIME_ZONE)
         val toNewYork = to.toLocalDateTime(GameCalendar.NEW_YORK_TIME_ZONE)
-        return fromNewYork.date == toNewYork.date &&
-            toNewYork.time > US_REGULAR_OPEN && fromNewYork.time < US_REGULAR_CLOSE
+        if (fromNewYork.date != toNewYork.date) return false
+        val session = usRegularSession(fromNewYork.date) ?: return false
+        return to > session.opensAt && from < session.closesAt
     }
 
     fun reachesUsRegularClose(from: Instant, to: Instant): Boolean {
         val fromNewYork = from.toLocalDateTime(GameCalendar.NEW_YORK_TIME_ZONE)
         val toNewYork = to.toLocalDateTime(GameCalendar.NEW_YORK_TIME_ZONE)
-        return fromNewYork.date == toNewYork.date &&
-            fromNewYork.time < US_REGULAR_CLOSE && toNewYork.time >= US_REGULAR_CLOSE
+        if (fromNewYork.date != toNewYork.date) return false
+        val session = usRegularSession(fromNewYork.date) ?: return false
+        return from < session.closesAt && to >= session.closesAt
     }
 
+    private fun usRegularSession(date: LocalDate) = GameCalendar.regularSessionWindow(
+        market = Market.NYSE,
+        localDate = date,
+        closedDates = if (DefaultMarketHolidays.supportsYear(date.year)) {
+            DefaultMarketHolidays.closedDates(Market.NYSE, date.year)
+        } else {
+            emptySet()
+        },
+    )
+
     private const val PARTIAL_TRANSITION_COUNT: Int = 4
-    private const val HOLIDAY_CALENDAR_START_YEAR: Int = 2026
     private val US_REGULAR_OPEN: LocalTime = LocalTime(9, 30)
-    private val US_REGULAR_CLOSE: LocalTime = LocalTime(16, 0)
 }

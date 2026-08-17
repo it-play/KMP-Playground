@@ -9,11 +9,8 @@ import com.amond.kmpbook.domain.time.GameCalendar
 import kotlin.time.Instant
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.LocalTime
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
-import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 
 /** Calendar resolver shared by composite and alternative-risk-premia reference books. */
@@ -119,15 +116,28 @@ internal object CompositeScheduleResolver {
 
     private fun isTradingDate(market: Market, date: LocalDate): Boolean =
         !GameCalendar.isWeekend(date) &&
-            (date.year !in FIRST_YEAR..LAST_YEAR ||
+            (!DefaultMarketHolidays.supportsYear(date.year) ||
                 date !in closedDateCache.getOrPut(market to date.year) {
                     DefaultMarketHolidays.closedDates(market, date.year)
                 })
 
     private fun closeInstant(baseCurrency: ReferenceCurrency, date: LocalDate): Instant {
         val market = market(baseCurrency)
-        val close = if (market.isKorean) LocalTime(15, 30) else LocalTime(16, 0)
-        return LocalDateTime(date, close).toInstant(GameCalendar.timeZoneFor(market))
+        return requireNotNull(
+            GameCalendar.regularSessionWindow(
+                market = market,
+                localDate = date,
+                closedDates = closedDateCache.getOrPut(market to date.year) {
+                    if (DefaultMarketHolidays.supportsYear(date.year)) {
+                        DefaultMarketHolidays.closedDates(market, date.year)
+                    } else {
+                        emptySet()
+                    }
+                },
+            ),
+        ) {
+            "$date 은 $market 정규장 거래일이 아닙니다."
+        }.closesAt
     }
 
     private fun market(baseCurrency: ReferenceCurrency): Market =

@@ -77,6 +77,17 @@ data class ReferencePortfolioPlan(
                     hasValidTransitionBaselineWeights(positionIds) &&
                     selectionIncumbentAssetIds == null && selectionAvailabilityDate == null,
             )
+            ReferencePortfolioActionKind.CORPORATE_ACTION_TRANSITION -> require(
+                corporateAction?.kind in setOf(
+                    ReferencePortfolioCorporateActionKind.MERGER,
+                    ReferencePortfolioCorporateActionKind.TERMINAL_REMOVAL,
+                ) &&
+                    effectiveDate >= requireNotNull(corporateAction).effectiveDate &&
+                    removedAssetIds.isEmpty() &&
+                    weightReferenceMarketValues == null &&
+                    hasValidTransitionBaselineWeights(positionIds) &&
+                    selectionIncumbentAssetIds == null && selectionAvailabilityDate == null,
+            )
             ReferencePortfolioActionKind.SCHEDULED_REWEIGHT -> require(
                 addedAssetIds.isEmpty() && removedAssetIds.isEmpty() && corporateAction == null &&
                     hasValidWeightReferenceMarketValues(orderedPositionIds) &&
@@ -140,7 +151,11 @@ data class ReferencePortfolioPlan(
 
     private fun hasReplacementWeightReferenceInput(orderedPositionIds: List<String>): Boolean =
         if (addedAssetIds.isEmpty()) {
-            weightReferenceMarketValues == null
+            if (corporateAction != null && effectiveDate > corporateAction.effectiveDate) {
+                hasValidWeightReferenceMarketValues(orderedPositionIds)
+            } else {
+                weightReferenceMarketValues == null
+            }
         } else {
             hasValidWeightReferenceMarketValues(orderedPositionIds)
         }
