@@ -12,6 +12,7 @@ import com.amond.kmpbook.presentation.simulator.SimulatorViewModel
 class SimulatorGameModApi(
     viewModel: SimulatorViewModel,
     grantedCapabilities: Set<ModCapability>,
+    override val trustedDebug: TrustedDebugGameApi? = null,
 ) : GameModApi {
     override val version: Int = MOD_API_VERSION
     override val grantedCapabilities: Set<ModCapability> = grantedCapabilities.toSet()

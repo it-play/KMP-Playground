@@ -5,6 +5,8 @@ data class ActiveModConfiguration(
     val version: String,
     val settings: Map<String, String>,
     val contentFingerprint: String? = null,
+    val executableFingerprint: String? = null,
+    val grantedCapabilities: Set<ModCapability> = emptySet(),
 ) {
     fun validate(): String? {
         // Gson and other reflection-based decoders can bypass Kotlin's non-null constructor contract.
@@ -12,6 +14,8 @@ data class ActiveModConfiguration(
         val decodedVersion: String? = version
         val decodedSettings: Map<String, String>? = settings
         val decodedContentFingerprint: String? = contentFingerprint
+        val decodedExecutableFingerprint: String? = executableFingerprint
+        val decodedGrantedCapabilities: Set<ModCapability>? = grantedCapabilities
         if (decodedId == null || !MOD_ID_PATTERN.matches(decodedId)) {
             return "모드 ID 형식이 올바르지 않습니다."
         }
@@ -27,6 +31,17 @@ data class ActiveModConfiguration(
         }
         if (decodedContentFingerprint != null && !CONTENT_FINGERPRINT_PATTERN.matches(decodedContentFingerprint)) {
             return "모드 콘텐츠 fingerprint 형식이 올바르지 않습니다."
+        }
+        if (decodedExecutableFingerprint != null &&
+            !CONTENT_FINGERPRINT_PATTERN.matches(decodedExecutableFingerprint)
+        ) {
+            return "모드 실행 코드 fingerprint 형식이 올바르지 않습니다."
+        }
+        if (decodedGrantedCapabilities == null || decodedGrantedCapabilities.size > ModCapability.entries.size) {
+            return "모드에 부여된 권한 집합이 올바르지 않습니다."
+        }
+        if (decodedGrantedCapabilities.isNotEmpty() && decodedExecutableFingerprint == null) {
+            return "실행 코드가 없는 모드에는 런타임 권한을 부여할 수 없습니다."
         }
         decodedSettings.entries.forEach { entry ->
             val key: String? = entry.key

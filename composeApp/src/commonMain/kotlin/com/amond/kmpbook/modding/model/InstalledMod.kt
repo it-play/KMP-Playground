@@ -15,6 +15,9 @@ data class InstalledMod(
     val instrumentPack: InstrumentPack?,
     val settings: List<ModSettingDefinition>,
     val requestedCapabilities: Set<ModCapability>,
+    val runtimeJarPath: String? = null,
+    val executableFingerprint: String? = null,
+    val grantedCapabilities: Set<ModCapability> = emptySet(),
     val configuration: Map<String, String>,
     val enabled: Boolean,
 ) {
