@@ -53,6 +53,7 @@ kotlin {
             implementation(libs.nucleus.application)
             implementation(libs.nucleus.core.runtime)
             implementation(libs.nucleus.decorated.window.tao)
+            implementation(libs.nucleus.rodio)
         }
     }
 }
@@ -65,6 +66,7 @@ nucleus.application {
         targetFormats(TargetFormat.Msi)
         modules("java.instrument", "java.prefs", "java.sql", "jdk.unsupported")
         cleanupNativeLibs = true
+        appResourcesRootDir.set(project.layout.projectDirectory.dir("src/desktopMain/appResources"))
         appName = "Market Ledger 2040"
         packageName = "MarketLedger2040"
         packageVersion = appVersion

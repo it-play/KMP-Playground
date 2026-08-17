@@ -10,6 +10,7 @@ kotlinx-datetime = "0.8.0"
 kotlinx-serialization = "1.11.0"
 lucide-icons = "2.2.1"
 nucleus = "2.4.4"
+nucleus-rodio = "1.0.2"
 
 [libraries]
 compose-uiTooling = { module = "org.jetbrains.compose.ui:ui-tooling", version.ref = "composeMultiplatform" }
@@ -31,6 +32,7 @@ lucide-icons = { module = "com.composables:icons-lucide-cmp", version.ref = "luc
 nucleus-application = { module = "dev.nucleusframework:nucleus.nucleus-application", version.ref = "nucleus" }
 nucleus-core-runtime = { module = "dev.nucleusframework:nucleus.core-runtime", version.ref = "nucleus" }
 nucleus-decorated-window-tao = { module = "dev.nucleusframework:nucleus.decorated-window-tao", version.ref = "nucleus" }
+nucleus-rodio = { module = "dev.nucleusframework:nucleus.rodio", version.ref = "nucleus-rodio" }
 
 [plugins]
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
