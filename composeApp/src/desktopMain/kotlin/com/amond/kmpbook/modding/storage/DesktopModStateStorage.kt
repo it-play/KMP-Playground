@@ -216,7 +216,7 @@ internal class DesktopModStateStorage(
             StandardOpenOption.WRITE,
             LinkOption.NOFOLLOW_LINKS,
         ).use { channel ->
-            channel.lock().use { block() }
+            channel.withTimedExclusiveLock(block = block)
         }
     }
 

@@ -607,7 +607,7 @@ internal class DesktopBundledModInstaller(
             StandardOpenOption.WRITE,
             LinkOption.NOFOLLOW_LINKS,
         ).use { channel ->
-            channel.lock().use { block() }
+            channel.withTimedExclusiveLock(block = block)
         }
     }
 
@@ -620,7 +620,7 @@ internal class DesktopBundledModInstaller(
             StandardOpenOption.WRITE,
             LinkOption.NOFOLLOW_LINKS,
         ).use { channel ->
-            channel.lock().use { block() }
+            channel.withTimedExclusiveLock(block = block)
         }
     }
 
