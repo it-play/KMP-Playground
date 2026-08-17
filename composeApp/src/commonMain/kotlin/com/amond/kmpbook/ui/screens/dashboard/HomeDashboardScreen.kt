@@ -257,7 +257,7 @@ private fun EquityCurvePanel(
     LedgerPanel(modifier) {
         Column(Modifier.fillMaxSize()) {
             SectionHeading("자산 곡선", eyebrow = "EQUITY CURVE") {
-                StatusLabel("최대낙폭 ${formatPercent(maxDrawdown, false)}", MarketColors.Amber)
+                StatusLabel("일별 최대낙폭 ${formatPercent(maxDrawdown, false)}", MarketColors.Amber)
             }
             Spacer(Modifier.height(12.dp))
             SparklineChart(

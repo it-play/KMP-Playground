@@ -13,7 +13,9 @@ data class ModPortfolioSummary(
     val totalSaleTaxKrw: Double,
     val totalTransactionCostKrw: Double,
     val totalDividendKrw: Double,
+    /** 초기자본·일별 마감·현재 평가에서 파생한 최고자산. */
     val peakAssetsKrw: Double,
+    /** 일별 마감 및 현재 평가 기준 최대 낙폭. */
     val maximumDrawdown: Double,
     val benchmarkReturn: Double,
     val holdingCount: Int,

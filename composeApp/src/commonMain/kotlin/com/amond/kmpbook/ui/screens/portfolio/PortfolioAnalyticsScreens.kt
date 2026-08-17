@@ -165,7 +165,7 @@ fun AnalyticsScreen(
             AnalyticsTile("누적 수익률", formatPercent(snapshot.totalReturnRate), "초기자본 대비", deltaColor(snapshot.totalReturnRate), Modifier.weight(1f))
             AnalyticsTile("연환산 변동성", formatPercent(volatility, false), "일별 수익률 기준", MarketColors.Amber, Modifier.weight(1f))
             AnalyticsTile("샤프 지수", formatNumber(sharpe), "무위험수익률 3% 가정", if (sharpe >= 1.0) MarketColors.Primary else MarketColors.Ink, Modifier.weight(1f))
-            AnalyticsTile("최대 낙폭", formatPercent(maxDrawdown, false), "고점 대비 저점", MarketColors.Fall, Modifier.weight(1f))
+            AnalyticsTile("일별 최대 낙폭", formatPercent(maxDrawdown, false), "일별 마감·현재 평가 기준", MarketColors.Fall, Modifier.weight(1f))
         }
         Row(
             Modifier.fillMaxWidth().weight(1f),
