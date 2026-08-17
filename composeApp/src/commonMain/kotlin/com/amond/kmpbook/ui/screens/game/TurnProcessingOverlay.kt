@@ -1,5 +1,6 @@
 package com.amond.kmpbook.ui.screens.game
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,14 +14,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,11 +45,9 @@ import com.amond.kmpbook.domain.model.game.TurnStep
 import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.presentation.simulator.TurnProcessingUiState
 import com.amond.kmpbook.ui.components.LoadingFinancialFact
-import com.amond.kmpbook.ui.components.MarketButton
-import com.amond.kmpbook.ui.components.MarketButtonTone
-import com.amond.kmpbook.ui.components.MarketButtonVariant
 import com.amond.kmpbook.ui.format.formatDateTimeKst
 import com.amond.kmpbook.ui.theme.MarketColors
+import com.amond.kmpbook.ui.theme.MarketComponentSize
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketSpacing
 import com.amond.kmpbook.ui.theme.MarketType
@@ -419,13 +421,31 @@ private fun ProcessingFooter(
             )
         }
         Spacer(Modifier.width(MarketSpacing.lg))
-        MarketButton(
-            text = if (state.cancellationRequested) "취소 요청됨" else "진행 취소",
+        OutlinedButton(
             onClick = onCancel,
             enabled = !state.cancellationRequested,
-            variant = MarketButtonVariant.Weak,
-            tone = MarketButtonTone.Danger,
-        )
+            modifier = Modifier.heightIn(min = MarketComponentSize.primaryButtonHeight),
+            shape = RoundedCornerShape(MarketRadii.medium),
+            border = BorderStroke(
+                width = 1.dp,
+                color = if (state.cancellationRequested) {
+                    MarketColors.Grey700.copy(alpha = 0.55f)
+                } else {
+                    MarketColors.Grey600.copy(alpha = 0.82f)
+                },
+            ),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = Color.Transparent,
+                contentColor = MarketColors.Grey400,
+                disabledContainerColor = Color.Transparent,
+                disabledContentColor = MarketColors.Grey600,
+            ),
+        ) {
+            Text(
+                text = if (state.cancellationRequested) "취소 요청됨" else "진행 취소",
+                style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+            )
+        }
     }
 }
 
