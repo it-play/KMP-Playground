@@ -1,6 +1,6 @@
 package com.amond.kmpbook.presentation.simulator
 
-import com.amond.kmpbook.modding.builtin.debug.DebugMod
+import com.amond.kmpbook.modding.model.ModCapability
 import com.amond.kmpbook.persistence.validation.validateSimulatorUiState
 import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.model.corporateaction.CorporateActionKind
@@ -1051,7 +1051,11 @@ internal class SimulatorRuntime(
 
     internal fun debugSetCash(currency: Currency, amount: Double): DebugRuntimeResult {
         if (phase !in DEBUG_MUTABLE_PHASES) return debugFailure("현재 게임 단계에서는 현금을 바꿀 수 없습니다.")
-        if (options.activeMods.none { mod -> DebugMod.isCompatible(mod.id, mod.version) }) {
+        if (options.activeMods.none { mod ->
+                mod.executableFingerprint != null &&
+                    ModCapability.DEBUG_CONSOLE in mod.grantedCapabilities
+            }
+        ) {
             return debugFailure("호환되는 디버그 모드가 활성화되지 않았습니다.")
         }
         val maximum = when (currency) {
@@ -2051,8 +2055,8 @@ internal class SimulatorRuntime(
         cashAdjustments.clear()
         cashAdjustments += state.cashAdjustmentLedger
         require(cashAdjustments.isEmpty() || options.activeMods.any { mod ->
-            DebugMod.isCompatible(mod.id, mod.version)
-        }) { "디버그 현금 조정은 호환되는 신뢰 디버그 모드에서만 복원할 수 있습니다." }
+            mod.executableFingerprint != null && ModCapability.DEBUG_CONSOLE in mod.grantedCapabilities
+        }) { "디버그 현금 조정은 검증된 디버그 권한 모드에서만 복원할 수 있습니다." }
         activeEvents.clear()
         activeEvents += state.eventEngineSnapshot.activeEvents
         newsEvents.clear()

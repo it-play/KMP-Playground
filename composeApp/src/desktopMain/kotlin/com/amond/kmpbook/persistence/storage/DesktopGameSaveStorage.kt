@@ -1,5 +1,6 @@
 package com.amond.kmpbook.persistence.storage
 
+import com.amond.kmpbook.platform.DesktopGameDirectories
 import com.amond.kmpbook.domain.data.InstrumentCatalogReference
 import com.amond.kmpbook.domain.data.InstrumentCatalogSourceReference
 import com.amond.kmpbook.domain.model.causal.CausalEconomicFactor
@@ -120,6 +121,7 @@ import com.amond.kmpbook.domain.tax.core.TaxJurisdiction
 import com.amond.kmpbook.domain.tax.fee.FeeCategory
 import com.amond.kmpbook.domain.tax.fee.FeeJurisdiction
 import com.amond.kmpbook.modding.model.ActiveModConfiguration
+import com.amond.kmpbook.modding.model.ModCapability
 import com.amond.kmpbook.persistence.model.GameSaveEnvelope
 import com.amond.kmpbook.persistence.model.GameSaveError
 import com.amond.kmpbook.persistence.model.GameSaveErrorCode
@@ -166,7 +168,6 @@ import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
-import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.PosixFilePermission
@@ -190,21 +191,7 @@ private const val GAME_SAVE_EXTENSION: String = ".ml2"
 private const val MAX_GAME_SAVE_NAME_LENGTH: Int = 80
 
 private fun defaultGameSaveDirectory(): Path {
-    val osName = System.getProperty("os.name").orEmpty()
-    val userHome = requireNotNull(System.getProperty("user.home")) {
-        "The JVM user.home property is unavailable."
-    }
-    val appData = System.getenv("APPDATA")
-    val saveDirectory = if (osName.contains("Windows", ignoreCase = true)) {
-        val roamingAppData = appData
-            ?.takeIf(String::isNotBlank)
-            ?.let(Paths::get)
-            ?: Paths.get(userHome, "AppData", "Roaming")
-        roamingAppData.resolve("MarketLedger2040")
-    } else {
-        Paths.get(userHome, ".market-ledger-2040")
-    }
-    return saveDirectory.resolve("saves").toAbsolutePath().normalize()
+    return DesktopGameDirectories.discover().saves
 }
 
 actual class GameSaveStorage actual constructor() {
@@ -1310,6 +1297,17 @@ actual class GameSaveStorage actual constructor() {
                     if (settings.size() > ActiveModConfiguration.MAX_SETTINGS) {
                         throw JsonParseException("필드 '$path.settings'의 항목이 너무 많습니다.")
                     }
+                    val grantedCapabilities = activeMod.requiredEnumArray<ModCapability>(
+                        "grantedCapabilities",
+                        "$path.grantedCapabilities",
+                    )
+                    if (grantedCapabilities.size != grantedCapabilities.toSet().size ||
+                        grantedCapabilities != grantedCapabilities.sortedBy { it.ordinal }
+                    ) {
+                        throw JsonParseException(
+                            "필드 '$path.grantedCapabilities'는 중복 없이 enum 선언 순서여야 합니다.",
+                        )
+                    }
                     val decoded = ActiveModConfiguration(
                         id = activeMod.requiredStrictString("id", "$path.id"),
                         version = activeMod.requiredStrictString("version", "$path.version"),
@@ -1320,6 +1318,11 @@ actual class GameSaveStorage actual constructor() {
                             "contentFingerprint",
                             "$path.contentFingerprint",
                         ),
+                        executableFingerprint = activeMod.nullableStrictString(
+                            "executableFingerprint",
+                            "$path.executableFingerprint",
+                        ),
+                        grantedCapabilities = grantedCapabilities.toSet(),
                     )
                     decoded.validate()?.let { message ->
                         throw JsonParseException("필드 '$path'이 유효하지 않습니다: $message")
@@ -5505,6 +5508,8 @@ actual class GameSaveStorage actual constructor() {
             "version",
             "settings",
             "contentFingerprint",
+            "executableFingerprint",
+            "grantedCapabilities",
         )
 
         val CATALOG_REFERENCE_FIELDS: Set<String> = setOf(

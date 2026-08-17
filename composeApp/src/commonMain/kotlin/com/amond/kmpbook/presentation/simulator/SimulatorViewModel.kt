@@ -15,7 +15,7 @@ import com.amond.kmpbook.domain.model.venue.MarketSession
 import com.amond.kmpbook.domain.simulation.market.ExternalMarketForces
 import com.amond.kmpbook.domain.simulation.event.DebugEventGuide
 import com.amond.kmpbook.domain.time.GameCalendar
-import com.amond.kmpbook.modding.builtin.debug.DebugMod
+import com.amond.kmpbook.modding.model.ModCapability
 import com.amond.kmpbook.persistence.validation.validateSimulatorUiState
 import com.amond.kmpbook.presentation.trading.OrderRequest
 import kotlinx.coroutines.Dispatchers
@@ -761,7 +761,8 @@ class SimulatorViewModel(
     }
 
     internal fun isDebugConsoleEnabled(): Boolean = currentState.options.activeMods.any { activeMod ->
-        DebugMod.isCompatible(activeMod.id, activeMod.version)
+        activeMod.executableFingerprint != null &&
+            ModCapability.DEBUG_CONSOLE in activeMod.grantedCapabilities
     }
 
     internal fun debugSetInstrumentPrice(

@@ -197,7 +197,7 @@ import com.amond.kmpbook.domain.tax.liability.AccountingObservationBoundary
 import com.amond.kmpbook.domain.time.DefaultMarketHolidays
 import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.domain.time.KofrBusinessCalendar
-import com.amond.kmpbook.modding.builtin.debug.DebugMod
+import com.amond.kmpbook.modding.model.ModCapability
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.presentation.simulator.SimulatorRuntime
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
@@ -694,7 +694,7 @@ private fun validateSimulatorUiStateInternal(
         return "보유 수량·평균원가·실현손익·FIFO·세무 원장이 canonical 회계 재생 결과와 다릅니다."
     }
     val debugCashEnabled = state.options.activeMods.any { mod ->
-        DebugMod.isCompatible(mod.id, mod.version)
+        mod.executableFingerprint != null && ModCapability.DEBUG_CONSOLE in mod.grantedCapabilities
     }
     if (state.cashAdjustmentLedger.isNotEmpty() && !debugCashEnabled) {
         return "디버그 현금 조정 원장은 호환되는 신뢰 디버그 모드에서만 허용됩니다."
@@ -1689,7 +1689,7 @@ private fun validateSimulatorUiStateInternal(
 
     val listingEventsByStockId = state.listingLifecycleLedger.groupBy { event -> event.stockId }
     val debugPriceFactsAllowed = state.options.activeMods.any { mod ->
-        DebugMod.isCompatible(mod.id, mod.version)
+        mod.executableFingerprint != null && ModCapability.DEBUG_CONSOLE in mod.grantedCapabilities
     }
     val oneDayChartBarsByStockId = state.chartPriceHistory.mapValues { (_, histories) ->
         histories.getValue(PriceBarInterval.ONE_DAY)
@@ -2001,7 +2001,7 @@ private fun validatePortfolioSnapshotAccountingLineage(
 ): String? {
     if (state.portfolioSnapshots.isEmpty()) return "일별 포트폴리오 스냅샷이 비어 있습니다."
     val debugPriceFactsAllowed = state.options.activeMods.any { mod ->
-        DebugMod.isCompatible(mod.id, mod.version)
+        mod.executableFingerprint != null && ModCapability.DEBUG_CONSOLE in mod.grantedCapabilities
     }
     val expectedCashCurrencies = Currency.entries.toSet()
     val expectedExchangeRateCurrencies = setOf(Currency.USD)

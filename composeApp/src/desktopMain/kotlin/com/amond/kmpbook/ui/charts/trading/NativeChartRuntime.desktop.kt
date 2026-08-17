@@ -1,6 +1,7 @@
 package com.amond.kmpbook.ui.charts.trading
 
 import androidx.compose.ui.Modifier
+import com.amond.kmpbook.platform.DesktopGameDirectories
 import dev.nucleusframework.window.tao.consumeOverlayPointerEvents
 import java.nio.file.Files
 import java.nio.file.Path
@@ -71,13 +72,7 @@ private fun isWindows(): Boolean =
     System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)
 
 private fun preferredChartDataDirectory(): Path? = runCatching {
-    val userHome = System.getProperty("user.home")?.takeIf(String::isNotBlank)
-    val appDataRoot = System.getenv("LOCALAPPDATA")
-        ?.takeIf(String::isNotBlank)
-        ?.let(Paths::get)
-        ?: userHome?.let { home -> Paths.get(home, "AppData", "Local") }
-        ?: return@runCatching null
-    appDataRoot.resolve("MarketLedger2040").resolve("WebView")
+    DesktopGameDirectories.discover().localDataRoot.resolve("WebView")
 }.getOrNull()
 
 private fun createWritableDirectory(path: Path): String? = runCatching {
