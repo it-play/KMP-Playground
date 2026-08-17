@@ -45,9 +45,14 @@ import dev.nucleusframework.webview.web.rememberWebViewNavigator
 import dev.nucleusframework.webview.web.rememberWebViewStateWithHTMLData
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -67,6 +72,10 @@ private val chartJson = Json {
     encodeDefaults = true
     explicitNulls = false
 }
+private class PreparedChartPayload(
+    val injectionScript: String,
+    val validEventIds: Set<String>,
+)
 
 @Composable
 internal fun TradingViewMarketChart(
@@ -86,25 +95,73 @@ internal fun TradingViewMarketChart(
     onObscuredClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val orderedBars = remember(bars) { bars.sortedBy(PriceBar::startTime) }
-    if (orderedBars.isEmpty()) {
+    if (bars.isEmpty()) {
         ChartMessage(
             text = "첫 거래 시간이 지나면 OHLCV 차트가 생성됩니다.",
             modifier = modifier,
         )
         return
     }
-    val nativeChartRuntimeAvailable = remember { isNativeChartRuntimeAvailable() }
-    if (!nativeChartRuntimeAvailable) {
-        MissingNativeChartRuntime(modifier)
-        return
-    }
-    val chartDataDirectory = remember { nativeChartDataDirectory() }
 
-    val chartHtmlResult by produceState<Result<String>?>(initialValue = null) {
-        value = runCatching { loadChartHtml() }
+    val nativeChartRuntime by produceState<NativeChartRuntimeConfiguration?>(initialValue = null) {
+        value = prepareNativeChartRuntime()
     }
+    val chartHtmlResult by produceState<Result<String>?>(initialValue = null) {
+        value = try {
+            Result.success(withContext(Dispatchers.IO) { loadChartHtml() })
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            Result.failure(error)
+        }
+    }
+    val preparedPayloadResult by produceState<Result<PreparedChartPayload>?>(
+        null,
+        symbol,
+        resolution,
+        market,
+        priceMinMove,
+        rangeKey,
+        bars,
+        visibleDurationSeconds,
+        averagePrice,
+        trades,
+        relatedNews,
+    ) {
+        value = try {
+            Result.success(
+                withContext(Dispatchers.Default) {
+                    prepareChartPayload(
+                        symbol = symbol,
+                        resolution = resolution,
+                        market = market,
+                        priceMinMove = priceMinMove,
+                        rangeKey = rangeKey,
+                        bars = bars,
+                        visibleDurationSeconds = visibleDurationSeconds,
+                        averagePrice = averagePrice,
+                        trades = trades,
+                        relatedNews = relatedNews,
+                    )
+                },
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            Result.failure(error)
+        }
+    }
+
+    val runtimeConfiguration = nativeChartRuntime
     when {
+        runtimeConfiguration == null -> {
+            ChartLoading(modifier)
+            return
+        }
+        !runtimeConfiguration.isAvailable -> {
+            MissingNativeChartRuntime(modifier)
+            return
+        }
         chartHtmlResult == null -> {
             ChartLoading(modifier)
             return
@@ -116,41 +173,23 @@ internal fun TradingViewMarketChart(
             )
             return
         }
+        preparedPayloadResult == null -> {
+            ChartLoading(modifier)
+            return
+        }
+        preparedPayloadResult?.isFailure == true -> {
+            ChartMessage(
+                text = "차트 데이터를 준비하지 못했습니다.",
+                modifier = modifier,
+            )
+            return
+        }
     }
 
     val chartHtml = chartHtmlResult?.getOrNull() ?: return
-    val payload = remember(
-        symbol,
-        resolution,
-        market,
-        priceMinMove,
-        rangeKey,
-        orderedBars,
-        visibleDurationSeconds,
-        averagePrice,
-        trades,
-        relatedNews,
-    ) {
-        createPayload(
-            symbol = symbol,
-            resolution = resolution,
-            market = market,
-            priceMinMove = priceMinMove,
-            rangeKey = rangeKey,
-            bars = orderedBars,
-            visibleDurationSeconds = visibleDurationSeconds,
-            averagePrice = averagePrice,
-            trades = trades,
-            relatedNews = relatedNews,
-        )
-    }
-    val payloadArgument = remember(payload) { payload.toJavaScriptArgument() }
-    val validEventIds = remember(payload.markers) {
-        payload.markers.mapNotNull { marker ->
-            marker.id.removePrefix("event:").takeIf { marker.id.startsWith("event:") }
-        }.toSet()
-    }
-    val currentValidEventIds = rememberUpdatedState(validEventIds)
+    val preparedPayload = preparedPayloadResult?.getOrNull() ?: return
+    val payloadInjectionScript = preparedPayload.injectionScript
+    val currentValidEventIds = rememberUpdatedState(preparedPayload.validEventIds)
     val currentOnOpenEvent = rememberUpdatedState(onOpenEvent)
     val currentOnShowAll = rememberUpdatedState(onShowAll)
 
@@ -168,8 +207,8 @@ internal fun TradingViewMarketChart(
             backgroundColor = MarketColors.Paper
             desktopWebSettings.apply {
                 transparent = false
-                dataDirectory = chartDataDirectory
-                incognito = chartDataDirectory == null
+                dataDirectory = runtimeConfiguration.dataDirectory
+                incognito = runtimeConfiguration.dataDirectory == null
                 enableClipboard = false
                 enableDevtools = false
                 enableNavigationGestures = false
@@ -218,13 +257,10 @@ internal fun TradingViewMarketChart(
         }
     }
 
-    LaunchedEffect(webViewState.pageTitle, payloadArgument) {
+    LaunchedEffect(webViewState.pageTitle, payloadInjectionScript) {
         if (webViewState.pageTitle != READY_TITLE) return@LaunchedEffect
         readinessTimedOut = false
-        navigator.evaluateJavaScript(
-            "window.__MARKET_LEDGER_PENDING_PAYLOAD__=$payloadArgument;" +
-                "window.marketLedgerChart?.receiveBase64($payloadArgument);",
-        )
+        navigator.evaluateJavaScript(payloadInjectionScript)
     }
     LaunchedEffect(webViewState.loadingState, webViewState.pageTitle) {
         if (webViewState.loadingState !is LoadingState.Finished || webViewState.pageTitle == READY_TITLE) {
@@ -260,6 +296,45 @@ internal fun TradingViewMarketChart(
             webViewState.pageTitle != READY_TITLE -> ChartLoading(Modifier.fillMaxSize())
         }
     }
+}
+
+private suspend fun prepareChartPayload(
+    symbol: String,
+    resolution: String,
+    market: Market,
+    priceMinMove: Double,
+    rangeKey: String,
+    bars: List<PriceBar>,
+    visibleDurationSeconds: Long?,
+    averagePrice: Double?,
+    trades: List<Trade>,
+    relatedNews: List<NewsStoryUi>,
+): PreparedChartPayload {
+    val orderedBars = bars.sortedBy(PriceBar::startTime)
+    currentCoroutineContext().ensureActive()
+    val payload = createPayload(
+        symbol = symbol,
+        resolution = resolution,
+        market = market,
+        priceMinMove = priceMinMove,
+        rangeKey = rangeKey,
+        bars = orderedBars,
+        visibleDurationSeconds = visibleDurationSeconds,
+        averagePrice = averagePrice,
+        trades = trades,
+        relatedNews = relatedNews,
+    )
+    currentCoroutineContext().ensureActive()
+    val javaScriptArgument = payload.toJavaScriptArgument()
+    currentCoroutineContext().ensureActive()
+    return PreparedChartPayload(
+        injectionScript =
+            "window.__MARKET_LEDGER_PENDING_PAYLOAD__=$javaScriptArgument;" +
+                "window.marketLedgerChart?.receiveBase64(window.__MARKET_LEDGER_PENDING_PAYLOAD__);",
+        validEventIds = payload.markers.mapNotNullTo(linkedSetOf()) { marker ->
+            marker.id.removePrefix("event:").takeIf { marker.id.startsWith("event:") }
+        },
+    )
 }
 
 @Composable
@@ -411,16 +486,38 @@ private fun createMarkers(
     }
 }.sortedWith(compareBy(MarketChartMarkerPayload::time, MarketChartMarkerPayload::id))
 
-private fun List<PriceBar>.containingBarTime(epochSeconds: Long): Long? =
-    firstOrNull { bar ->
-        epochSeconds >= bar.startTime.epochSeconds && epochSeconds < bar.endTime.epochSeconds
-    }?.startTime?.epochSeconds
+private fun List<PriceBar>.containingBarTime(epochSeconds: Long): Long? {
+    var low = 0
+    var high = lastIndex
+    var candidate = -1
+    while (low <= high) {
+        val middle = (low + high).ushr(1)
+        if (this[middle].startTime.epochSeconds <= epochSeconds) {
+            candidate = middle
+            low = middle + 1
+        } else {
+            high = middle - 1
+        }
+    }
+    val bar = getOrNull(candidate) ?: return null
+    return bar.startTime.epochSeconds.takeIf { epochSeconds < bar.endTime.epochSeconds }
+}
 
 private fun List<PriceBar>.snapEventToBarTime(epochSeconds: Long): Long? {
     if (isEmpty() || epochSeconds < first().startTime.epochSeconds) return null
-    return firstOrNull { bar -> epochSeconds < bar.endTime.epochSeconds }
-        ?.startTime
-        ?.epochSeconds
+    var low = 0
+    var high = lastIndex
+    var candidate = -1
+    while (low <= high) {
+        val middle = (low + high).ushr(1)
+        if (epochSeconds < this[middle].endTime.epochSeconds) {
+            candidate = middle
+            high = middle - 1
+        } else {
+            low = middle + 1
+        }
+    }
+    return getOrNull(candidate)?.startTime?.epochSeconds
 }
 
 @OptIn(ExperimentalEncodingApi::class)
