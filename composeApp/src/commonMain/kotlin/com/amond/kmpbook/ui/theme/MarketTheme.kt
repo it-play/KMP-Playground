@@ -146,7 +146,7 @@ private fun MarketTypography.asMaterialTypography(): Typography = Typography(
 
 @Composable
 fun MarketSimulatorTheme(content: @Composable () -> Unit) {
-    val installedFamily = remember { platformPreferredMarketFontFamily() }
+    val installedFamily = rememberPlatformPreferredMarketFontFamily()
     val bundledFamily = bundledPretendard()
     val selectedFamily = installedFamily ?: bundledFamily
     val marketTypography = remember(selectedFamily) { createMarketTypography(selectedFamily) }
