@@ -69,9 +69,6 @@ val assembleSignedStableRelease = tasks.register<AssembleSignedStableReleaseTask
     appVersion.set(releaseAppVersion)
     buildCohort.set(providers.environmentVariable("ML_BUILD_COHORT"))
     publishedAt.set(providers.environmentVariable(AssembleSignedStableReleaseTask.PUBLISHED_AT_ENV))
-    baseReleaseUrl.set(
-        "https://github.com/it-play/KMP-Playground/releases/download/market-ledger-game-stable",
-    )
     allowedBuildDirectory.set(layout.buildDirectory)
     outputDirectory.set(layout.buildDirectory.dir("release"))
     mustRunAfter(validateWindowsReleaseEnvironment)

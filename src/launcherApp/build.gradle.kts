@@ -78,7 +78,6 @@ nucleus.application {
             signing {
                 enabled = windowsSigningThumbprint.isPresent
                 certificateSha1 = windowsSigningThumbprint.orNull
-                timestampServer = "https://timestamp.digicert.com"
                 algorithm = SigningAlgorithm.Sha256
             }
             msi {

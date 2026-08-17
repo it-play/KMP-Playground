@@ -30,7 +30,7 @@ val debugBundleVersion = project.version.toString()
 val hostAppVersion = providers.gradleProperty("appVersion")
 val runtimeEntrypoint = "com.amond.kmpbook.debug.bundle.DebugExecutableGameMod"
 val runtimeBundlePath = "lib/market-ledger-debug.jar"
-val pairingDat = rootProject.layout.projectDirectory.file("security/debug-bundle-challenge.dat")
+val pairingDat = layout.projectDirectory.file("src/main/trust/debug-bundle-challenge.dat")
 val trustMaterial = layout.buildDirectory.dir("trust/material")
 
 tasks.named<Jar>("jar") {

@@ -97,7 +97,7 @@ jobs:
         run: |
           $keyDirectory = Join-Path $env:RUNNER_TEMP 'market-ledger-pr-keys'
           $materializedPrivateKey = Join-Path $env:GITHUB_WORKSPACE `
-            'debugModBundle/build/trust/material/debug-signing-private-key.pk8'
+            'src/debugModBundle/build/trust/material/debug-signing-private-key.pk8'
           Remove-Item -LiteralPath $keyDirectory -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -LiteralPath $materializedPrivateKey -Force -ErrorAction SilentlyContinue
           if (-not [string]::IsNullOrWhiteSpace($env:PR_WINDOWS_SIGNING_CERT_SHA1)) {
@@ -357,7 +357,6 @@ jobs:
           CERTIFICATE_BASE64: ${{ secrets.ML_WINDOWS_SIGNING_CERT_PFX_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.ML_WINDOWS_SIGNING_CERT_PASSWORD }}
           EXPECTED_CERT_SHA256: ${{ vars.ML_WINDOWS_SIGNING_CERT_SHA256 }}
-          WINDOWS_SIGNING_TRUST_MODE: ${{ vars.ML_WINDOWS_SIGNING_TRUST_MODE }}
         run: |
           $ErrorActionPreference = 'Stop'
           if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64) -or
@@ -399,30 +398,23 @@ jobs:
           if ($certificateSha256 -cne $env:EXPECTED_CERT_SHA256) {
             throw 'The imported Windows signing certificate does not match the pinned SHA-256 fingerprint.'
           }
-          $trustMode = $env:WINDOWS_SIGNING_TRUST_MODE
-          if ($trustMode -notin @('internal-self-signed', 'public-ca')) {
-            throw 'ML_WINDOWS_SIGNING_TRUST_MODE must be internal-self-signed or public-ca.'
+          if ($certificate.Subject -cne $certificate.Issuer) {
+            throw 'The project-owned Windows signing certificate must be self-signed.'
           }
-          if ($trustMode -eq 'internal-self-signed') {
-            if ($certificate.Subject -cne $certificate.Issuer) {
-              throw 'The internal Windows signing certificate must be self-signed.'
-            }
-            $publicCertificatePath = Join-Path $env:RUNNER_TEMP 'market-ledger-code-signing.cer'
-            Export-Certificate -Cert $certificate -FilePath $publicCertificatePath -Type CERT | Out-Null
-            try {
-              $trustedRoots = @(Import-Certificate `
-                -FilePath $publicCertificatePath `
-                -CertStoreLocation 'Cert:\CurrentUser\Root')
-            } finally {
-              Remove-Item -LiteralPath $publicCertificatePath -Force -ErrorAction SilentlyContinue
-            }
-            if ($trustedRoots.Count -ne 1 -or $trustedRoots[0].Thumbprint -cne $certificate.Thumbprint) {
-              throw 'The internal Windows signing certificate was not pinned into the temporary trust store.'
-            }
-            $trustWarning = 'The Windows artifacts use an internal self-signed Authenticode certificate. ' +
-              'It proves CI artifact integrity but is not publicly trusted on fresh Windows PCs.'
-            $trustWarning >> $env:GITHUB_STEP_SUMMARY
+          $publicCertificatePath = Join-Path $env:RUNNER_TEMP 'market-ledger-code-signing.cer'
+          Export-Certificate -Cert $certificate -FilePath $publicCertificatePath -Type CERT | Out-Null
+          try {
+            $trustedRoots = @(Import-Certificate `
+              -FilePath $publicCertificatePath `
+              -CertStoreLocation 'Cert:\CurrentUser\Root')
+          } finally {
+            Remove-Item -LiteralPath $publicCertificatePath -Force -ErrorAction SilentlyContinue
           }
+          if ($trustedRoots.Count -ne 1 -or $trustedRoots[0].Thumbprint -cne $certificate.Thumbprint) {
+            throw 'The pinned internal signing certificate was not added to the temporary trust store.'
+          }
+          'Windows artifacts use the project-owned, SHA-256-pinned internal signing certificate.' >> `
+            $env:GITHUB_STEP_SUMMARY
 
       - name: Build one fully signed Windows release
         if: steps.version.outputs.should_publish == 'true'
@@ -443,7 +435,7 @@ jobs:
         shell: pwsh
         run: |
           $materializedPrivateKey = Join-Path $env:GITHUB_WORKSPACE `
-            'debugModBundle/build/trust/material/debug-signing-private-key.pk8'
+            'src/debugModBundle/build/trust/material/debug-signing-private-key.pk8'
           Remove-Item -LiteralPath $materializedPrivateKey -Force -ErrorAction SilentlyContinue
 
       - name: Verify launcher and MSI Authenticode signatures
@@ -455,10 +447,10 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $msi = Join-Path $env:GITHUB_WORKSPACE `
-            "launcherApp/build/compose/binaries/main/msi/MarketLedger2040-Launcher-$env:APP_VERSION.msi"
+            "src/launcherApp/build/compose/binaries/main/msi/MarketLedger2040-Launcher-$env:APP_VERSION.msi"
           if (-not (Test-Path -LiteralPath $msi -PathType Leaf)) { throw 'Launcher MSI is missing.' }
           $launchers = @(Get-ChildItem `
-            -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'launcherApp/build/compose/binaries/main/app') `
+            -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'src/launcherApp/build/compose/binaries/main/app') `
             -Filter 'MarketLedger2040Launcher.exe' -File -Recurse)
           if ($launchers.Count -ne 1) { throw 'Expected exactly one packaged launcher executable.' }
           $signTool = Get-Command signtool -ErrorAction SilentlyContinue
@@ -517,7 +509,7 @@ jobs:
             Copy-Item -LiteralPath (Join-Path $release $name) -Destination (Join-Path $publish $name)
           }
           $msi = Join-Path $env:GITHUB_WORKSPACE `
-            "launcherApp/build/compose/binaries/main/msi/MarketLedger2040-Launcher-$env:APP_VERSION.msi"
+            "src/launcherApp/build/compose/binaries/main/msi/MarketLedger2040-Launcher-$env:APP_VERSION.msi"
           Copy-Item -LiteralPath $msi -Destination (Join-Path $publish ([IO.Path]::GetFileName($msi)))
 
       - name: Upload verified Windows release artifact

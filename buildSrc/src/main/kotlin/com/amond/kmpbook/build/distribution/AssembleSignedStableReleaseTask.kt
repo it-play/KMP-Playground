@@ -13,7 +13,6 @@ import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
-import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -47,9 +46,6 @@ abstract class AssembleSignedStableReleaseTask : DefaultTask() {
     abstract val publishedAt: Property<String>
 
     @get:Input
-    abstract val baseReleaseUrl: Property<String>
-
-    @get:Input
     abstract val gameEntryPoint: Property<String>
 
     @get:OutputDirectory
@@ -74,7 +70,7 @@ abstract class AssembleSignedStableReleaseTask : DefaultTask() {
         }
         val cohort = TrustBuildSupport.validateCohort(buildCohort.get())
         val published = canonicalPublishedAt(publishedAt.get())
-        val baseUrl = canonicalBaseReleaseUrl(baseReleaseUrl.get())
+        val baseUrl = BUNDLED_RELEASE_BASE_URL
         val entryPoint = validateRelativePath(gameEntryPoint.get())
         require(entryPoint.endsWith(".exe", ignoreCase = true)) { "The stable game entrypoint must be a Windows .exe." }
 
@@ -629,18 +625,6 @@ abstract class AssembleSignedStableReleaseTask : DefaultTask() {
         throw IllegalArgumentException("ML_RELEASE_PUBLISHED_AT must be an ISO-8601 instant.", error)
     }
 
-    private fun canonicalBaseReleaseUrl(value: String): String {
-        val uri = try {
-            URI(value)
-        } catch (error: Exception) {
-            throw IllegalArgumentException("baseReleaseUrl is not a valid URI.", error)
-        }
-        require(uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank() &&
-            uri.userInfo == null && uri.fragment == null && uri.rawQuery == null
-        ) { "baseReleaseUrl must be an absolute HTTPS URL without credentials, query, or fragment." }
-        return uri.toASCIIString().trimEnd('/')
-    }
-
     private fun String.toAscii(): ByteArray = toByteArray(StandardCharsets.US_ASCII)
 
     companion object {
@@ -648,6 +632,7 @@ abstract class AssembleSignedStableReleaseTask : DefaultTask() {
         const val FEED_SIGNATURE_FILE_NAME: String = "market-ledger-stable-feed.json.sig"
         const val FEED_PRIVATE_KEY_ENV: String = "ML_FEED_SIGNING_KEY_PKCS8_B64"
         const val FEED_PUBLIC_KEY_ENV: String = "ML_FEED_SIGNING_PUBLIC_KEY_X509_B64"
+        const val BUNDLED_RELEASE_BASE_URL: String = "classpath:/bundled-release"
         const val PUBLISHED_AT_ENV: String = "ML_RELEASE_PUBLISHED_AT"
 
         private const val DEFAULT_GAME_ENTRY_POINT = "MarketLedger2040.exe"

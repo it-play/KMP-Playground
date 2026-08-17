@@ -1,4 +1,4 @@
-# Debug bundle trust inputs
+# Debug bundle trust model
 
 `debug-bundle-challenge.dat` is the canonical, non-secret pairing challenge shared by the
 host and the signed built-in debug bundle. Keep exactly four LF-terminated bracketed groups;
@@ -9,15 +9,14 @@ The DAT is an additional build-pairing check, not a cryptographic secret. Ed2551
 and the host-pinned public key are the trust root.
 
 Build channels are selected with `ML_BUILD_CHANNEL=dev|release` (default: `dev`).
-Development builds generate an ephemeral Ed25519 key under `debugModBundle/build/trust` and
+Development builds generate an ephemeral Ed25519 key under `src/debugModBundle/build/trust` and
 generate a CSPRNG build cohort unless `ML_BUILD_COHORT` is supplied.
 
 GitHub repository variables (public verification material):
 
 - `ML_DEBUG_BUNDLE_SIGNING_PUBLIC_KEY_X509_BASE64`: Ed25519 X.509 public key
 - `ML_FEED_SIGNING_PUBLIC_KEY_X509_B64`: stable-feed Ed25519 X.509 public key
-- `ML_WINDOWS_SIGNING_CERT_SHA256`: uppercase SHA-256 fingerprint of the Authenticode certificate
-- `ML_WINDOWS_SIGNING_TRUST_MODE`: `internal-self-signed` or `public-ca`
+- `ML_WINDOWS_SIGNING_CERT_SHA256`: uppercase SHA-256 fingerprint of the project-owned signing certificate
 
 The `market-ledger-stable` GitHub environment contains only secrets:
 
@@ -42,12 +41,11 @@ The Windows release workflow additionally imports its non-exportable signing cer
 `ML_WINDOWS_SIGNING_CERT_PFX_BASE64` and `ML_WINDOWS_SIGNING_CERT_PASSWORD` environment secrets.
 It signs and independently verifies both the launcher executable and MSI before publishing.
 
-The current development configuration uses `internal-self-signed`. CI checks the pinned
-certificate fingerprint, temporarily trusts that exact certificate only while verifying its own
-artifacts, and removes it from the runner afterward. This proves artifact integrity inside CI but
-does not make the publisher publicly trusted on a fresh Windows PC. Replace the PFX with a
-CA-issued Authenticode certificate and set `ML_WINDOWS_SIGNING_TRUST_MODE=public-ca` before a
-public release that must display a trusted publisher identity.
+Stable Windows packaging uses one project-owned self-signed certificate. CI requires its pinned
+SHA-256 fingerprint, temporarily adds that exact public certificate to the runner trust store,
+verifies the launcher executable and MSI, and removes the certificate afterward. No external
+certificate authority, timestamp service, trust-mode switch, or certificate migration path is part
+of this project.
 
 Production Ed25519 private keys are exposed only to the single release-build process environment
 and read inside non-cacheable task actions. They are never written to a GitHub command file,

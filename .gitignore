@@ -3,6 +3,8 @@
 .gradle
 **/build/
 !src/**/build/
+src/debugModBundle/build/
+src/launcherApp/build/
 !buildSrc/
 !buildSrc/**
 buildSrc/.gradle/

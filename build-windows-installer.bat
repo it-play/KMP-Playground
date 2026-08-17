@@ -45,7 +45,7 @@ if errorlevel 1 goto :failed
 
 echo.
 echo Signed stable assets: build\release
-echo Launcher MSI: launcherApp\build\compose\binaries\main\msi
+echo Launcher MSI: src\launcherApp\build\compose\binaries\main\msi
 exit /b 0
 
 :failed

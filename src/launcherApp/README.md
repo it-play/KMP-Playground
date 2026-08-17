@@ -16,13 +16,13 @@ ephemeral public key so that local `check` and IDE builds do not need release se
 build fails closed when the configured key is absent.
 
 ```text
-launcherApp/build/generated/release-resources/
+src/launcherApp/build/generated/release-resources/
   market-ledger/release/stable-feed-public-key.b64
   market-ledger/release/minimum-game-version.txt
 ```
 
 For offline development, an optional complete, signed release may be placed under
-`launcherApp/src/main/resources/bundled-release/`. The expected feed filenames are
+`src/launcherApp/src/main/resources/bundled-release/`. The expected feed filenames are
 `market-ledger-stable-feed.json` and `market-ledger-stable-feed.json.sig`; artifact URLs in that
 feed use `classpath:/bundled-release/<asset-name>`. A bundled release is only a fallback after the
 remote stable feed fails, and it is verified with the same embedded release key.

@@ -31,3 +31,6 @@ dependencyResolutionManagement {
 include(":composeApp")
 include(":debugModBundle")
 include(":launcherApp")
+
+project(":debugModBundle").projectDir = file("src/debugModBundle")
+project(":launcherApp").projectDir = file("src/launcherApp")
