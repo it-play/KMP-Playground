@@ -2,10 +2,6 @@
 
 Kotlin Multiplatform 앱 프로젝트
 
-## 구현 참고 자료
-
-- [전용 종목 흐름 목록](docs/dedicated-instrument-flows.md)
-
 ---
 
 ## 앱 히스토리
