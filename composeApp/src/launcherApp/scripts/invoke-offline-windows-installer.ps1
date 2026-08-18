@@ -43,6 +43,11 @@ try {
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
         throw "The offline launcher MSI must be built on Windows."
     }
+    $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $currentPrincipal = [Security.Principal.WindowsPrincipal]::new($currentIdentity)
+    if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw "Run build-windows-installer.bat from an Administrator terminal."
+    }
     if (-not (Test-Path -LiteralPath ".\gradlew.bat" -PathType Leaf)) {
         throw "gradlew.bat was not found in the project directory."
     }
@@ -90,7 +95,7 @@ try {
     }
     $trustedCertificates = @(Import-Certificate `
         -FilePath $certificatePath `
-        -CertStoreLocation "Cert:\CurrentUser\Root")
+        -CertStoreLocation "Cert:\LocalMachine\Root")
     if ($trustedCertificates.Count -ne 1 -or
         $trustedCertificates[0].Thumbprint.ToUpperInvariant() -ne $certificateThumbprint) {
         throw "The temporary trusted certificate differs from the signing certificate."
@@ -133,7 +138,7 @@ try {
     }
     try {
         Remove-BuildCertificate `
-            -StorePath "Cert:\CurrentUser\Root" `
+            -StorePath "Cert:\LocalMachine\Root" `
             -Thumbprint $certificateThumbprint
     } catch {
         $cleanupFailures.Add("trusted certificate: $($_.Exception.Message)")

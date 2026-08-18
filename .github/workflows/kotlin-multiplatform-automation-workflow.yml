@@ -338,20 +338,24 @@ jobs:
           if (-not (Test-Path -LiteralPath $publicCertificatePath -PathType Leaf)) {
             throw 'The validated public code-signing certificate is missing.'
           }
+          Write-Host 'Adding the pinned certificate to the temporary machine trust store...'
           $trustedRoots = @(Import-Certificate `
             -FilePath $publicCertificatePath `
-            -CertStoreLocation 'Cert:\CurrentUser\Root')
+            -CertStoreLocation 'Cert:\LocalMachine\Root')
           if ($trustedRoots.Count -ne 1 -or
               $trustedRoots[0].Thumbprint -cne $env:EXPECTED_THUMBPRINT) {
             throw 'The pinned internal signing certificate was not added to the temporary trust store.'
           }
+          Write-Host 'The temporary machine trust store is ready.'
           $signTool = Get-Command signtool -ErrorAction SilentlyContinue
           if ($null -eq $signTool) {
-            $signTool = Get-ChildItem `
-              -LiteralPath "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
-              -Filter signtool.exe -File -Recurse | `
-              Where-Object { $_.DirectoryName -match '\\x64$' } | `
-              Sort-Object FullName -Descending | Select-Object -First 1
+            $windowsKitsBin = Join-Path "${env:ProgramFiles(x86)}" 'Windows Kits\10\bin'
+            $signTool = Get-ChildItem -LiteralPath $windowsKitsBin -Directory | `
+              ForEach-Object { Join-Path $_.FullName 'x64\signtool.exe' } | `
+              Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | `
+              Sort-Object -Descending | `
+              Select-Object -First 1 | `
+              ForEach-Object { Get-Item -LiteralPath $_ }
           }
           if ($null -eq $signTool) { throw 'signtool.exe was not found.' }
           $signToolPath = if ($signTool -is [System.Management.Automation.ApplicationInfo]) {
@@ -360,6 +364,7 @@ jobs:
             $signTool.FullName
           }
           foreach ($file in @($launchers[0].FullName, $msi)) {
+            Write-Host "Verifying $([IO.Path]::GetFileName($file))..."
             $signature = Get-AuthenticodeSignature -FilePath $file
             if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
                 $signature.SignerCertificate.Thumbprint -ne $env:EXPECTED_THUMBPRINT) {
@@ -438,14 +443,14 @@ jobs:
           }
           foreach ($thumbprint in @($thumbprints | Sort-Object -Unique)) {
             if (-not [string]::IsNullOrWhiteSpace($thumbprint)) {
-              foreach ($storeName in @('My', 'Root')) {
-                $certificatePath = "Cert:\CurrentUser\$storeName\$thumbprint"
-                if ($storeName -eq 'My') {
-                  Remove-Item -LiteralPath $certificatePath -DeleteKey -Force -ErrorAction SilentlyContinue
-                } else {
-                  Remove-Item -LiteralPath $certificatePath -Force -ErrorAction SilentlyContinue
-                }
-              }
+              $signingCertificatePath = "Cert:\CurrentUser\My\$thumbprint"
+              Remove-Item `
+                -LiteralPath $signingCertificatePath `
+                -DeleteKey -Force -ErrorAction SilentlyContinue
+              $trustedCertificatePath = "Cert:\LocalMachine\Root\$thumbprint"
+              Remove-Item `
+                -LiteralPath $trustedCertificatePath `
+                -Force -ErrorAction SilentlyContinue
             }
           }
           Remove-Item -LiteralPath $thumbprintPath -Force -ErrorAction SilentlyContinue
