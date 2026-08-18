@@ -64,6 +64,10 @@ tasks.named<ProcessResources>("processResources") {
     from(rootProject.file("assets/market-ledger-icon.png")) {
         into("launcher")
     }
+    from(rootProject.file("composeApp/src/commonMain/composeResources/font")) {
+        include("pretendard_regular.otf", "pretendard_bold.otf")
+        into("launcher/fonts")
+    }
 }
 
 val validateBundledReleaseJar = tasks.register<ValidateBundledReleaseJarTask>("validateBundledReleaseJar") {

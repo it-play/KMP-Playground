@@ -6,7 +6,6 @@ import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Dimension
 import java.awt.FlowLayout
-import java.awt.Font
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
 import java.util.concurrent.atomic.AtomicBoolean
@@ -45,18 +44,18 @@ internal class LauncherFrame(
         javaClass.getResource("/launcher/market-ledger-icon.png")?.let { iconImage = ImageIcon(it).image }
 
         statusLabel.apply {
-            font = Font(WINDOWS_FONT, Font.BOLD, 22)
+            font = LauncherFonts.bold(22f)
             foreground = INK
             alignmentX = LEFT_ALIGNMENT
         }
         versionLabel.apply {
-            font = Font(WINDOWS_FONT, Font.PLAIN, 12)
+            font = LauncherFonts.regular(12f)
             foreground = MUTED
             alignmentX = LEFT_ALIGNMENT
             isVisible = false
         }
         detailText.apply {
-            font = Font(WINDOWS_FONT, Font.PLAIN, 13)
+            font = LauncherFonts.regular(13f)
             foreground = INK
             background = PAPER
             isEditable = false
@@ -225,7 +224,6 @@ internal class LauncherFrame(
     }
 
     private companion object {
-        const val WINDOWS_FONT = "Segoe UI"
         val BACKGROUND = Color(0xED, 0xF1, 0xF4)
         val PAPER = Color(0xFC, 0xFD, 0xFE)
         val INK = Color(0x17, 0x22, 0x2D)

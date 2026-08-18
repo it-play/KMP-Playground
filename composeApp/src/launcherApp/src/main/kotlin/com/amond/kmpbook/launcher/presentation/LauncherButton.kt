@@ -4,7 +4,6 @@ import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Cursor
 import java.awt.Dimension
-import java.awt.Font
 import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.RenderingHints
@@ -15,7 +14,7 @@ internal class LauncherButton(
     private val isPrimary: Boolean,
 ) : JButton(label) {
     init {
-        font = Font(WINDOWS_FONT, Font.BOLD, 13)
+        font = LauncherFonts.bold(13f)
         preferredSize = Dimension(if (isPrimary) 118 else 126, 42)
         isContentAreaFilled = false
         isBorderPainted = false
@@ -66,7 +65,6 @@ internal class LauncherButton(
     }
 
     private companion object {
-        const val WINDOWS_FONT = "Segoe UI"
         val PRIMARY = Color(0x62, 0x5C, 0xF6)
         val PRIMARY_HOVER = Color(0x55, 0x50, 0xE2)
         val PRIMARY_PRESSED = Color(0x49, 0x45, 0xC8)

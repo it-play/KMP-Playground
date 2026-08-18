@@ -3,7 +3,6 @@ package com.amond.kmpbook.launcher.presentation
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Dimension
-import java.awt.Font
 import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.RenderingHints
@@ -11,6 +10,9 @@ import java.awt.geom.Path2D
 import javax.swing.JPanel
 
 internal class LauncherBrandPanel : JPanel() {
+    private val brandBold = LauncherFonts.bold(18f)
+    private val brandRegular = LauncherFonts.regular(18f)
+
     init {
         background = NAVY
         preferredSize = Dimension(264, 0)
@@ -66,16 +68,15 @@ internal class LauncherBrandPanel : JPanel() {
     private fun paintBrand(canvas: Graphics2D) {
         val brandTop = height - 79
         canvas.color = PAPER
-        canvas.font = Font(WINDOWS_FONT, Font.BOLD, 18)
+        canvas.font = brandBold
         canvas.drawString("MARKET", 28, brandTop)
-        canvas.font = Font(WINDOWS_FONT, Font.PLAIN, 18)
+        canvas.font = brandRegular
         canvas.drawString("LEDGER 2040", 28, brandTop + 25)
         canvas.color = VIOLET
         canvas.fillRoundRect(28, brandTop + 38, 42, 4, 4, 4)
     }
 
     private companion object {
-        const val WINDOWS_FONT = "Segoe UI"
         val NAVY = Color(0x12, 0x1B, 0x24)
         val PAPER = Color(0xFC, 0xFD, 0xFE)
         val VIOLET = Color(0x62, 0x5C, 0xF6)
