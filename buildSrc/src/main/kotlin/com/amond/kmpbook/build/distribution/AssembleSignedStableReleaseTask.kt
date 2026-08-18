@@ -70,7 +70,7 @@ abstract class AssembleSignedStableReleaseTask : DefaultTask() {
         }
         val cohort = TrustBuildSupport.validateCohort(buildCohort.get())
         val published = canonicalPublishedAt(publishedAt.get())
-        val baseUrl = BUNDLED_RELEASE_BASE_URL
+        val resourceDirectory = BUNDLED_RELEASE_RESOURCE_DIRECTORY
         val entryPoint = validateRelativePath(gameEntryPoint.get())
         require(entryPoint.endsWith(".exe", ignoreCase = true)) { "The stable game entrypoint must be a Windows .exe." }
 
@@ -131,7 +131,7 @@ abstract class AssembleSignedStableReleaseTask : DefaultTask() {
             inventory = inventoryMetadata,
             entryPoint = entryPoint,
             debugBundle = debugCopy,
-            baseUrl = baseUrl,
+            resourceDirectory = resourceDirectory,
         )
         require(feedBytes.size <= MAX_FEED_BYTES) { "Canonical stable feed exceeds the launcher size policy." }
         val privateValue = requireNotNull(System.getenv(FEED_PRIVATE_KEY_ENV)) {
@@ -463,19 +463,19 @@ abstract class AssembleSignedStableReleaseTask : DefaultTask() {
         inventory: ReleaseArtifactMetadata,
         entryPoint: String,
         debugBundle: ReleaseArtifactMetadata,
-        baseUrl: String,
+        resourceDirectory: String,
     ): ByteArray {
         val json = buildString {
             append("{\"schema\":1,\"channel\":\"stable\",\"version\":\"$version\",\"publishedAt\":")
             appendJsonString(publishedAt)
-            append(",\"buildCohort\":\"$cohort\",\"game\":{\"url\":")
-            appendJsonString("$baseUrl/${game.fileName}")
-            append(",\"size\":${game.size},\"sha256\":\"${game.sha256}\",\"inventory\":{\"url\":")
-            appendJsonString("$baseUrl/${inventory.fileName}")
+            append(",\"buildCohort\":\"$cohort\",\"game\":{\"resource\":")
+            appendJsonString("$resourceDirectory/${game.fileName}")
+            append(",\"size\":${game.size},\"sha256\":\"${game.sha256}\",\"inventory\":{\"resource\":")
+            appendJsonString("$resourceDirectory/${inventory.fileName}")
             append(",\"size\":${inventory.size},\"sha256\":\"${inventory.sha256}\"},\"entryPoint\":")
             appendJsonString(entryPoint)
-            append("},\"debugBundle\":{\"url\":")
-            appendJsonString("$baseUrl/${debugBundle.fileName}")
+            append("},\"debugBundle\":{\"resource\":")
+            appendJsonString("$resourceDirectory/${debugBundle.fileName}")
             append(",\"size\":${debugBundle.size},\"sha256\":\"${debugBundle.sha256}\"}}\n")
         }
         return json.toByteArray(StandardCharsets.UTF_8)
@@ -632,7 +632,7 @@ abstract class AssembleSignedStableReleaseTask : DefaultTask() {
         const val FEED_SIGNATURE_FILE_NAME: String = "market-ledger-stable-feed.json.sig"
         const val FEED_PRIVATE_KEY_ENV: String = "ML_FEED_SIGNING_KEY_PKCS8_B64"
         const val FEED_PUBLIC_KEY_ENV: String = "ML_FEED_SIGNING_PUBLIC_KEY_X509_B64"
-        const val BUNDLED_RELEASE_BASE_URL: String = "classpath:/bundled-release"
+        const val BUNDLED_RELEASE_RESOURCE_DIRECTORY: String = "/bundled-release"
         const val PUBLISHED_AT_ENV: String = "ML_RELEASE_PUBLISHED_AT"
 
         private const val DEFAULT_GAME_ENTRY_POINT = "MarketLedger2040.exe"

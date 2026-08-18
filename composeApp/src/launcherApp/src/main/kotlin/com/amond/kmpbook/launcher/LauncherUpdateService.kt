@@ -15,12 +15,10 @@ internal class LauncherUpdateService(
 ) {
     fun prepare(progress: ProgressSink): PreparedLaunch {
         progress.report(ProgressUpdate("설치 상태를 확인하는 중입니다."))
-        val activeCohort = records.activeDirectoryNameOrNull()?.let { directoryName ->
-            records.load(directoryName).document.feed.buildCohort
-        }
-        debugInstaller.recoverInterruptedReplacement(activeCohort)
+        val activeFeed = loadTrustedActiveFeedOrNull()
+        debugInstaller.recoverInterruptedReplacement(activeFeed?.buildCohort)
         return try {
-            PreparedLaunch(update(progress))
+            PreparedLaunch(update(progress, activeFeed))
         } catch (rawUpdateError: Exception) {
             val updateError = rawUpdateError as? LauncherException
                 ?: LauncherException("update-io", "업데이트 중 안전하게 처리할 수 없는 I/O 오류가 발생했습니다.", rawUpdateError)
@@ -55,37 +53,37 @@ internal class LauncherUpdateService(
         }
     }
 
-    private fun update(progress: ProgressSink): ActiveInstallation {
+    private fun update(progress: ProgressSink, activeFeed: StableFeed?): ActiveInstallation {
         progress.report(ProgressUpdate("서명된 stable feed를 확인하는 중입니다.", 0.02))
         val document = releaseSource.load()
-        enforceMonotonicRelease(document.feed)
+        enforceMonotonicRelease(document.feed, activeFeed)
 
-        progress.report(ProgressUpdate("signed inventory를 받는 중입니다.", 0.06))
-        val inventoryPath = artifacts.obtain(document.feed.game.inventory, "json") { downloaded, total ->
-            progress.report(ProgressUpdate("signed inventory를 받는 중입니다.", scaled(downloaded, total, 0.06, 0.10)))
+        progress.report(ProgressUpdate("내장된 signed inventory를 준비하는 중입니다.", 0.06))
+        val inventoryPath = artifacts.obtain(document.feed.game.inventory, "json") { copied, total ->
+            progress.report(ProgressUpdate("내장된 signed inventory를 준비하는 중입니다.", scaled(copied, total, 0.06, 0.10)))
         }
         val inventoryBytes = Files.readAllBytes(inventoryPath)
         if (inventoryBytes.size.toLong() != document.feed.game.inventory.size ||
             !DigestUtils.constantTimeEquals(DigestUtils.sha256(inventoryBytes), document.feed.game.inventory.sha256)
         ) {
             artifacts.quarantine(inventoryPath, "inventory-readback")
-            throw LauncherException("inventory-readback", "다운로드한 inventory가 읽는 동안 변경되었습니다.")
+            throw LauncherException("inventory-readback", "캐시된 inventory가 읽는 동안 변경되었습니다.")
         }
         val inventory = inventoryParser.parse(inventoryBytes)
         if (inventory.files.none { it.path == document.feed.game.entryPoint }) {
             throw LauncherException("inventory-entrypoint", "게임 실행 파일이 signed inventory에 없습니다.")
         }
 
-        progress.report(ProgressUpdate("게임 본체를 받는 중입니다.", 0.10))
-        val gameArchive = artifacts.obtain(document.feed.game.archive, "zip") { downloaded, total ->
-            progress.report(ProgressUpdate("게임 본체를 받는 중입니다.", scaled(downloaded, total, 0.10, 0.67)))
+        progress.report(ProgressUpdate("내장된 게임 본체를 준비하는 중입니다.", 0.10))
+        val gameArchive = artifacts.obtain(document.feed.game.archive, "zip") { copied, total ->
+            progress.report(ProgressUpdate("내장된 게임 본체를 준비하는 중입니다.", scaled(copied, total, 0.10, 0.67)))
         }
         progress.report(ProgressUpdate("게임 본체를 안전하게 검증하고 설치하는 중입니다.", 0.68))
         val gameRoot = gameInstaller.installOrVerify(document, gameArchive, inventory)
 
-        progress.report(ProgressUpdate("디버그 모드 번들을 받는 중입니다.", 0.76))
-        val debugArchive = artifacts.obtain(document.feed.debugBundle, "zip") { downloaded, total ->
-            progress.report(ProgressUpdate("디버그 모드 번들을 받는 중입니다.", scaled(downloaded, total, 0.76, 0.88)))
+        progress.report(ProgressUpdate("내장된 디버그 모드 번들을 준비하는 중입니다.", 0.76))
+        val debugArchive = artifacts.obtain(document.feed.debugBundle, "zip") { copied, total ->
+            progress.report(ProgressUpdate("내장된 디버그 모드 번들을 준비하는 중입니다.", scaled(copied, total, 0.76, 0.88)))
         }
         progress.report(ProgressUpdate("디버그 모드 번들의 신뢰 정보를 검증하는 중입니다.", 0.89))
         val preparedDebug = debugInstaller.prepare(debugArchive, document.feed.buildCohort)
@@ -109,12 +107,26 @@ internal class LauncherUpdateService(
         return ActiveInstallation(directoryName, gameRoot, executable, record)
     }
 
-    private fun enforceMonotonicRelease(candidate: StableFeed) {
+    private fun loadTrustedActiveFeedOrNull(): StableFeed? {
+        val activeName = try {
+            records.activeDirectoryNameOrNull()
+        } catch (error: LauncherException) {
+            logger.error(error)
+            return null
+        } ?: return null
+        return try {
+            records.load(activeName).document.feed
+        } catch (error: LauncherException) {
+            logger.error(error)
+            null
+        }
+    }
+
+    private fun enforceMonotonicRelease(candidate: StableFeed, activeFeed: StableFeed?) {
         if (compareVersions(candidate.version, releaseFloor.minimumGameVersion) < 0) {
             throw LauncherException("release-below-launcher-floor", "서명된 feed가 이 런처의 최소 게임 버전보다 오래되었습니다.")
         }
-        val activeName = records.activeDirectoryNameOrNull() ?: return
-        val activeFeed = records.load(activeName).document.feed
+        if (activeFeed == null) return
         val versionOrder = compareVersions(candidate.version, activeFeed.version)
         if (versionOrder < 0 || candidate.publishedAt.isBefore(activeFeed.publishedAt)) {
             throw LauncherException("release-rollback", "서명된 feed가 현재 active 버전보다 오래되었습니다.")

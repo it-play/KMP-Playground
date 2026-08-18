@@ -6,7 +6,7 @@ import javax.swing.UIManager
 
 fun main() {
     val paths = try {
-        LauncherPaths.discover().also(LauncherPaths::createBeforeNetworkAccess)
+        LauncherPaths.discover().also(LauncherPaths::createRequiredDirectories)
     } catch (error: Exception) {
         showFatal("게임 데이터 폴더를 만들지 못했습니다.")
         return
@@ -28,10 +28,9 @@ fun main() {
         runCatching { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()) }
         try {
             val signatureVerifier = FeedSignatureVerifier.fromEmbeddedKey()
-            val httpClient = BoundedHttpsClient()
             val feedParser = StableFeedParser()
-            val releaseSource = StableReleaseSource(httpClient, signatureVerifier, feedParser, logger)
-            val artifactStore = ArtifactStore(paths, httpClient, logger)
+            val releaseSource = StableReleaseSource(signatureVerifier, feedParser)
+            val artifactStore = ArtifactStore(paths, logger)
             val inventoryParser = GameInventoryParser()
             val extractor = SecureZipExtractor()
             val inventoryVerifier = GameInventoryVerifier()

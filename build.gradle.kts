@@ -50,7 +50,7 @@ project(":launcherApp").tasks.matching { it.name == "packageMsi" }.configureEach
 
 val assembleSignedStableRelease = tasks.register<AssembleSignedStableReleaseTask>("assembleSignedStableRelease") {
     group = "distribution"
-    description = "Verifies both payloads, creates the game inventory, and signs the stable release feed."
+    description = "Verifies both payloads, creates the inventory, and signs the bundled offline feed."
     dependsOn(
         validateWindowsReleaseEnvironment,
         ":composeApp:packageGamePayload",
@@ -76,7 +76,7 @@ val assembleSignedStableRelease = tasks.register<AssembleSignedStableReleaseTask
 
 tasks.register("buildWindowsRelease") {
     group = "distribution"
-    description = "Builds the launcher MSI and one fully signed, cohort-bound stable game release."
+    description = "Builds one self-contained launcher MSI with the signed, cohort-bound game release."
     dependsOn(
         validateWindowsReleaseEnvironment,
         assembleSignedStableRelease,

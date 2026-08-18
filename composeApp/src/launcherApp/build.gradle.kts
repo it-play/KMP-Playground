@@ -1,7 +1,10 @@
+import com.amond.kmpbook.build.distribution.EmbedBundledReleaseTask
 import com.amond.kmpbook.build.distribution.GenerateLauncherReleaseResourcesTask
+import com.amond.kmpbook.build.distribution.ValidateBundledReleaseJarTask
 import com.amond.kmpbook.build.distribution.ValidateLauncherSigningConfigurationTask
 import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
+import org.gradle.jvm.tasks.Jar
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
@@ -13,6 +16,7 @@ val releasePublicKeyBase64 = providers.environmentVariable("ML_FEED_SIGNING_PUBL
 val windowsSigningThumbprint = providers.environmentVariable("ML_WINDOWS_SIGNING_CERT_SHA1")
 val releaseBuildChannel = providers.environmentVariable("ML_BUILD_CHANNEL").orElse("dev")
 val generatedReleaseResources = layout.buildDirectory.dir("generated/release-resources")
+val generatedBundledReleaseResources = layout.buildDirectory.dir("generated/bundled-release-resources")
 
 version = appVersion
 
@@ -40,6 +44,34 @@ sourceSets {
     }
 }
 
+val embedBundledRelease = tasks.register<EmbedBundledReleaseTask>("embedBundledRelease") {
+    group = "distribution"
+    description = "Embeds the complete signed release in the offline launcher."
+    dependsOn(":assembleSignedStableRelease")
+    releaseDirectory.set(rootProject.layout.buildDirectory.dir("release"))
+    this.appVersion.set(project.providers.gradleProperty("appVersion"))
+    outputDirectory.set(generatedBundledReleaseResources)
+}
+
+sourceSets.main {
+    resources.srcDir(generatedBundledReleaseResources)
+}
+
+tasks.named("processResources") {
+    mustRunAfter(embedBundledRelease)
+}
+
+val validateBundledReleaseJar = tasks.register<ValidateBundledReleaseJarTask>("validateBundledReleaseJar") {
+    group = "verification"
+    description = "Verifies the exact signed release embedded in the packaged launcher JAR."
+    dependsOn(embedBundledRelease, tasks.named("jar"))
+    launcherJar.set(tasks.named<Jar>("jar").flatMap { task -> task.archiveFile })
+    bundledReleaseDirectory.set(generatedBundledReleaseResources.map { directory ->
+        directory.dir("bundled-release")
+    })
+    this.appVersion.set(project.providers.gradleProperty("appVersion"))
+}
+
 tasks.register("printLauncherVersion") {
     group = "help"
     description = "Prints the launcher/MSI version."
@@ -54,7 +86,7 @@ val validateLauncherSigningConfiguration = tasks.register<ValidateLauncherSignin
 }
 
 tasks.matching { task -> task.name == "packageMsi" }.configureEach {
-    dependsOn(validateLauncherSigningConfiguration)
+    dependsOn(validateLauncherSigningConfiguration, validateBundledReleaseJar)
 }
 
 nucleus.application {
@@ -63,7 +95,7 @@ nucleus.application {
     nativeDistributions {
         artifactName = "MarketLedger2040-Launcher-\${version}.\${ext}"
         targetFormats(TargetFormat.Msi)
-        modules("java.desktop", "java.net.http", "jdk.crypto.ec")
+        modules("java.desktop", "jdk.crypto.ec")
         cleanupNativeLibs = true
         appResourcesRootDir.set(project.layout.projectDirectory.dir("src/main/appResources"))
         appName = "Market Ledger 2040 Launcher"

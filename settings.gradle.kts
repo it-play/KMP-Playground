@@ -32,5 +32,5 @@ include(":composeApp")
 include(":debugModBundle")
 include(":launcherApp")
 
-project(":debugModBundle").projectDir = file("src/debugModBundle")
-project(":launcherApp").projectDir = file("src/launcherApp")
+project(":debugModBundle").projectDir = file("composeApp/src/debugModBundle")
+project(":launcherApp").projectDir = file("composeApp/src/launcherApp")

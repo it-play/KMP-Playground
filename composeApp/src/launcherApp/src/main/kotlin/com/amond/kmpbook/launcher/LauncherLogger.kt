@@ -31,14 +31,12 @@ internal class LauncherLogger(private val logFile: Path) {
     }
 
     private fun sanitize(value: String): String = value
-        .replace(URL_QUERY, "?")
         .replace(SENSITIVE_ASSIGNMENT, "\$1=<redacted>")
         .replace(CONTROL_CHARACTERS, " ")
         .take(MAX_LOG_MESSAGE)
 
     private companion object {
         const val MAX_LOG_MESSAGE = 512
-        val URL_QUERY = Regex("(?i)(https://[^\\s?#]+)[?#][^\\s]+")
         val SENSITIVE_ASSIGNMENT = Regex("(?i)(token|secret|password|key|signature)\\s*[=:]\\s*[^\\s]+")
         val CONTROL_CHARACTERS = Regex("[\\u0000-\\u001f\\u007f]")
     }

@@ -3,7 +3,6 @@ package com.amond.kmpbook.launcher
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import java.net.URI
 import java.time.DateTimeException
 import java.time.Instant
 
@@ -44,17 +43,17 @@ internal class StableFeedParser {
             throw LauncherException("feed-cohort", "feed build cohort 형식이 올바르지 않습니다.")
         }
         val gameObject = root.requiredObject("game")
-        requireKeys(gameObject, setOf("url", "size", "sha256", "inventory", "entryPoint"), "game")
+        requireKeys(gameObject, setOf("resource", "size", "sha256", "inventory", "entryPoint"), "game")
         val gameArchive = parseArtifact(gameObject, MAX_GAME_ARCHIVE_BYTES, "game")
         val inventoryObject = gameObject.requiredObject("inventory")
-        requireKeys(inventoryObject, setOf("url", "size", "sha256"), "inventory")
+        requireKeys(inventoryObject, setOf("resource", "size", "sha256"), "inventory")
         val inventory = parseArtifact(inventoryObject, MAX_INVENTORY_BYTES.toLong(), "inventory")
         val entryPoint = SafePathPolicy.validateRelativePath(gameObject.requiredString("entryPoint"))
         if (!entryPoint.endsWith(".exe", ignoreCase = true)) {
             throw LauncherException("feed-entrypoint", "게임 실행 파일 경로가 .exe가 아닙니다.")
         }
         val debugObject = root.requiredObject("debugBundle")
-        requireKeys(debugObject, setOf("url", "size", "sha256"), "debugBundle")
+        requireKeys(debugObject, setOf("resource", "size", "sha256"), "debugBundle")
         val debugBundle = parseArtifact(debugObject, MAX_DEBUG_ARCHIVE_BYTES, "debugBundle")
         return StableFeed(
             version = version,
@@ -66,38 +65,25 @@ internal class StableFeedParser {
     }
 
     private fun parseArtifact(source: JsonObject, maximumSize: Long, label: String): ArtifactDescriptor {
-        val uri = parseArtifactUri(source.requiredString("url"), label)
+        val resourcePath = parseArtifactResource(source.requiredString("resource"), label)
         val size = source.requiredLong("size")
         val sha256 = source.requiredString("sha256")
         if (size !in 1..maximumSize || !DigestUtils.isSha256(sha256)) {
             throw LauncherException("feed-artifact", "$label 배포 파일의 크기 또는 해시가 올바르지 않습니다.")
         }
-        return ArtifactDescriptor(uri, size, sha256)
+        return ArtifactDescriptor(resourcePath, size, sha256)
     }
 
-    private fun parseArtifactUri(value: String, label: String): URI {
-        val uri = try {
-            URI(value)
-        } catch (error: Exception) {
-            throw LauncherException("feed-url", "$label 배포 URL 형식이 올바르지 않습니다.", error)
+    private fun parseArtifactResource(resourcePath: String, label: String): String {
+        if (!resourcePath.startsWith(BUNDLED_RELEASE_PREFIX) ||
+            !BUNDLED_RESOURCE_NAME.matches(resourcePath.removePrefix(BUNDLED_RELEASE_PREFIX))
+        ) {
+            throw LauncherException(
+                "feed-resource",
+                "$label 배포 파일은 런처에 포함된 bundled-release 리소스여야 합니다.",
+            )
         }
-        if (uri.fragment != null || uri.userInfo != null) {
-            throw LauncherException("feed-url", "$label 배포 URL에 허용되지 않는 구성요소가 있습니다.")
-        }
-        when (uri.scheme?.lowercase()) {
-            "https" -> if (uri.host.isNullOrBlank()) {
-                throw LauncherException("feed-url", "$label HTTPS URL에 host가 없습니다.")
-            }
-            "classpath" -> {
-                if (uri.rawAuthority != null || uri.rawQuery != null ||
-                    !uri.path.startsWith(BUNDLED_RELEASE_PREFIX)
-                ) {
-                    throw LauncherException("feed-url", "$label classpath URL이 허용 영역을 벗어납니다.")
-                }
-            }
-            else -> throw LauncherException("feed-url-scheme", "$label 배포 URL은 HTTPS여야 합니다.")
-        }
-        return uri
+        return resourcePath
     }
 
     private fun requireKeys(source: JsonObject, expected: Set<String>, label: String) {
@@ -154,6 +140,7 @@ internal class StableFeedParser {
         private const val MAX_GAME_ARCHIVE_BYTES = 8L * 1024L * 1024L * 1024L
         private const val MAX_DEBUG_ARCHIVE_BYTES = 256L * 1024L * 1024L
         private const val BUNDLED_RELEASE_PREFIX = "/bundled-release/"
+        private val BUNDLED_RESOURCE_NAME = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,191}")
         private val VERSION = Regex("(0|[1-9][0-9]{0,2})\\.(0|[1-9][0-9]{0,2})\\.(0|[1-9][0-9]{0,4})")
         private val INTEGER = Regex("0|[1-9][0-9]*")
     }

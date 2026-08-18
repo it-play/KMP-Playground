@@ -1,29 +1,13 @@
 package com.amond.kmpbook.launcher
 
-import java.net.URI
-
 internal class StableReleaseSource(
-    private val httpClient: BoundedHttpsClient,
     private val signatureVerifier: FeedSignatureVerifier,
     private val parser: StableFeedParser,
-    private val logger: LauncherLogger,
 ) {
-    fun load(): VerifiedFeedDocument {
-        val remoteFailure = try {
-            return verify(
-                httpClient.getBytes(REMOTE_FEED, StableFeedParser.MAX_FEED_BYTES),
-                httpClient.getBytes(REMOTE_SIGNATURE, MAX_SIGNATURE_BYTES),
-            )
-        } catch (error: LauncherException) {
-            logger.info("remote-feed-unavailable:${error.diagnosticCode}")
-            error
-        }
-        return try {
-            verify(readResource(BUNDLED_FEED, StableFeedParser.MAX_FEED_BYTES), readResource(BUNDLED_SIGNATURE, MAX_SIGNATURE_BYTES))
-        } catch (_: LauncherException) {
-            throw remoteFailure
-        }
-    }
+    fun load(): VerifiedFeedDocument = verify(
+        readResource(BUNDLED_FEED, StableFeedParser.MAX_FEED_BYTES),
+        readResource(BUNDLED_SIGNATURE, MAX_SIGNATURE_BYTES),
+    )
 
     fun verifyStored(content: ByteArray, signature: ByteArray): VerifiedFeedDocument {
         signatureVerifier.verify(content, signature)
@@ -48,14 +32,6 @@ internal class StableReleaseSource(
     }
 
     private companion object {
-        val REMOTE_FEED: URI = URI(
-            "https://github.com/it-play/KMP-Playground/releases/download/" +
-                "market-ledger-game-stable/market-ledger-stable-feed.json",
-        )
-        val REMOTE_SIGNATURE: URI = URI(
-            "https://github.com/it-play/KMP-Playground/releases/download/" +
-                "market-ledger-game-stable/market-ledger-stable-feed.json.sig",
-        )
         const val BUNDLED_FEED = "/bundled-release/market-ledger-stable-feed.json"
         const val BUNDLED_SIGNATURE = "/bundled-release/market-ledger-stable-feed.json.sig"
         const val MAX_SIGNATURE_BYTES = 256

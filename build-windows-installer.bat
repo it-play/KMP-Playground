@@ -14,5 +14,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
-node "src\launcherApp\scripts\build-offline-windows-installer.mjs"
+where npx >nul 2>nul
+if errorlevel 1 (
+    echo npx is required to package the offline launcher MSI.
+    exit /b 1
+)
+
+node "composeApp\src\launcherApp\scripts\build-offline-windows-installer.mjs"
 exit /b %errorlevel%

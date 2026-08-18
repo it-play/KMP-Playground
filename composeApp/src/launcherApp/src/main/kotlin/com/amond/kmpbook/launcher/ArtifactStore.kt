@@ -1,6 +1,5 @@
 package com.amond.kmpbook.launcher
 
-import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.Files
@@ -14,18 +13,18 @@ import java.util.UUID
 
 internal class ArtifactStore(
     private val paths: LauncherPaths,
-    private val httpClient: BoundedHttpsClient,
     private val logger: LauncherLogger,
 ) {
     fun obtain(
         descriptor: ArtifactDescriptor,
         extension: String,
-        progress: (downloaded: Long, total: Long) -> Unit,
+        progress: (copied: Long, total: Long) -> Unit,
     ): Path {
         if (!SAFE_EXTENSION.matches(extension)) {
             throw LauncherException("artifact-extension", "내부 배포 파일 확장자가 안전하지 않습니다.")
         }
-        val target = paths.downloads.resolve("${descriptor.sha256}.$extension")
+        validateBundledResource(descriptor)
+        val target = paths.artifactCache.resolve("${descriptor.sha256}.$extension")
         if (Files.exists(target)) {
             if (verifyExisting(target, descriptor)) {
                 progress(descriptor.size, descriptor.size)
@@ -33,25 +32,21 @@ internal class ArtifactStore(
             }
             quarantine(target, "cache-integrity")
         }
-        val partial = paths.downloads.resolve(".${descriptor.sha256}.${UUID.randomUUID()}.part")
+        val partial = paths.artifactCache.resolve(".${descriptor.sha256}.${UUID.randomUUID()}.part")
         try {
-            when (descriptor.uri.scheme.lowercase()) {
-                "https" -> downloadHttps(descriptor, partial, progress)
-                "classpath" -> copyClasspath(descriptor, partial, progress)
-                else -> throw LauncherException("artifact-scheme", "지원하지 않는 배포 파일 URL입니다.")
-            }
+            copyClasspath(descriptor, partial, progress)
             Files.move(partial, target, StandardCopyOption.ATOMIC_MOVE)
             return target
         } catch (error: Exception) {
             Files.deleteIfExists(partial)
             if (error is LauncherException) throw error
-            throw LauncherException("artifact-download", "배포 파일을 안전하게 저장하지 못했습니다.", error)
+            throw LauncherException("artifact-cache-write", "내장 배포 파일을 캐시에 안전하게 저장하지 못했습니다.", error)
         }
     }
 
     fun quarantine(artifact: Path, reason: String) {
-        if (artifact.parent.toAbsolutePath().normalize() != paths.downloads.toAbsolutePath().normalize()) {
-            throw LauncherException("quarantine-scope", "다운로드 캐시 외부 파일은 격리할 수 없습니다.")
+        if (artifact.parent.toAbsolutePath().normalize() != paths.artifactCache.toAbsolutePath().normalize()) {
+            throw LauncherException("quarantine-scope", "배포 캐시 외부 파일은 격리할 수 없습니다.")
         }
         if (!Files.exists(artifact, LinkOption.NOFOLLOW_LINKS)) return
         val timestamp = Instant.now().epochSecond
@@ -70,30 +65,23 @@ internal class ArtifactStore(
         return DigestUtils.constantTimeEquals(DigestUtils.sha256(path), descriptor.sha256)
     }
 
-    private fun downloadHttps(
-        descriptor: ArtifactDescriptor,
-        partial: Path,
-        progress: (Long, Long) -> Unit,
-    ) {
-        val response = httpClient.openArtifact(descriptor.uri)
-        response.body().use { input ->
-            val contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L)
-            if (contentLength >= 0 && contentLength != descriptor.size) {
-                throw LauncherException("artifact-content-length", "배포 파일 크기가 feed와 일치하지 않습니다.")
-            }
-            copyAndVerify(input::read, descriptor, partial, progress)
-        }
-    }
-
     private fun copyClasspath(
         descriptor: ArtifactDescriptor,
         partial: Path,
         progress: (Long, Long) -> Unit,
     ) {
-        val resourcePath = descriptor.uri.path
-        val input = ArtifactStore::class.java.getResourceAsStream(resourcePath)
+        val input = ArtifactStore::class.java.getResourceAsStream(descriptor.resourcePath)
             ?: throw LauncherException("bundled-artifact-missing", "내장 배포 파일이 없습니다.")
         input.use { stream -> copyAndVerify(stream::read, descriptor, partial, progress) }
+    }
+
+    private fun validateBundledResource(descriptor: ArtifactDescriptor) {
+        val resourcePath = descriptor.resourcePath
+        if (!resourcePath.startsWith(BUNDLED_RELEASE_PREFIX) ||
+            !BUNDLED_RESOURCE_NAME.matches(resourcePath.removePrefix(BUNDLED_RELEASE_PREFIX))
+        ) {
+            throw LauncherException("artifact-resource", "배포 파일은 런처에 포함된 리소스만 사용할 수 있습니다.")
+        }
     }
 
     private fun copyAndVerify(
@@ -129,6 +117,8 @@ internal class ArtifactStore(
 
     private companion object {
         const val BUFFER_SIZE = 64 * 1024
+        const val BUNDLED_RELEASE_PREFIX = "/bundled-release/"
+        val BUNDLED_RESOURCE_NAME = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,191}")
         val SAFE_EXTENSION = Regex("[a-z0-9]{1,8}")
     }
 }

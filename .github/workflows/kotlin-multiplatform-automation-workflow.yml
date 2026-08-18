@@ -1,4 +1,4 @@
-name: Market Ledger Windows Release
+name: Market Ledger Offline Windows Package
 
 on:
   workflow_dispatch:
@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 jobs:
-  validate-release-pipeline:
-    name: Validate signed release pipeline
+  validate-offline-package:
+    name: Validate offline signed package
     if: github.event_name == 'pull_request'
     runs-on: windows-latest
     timeout-minutes: 45
@@ -68,13 +68,13 @@ jobs:
           $cohort = [Convert]::ToHexString(
             [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
           ).ToLowerInvariant()
-          $publishedAt = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+          $packageTimestamp = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
           Write-Output "::add-mask::$($debugPair[0])"
           Write-Output "::add-mask::$($feedPair[0])"
           Write-Output "::add-mask::$cohort"
           "ML_BUILD_CHANNEL=release" >> $env:GITHUB_ENV
           "ML_BUILD_COHORT=$cohort" >> $env:GITHUB_ENV
-          "ML_RELEASE_PUBLISHED_AT=$publishedAt" >> $env:GITHUB_ENV
+          "ML_RELEASE_PUBLISHED_AT=$packageTimestamp" >> $env:GITHUB_ENV
           "ML_DEBUG_BUNDLE_SIGNING_KEY_PKCS8_BASE64=$($debugPair[0])" >> $env:GITHUB_ENV
           "ML_DEBUG_BUNDLE_SIGNING_PUBLIC_KEY_X509_BASE64=$($debugPair[1])" >> $env:GITHUB_ENV
           "ML_FEED_SIGNING_KEY_PKCS8_B64=$($feedPair[0])" >> $env:GITHUB_ENV
@@ -87,7 +87,7 @@ jobs:
           "ML_WINDOWS_SIGNING_CERT_SHA1=$($prCertificate.Thumbprint)" >> $env:GITHUB_ENV
           "PR_WINDOWS_SIGNING_CERT_SHA1=$($prCertificate.Thumbprint)" >> $env:GITHUB_ENV
 
-      - name: Build and verify ephemeral Windows release
+      - name: Build and verify ephemeral offline Windows package
         shell: pwsh
         run: .\gradlew.bat clean buildWindowsRelease --configuration-cache --no-daemon
 
@@ -97,7 +97,7 @@ jobs:
         run: |
           $keyDirectory = Join-Path $env:RUNNER_TEMP 'market-ledger-pr-keys'
           $materializedPrivateKey = Join-Path $env:GITHUB_WORKSPACE `
-            'src/debugModBundle/build/trust/material/debug-signing-private-key.pk8'
+            'composeApp/src/debugModBundle/build/trust/material/debug-signing-private-key.pk8'
           Remove-Item -LiteralPath $keyDirectory -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -LiteralPath $materializedPrivateKey -Force -ErrorAction SilentlyContinue
           if (-not [string]::IsNullOrWhiteSpace($env:PR_WINDOWS_SIGNING_CERT_SHA1)) {
@@ -105,17 +105,15 @@ jobs:
               -Force -ErrorAction SilentlyContinue
           }
 
-  publish-stable-release:
-    name: Publish stable game and launcher
-    if: github.event_name != 'pull_request'
+  package-stable-release:
+    name: Package offline stable game and launcher
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: windows-latest
     timeout-minutes: 45
     environment: market-ledger-stable
     concurrency:
-      group: market-ledger-stable-release
+      group: market-ledger-stable-package
       cancel-in-progress: false
-    permissions:
-      contents: write
 
     steps:
       - name: Check out source
@@ -149,13 +147,11 @@ jobs:
           --configuration-cache
           --no-daemon
 
-      - name: Decide whether to publish a version
+      - name: Decide whether to package a version
         id: version
         shell: pwsh
         env:
           PUSH_BEFORE_SHA: ${{ github.event.before }}
-          GH_TOKEN: ${{ github.token }}
-          FEED_PUBLIC: ${{ vars.ML_FEED_SIGNING_PUBLIC_KEY_X509_B64 }}
         run: |
           $ErrorActionPreference = 'Stop'
           function Assert-MsiVersion {
@@ -179,11 +175,14 @@ jobs:
             return $null
           }
 
+          if ($env:GITHUB_REF -ne 'refs/heads/main') {
+            throw 'Offline stable packaging requires refs/heads/main.'
+          }
           $appVersion = (.\gradlew.bat -q :composeApp:printAppVersion --no-daemon | Select-Object -Last 1).Trim()
           Assert-MsiVersion -Value $appVersion -Source 'appVersion'
-          $shouldPublish = $false
+
+          $shouldPackage = $false
           if ($env:GITHUB_EVENT_NAME -eq 'push') {
-            if ($env:GITHUB_REF -ne 'refs/heads/main') { throw 'Stable publishing requires refs/heads/main.' }
             $checkedOutSha = (& git rev-parse HEAD).Trim()
             if ($LASTEXITCODE -ne 0 -or $checkedOutSha -ne $env:GITHUB_SHA) {
               throw 'The checked-out commit does not match the push event.'
@@ -192,166 +191,49 @@ jobs:
             if ($previousSha -notmatch '^[0-9a-f]{40}$' -or $previousSha -match '^0{40}$') {
               throw "Cannot prove a version increase from push before SHA '$previousSha'."
             }
-            & git cat-file -e "${previousSha}^{commit}"
+            $previousCommitSpec = "$previousSha^{commit}"
+            & git cat-file -e $previousCommitSpec
             if ($LASTEXITCODE -ne 0) { throw 'Push before commit is unavailable.' }
-            $previousProperties = @(& git show "${previousSha}:gradle.properties")
+            $previousPropertiesSpec = $previousSha + ':gradle.properties'
+            $previousProperties = @(& git show $previousPropertiesSpec)
             if ($LASTEXITCODE -ne 0) { throw 'Cannot read the previous gradle.properties.' }
-            $previousVersion = Find-SingleVersion `
-              -Lines $previousProperties `
-              -Pattern '^\s*appVersion\s*=\s*([^\s#]+)\s*(?:#.*)?$' `
-              -Source "gradle.properties at $previousSha"
+            $previousVersion = Find-SingleVersion -Lines $previousProperties -Pattern '^\s*appVersion\s*=\s*([^\s#]+)\s*(?:#.*)?$' -Source "gradle.properties at $previousSha"
             if ($null -eq $previousVersion) { throw 'Cannot determine the previous appVersion.' }
             Assert-MsiVersion -Value $previousVersion -Source 'previous appVersion'
             if ([version] $appVersion -lt [version] $previousVersion) {
               throw "appVersion regressed from $previousVersion to $appVersion."
             }
-            $shouldPublish = [version] $appVersion -gt [version] $previousVersion
+            $shouldPackage = [version] $appVersion -gt [version] $previousVersion
           } elseif ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
-            if ($env:GITHUB_REF -ne 'refs/heads/main') {
-              throw 'Manual stable recovery requires refs/heads/main.'
-            }
-            $shouldPublish = $true
-          }
-
-          if ($shouldPublish) {
-            $tag = 'market-ledger-game-stable'
-            $releaseLines = @(& gh release view $tag `
-              --repo $env:GITHUB_REPOSITORY --json assets 2>&1)
-            $releaseExitCode = $LASTEXITCODE
-            $releaseText = $releaseLines -join [Environment]::NewLine
-            if ($releaseExitCode -ne 0) {
-              if ($releaseText -notmatch '(?i)(release not found|HTTP 404|Not Found)') {
-                throw "Cannot inspect the existing stable release: $releaseText"
-              }
-            } else {
-              $releaseData = $releaseText | ConvertFrom-Json
-              $feedAssets = @($releaseData.assets | Where-Object {
-                $_.name -eq 'market-ledger-stable-feed.json'
-              })
-              $signatureAssets = @($releaseData.assets | Where-Object {
-                $_.name -eq 'market-ledger-stable-feed.json.sig'
-              })
-              if ($feedAssets.Count -gt 1 -or $signatureAssets.Count -gt 1) {
-                throw 'The stable release contains duplicate feed or signature assets.'
-              }
-              if ($feedAssets.Count -ne $signatureAssets.Count) {
-                throw 'The stable release contains an incomplete feed/signature pair.'
-              }
-              if ($feedAssets.Count -eq 1) {
-                if ([string]::IsNullOrWhiteSpace($env:FEED_PUBLIC)) {
-                  throw 'The stable-feed public key is required to verify the existing release.'
-                }
-                if (-not (Get-Command openssl -ErrorAction SilentlyContinue)) {
-                  throw 'OpenSSL is required to verify the existing stable feed.'
-                }
-                $inspection = Join-Path $env:RUNNER_TEMP `
-                  "market-ledger-stable-inspection-$([Guid]::NewGuid().ToString('N'))"
-                New-Item -ItemType Directory -Path $inspection | Out-Null
-                try {
-                  & gh release download $tag `
-                    --repo $env:GITHUB_REPOSITORY `
-                    --pattern 'market-ledger-stable-feed.json' `
-                    --dir $inspection
-                  if ($LASTEXITCODE -ne 0) { throw 'Cannot download the existing stable feed.' }
-                  & gh release download $tag `
-                    --repo $env:GITHUB_REPOSITORY `
-                    --pattern 'market-ledger-stable-feed.json.sig' `
-                    --dir $inspection
-                  if ($LASTEXITCODE -ne 0) { throw 'Cannot download the existing stable feed signature.' }
-                  $feedPath = Join-Path $inspection 'market-ledger-stable-feed.json'
-                  $signaturePath = Join-Path $inspection 'market-ledger-stable-feed.json.sig'
-                  $feedLength = (Get-Item -LiteralPath $feedPath).Length
-                  $signatureLength = (Get-Item -LiteralPath $signaturePath).Length
-                  if ($feedLength -lt 1 -or $feedLength -gt 65536) {
-                    throw 'The existing stable feed exceeds its size policy.'
-                  }
-                  if ($signatureLength -lt 1 -or $signatureLength -gt 256) {
-                    throw 'The existing stable feed signature exceeds its size policy.'
-                  }
-
-                  $signatureTextBytes = [IO.File]::ReadAllBytes($signaturePath)
-                  if (@($signatureTextBytes | Where-Object { $_ -lt 0x21 -or $_ -gt 0x7e }).Count -ne 0) {
-                    throw 'The existing stable feed signature is not canonical ASCII.'
-                  }
-                  try {
-                    $signatureBytes = [Convert]::FromBase64String(
-                      [Text.Encoding]::ASCII.GetString($signatureTextBytes)
-                    )
-                    $publicKeyBytes = [Convert]::FromBase64String($env:FEED_PUBLIC)
-                  } catch {
-                    throw 'The existing feed signature or configured public key is not valid Base64.'
-                  }
-                  $canonicalSignatureText = [Convert]::ToBase64String($signatureBytes)
-                  $actualSignatureText = [Text.Encoding]::ASCII.GetString($signatureTextBytes)
-                  if ($signatureBytes.Length -ne 64 -or $canonicalSignatureText -cne $actualSignatureText) {
-                    throw 'The existing stable feed signature is not canonical Ed25519 data.'
-                  }
-                  $feedBytes = [IO.File]::ReadAllBytes($feedPath)
-                  $domainText = [Text.Encoding]::UTF8.GetBytes('MarketLedger2040.StableFeed.v1')
-                  $domain = [byte[]]::new($domainText.Length + 1)
-                  [Buffer]::BlockCopy($domainText, 0, $domain, 0, $domainText.Length)
-                  $message = [byte[]]::new($domain.Length + $feedBytes.Length)
-                  [Buffer]::BlockCopy($domain, 0, $message, 0, $domain.Length)
-                  [Buffer]::BlockCopy($feedBytes, 0, $message, $domain.Length, $feedBytes.Length)
-                  $publicKeyPath = Join-Path $inspection 'stable-feed-public-key.der'
-                  $signatureRawPath = Join-Path $inspection 'stable-feed-signature.raw'
-                  $messagePath = Join-Path $inspection 'stable-feed-message.bin'
-                  [IO.File]::WriteAllBytes($publicKeyPath, $publicKeyBytes)
-                  [IO.File]::WriteAllBytes($signatureRawPath, $signatureBytes)
-                  [IO.File]::WriteAllBytes($messagePath, $message)
-                  & openssl pkeyutl -verify -pubin -keyform DER `
-                    -inkey $publicKeyPath -rawin -in $messagePath -sigfile $signatureRawPath
-                  if ($LASTEXITCODE -ne 0) {
-                    throw 'The existing stable feed has an invalid Ed25519 signature.'
-                  }
-
-                  $currentFeed = Get-Content -LiteralPath $feedPath -Raw | ConvertFrom-Json
-                  if ($currentFeed.schema -ne 1 -or $currentFeed.channel -ne 'stable') {
-                    throw 'The existing stable feed has an unsupported identity.'
-                  }
-                  Assert-MsiVersion -Value $currentFeed.version -Source 'existing stable feed version'
-                  $currentVersion = [version] $currentFeed.version
-                  $candidateVersion = [version] $appVersion
-                  if ($currentVersion -gt $candidateVersion) {
-                    throw "Stable version $currentVersion is newer than candidate $candidateVersion."
-                  }
-                  if ($currentVersion -eq $candidateVersion) {
-                    if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
-                      throw "Manual publishing refuses to create a second signed build for version $candidateVersion."
-                    }
-                    $shouldPublish = $false
-                  }
-                } finally {
-                  Remove-Item -LiteralPath $inspection -Recurse -Force -ErrorAction SilentlyContinue
-                }
-              }
-            }
+            $shouldPackage = $true
+          } else {
+            throw "Unsupported event for offline stable packaging: $env:GITHUB_EVENT_NAME"
           }
 
           "appVersion=$appVersion" >> $env:GITHUB_OUTPUT
-          "should_publish=$($shouldPublish.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-          if ($shouldPublish) {
-            "Stable release $appVersion will be assembled and published." >> $env:GITHUB_STEP_SUMMARY
+          "should_package=$($shouldPackage.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          if ($shouldPackage) {
+            "Offline stable package $appVersion will be assembled as an Actions artifact." >> $env:GITHUB_STEP_SUMMARY
           } else {
-            "Stable publishing skipped because appVersion remains $appVersion." >> $env:GITHUB_STEP_SUMMARY
+            "Offline packaging skipped because appVersion remains $appVersion." >> $env:GITHUB_STEP_SUMMARY
           }
 
-      - name: Configure one release trust cohort
-        id: release_trust
-        if: steps.version.outputs.should_publish == 'true'
+      - name: Configure one package trust cohort
+        id: package_trust
+        if: steps.version.outputs.should_package == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $cohort = [Convert]::ToHexString(
             [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
           ).ToLowerInvariant()
-          $publishedAt = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+          $packageTimestamp = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
           "cohort=$cohort" >> $env:GITHUB_OUTPUT
-          "published_at=$publishedAt" >> $env:GITHUB_OUTPUT
+          "package_timestamp=$packageTimestamp" >> $env:GITHUB_OUTPUT
 
       - name: Import Windows code-signing certificate
         id: windows_signing
-        if: steps.version.outputs.should_publish == 'true'
+        if: steps.version.outputs.should_package == 'true'
         shell: pwsh
         env:
           CERTIFICATE_BASE64: ${{ secrets.ML_WINDOWS_SIGNING_CERT_PFX_BASE64 }}
@@ -416,13 +298,13 @@ jobs:
           'Windows artifacts use the project-owned, SHA-256-pinned internal signing certificate.' >> `
             $env:GITHUB_STEP_SUMMARY
 
-      - name: Build one fully signed Windows release
-        if: steps.version.outputs.should_publish == 'true'
+      - name: Build one fully signed offline Windows package
+        if: steps.version.outputs.should_package == 'true'
         shell: pwsh
         env:
           ML_BUILD_CHANNEL: release
-          ML_BUILD_COHORT: ${{ steps.release_trust.outputs.cohort }}
-          ML_RELEASE_PUBLISHED_AT: ${{ steps.release_trust.outputs.published_at }}
+          ML_BUILD_COHORT: ${{ steps.package_trust.outputs.cohort }}
+          ML_RELEASE_PUBLISHED_AT: ${{ steps.package_trust.outputs.package_timestamp }}
           ML_DEBUG_BUNDLE_SIGNING_KEY_PKCS8_BASE64: ${{ secrets.ML_DEBUG_BUNDLE_SIGNING_KEY_PKCS8_BASE64 }}
           ML_DEBUG_BUNDLE_SIGNING_PUBLIC_KEY_X509_BASE64: ${{ vars.ML_DEBUG_BUNDLE_SIGNING_PUBLIC_KEY_X509_BASE64 }}
           ML_FEED_SIGNING_KEY_PKCS8_B64: ${{ secrets.ML_FEED_SIGNING_KEY_PKCS8_B64 }}
@@ -430,16 +312,16 @@ jobs:
           ML_WINDOWS_SIGNING_CERT_SHA1: ${{ steps.windows_signing.outputs.thumbprint }}
         run: .\gradlew.bat clean buildWindowsRelease --configuration-cache --no-daemon
 
-      - name: Remove materialized release private key file
-        if: always() && steps.version.outputs.should_publish == 'true'
+      - name: Remove materialized package private key file
+        if: always() && steps.version.outputs.should_package == 'true'
         shell: pwsh
         run: |
           $materializedPrivateKey = Join-Path $env:GITHUB_WORKSPACE `
-            'src/debugModBundle/build/trust/material/debug-signing-private-key.pk8'
+            'composeApp/src/debugModBundle/build/trust/material/debug-signing-private-key.pk8'
           Remove-Item -LiteralPath $materializedPrivateKey -Force -ErrorAction SilentlyContinue
 
       - name: Verify launcher and MSI Authenticode signatures
-        if: steps.version.outputs.should_publish == 'true'
+        if: steps.version.outputs.should_package == 'true'
         shell: pwsh
         env:
           APP_VERSION: ${{ steps.version.outputs.appVersion }}
@@ -447,12 +329,11 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $msi = Join-Path $env:GITHUB_WORKSPACE `
-            "src/launcherApp/build/compose/binaries/main/msi/MarketLedger2040-Launcher-$env:APP_VERSION.msi"
+            "composeApp/src/launcherApp/build/compose/binaries/main/msi/MarketLedger2040-Launcher-$env:APP_VERSION.msi"
           if (-not (Test-Path -LiteralPath $msi -PathType Leaf)) { throw 'Launcher MSI is missing.' }
-          $launchers = @(Get-ChildItem `
-            -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'src/launcherApp/build/compose/binaries/main/app') `
-            -Filter 'MarketLedger2040Launcher.exe' -File -Recurse)
-          if ($launchers.Count -ne 1) { throw 'Expected exactly one packaged launcher executable.' }
+          $msiExtraction = Join-Path $env:RUNNER_TEMP `
+            "market-ledger-msi-verification-$([Guid]::NewGuid().ToString('N'))"
+          New-Item -ItemType Directory -Path $msiExtraction | Out-Null
           $signTool = Get-Command signtool -ErrorAction SilentlyContinue
           if ($null -eq $signTool) {
             $signTool = Get-ChildItem `
@@ -467,27 +348,39 @@ jobs:
           } else {
             $signTool.FullName
           }
-          foreach ($file in @($launchers[0].FullName, $msi)) {
-            $signature = Get-AuthenticodeSignature -FilePath $file
-            if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
-                $signature.SignerCertificate.Thumbprint -ne $env:EXPECTED_THUMBPRINT) {
-              throw "Authenticode signature verification failed for $([IO.Path]::GetFileName($file))."
+          try {
+            & msiexec.exe /a $msi /qn "TARGETDIR=$msiExtraction"
+            if ($LASTEXITCODE -ne 0) {
+              throw "MSI administrative extraction failed with exit code $LASTEXITCODE."
             }
-            & $signToolPath verify /pa /all /v $file
-            if ($LASTEXITCODE -ne 0) { throw 'signtool rejected a launcher release artifact.' }
+            $launchers = @(Get-ChildItem `
+              -LiteralPath $msiExtraction `
+              -Filter 'MarketLedger2040Launcher.exe' -File -Recurse)
+            if ($launchers.Count -ne 1) { throw 'Expected exactly one launcher executable inside the MSI.' }
+            foreach ($file in @($launchers[0].FullName, $msi)) {
+              $signature = Get-AuthenticodeSignature -FilePath $file
+              if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
+                  $signature.SignerCertificate.Thumbprint -ne $env:EXPECTED_THUMBPRINT) {
+                throw "Authenticode signature verification failed for $([IO.Path]::GetFileName($file))."
+              }
+              & $signToolPath verify /pa /all /v $file
+              if ($LASTEXITCODE -ne 0) { throw 'signtool rejected an offline launcher package artifact.' }
+            }
+          } finally {
+            Remove-Item -LiteralPath $msiExtraction -Recurse -Force -ErrorAction SilentlyContinue
           }
 
-      - name: Collect the verified release closure
-        if: steps.version.outputs.should_publish == 'true'
+      - name: Verify embedded release closure and stage launcher MSI
+        if: steps.version.outputs.should_package == 'true'
         shell: pwsh
         env:
           APP_VERSION: ${{ steps.version.outputs.appVersion }}
         run: |
           $ErrorActionPreference = 'Stop'
           $release = Join-Path $env:GITHUB_WORKSPACE 'build/release'
-          $publish = Join-Path $env:GITHUB_WORKSPACE 'build/publish-assets'
+          $package = Join-Path $env:RUNNER_TEMP 'market-ledger-offline-package'
           if (-not (Test-Path -LiteralPath $release -PathType Container)) {
-            throw 'The signed stable release output directory is missing.'
+            throw 'The signed offline package output directory is missing.'
           }
           $expected = @(
             "market-ledger-game-$env:APP_VERSION-windows-x64.zip",
@@ -502,71 +395,32 @@ jobs:
             -ReferenceObject @($expected | Sort-Object) `
             -DifferenceObject @($actualFiles.Name | Sort-Object))
           if ($actualEntries.Count -ne $expected.Count -or $differences.Count -ne 0) {
-            throw 'build/release does not contain exactly the five signed stable release assets.'
+            throw 'build/release does not contain exactly the five signed offline payload assets.'
           }
-          New-Item -ItemType Directory -Path $publish -Force | Out-Null
-          foreach ($name in $expected) {
-            Copy-Item -LiteralPath (Join-Path $release $name) -Destination (Join-Path $publish $name)
-          }
+          Remove-Item -LiteralPath $package -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $package | Out-Null
           $msi = Join-Path $env:GITHUB_WORKSPACE `
-            "src/launcherApp/build/compose/binaries/main/msi/MarketLedger2040-Launcher-$env:APP_VERSION.msi"
-          Copy-Item -LiteralPath $msi -Destination (Join-Path $publish ([IO.Path]::GetFileName($msi)))
+            "composeApp/src/launcherApp/build/compose/binaries/main/msi/MarketLedger2040-Launcher-$env:APP_VERSION.msi"
+          $msiName = [IO.Path]::GetFileName($msi)
+          Copy-Item -LiteralPath $msi -Destination (Join-Path $package $msiName)
+          $actualPackageEntries = @(Get-ChildItem -LiteralPath $package -Force)
+          if ($actualPackageEntries.Count -ne 1 -or
+              @($actualPackageEntries | Where-Object { $_.PSIsContainer }).Count -ne 0 -or
+              $actualPackageEntries[0].Name -cne $msiName) {
+            throw 'The offline package must contain only the bundled launcher MSI.'
+          }
 
-      - name: Upload verified Windows release artifact
-        if: steps.version.outputs.should_publish == 'true'
+      - name: Upload verified offline Windows package
+        if: steps.version.outputs.should_package == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: MarketLedger2040-${{ steps.version.outputs.appVersion }}-Windows-x64
-          path: build/publish-assets/*
+          name: MarketLedger2040-${{ steps.version.outputs.appVersion }}-Offline-Windows-x64
+          path: ${{ runner.temp }}/market-ledger-offline-package/*
           if-no-files-found: error
           retention-days: 90
 
-      - name: Publish verified assets with the feed as commit point
-        if: steps.version.outputs.should_publish == 'true'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          APP_VERSION: ${{ steps.version.outputs.appVersion }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $tag = 'market-ledger-game-stable'
-          $publish = Join-Path $env:GITHUB_WORKSPACE 'build/publish-assets'
-          & gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
-          if ($LASTEXITCODE -ne 0) {
-            & gh release create $tag `
-              --repo $env:GITHUB_REPOSITORY `
-              --target $env:GITHUB_SHA `
-              --title 'Market Ledger 2040 Stable' `
-              --notes "Signed stable channel assets for $env:APP_VERSION."
-            if ($LASTEXITCODE -ne 0) { throw 'Failed to create the stable GitHub Release.' }
-          } else {
-            & gh release edit $tag `
-              --repo $env:GITHUB_REPOSITORY `
-              --title 'Market Ledger 2040 Stable' `
-              --notes "Signed stable channel assets for $env:APP_VERSION."
-            if ($LASTEXITCODE -ne 0) { throw 'Failed to update stable release metadata.' }
-          }
-
-          $payloadAssets = @(
-            (Join-Path $publish "market-ledger-game-$env:APP_VERSION-windows-x64.zip"),
-            (Join-Path $publish "market-ledger-debug-$env:APP_VERSION-windows-x64.zip"),
-            (Join-Path $publish "MarketLedger2040-Launcher-$env:APP_VERSION.msi")
-          )
-          & gh release upload $tag @payloadAssets --repo $env:GITHUB_REPOSITORY --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to upload stable payload assets.' }
-          & gh release upload $tag `
-            (Join-Path $publish "market-ledger-game-$env:APP_VERSION-windows-x64.inventory.json") `
-            --repo $env:GITHUB_REPOSITORY --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to upload the signed game inventory.' }
-          & gh release upload $tag (Join-Path $publish 'market-ledger-stable-feed.json.sig') `
-            --repo $env:GITHUB_REPOSITORY --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to upload the stable feed signature.' }
-          & gh release upload $tag (Join-Path $publish 'market-ledger-stable-feed.json') `
-            --repo $env:GITHUB_REPOSITORY --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to upload the stable feed commit point.' }
-
       - name: Remove imported signing material
-        if: always() && steps.version.outputs.should_publish == 'true'
+        if: always() && steps.version.outputs.should_package == 'true'
         shell: pwsh
         env:
           CERTIFICATE_THUMBPRINT: ${{ steps.windows_signing.outputs.thumbprint }}
@@ -584,8 +438,12 @@ jobs:
           foreach ($thumbprint in @($thumbprints | Sort-Object -Unique)) {
             if (-not [string]::IsNullOrWhiteSpace($thumbprint)) {
               foreach ($storeName in @('My', 'Root')) {
-                Remove-Item -LiteralPath "Cert:\CurrentUser\$storeName\$thumbprint" `
-                  -Force -ErrorAction SilentlyContinue
+                $certificatePath = "Cert:\CurrentUser\$storeName\$thumbprint"
+                if ($storeName -eq 'My') {
+                  Remove-Item -LiteralPath $certificatePath -DeleteKey -Force -ErrorAction SilentlyContinue
+                } else {
+                  Remove-Item -LiteralPath $certificatePath -Force -ErrorAction SilentlyContinue
+                }
               }
             }
           }

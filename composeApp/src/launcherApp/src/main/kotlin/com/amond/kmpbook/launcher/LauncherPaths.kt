@@ -12,14 +12,14 @@ internal data class LauncherPaths(
     val localRoot: Path,
     val versions: Path,
     val staging: Path,
-    val downloads: Path,
+    val artifactCache: Path,
     val quarantine: Path,
     val state: Path,
     val runtimeCache: Path,
 ) {
-    fun createBeforeNetworkAccess() {
+    fun createRequiredDirectories() {
         listOf(userRoot, mods, resources, saves).forEach(::createSecureDirectory)
-        listOf(localRoot, versions, staging, downloads, quarantine, state, runtimeCache)
+        listOf(localRoot, versions, staging, artifactCache, quarantine, state, runtimeCache)
             .forEach(::createSecureDirectory)
     }
 
@@ -47,7 +47,7 @@ internal data class LauncherPaths(
                 localRoot = localRoot,
                 versions = localRoot.resolve("versions"),
                 staging = localRoot.resolve("staging"),
-                downloads = localRoot.resolve("downloads"),
+                artifactCache = localRoot.resolve("artifact-cache"),
                 quarantine = localRoot.resolve("quarantine"),
                 state = localRoot.resolve("state"),
                 runtimeCache = localRoot.resolve("runtime-cache"),
