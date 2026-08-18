@@ -99,13 +99,12 @@ abstract class SignWindowsLauncherExecutableTask @Inject constructor(
             LinkOption.NOFOLLOW_LINKS,
         ) ?: error("The Windows launcher does not expose DOS file attributes.")
         val wasReadOnly = attributes.readAttributes().isReadOnly
-        if (wasReadOnly) attributes.setReadOnly(false)
-        require(!attributes.readAttributes().isReadOnly && Files.isWritable(launcher)) {
-            "The jpackage launcher executable could not be made writable for Authenticode signing."
-        }
-
         var actionFailure: Throwable? = null
         try {
+            if (wasReadOnly) attributes.setReadOnly(false)
+            require(!attributes.readAttributes().isReadOnly && Files.isWritable(launcher)) {
+                "The jpackage launcher executable could not be made writable for Authenticode signing."
+            }
             action()
         } catch (failure: Throwable) {
             actionFailure = failure
@@ -114,6 +113,9 @@ abstract class SignWindowsLauncherExecutableTask @Inject constructor(
             if (wasReadOnly) {
                 try {
                     attributes.setReadOnly(true)
+                    check(attributes.readAttributes().isReadOnly) {
+                        "The jpackage launcher executable read-only attribute was not restored."
+                    }
                 } catch (restoreFailure: Throwable) {
                     if (actionFailure != null) {
                         actionFailure.addSuppressed(restoreFailure)
