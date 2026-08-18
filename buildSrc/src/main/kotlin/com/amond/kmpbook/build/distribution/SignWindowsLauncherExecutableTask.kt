@@ -11,6 +11,7 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.nio.file.attribute.DosFileAttributeView
 import javax.inject.Inject
 
 abstract class SignWindowsLauncherExecutableTask @Inject constructor(
@@ -71,22 +72,57 @@ abstract class SignWindowsLauncherExecutableTask @Inject constructor(
 
         val launcher = launchers.single().toAbsolutePath().normalize()
         val signTool = findSignTool()
-        execOperations.exec {
-            executable(signTool.toFile())
-            args(
-                "sign",
-                "/sha1",
-                thumbprint,
-                "/s",
-                "My",
-                "/fd",
-                "SHA256",
-                "/debug",
-                launcher.toString(),
-            )
+        withTemporarilyWritableLauncher(launcher) {
+            execOperations.exec {
+                executable(signTool.toFile())
+                args(
+                    "sign",
+                    "/sha1",
+                    thumbprint,
+                    "/s",
+                    "My",
+                    "/fd",
+                    "SHA256",
+                    "/debug",
+                    launcher.toString(),
+                )
+            }
+            verifySignerMetadata(launcher, thumbprint)
         }
-        verifySignerMetadata(launcher, thumbprint)
         logger.lifecycle("Authenticode-signed the launcher executable before MSI assembly.")
+    }
+
+    private fun withTemporarilyWritableLauncher(launcher: Path, action: () -> Unit) {
+        val attributes = Files.getFileAttributeView(
+            launcher,
+            DosFileAttributeView::class.java,
+            LinkOption.NOFOLLOW_LINKS,
+        ) ?: error("The Windows launcher does not expose DOS file attributes.")
+        val wasReadOnly = attributes.readAttributes().isReadOnly
+        if (wasReadOnly) attributes.setReadOnly(false)
+        require(!attributes.readAttributes().isReadOnly && Files.isWritable(launcher)) {
+            "The jpackage launcher executable could not be made writable for Authenticode signing."
+        }
+
+        var actionFailure: Throwable? = null
+        try {
+            action()
+        } catch (failure: Throwable) {
+            actionFailure = failure
+            throw failure
+        } finally {
+            if (wasReadOnly) {
+                try {
+                    attributes.setReadOnly(true)
+                } catch (restoreFailure: Throwable) {
+                    if (actionFailure != null) {
+                        actionFailure.addSuppressed(restoreFailure)
+                    } else {
+                        throw restoreFailure
+                    }
+                }
+            }
+        }
     }
 
     private fun findSignTool(): Path {
