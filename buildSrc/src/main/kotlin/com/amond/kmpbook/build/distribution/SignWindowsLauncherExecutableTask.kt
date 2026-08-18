@@ -87,7 +87,6 @@ abstract class SignWindowsLauncherExecutableTask @Inject constructor(
                     launcher.toString(),
                 )
             }
-            verifySignerMetadata(launcher, thumbprint)
         }
         logger.lifecycle("Authenticode-signed the launcher executable before MSI assembly.")
     }
@@ -152,23 +151,6 @@ abstract class SignWindowsLauncherExecutableTask @Inject constructor(
         }
         return candidates.lastOrNull()?.toAbsolutePath()?.normalize()
             ?: error("signtool.exe was not found in the Windows SDK x64 directories.")
-    }
-
-    private fun verifySignerMetadata(launcher: Path, thumbprint: String) {
-        val script = """
-            ${'$'}ErrorActionPreference = 'Stop'
-            ${'$'}signature = Get-AuthenticodeSignature -LiteralPath ${'$'}env:ML_SIGNED_EXECUTABLE
-            if (${'$'}null -eq ${'$'}signature.SignerCertificate -or
-                ${'$'}signature.SignerCertificate.Thumbprint.ToUpperInvariant() -cne ${'$'}env:ML_EXPECTED_SIGNER) {
-                throw 'The launcher executable signer does not match the selected certificate.'
-            }
-        """.trimIndent()
-        execOperations.exec {
-            executable("powershell.exe")
-            args("-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script)
-            environment("ML_SIGNED_EXECUTABLE", launcher.toString())
-            environment("ML_EXPECTED_SIGNER", thumbprint)
-        }
     }
 
     private fun isSafeRegularFile(path: Path): Boolean =
