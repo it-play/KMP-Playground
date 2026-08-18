@@ -261,6 +261,7 @@ import com.amond.kmpbook.presentation.portfolio.CanonicalCashAccountingReplay
 import com.amond.kmpbook.presentation.portfolio.CanonicalDailyPriceBarProjection
 import com.amond.kmpbook.presentation.portfolio.CanonicalPortfolioAccountingTotals
 import com.amond.kmpbook.presentation.portfolio.CanonicalPriceHistoryRetention
+import com.amond.kmpbook.presentation.portfolio.CanonicalTradeCostMode
 import com.amond.kmpbook.presentation.portfolio.CanonicalTradeCostProjection
 import com.amond.kmpbook.presentation.portfolio.canonicalDayOrderSessionClose
 import com.amond.kmpbook.presentation.portfolio.canonicalPendingTaxSettlementTradeIds
@@ -280,6 +281,7 @@ import com.amond.kmpbook.presentation.portfolio.DailyTradingSurveillancePoint
 import com.amond.kmpbook.presentation.portfolio.DividendLedgerEntry
 import com.amond.kmpbook.presentation.portfolio.ForeignExchangeRecord
 import com.amond.kmpbook.presentation.portfolio.KrxDailySurveillanceProjection
+import com.amond.kmpbook.presentation.portfolio.KrxDailySurveillanceResult
 import com.amond.kmpbook.presentation.portfolio.PortfolioPerformanceExtrema
 import com.amond.kmpbook.presentation.portfolio.RealizedGainRecord
 import com.amond.kmpbook.presentation.portfolio.TaxPaymentNotice
@@ -4810,7 +4812,7 @@ internal class SimulatorRuntime(
      * This keeps historical proxy/rank values reproducible after a unit adjustment instead of
      * preserving a pre-split floating-point value beside retroactively adjusted price history.
      */
-    private fun projectKrxDailySurveillance(date: LocalDate): KrxDailySurveillanceProjection.Result {
+    private fun projectKrxDailySurveillance(date: LocalDate): KrxDailySurveillanceResult {
         val closeByStockId = stocks.asSequence()
             .filter { stock -> stock.market.isKorean }
             .associate { stock ->
@@ -5846,7 +5848,7 @@ internal class SimulatorRuntime(
             grossCash = gross,
             tradedOn = paidOn,
             preSaleAveragePrice = holding.averagePrice,
-            mode = CanonicalTradeCostProjection.Mode.CONTRACTUAL_CASH_SETTLEMENT,
+            mode = CanonicalTradeCostMode.CONTRACTUAL_CASH_SETTLEMENT,
         )
         val taxBreakdown = projectedCost.taxBreakdown
         val saleTax = projectedCost.saleTax
@@ -5962,7 +5964,7 @@ internal class SimulatorRuntime(
             grossCash = gross,
             tradedOn = tradedOn,
             preSaleAveragePrice = holding.averagePrice,
-            mode = CanonicalTradeCostProjection.Mode.REGULAR_EXCHANGE,
+            mode = CanonicalTradeCostMode.REGULAR_EXCHANGE,
         )
         val feeBreakdown = requireNotNull(projectedCost.feeBreakdown)
         val commission = projectedCost.commission
@@ -6683,7 +6685,7 @@ internal class SimulatorRuntime(
             grossCash = gross,
             tradedOn = tradedOn,
             preSaleAveragePrice = holding.averagePrice,
-            mode = CanonicalTradeCostProjection.Mode.CORPORATE_ACTION_CASH_IN_LIEU,
+            mode = CanonicalTradeCostMode.CORPORATE_ACTION_CASH_IN_LIEU,
         )
         val taxBreakdown = projectedCost.taxBreakdown
         val saleTax = projectedCost.saleTax
@@ -7580,7 +7582,7 @@ internal class SimulatorRuntime(
             grossCash = gross,
             tradedOn = tradedOn,
             preSaleAveragePrice = preSaleHolding?.averagePrice,
-            mode = CanonicalTradeCostProjection.Mode.REGULAR_EXCHANGE,
+            mode = CanonicalTradeCostMode.REGULAR_EXCHANGE,
         )
         val feeBreakdown = requireNotNull(projectedCost.feeBreakdown)
         val commission = projectedCost.commission

@@ -11,8 +11,6 @@ import com.amond.kmpbook.domain.tax.domestic.DomesticSaleTaxRequest
 import com.amond.kmpbook.domain.tax.fee.BrokerFeeCalculator
 import com.amond.kmpbook.domain.tax.fee.BrokerFeeRequest
 import com.amond.kmpbook.domain.tax.fee.BrokerFeeSchedule
-import com.amond.kmpbook.domain.tax.fee.FeeBreakdown
-import com.amond.kmpbook.domain.tax.liability.TaxBreakdown
 import kotlin.math.round
 import kotlinx.datetime.LocalDate
 
@@ -22,19 +20,6 @@ import kotlinx.datetime.LocalDate
  * zero-commission contractual/fractional cash settlement.
  */
 object CanonicalTradeCostProjection {
-    enum class Mode {
-        REGULAR_EXCHANGE,
-        CONTRACTUAL_CASH_SETTLEMENT,
-        CORPORATE_ACTION_CASH_IN_LIEU,
-    }
-
-    data class Result(
-        val commission: Double,
-        val saleTax: Double,
-        val feeBreakdown: FeeBreakdown?,
-        val taxBreakdown: TaxBreakdown?,
-    )
-
     fun project(
         stock: StockDefinition,
         side: OrderSide,
@@ -42,13 +27,13 @@ object CanonicalTradeCostProjection {
         grossCash: Double,
         tradedOn: LocalDate,
         preSaleAveragePrice: Double?,
-        mode: Mode,
-    ): Result {
+        mode: CanonicalTradeCostMode,
+    ): CanonicalTradeCostResult {
         require(quantity.isFinite() && quantity > 0.0)
         require(grossCash.isFinite() && grossCash >= 0.0)
         require(side != OrderSide.SELL || preSaleAveragePrice?.isFinite() == true)
 
-        val feeBreakdown = if (mode == Mode.REGULAR_EXCHANGE) {
+        val feeBreakdown = if (mode == CanonicalTradeCostMode.REGULAR_EXCHANGE) {
             BROKER_FEE_CALCULATOR.calculate(
                 BrokerFeeRequest(
                     market = stock.market,
@@ -82,7 +67,7 @@ object CanonicalTradeCostProjection {
                     ),
                 )
             }
-            mode != Mode.CONTRACTUAL_CASH_SETTLEMENT ->
+            mode != CanonicalTradeCostMode.CONTRACTUAL_CASH_SETTLEMENT ->
                 DOMESTIC_SALE_TAX_CALCULATOR.calculate(
                     DomesticSaleTaxRequest(
                         market = stock.market,
@@ -92,7 +77,7 @@ object CanonicalTradeCostProjection {
                 )
             else -> null
         }
-        return Result(
+        return CanonicalTradeCostResult(
             commission = feeBreakdown?.totalFees?.amount ?: 0.0,
             saleTax = taxBreakdown?.totalTax?.amount ?: 0.0,
             feeBreakdown = feeBreakdown,

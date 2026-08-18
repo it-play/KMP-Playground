@@ -8,17 +8,12 @@ import com.amond.kmpbook.domain.model.market.Market
  * 런타임 생성과 저장 검증이 같은 정렬·합산 순서를 사용해야 부동소수점 계보가 흔들리지 않는다.
  */
 object KrxDailySurveillanceProjection {
-    data class Result(
-        val marketProxyByStockId: Map<String, Double>,
-        val marketCapRankByStockId: Map<String, Int>,
-    )
-
     fun project(
         stocks: Collection<StockDefinition>,
         closeByStockId: Map<String, Double>,
         indexEligibleStockIds: Set<String>,
         top100MarketCapProxyKrw: Double,
-    ): Result {
+    ): KrxDailySurveillanceResult {
         val orderedStocks = stocks.asSequence()
             .filter { stock -> stock.market.isKorean }
             .sortedBy(StockDefinition::id)
@@ -60,6 +55,6 @@ object KrxDailySurveillanceProjection {
             top100Proxy.forEachIndexed { index, (stock, _) -> put(stock.id, index + 1) }
             outsideTop100Proxy.forEachIndexed { index, (stock, _) -> put(stock.id, 101 + index) }
         }
-        return Result(proxyByStockId, rankByStockId)
+        return KrxDailySurveillanceResult(proxyByStockId, rankByStockId)
     }
 }

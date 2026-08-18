@@ -27,26 +27,10 @@ import kotlin.math.round
  * sources. Trade-settlement FX, dividend pay FX, and ex-date ROC-basis FX remain explicit observed
  * facts because the bounded save history cannot replay the full historical macro path.
  *
- * Nested value types keep the replay contract and its implementation-only event model together.
+ * Private event types remain nested because they are coupled to this replay's ordering and lot
+ * mutation lifecycle; exposing them as module-wide implementation types would weaken encapsulation.
  */
 object CanonicalTaxAccountingReplay {
-    data class Result(
-        val fifoCostBasisBook: FifoCostBasisBook,
-        val realizedGains: List<RealizedGainRecord>,
-        val nativeHoldingsByStockId: Map<String, NativeHoldingFact>,
-        val originExcessReturnOfCapitalGainKrw: Map<String, Long>,
-        val dividendExcessReturnOfCapitalGainKrw: Map<String, Long>,
-        val affectedTaxYears: Set<Int>,
-    )
-
-    data class NativeHoldingFact(
-        val stockId: String,
-        val quantity: Double,
-        val averagePrice: Double,
-        val currency: Currency,
-        val realizedProfit: Double,
-    )
-
     fun replay(
         stocksById: Map<String, StockDefinition>,
         orders: List<Order>,
@@ -57,7 +41,7 @@ object CanonicalTaxAccountingReplay {
         distributionOrigins: List<DistributionEntitlementOrigin>,
         dividendEntries: List<DividendLedgerEntry>,
         portfolioSnapshots: List<PortfolioSnapshot>,
-    ): Result {
+    ): CanonicalTaxAccountingResult {
         val ordersById = orders.associateBy(Order::id)
         require(ordersById.size == orders.size) { "주문 ID가 중복되었습니다." }
         val tradesById = trades.associateBy(Trade::id)
@@ -363,11 +347,11 @@ object CanonicalTaxAccountingReplay {
             rebuiltGains.mapTo(this) { gain -> gain.settlementDate.year }
             dividendEntries.mapTo(this) { entry -> GameCalendar.campaignDate(entry.paidAt).year }
         }
-        return Result(
+        return CanonicalTaxAccountingResult(
             fifoCostBasisBook = fifoBook,
             realizedGains = rebuiltGains,
             nativeHoldingsByStockId = nativePositions.mapValuesTo(linkedMapOf()) { (stockId, position) ->
-                NativeHoldingFact(
+                CanonicalTaxNativeHoldingFact(
                     stockId = stockId,
                     quantity = position.quantity,
                     averagePrice = position.averagePrice,
@@ -396,12 +380,12 @@ object CanonicalTaxAccountingReplay {
     private fun canonicalCostMode(
         order: Order,
         trade: Trade,
-    ): CanonicalTradeCostProjection.Mode = when {
+    ): CanonicalTradeCostMode = when {
         trade.settlementKind == TradeSettlementKind.CONTRACTUAL_CASH_SETTLEMENT ->
-            CanonicalTradeCostProjection.Mode.CONTRACTUAL_CASH_SETTLEMENT
+            CanonicalTradeCostMode.CONTRACTUAL_CASH_SETTLEMENT
         order.id.startsWith(CASH_IN_LIEU_ORDER_PREFIX) ->
-            CanonicalTradeCostProjection.Mode.CORPORATE_ACTION_CASH_IN_LIEU
-        else -> CanonicalTradeCostProjection.Mode.REGULAR_EXCHANGE
+            CanonicalTradeCostMode.CORPORATE_ACTION_CASH_IN_LIEU
+        else -> CanonicalTradeCostMode.REGULAR_EXCHANGE
     }
 
     private fun validateDispositionProvenance(
@@ -410,15 +394,15 @@ object CanonicalTaxAccountingReplay {
         stock: StockDefinition,
         previous: NativePosition?,
         corporateActions: List<CorporateActionRecord>,
-        mode: CanonicalTradeCostProjection.Mode,
+        mode: CanonicalTradeCostMode,
     ) {
         if (trade.side != OrderSide.SELL) {
-            require(mode == CanonicalTradeCostProjection.Mode.REGULAR_EXCHANGE)
+            require(mode == CanonicalTradeCostMode.REGULAR_EXCHANGE)
             return
         }
         val position = requireNotNull(previous)
         when (mode) {
-            CanonicalTradeCostProjection.Mode.CORPORATE_ACTION_CASH_IN_LIEU -> {
+            CanonicalTradeCostMode.CORPORATE_ACTION_CASH_IN_LIEU -> {
                 val action = corporateActions.asSequence()
                     .filter { candidate ->
                         candidate.stockId == stock.id &&
@@ -437,10 +421,10 @@ object CanonicalTaxAccountingReplay {
                 require(abs(expectedRemainder - trade.quantity) <= CASH_IN_LIEU_QUANTITY_EPSILON)
             }
 
-            CanonicalTradeCostProjection.Mode.CONTRACTUAL_CASH_SETTLEMENT,
+            CanonicalTradeCostMode.CONTRACTUAL_CASH_SETTLEMENT,
             -> require(abs(position.quantity - trade.quantity) <= QUANTITY_EPSILON)
 
-            CanonicalTradeCostProjection.Mode.REGULAR_EXCHANGE -> {
+            CanonicalTradeCostMode.REGULAR_EXCHANGE -> {
                 if (order.id.startsWith(LISTING_MARKET_SALE_ORDER_PREFIX)) {
                     require(abs(position.quantity - trade.quantity) <= QUANTITY_EPSILON)
                 }

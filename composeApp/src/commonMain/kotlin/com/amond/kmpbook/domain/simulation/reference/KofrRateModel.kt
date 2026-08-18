@@ -77,6 +77,8 @@ class KofrRateModel(private val seed: Long) {
         return weightedRate / retainedNotional
     }
 
+    // RepoTransaction은 이 모델의 정렬·절사 계산 중에만 살아 있는 합성 표본이다. 별도 파일로
+    // 분리하면 private 계산 세부사항을 internal로 넓혀야 하므로 모델 내부에 둔다.
     private data class RepoTransaction(
         val rateAnnual: Double,
         val notional: Double,

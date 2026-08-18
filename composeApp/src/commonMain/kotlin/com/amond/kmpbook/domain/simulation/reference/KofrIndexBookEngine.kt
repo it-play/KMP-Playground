@@ -234,6 +234,8 @@ class KofrIndexBookEngine(private val rateModel: KofrRateModel) {
         return byRef
     }
 
+    // 두 타입은 이 엔진의 발행·관측 이벤트를 시간순으로 처리할 때만 존재한다. 별도 파일로
+    // 분리하면 private 이벤트 모델을 internal로 넓혀야 하므로 엔진 내부에 캡슐화한다.
     private data class KofrEvent(
         val kind: KofrEventKind,
         val date: LocalDate,

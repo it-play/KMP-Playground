@@ -30,18 +30,12 @@ import kotlinx.datetime.toInstant
  * U.S. exchange trades use execution FX until their T+1 settlement midnight. The settlement is a
  * temporal event without a global accounting sequence, so it is applied before same-instant ex/pay
  * accounting, matching the runtime boundary order.
+ *
+ * Private accumulator, lot, mutation, and event types stay nested because their mutable lifetime
+ * and ordering invariants belong exclusively to this one-pass replay. Separate files would require
+ * widening file-private implementation details to module-wide visibility.
  */
 object CanonicalPortfolioSnapshotAccountingReplay {
-    data class Fact(
-        val cashByCurrency: Map<Currency, Double>,
-        val nativeHoldingsByStockId: Map<String, CanonicalTaxAccountingReplay.NativeHoldingFact>,
-        val holdingCostBasisKrw: Map<String, Double>,
-        val distributionReceivableByCurrency: Map<Currency, Double>,
-        val realizedProfitKrw: Double,
-        val cumulativeCommissionKrw: Double,
-        val cumulativeTaxKrw: Double,
-    )
-
     fun replay(
         stocksById: Map<String, StockDefinition>,
         initialCapitalKrw: Double,
@@ -58,7 +52,7 @@ object CanonicalPortfolioSnapshotAccountingReplay {
         foreignExchanges: List<ForeignExchangeRecord>,
         cashAdjustments: List<CashAdjustmentRecord>,
         portfolioSnapshots: List<PortfolioSnapshot>,
-    ): Map<AccountingObservationBoundary, Fact> {
+    ): Map<AccountingObservationBoundary, CanonicalPortfolioSnapshotAccountingFact> {
         require(orders.map(Order::id).distinct().size == orders.size)
         val tradesById = trades.associateBy(Trade::id)
         val costsByTradeId = transactionCosts.associateBy(TransactionCostRecord::tradeId)
@@ -336,14 +330,14 @@ object CanonicalPortfolioSnapshotAccountingReplay {
             }
         }
 
-        fun fact(): Fact {
+        fun fact(): CanonicalPortfolioSnapshotAccountingFact {
             val receivables = pendingReceivablesByOriginId.values
                 .groupBy(Pair<Currency, Double>::first)
                 .mapValues { (_, values) -> values.sumOf(Pair<Currency, Double>::second) }
-            return Fact(
+            return CanonicalPortfolioSnapshotAccountingFact(
                 cashByCurrency = cash.toMap(),
                 nativeHoldingsByStockId = nativePositions.mapValuesTo(linkedMapOf()) { (stockId, position) ->
-                    CanonicalTaxAccountingReplay.NativeHoldingFact(
+                    CanonicalTaxNativeHoldingFact(
                         stockId = stockId,
                         quantity = position.quantity,
                         averagePrice = position.averagePrice,

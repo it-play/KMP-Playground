@@ -172,6 +172,8 @@ object CanonicalCashAccountingReplay {
         balances[currency] = if (next == -0.0) 0.0 else next
     }
 
+    // Event and Kind exist only for this replay's deterministic accounting order. Keeping them
+    // nested preserves that lifecycle and encapsulation; a separate file would widen them to internal.
     private data class Event(
         val accountingSequence: Long,
         val occurredAt: Instant,

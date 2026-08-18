@@ -119,6 +119,8 @@ internal object KoreanPublicHolidayCalendar {
         add(HolidayOccasion.single(date, WeekendSubstitute.SATURDAY_OR_SUNDAY, true))
     }
 
+    // 두 타입은 이 달력의 공휴일 군집·대체일 계산에서만 쓰인다. 별도 파일로 분리하면 private
+    // 규정 모델을 internal로 넓혀야 하므로 계산기 내부에 캡슐화한다.
     private data class HolidayOccasion(
         val dates: List<LocalDate>,
         val weekendSubstitute: WeekendSubstitute,

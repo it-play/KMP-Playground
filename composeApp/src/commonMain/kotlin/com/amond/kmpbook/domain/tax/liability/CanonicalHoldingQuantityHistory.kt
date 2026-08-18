@@ -77,7 +77,11 @@ object CanonicalHoldingQuantityHistory {
         return result
     }
 
-    /** One merged accounting event; null [side] denotes a corporate-action multiplier. */
+    /**
+     * One merged accounting event; null [side] denotes a corporate-action multiplier. It shares
+     * this replay's ordering lifecycle and stays nested so private accounting details do not need
+     * internal visibility in a separate file.
+     */
     private data class Event(
         val accountingSequence: Long,
         val occurredAt: Instant,

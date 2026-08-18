@@ -34,6 +34,8 @@ import com.amond.kmpbook.domain.model.fund.ReferencePortfolioRecord
 import com.amond.kmpbook.domain.model.fund.MethodologyEquitySector
 import com.amond.kmpbook.domain.model.market.Market
 import com.amond.kmpbook.domain.model.market.Sector
+import com.amond.kmpbook.domain.simulation.fund.reconstitution.CanonicalScheduledReconstitution
+import com.amond.kmpbook.domain.simulation.fund.reconstitution.ReconstitutedReferenceCandidates
 import com.amond.kmpbook.domain.simulation.market.MacroEnvironment
 import com.amond.kmpbook.domain.simulation.price.DeterministicRandom
 import com.amond.kmpbook.domain.time.GameCalendar
@@ -47,25 +49,6 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
-
-/** Canonical replay output used by save validation for path-dependent scheduled reviews. */
-internal data class CanonicalScheduledReconstitution(
-    val selectionRanks: Map<String, Int>,
-    val referenceMarketValueMultipliers: Map<String, Double>,
-    val nextPathState: EquityMethodologyPathState,
-    val selectionAvailabilityDate: LocalDate,
-    val weightReferenceMarketValues: Map<String, Double>?,
-    val targetWeights: Map<String, Double>?,
-    val canonicalFinalPositions: List<ReferencePortfolioPosition>?,
-    val canonicalTransitionPositionsByEffectiveDate:
-        Map<LocalDate, List<ReferencePortfolioPosition>>,
-)
-
-private data class ReconstitutedReferenceCandidates(
-    val candidates: List<RankedReferenceCandidate>,
-    val referenceMarketValueMultipliers: Map<String, Double>,
-    val nextPathState: EquityMethodologyPathState,
-)
 
 /**
  * 등록된 버전형 주식 방법론을 비거래 기준자산에 적용하는 provider-neutral 결정론적 host다.

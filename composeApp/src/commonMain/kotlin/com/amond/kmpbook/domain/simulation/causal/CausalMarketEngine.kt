@@ -271,6 +271,8 @@ object CausalMarketEngine {
         CausalTraceNodeKind.ECONOMIC_FACTOR -> error("경제 요인은 종목 노출의 최종 대상일 수 없습니다.")
     }
 
+    // StockExposure는 전파 탐색 동안만 종목과 카탈로그 노출을 결합한다. 별도 파일로 분리하면
+    // private 전파 세부사항을 internal로 넓혀야 하므로 엔진 내부에 캡슐화한다.
     private data class StockExposure(
         val stock: StockDefinition,
         val exposure: CausalStockExposure,

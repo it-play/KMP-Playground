@@ -216,6 +216,10 @@ import com.amond.kmpbook.presentation.portfolio.CanonicalTradingLedgerValidation
 import com.amond.kmpbook.presentation.portfolio.KrxDailySurveillanceProjection
 import com.amond.kmpbook.presentation.portfolio.PortfolioPerformanceExtrema
 import com.amond.kmpbook.presentation.portfolio.roundCurrencyForAccounting
+import com.amond.kmpbook.persistence.validation.model.ReferenceCorporateExecutionKey
+import com.amond.kmpbook.persistence.validation.model.ReferenceExecutionOrder
+import com.amond.kmpbook.persistence.validation.model.ReferenceMembershipTransition
+import com.amond.kmpbook.persistence.validation.model.UnitAdjustmentLineage
 import kotlin.math.exp
 import kotlin.math.abs
 import kotlin.math.round
@@ -4856,25 +4860,6 @@ private val CORPORATE_REFERENCE_ACTION_KINDS: Set<ReferencePortfolioActionKind> 
     ReferencePortfolioActionKind.TERMINAL_REMOVAL,
 )
 
-private data class ReferenceCorporateExecutionKey(
-    val corporateEventId: String,
-    val kind: ReferencePortfolioActionKind,
-    val effectiveDate: LocalDate,
-)
-
-private data class ReferenceExecutionOrder(
-    val effectiveDate: LocalDate,
-    val kind: ReferencePortfolioActionKind,
-    val corporateEventId: String,
-)
-
-private data class ReferenceMembershipTransition(
-    val order: ReferenceExecutionOrder,
-    val addedAssetIds: Set<String> = emptySet(),
-    val removedAssetIds: Set<String> = emptySet(),
-    val resultingAssetIds: Set<String>? = null,
-)
-
 private fun ReferencePortfolioCorporateAction.primaryReferenceActionKind(): ReferencePortfolioActionKind =
     when (kind) {
         ReferencePortfolioCorporateActionKind.MERGER ->
@@ -4949,11 +4934,6 @@ private fun referencePortfolioPlanId(plan: ReferencePortfolioPlan): String {
     return "reference-plan:${plan.portfolioId}:${plan.kind.name}$actionSegment:" +
         "${plan.weightReferenceDate}:${plan.effectiveDate}"
 }
-
-private data class UnitAdjustmentLineage(
-    val cumulativeFactor: Double,
-    val lastAccountingSequence: Long?,
-)
 
 /** Replays the exact applied split/reverse-split order used by the runtime. */
 private fun SimulatorUiState.unitAdjustmentLineage(stockId: String): UnitAdjustmentLineage {

@@ -323,6 +323,8 @@ class FixedIncomeReferenceBookEngine(
         return (base * stressMultiplier).coerceIn(0.0, 1.0)
     }
 
+    // RollResult는 만기 교체 알고리즘 안에서만 상태와 기록을 묶는 단명 결과다. 별도 파일로
+    // 분리하면 private 구현 타입을 internal로 넓혀야 하므로 엔진 내부에 둔다.
     private data class RollResult(
         val state: FixedIncomeReferenceState,
         val record: FixedIncomeRollRecord?,
