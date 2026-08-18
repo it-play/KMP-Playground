@@ -39,7 +39,7 @@ internal class LauncherController(
                 javax.swing.SwingUtilities.invokeLater { frame.dispose() }
             } catch (error: LauncherException) {
                 logger.error(error)
-                frame.showLaunchError(error)
+                frame.showLaunchError()
             }
         }
     }
@@ -47,7 +47,7 @@ internal class LauncherController(
     private fun runPreparation() {
         if (closed.get() || !working.compareAndSet(false, true)) return
         prepared = null
-        frame.showWorking(ProgressUpdate("설치 및 업데이트를 확인하는 중입니다."))
+        frame.showWorking(ProgressUpdate("확인 중"))
         executor.execute {
             try {
                 val result = updateService.prepare(frame::showWorking)
@@ -55,10 +55,10 @@ internal class LauncherController(
                 frame.showReady(result)
             } catch (error: LauncherException) {
                 logger.error(error)
-                frame.showError(error)
+                frame.showError()
             } catch (error: Exception) {
                 logger.error(error)
-                frame.showError(LauncherException("unexpected", "예상하지 못한 런처 오류가 발생했습니다.", error))
+                frame.showError()
             } finally {
                 working.set(false)
             }

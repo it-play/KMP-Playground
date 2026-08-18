@@ -29,7 +29,7 @@ fun main() {
     val paths = try {
         LauncherPaths.discover().also(LauncherPaths::createRequiredDirectories)
     } catch (error: Exception) {
-        showFatal("게임 데이터 폴더를 만들지 못했습니다.")
+        showFatal("초기화하지 못했습니다.")
         return
     }
     val logger = LauncherLogger(paths.state.resolve("launcher.log"))
@@ -37,11 +37,11 @@ fun main() {
         SingleInstanceLock.acquire(paths.state.resolve("launcher.lock"))
     } catch (error: LauncherException) {
         logger.error(error)
-        showFatal(error.message)
+        showFatal("런처를 시작하지 못했습니다.")
         return
     }
     if (instanceLock == null) {
-        showFatal("Market Ledger 2040 Launcher가 이미 실행 중입니다.")
+        showFatal("이미 실행 중입니다.")
         return
     }
 
@@ -96,7 +96,7 @@ fun main() {
         } catch (error: LauncherException) {
             logger.error(error)
             instanceLock.close()
-            showFatal(error.message)
+            showFatal("런처를 시작하지 못했습니다.")
         } catch (error: Exception) {
             logger.error(error)
             instanceLock.close()

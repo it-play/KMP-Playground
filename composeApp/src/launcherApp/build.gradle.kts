@@ -6,6 +6,7 @@ import com.amond.kmpbook.build.distribution.ValidateLauncherSigningConfiguration
 import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.gradle.jvm.tasks.Jar
+import org.gradle.language.jvm.tasks.ProcessResources
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
@@ -58,8 +59,11 @@ sourceSets.main {
     resources.srcDir(generatedBundledReleaseResources)
 }
 
-tasks.named("processResources") {
+tasks.named<ProcessResources>("processResources") {
     mustRunAfter(embedBundledRelease)
+    from(rootProject.file("assets/market-ledger-icon.png")) {
+        into("launcher")
+    }
 }
 
 val validateBundledReleaseJar = tasks.register<ValidateBundledReleaseJarTask>("validateBundledReleaseJar") {
@@ -115,9 +119,10 @@ nucleus.application {
         packageName = "MarketLedger2040Launcher"
         packageVersion = appVersion
         vendor = "Market Ledger 2040"
-        description = "Secure installer, updater, and launcher for Market Ledger 2040"
+        description = "Market Ledger 2040 Launcher"
 
         windows {
+            iconFile.set(rootProject.file("composeApp/src/desktopMain/resources/icons/market-ledger.ico"))
             console = false
             upgradeUuid = "C5CB2FF3-338F-468F-817A-D55BBA54D7EB"
             signing {

@@ -30,7 +30,7 @@ internal class LauncherUpdateService(
     private val logger: LauncherLogger,
 ) {
     fun prepare(progress: ProgressSink): PreparedLaunch {
-        progress.report(ProgressUpdate("설치 상태를 확인하는 중입니다."))
+        progress.report(ProgressUpdate("확인 중"))
         val activeFeed = loadTrustedActiveFeedOrNull()
         debugInstaller.recoverInterruptedReplacement(activeFeed?.buildCohort)
         return try {
@@ -39,7 +39,7 @@ internal class LauncherUpdateService(
             val updateError = rawUpdateError as? LauncherException
                 ?: LauncherException("update-io", "업데이트 중 안전하게 처리할 수 없는 I/O 오류가 발생했습니다.", rawUpdateError)
             logger.error(updateError)
-            progress.report(ProgressUpdate("업데이트를 적용하지 않고 기존 설치를 검증하는 중입니다."))
+            progress.report(ProgressUpdate("확인 중"))
             val active = try {
                 activeResolver.resolveOrNull()
             } catch (activeError: LauncherException) {
@@ -64,19 +64,19 @@ internal class LauncherUpdateService(
             }
             PreparedLaunch(
                 installation = active,
-                warning = "업데이트를 설치하지 않았습니다 (${updateError.diagnosticCode}). 검증된 기존 버전을 실행할 수 있습니다.",
+                warning = "업데이트 실패 · 기존 버전 실행 가능",
             )
         }
     }
 
     private fun update(progress: ProgressSink, activeFeed: StableFeed?): ActiveInstallation {
-        progress.report(ProgressUpdate("서명된 stable feed를 확인하는 중입니다.", 0.02))
+        progress.report(ProgressUpdate("확인 중", 0.02))
         val document = releaseSource.load()
         enforceMonotonicRelease(document.feed, activeFeed)
 
-        progress.report(ProgressUpdate("내장된 signed inventory를 준비하는 중입니다.", 0.06))
+        progress.report(ProgressUpdate("설치 준비 중", 0.06))
         val inventoryPath = artifacts.obtain(document.feed.game.inventory, "json") { copied, total ->
-            progress.report(ProgressUpdate("내장된 signed inventory를 준비하는 중입니다.", scaled(copied, total, 0.06, 0.10)))
+            progress.report(ProgressUpdate("설치 준비 중", scaled(copied, total, 0.06, 0.10)))
         }
         val inventoryBytes = Files.readAllBytes(inventoryPath)
         if (inventoryBytes.size.toLong() != document.feed.game.inventory.size ||
@@ -90,23 +90,23 @@ internal class LauncherUpdateService(
             throw LauncherException("inventory-entrypoint", "게임 실행 파일이 signed inventory에 없습니다.")
         }
 
-        progress.report(ProgressUpdate("내장된 게임 본체를 준비하는 중입니다.", 0.10))
+        progress.report(ProgressUpdate("설치 준비 중", 0.10))
         val gameArchive = artifacts.obtain(document.feed.game.archive, "zip") { copied, total ->
-            progress.report(ProgressUpdate("내장된 게임 본체를 준비하는 중입니다.", scaled(copied, total, 0.10, 0.67)))
+            progress.report(ProgressUpdate("설치 준비 중", scaled(copied, total, 0.10, 0.67)))
         }
-        progress.report(ProgressUpdate("게임 본체를 안전하게 검증하고 설치하는 중입니다.", 0.68))
+        progress.report(ProgressUpdate("설치 중", 0.68))
         val gameRoot = gameInstaller.installOrVerify(document, gameArchive, inventory)
 
-        progress.report(ProgressUpdate("내장된 디버그 모드 번들을 준비하는 중입니다.", 0.76))
+        progress.report(ProgressUpdate("설치 중", 0.76))
         val debugArchive = artifacts.obtain(document.feed.debugBundle, "zip") { copied, total ->
-            progress.report(ProgressUpdate("내장된 디버그 모드 번들을 준비하는 중입니다.", scaled(copied, total, 0.76, 0.88)))
+            progress.report(ProgressUpdate("설치 중", scaled(copied, total, 0.76, 0.88)))
         }
-        progress.report(ProgressUpdate("디버그 모드 번들의 신뢰 정보를 검증하는 중입니다.", 0.89))
+        progress.report(ProgressUpdate("설치 중", 0.89))
         val preparedDebug = debugInstaller.prepare(debugArchive, document.feed.buildCohort)
         val directoryName = VersionNaming.directoryName(document.feed)
         records.save(directoryName, document, inventoryBytes)
 
-        progress.report(ProgressUpdate("검증된 버전을 활성화하는 중입니다.", 0.96))
+        progress.report(ProgressUpdate("마무리 중", 0.96))
         val debugCommit = debugInstaller.commit(preparedDebug)
         try {
             records.activate(directoryName)
@@ -119,7 +119,7 @@ internal class LauncherUpdateService(
 
         val executable = SafePathPolicy.resolve(gameRoot, document.feed.game.entryPoint)
         val record = InstallationRecord(document, inventoryBytes, inventory)
-        progress.report(ProgressUpdate("실행 준비가 완료되었습니다.", 1.0))
+        progress.report(ProgressUpdate("마무리 중", 1.0))
         return ActiveInstallation(directoryName, gameRoot, executable, record)
     }
 
