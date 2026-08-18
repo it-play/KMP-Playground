@@ -9,6 +9,7 @@ enum class Screen(val displayName: String) {
     PORTFOLIO("포트폴리오"),
     EVENTS("뉴스·이벤트"),
     ANALYTICS("투자 분석"),
+    DICTIONARY("사전"),
     TAX_REPORT("세금 내역"),
     SETTINGS("설정"),
     ENDING("정산 결과"),

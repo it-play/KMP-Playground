@@ -64,6 +64,7 @@ import com.amond.kmpbook.ui.theme.MarketMotion
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketSpacing
 import com.amond.kmpbook.ui.theme.MarketType
+import com.composables.icons.lucide.BookOpen
 import com.composables.icons.lucide.ChartCandlestick
 import com.composables.icons.lucide.ChartNoAxesCombined
 import com.composables.icons.lucide.ChartPie
@@ -82,6 +83,7 @@ private val navigationItems = listOf(
     NavigationItem(Screen.PORTFOLIO, "포트폴리오", Lucide.ChartPie),
     NavigationItem(Screen.EVENTS, "뉴스·이벤트", Lucide.Newspaper),
     NavigationItem(Screen.ANALYTICS, "투자 분석", Lucide.ChartNoAxesCombined),
+    NavigationItem(Screen.DICTIONARY, "사전", Lucide.BookOpen),
     NavigationItem(Screen.TAX_REPORT, "세금 센터", Lucide.ReceiptText),
     NavigationItem(Screen.SETTINGS, "설정", Lucide.SlidersHorizontal),
 )

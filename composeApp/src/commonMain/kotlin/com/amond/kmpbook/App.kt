@@ -82,6 +82,7 @@ import com.amond.kmpbook.ui.components.MarketProtectionDetailSurface
 import com.amond.kmpbook.ui.components.MarketProtectionStrip
 import com.amond.kmpbook.ui.screens.dashboard.HomeDashboardScreen
 import com.amond.kmpbook.ui.screens.debug.DebugConsoleOverlay
+import com.amond.kmpbook.ui.screens.dictionary.DictionaryScreen
 import com.amond.kmpbook.ui.screens.game.EndingScreen
 import com.amond.kmpbook.ui.screens.game.GameEntryDestination
 import com.amond.kmpbook.ui.screens.game.GameLobbyScreen
@@ -1245,6 +1246,8 @@ private fun ScreenContent(
             totalCostsKrw = state.totalTransactionCostKrw,
             maxDrawdown = state.maximumDrawdown,
         )
+
+        Screen.DICTIONARY -> DictionaryScreen()
 
         Screen.TAX_REPORT -> TaxCenterScreen(state.toTaxCenterData())
 

@@ -1,0 +1,19 @@
+{
+  "articles": [
+    "files/dictionary/articles/stocks.mdx",
+    "files/dictionary/articles/bonds-and-interest-rates.mdx",
+    "files/dictionary/articles/etf.mdx",
+    "files/dictionary/articles/diversification.mdx",
+    "files/dictionary/articles/market-and-limit-orders.mdx",
+    "files/dictionary/articles/blackrock.mdx",
+    "files/dictionary/articles/vanguard.mdx",
+    "files/dictionary/articles/samsung-asset-management.mdx",
+    "files/dictionary/articles/visa.mdx",
+    "files/dictionary/articles/berkshire-hathaway.mdx",
+    "files/dictionary/articles/jpmorgan-chase.mdx",
+    "files/dictionary/articles/kb-financial-group.mdx",
+    "files/dictionary/articles/samsung-electronics.mdx",
+    "files/dictionary/articles/apple.mdx",
+    "files/dictionary/articles/nvidia.mdx"
+  ]
+}
