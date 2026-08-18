@@ -326,8 +326,14 @@ jobs:
           $msi = Join-Path $env:GITHUB_WORKSPACE `
             "composeApp/src/launcherApp/build/compose/binaries/main/msi/MarketLedger2040-Launcher-$env:APP_VERSION.msi"
           if (-not (Test-Path -LiteralPath $msi -PathType Leaf)) { throw 'Launcher MSI is missing.' }
-          $msiExtraction = Join-Path $env:RUNNER_TEMP `
-            "market-ledger-msi-verification-$([Guid]::NewGuid().ToString('N'))"
+          $appImage = Join-Path $env:GITHUB_WORKSPACE `
+            'composeApp/src/launcherApp/build/compose/binaries/main/app'
+          $launchers = @(Get-ChildItem `
+            -LiteralPath $appImage `
+            -Filter 'MarketLedger2040Launcher.exe' -File -Recurse)
+          if ($launchers.Count -ne 1) {
+            throw 'Expected exactly one launcher executable in the packaged app image.'
+          }
           $publicCertificatePath = Join-Path $env:RUNNER_TEMP 'market-ledger-code-signing.cer'
           if (-not (Test-Path -LiteralPath $publicCertificatePath -PathType Leaf)) {
             throw 'The validated public code-signing certificate is missing.'
@@ -353,27 +359,14 @@ jobs:
           } else {
             $signTool.FullName
           }
-          try {
-            New-Item -ItemType Directory -Path $msiExtraction | Out-Null
-            & msiexec.exe /a $msi /qn "TARGETDIR=$msiExtraction"
-            if ($LASTEXITCODE -ne 0) {
-              throw "MSI administrative extraction failed with exit code $LASTEXITCODE."
+          foreach ($file in @($launchers[0].FullName, $msi)) {
+            $signature = Get-AuthenticodeSignature -FilePath $file
+            if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
+                $signature.SignerCertificate.Thumbprint -ne $env:EXPECTED_THUMBPRINT) {
+              throw "Authenticode signature verification failed for $([IO.Path]::GetFileName($file))."
             }
-            $launchers = @(Get-ChildItem `
-              -LiteralPath $msiExtraction `
-              -Filter 'MarketLedger2040Launcher.exe' -File -Recurse)
-            if ($launchers.Count -ne 1) { throw 'Expected exactly one launcher executable inside the MSI.' }
-            foreach ($file in @($launchers[0].FullName, $msi)) {
-              $signature = Get-AuthenticodeSignature -FilePath $file
-              if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
-                  $signature.SignerCertificate.Thumbprint -ne $env:EXPECTED_THUMBPRINT) {
-                throw "Authenticode signature verification failed for $([IO.Path]::GetFileName($file))."
-              }
-              & $signToolPath verify /pa /all /v $file
-              if ($LASTEXITCODE -ne 0) { throw 'signtool rejected an offline launcher package artifact.' }
-            }
-          } finally {
-            Remove-Item -LiteralPath $msiExtraction -Recurse -Force -ErrorAction SilentlyContinue
+            & $signToolPath verify /pa /all /v $file
+            if ($LASTEXITCODE -ne 0) { throw 'signtool rejected an offline launcher package artifact.' }
           }
 
       - name: Verify embedded release closure and stage launcher MSI

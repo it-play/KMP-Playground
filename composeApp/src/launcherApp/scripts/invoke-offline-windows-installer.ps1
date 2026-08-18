@@ -4,7 +4,6 @@ Set-StrictMode -Version Latest
 $certificate = $null
 $certificatePath = $null
 $certificateThumbprint = $null
-$msiExtractionDirectory = $null
 $buildIdentifier = [Guid]::NewGuid().ToString("N")
 $subject = "CN=Market Ledger 2040 Internal Build $buildIdentifier"
 $generatedEnvironmentNames = @(
@@ -96,23 +95,18 @@ try {
         $trustedCertificates[0].Thumbprint.ToUpperInvariant() -ne $certificateThumbprint) {
         throw "The temporary trusted certificate differs from the signing certificate."
     }
-    $msiExtractionDirectory = Join-Path `
-        ([IO.Path]::GetTempPath()) `
-        "market-ledger-msi-$buildIdentifier"
-    New-Item -ItemType Directory -Path $msiExtractionDirectory | Out-Null
-    & msiexec.exe /a $msiFiles[0].FullName /qn "TARGETDIR=$msiExtractionDirectory"
-    if ($LASTEXITCODE -ne 0) {
-        throw "MSI administrative extraction failed with exit code $LASTEXITCODE."
-    }
+    $launcherAppImageDirectory = Join-Path `
+        $PWD `
+        "composeApp\src\launcherApp\build\compose\binaries\main\app"
     $launcherExecutables = @(
         Get-ChildItem `
-            -LiteralPath $msiExtractionDirectory `
+            -LiteralPath $launcherAppImageDirectory `
             -Filter "MarketLedger2040Launcher.exe" `
             -File `
             -Recurse
     )
     if ($launcherExecutables.Count -ne 1) {
-        throw "Expected exactly one packaged launcher executable."
+        throw "Expected exactly one launcher executable in the packaged app image."
     }
     foreach ($file in @($launcherExecutables[0], $msiFiles[0])) {
         $signature = Get-AuthenticodeSignature -FilePath $file.FullName
@@ -135,14 +129,6 @@ try {
             Remove-Item -LiteralPath $certificatePath -Force -ErrorAction Stop
         } catch {
             $cleanupFailures.Add("temporary certificate file: $($_.Exception.Message)")
-        }
-    }
-    if ($null -ne $msiExtractionDirectory -and
-        (Test-Path -LiteralPath $msiExtractionDirectory -PathType Container)) {
-        try {
-            Remove-Item -LiteralPath $msiExtractionDirectory -Recurse -Force -ErrorAction Stop
-        } catch {
-            $cleanupFailures.Add("MSI verification directory: $($_.Exception.Message)")
         }
     }
     try {
