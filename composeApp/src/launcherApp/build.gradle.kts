@@ -1,5 +1,6 @@
 import com.amond.kmpbook.build.distribution.EmbedBundledReleaseTask
 import com.amond.kmpbook.build.distribution.GenerateLauncherReleaseResourcesTask
+import com.amond.kmpbook.build.distribution.SignWindowsLauncherExecutableTask
 import com.amond.kmpbook.build.distribution.ValidateBundledReleaseJarTask
 import com.amond.kmpbook.build.distribution.ValidateLauncherSigningConfigurationTask
 import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
@@ -85,8 +86,20 @@ val validateLauncherSigningConfiguration = tasks.register<ValidateLauncherSignin
     certificateSha1.set(windowsSigningThumbprint.orElse(""))
 }
 
+val signWindowsLauncherExecutable = tasks.register<SignWindowsLauncherExecutableTask>(
+    "signWindowsLauncherExecutable",
+) {
+    group = "distribution"
+    description = "Authenticode-signs the launcher executable before electron-builder assembles the MSI."
+    dependsOn(tasks.named("createDistributable"), validateLauncherSigningConfiguration)
+    appImageDirectory.set(layout.buildDirectory.dir("compose/binaries/main/app"))
+    executableName.set("MarketLedger2040Launcher.exe")
+    buildChannel.set(releaseBuildChannel)
+    certificateSha1.set(windowsSigningThumbprint.orElse(""))
+}
+
 tasks.matching { task -> task.name == "packageMsi" }.configureEach {
-    dependsOn(validateLauncherSigningConfiguration, validateBundledReleaseJar)
+    dependsOn(signWindowsLauncherExecutable, validateBundledReleaseJar)
 }
 
 nucleus.application {

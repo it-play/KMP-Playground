@@ -22,6 +22,9 @@ val validateWindowsReleaseEnvironment = tasks.register("validateWindowsReleaseEn
         require(System.getenv("ML_BUILD_CHANNEL")?.trim() == "release") {
             "ML_BUILD_CHANNEL must be exactly 'release' for buildWindowsRelease."
         }
+        require(System.getenv("ELECTRON_BUILDER_OFFLINE") == "true") {
+            "ELECTRON_BUILDER_OFFLINE must be exactly 'true' so Authenticode signing stays offline."
+        }
         require(System.getenv("ML_BUILD_COHORT")?.trim()?.matches(Regex("[0-9a-f]{64}")) == true) {
             "ML_BUILD_COHORT must be 64 lowercase hexadecimal characters."
         }

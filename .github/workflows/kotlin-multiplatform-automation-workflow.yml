@@ -72,6 +72,7 @@ jobs:
           Write-Output "::add-mask::$($debugPair[0])"
           Write-Output "::add-mask::$($feedPair[0])"
           Write-Output "::add-mask::$cohort"
+          "ELECTRON_BUILDER_OFFLINE=true" >> $env:GITHUB_ENV
           "ML_BUILD_CHANNEL=release" >> $env:GITHUB_ENV
           "ML_BUILD_COHORT=$cohort" >> $env:GITHUB_ENV
           "ML_RELEASE_PUBLISHED_AT=$packageTimestamp" >> $env:GITHUB_ENV
@@ -102,7 +103,7 @@ jobs:
           Remove-Item -LiteralPath $materializedPrivateKey -Force -ErrorAction SilentlyContinue
           if (-not [string]::IsNullOrWhiteSpace($env:PR_WINDOWS_SIGNING_CERT_SHA1)) {
             Remove-Item -LiteralPath "Cert:\CurrentUser\My\$env:PR_WINDOWS_SIGNING_CERT_SHA1" `
-              -Force -ErrorAction SilentlyContinue
+              -DeleteKey -Force -ErrorAction SilentlyContinue
           }
 
   package-stable-release:
@@ -268,7 +269,10 @@ jobs:
             throw 'The Windows code-signing certificate is not currently valid with a private key.'
           }
           $codeSigningOid = '1.3.6.1.5.5.7.3.3'
-          if (-not @($certificate.EnhancedKeyUsageList | Where-Object { $_.ObjectId.Value -eq $codeSigningOid })) {
+          $enhancedKeyUsageOids = @(
+            $certificate.EnhancedKeyUsageList | ForEach-Object { [string] $_.ObjectId }
+          )
+          if ($enhancedKeyUsageOids -notcontains $codeSigningOid) {
             throw 'The Windows certificate does not permit code signing.'
           }
           if ($env:EXPECTED_CERT_SHA256 -notmatch '^[0-9A-F]{64}$') {
@@ -285,23 +289,14 @@ jobs:
           }
           $publicCertificatePath = Join-Path $env:RUNNER_TEMP 'market-ledger-code-signing.cer'
           Export-Certificate -Cert $certificate -FilePath $publicCertificatePath -Type CERT | Out-Null
-          try {
-            $trustedRoots = @(Import-Certificate `
-              -FilePath $publicCertificatePath `
-              -CertStoreLocation 'Cert:\CurrentUser\Root')
-          } finally {
-            Remove-Item -LiteralPath $publicCertificatePath -Force -ErrorAction SilentlyContinue
-          }
-          if ($trustedRoots.Count -ne 1 -or $trustedRoots[0].Thumbprint -cne $certificate.Thumbprint) {
-            throw 'The pinned internal signing certificate was not added to the temporary trust store.'
-          }
-          'Windows artifacts use the project-owned, SHA-256-pinned internal signing certificate.' >> `
+          'Windows artifacts use the project-owned, SHA-256-pinned internal signing certificate without timestamping.' >> `
             $env:GITHUB_STEP_SUMMARY
 
       - name: Build one fully signed offline Windows package
         if: steps.version.outputs.should_package == 'true'
         shell: pwsh
         env:
+          ELECTRON_BUILDER_OFFLINE: "true"
           ML_BUILD_CHANNEL: release
           ML_BUILD_COHORT: ${{ steps.package_trust.outputs.cohort }}
           ML_RELEASE_PUBLISHED_AT: ${{ steps.package_trust.outputs.package_timestamp }}
@@ -333,7 +328,17 @@ jobs:
           if (-not (Test-Path -LiteralPath $msi -PathType Leaf)) { throw 'Launcher MSI is missing.' }
           $msiExtraction = Join-Path $env:RUNNER_TEMP `
             "market-ledger-msi-verification-$([Guid]::NewGuid().ToString('N'))"
-          New-Item -ItemType Directory -Path $msiExtraction | Out-Null
+          $publicCertificatePath = Join-Path $env:RUNNER_TEMP 'market-ledger-code-signing.cer'
+          if (-not (Test-Path -LiteralPath $publicCertificatePath -PathType Leaf)) {
+            throw 'The validated public code-signing certificate is missing.'
+          }
+          $trustedRoots = @(Import-Certificate `
+            -FilePath $publicCertificatePath `
+            -CertStoreLocation 'Cert:\CurrentUser\Root')
+          if ($trustedRoots.Count -ne 1 -or
+              $trustedRoots[0].Thumbprint -cne $env:EXPECTED_THUMBPRINT) {
+            throw 'The pinned internal signing certificate was not added to the temporary trust store.'
+          }
           $signTool = Get-Command signtool -ErrorAction SilentlyContinue
           if ($null -eq $signTool) {
             $signTool = Get-ChildItem `
@@ -349,6 +354,7 @@ jobs:
             $signTool.FullName
           }
           try {
+            New-Item -ItemType Directory -Path $msiExtraction | Out-Null
             & msiexec.exe /a $msi /qn "TARGETDIR=$msiExtraction"
             if ($LASTEXITCODE -ne 0) {
               throw "MSI administrative extraction failed with exit code $LASTEXITCODE."
@@ -426,8 +432,10 @@ jobs:
           CERTIFICATE_THUMBPRINT: ${{ steps.windows_signing.outputs.thumbprint }}
         run: |
           $pfxPath = Join-Path $env:RUNNER_TEMP 'market-ledger-code-signing.pfx'
+          $publicCertificatePath = Join-Path $env:RUNNER_TEMP 'market-ledger-code-signing.cer'
           $thumbprintPath = Join-Path $env:RUNNER_TEMP 'market-ledger-code-signing.thumbprints'
           Remove-Item -LiteralPath $pfxPath -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath $publicCertificatePath -Force -ErrorAction SilentlyContinue
           $thumbprints = @()
           if (Test-Path -LiteralPath $thumbprintPath -PathType Leaf) {
             $thumbprints += [IO.File]::ReadAllLines($thumbprintPath)

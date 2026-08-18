@@ -44,6 +44,7 @@ function createSigningPair() {
 function buildEnvironment(debugPair, feedPair) {
   return {
     ...process.env,
+    ELECTRON_BUILDER_OFFLINE: "true",
     ML_BUILD_CHANNEL: "release",
     ML_BUILD_COHORT: randomBytes(32).toString("hex"),
     ML_DEBUG_BUNDLE_SIGNING_KEY_PKCS8_BASE64:

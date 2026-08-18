@@ -8,6 +8,7 @@ $msiExtractionDirectory = $null
 $buildIdentifier = [Guid]::NewGuid().ToString("N")
 $subject = "CN=Market Ledger 2040 Internal Build $buildIdentifier"
 $generatedEnvironmentNames = @(
+    "ELECTRON_BUILDER_OFFLINE",
     "ML_BUILD_CHANNEL",
     "ML_BUILD_COHORT",
     "ML_DEBUG_BUNDLE_SIGNING_KEY_PKCS8_BASE64",
@@ -62,7 +63,10 @@ try {
         throw "The temporary Authenticode certificate has no private key."
     }
     $codeSigningOid = "1.3.6.1.5.5.7.3.3"
-    if (-not ($certificate.EnhancedKeyUsageList.ObjectId.Value -contains $codeSigningOid)) {
+    $enhancedKeyUsageOids = @(
+        $certificate.EnhancedKeyUsageList | ForEach-Object { [string] $_.ObjectId }
+    )
+    if ($enhancedKeyUsageOids -notcontains $codeSigningOid) {
         throw "The temporary certificate is not valid for code signing."
     }
 
@@ -73,13 +77,6 @@ try {
 
     $certificatePath = Join-Path ([IO.Path]::GetTempPath()) "market-ledger-$buildIdentifier.cer"
     Export-Certificate -Cert $certificate -FilePath $certificatePath -Type CERT | Out-Null
-    $trustedCertificates = @(Import-Certificate `
-        -FilePath $certificatePath `
-        -CertStoreLocation "Cert:\CurrentUser\Root")
-    if ($trustedCertificates.Count -ne 1 -or
-        $trustedCertificates[0].Thumbprint.ToUpperInvariant() -ne $certificateThumbprint) {
-        throw "The temporary trusted certificate differs from the signing certificate."
-    }
 
     $env:ML_WINDOWS_SIGNING_CERT_SHA1 = $certificateThumbprint
     & ".\gradlew.bat" clean buildWindowsRelease --configuration-cache --no-daemon
@@ -91,6 +88,13 @@ try {
     $msiFiles = @(Get-ChildItem -LiteralPath $msiDirectory -Filter "MarketLedger2040-Launcher-*.msi" -File)
     if ($msiFiles.Count -ne 1) {
         throw "Expected exactly one packaged launcher MSI."
+    }
+    $trustedCertificates = @(Import-Certificate `
+        -FilePath $certificatePath `
+        -CertStoreLocation "Cert:\CurrentUser\Root")
+    if ($trustedCertificates.Count -ne 1 -or
+        $trustedCertificates[0].Thumbprint.ToUpperInvariant() -ne $certificateThumbprint) {
+        throw "The temporary trusted certificate differs from the signing certificate."
     }
     $msiExtractionDirectory = Join-Path `
         ([IO.Path]::GetTempPath()) `
