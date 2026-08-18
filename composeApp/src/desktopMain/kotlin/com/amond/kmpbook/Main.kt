@@ -36,6 +36,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import com.amond.kmpbook.audio.DesktopBackgroundMusicPlayer
@@ -43,7 +44,9 @@ import com.amond.kmpbook.domain.data.DesktopInstrumentPackParser
 import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.data.InstrumentPack
 import com.amond.kmpbook.presentation.settings.AudioSettings
+import com.amond.kmpbook.presentation.settings.AppSettingsStorage
 import com.amond.kmpbook.presentation.settings.DesktopAudioSettingsPersistence
+import com.amond.kmpbook.presentation.settings.WindowDisplayMode
 import com.amond.kmpbook.presentation.simulator.SimulatorViewModel
 import com.amond.kmpbook.ui.components.LoadingFinancialFact
 import com.amond.kmpbook.ui.screens.opening.OpeningScreen
@@ -113,6 +116,10 @@ fun main() {
         val audioSettingsPersistence = remember { DesktopAudioSettingsPersistence() }
         var audioSettings by remember { mutableStateOf(AudioSettings()) }
         var areAudioSettingsLoaded by remember { mutableStateOf(false) }
+        val appSettingsStorage = remember { AppSettingsStorage() }
+        var windowDisplayMode by remember {
+            mutableStateOf(appSettingsStorage.loadWindowDisplayMode())
+        }
         val effectiveMusicVolume = if (!areAudioSettingsLoaded) {
             null
         } else if (audioSettings.muted) {
@@ -128,6 +135,7 @@ fun main() {
             width = MarketLayout.defaultWindowWidth,
             height = MarketLayout.defaultWindowHeight,
             position = WindowPosition(Alignment.Center),
+            placement = windowDisplayMode.toWindowPlacement(),
         )
         DisposableEffect(backgroundMusicPlayer) {
             onDispose(backgroundMusicPlayer::close)
@@ -142,6 +150,9 @@ fun main() {
         LaunchedEffect(audioSettingsPersistence, audioSettings, areAudioSettingsLoaded) {
             if (!areAudioSettingsLoaded) return@LaunchedEffect
             audioSettingsPersistence.scheduleSave(audioSettings)
+        }
+        LaunchedEffect(windowDisplayMode) {
+            windowState.placement = windowDisplayMode.toWindowPlacement()
         }
         LaunchedEffect(backgroundMusicPlayer) {
             backgroundMusicPlayer.playbackErrors.collect { error ->
@@ -350,6 +361,11 @@ fun main() {
                         audioSettings = audioSettings,
                         areAudioSettingsLoaded = areAudioSettingsLoaded,
                         onAudioSettingsChange = { settings -> audioSettings = settings },
+                        windowDisplayMode = windowDisplayMode,
+                        onWindowDisplayModeChange = { mode ->
+                            windowDisplayMode = mode
+                            appSettingsStorage.saveWindowDisplayMode(mode)
+                        },
                         onExitRequest = ::exitApplication,
                         onExitBlockedChanged = { blocked -> isExitBlocked = blocked },
                         escapeRequest = escapeRequest,
@@ -416,6 +432,12 @@ fun main() {
             }
         }
     }
+}
+
+private fun WindowDisplayMode.toWindowPlacement(): WindowPlacement = when (this) {
+    WindowDisplayMode.FULLSCREEN -> WindowPlacement.Fullscreen
+    WindowDisplayMode.BORDERLESS -> WindowPlacement.Maximized
+    WindowDisplayMode.WINDOWED -> WindowPlacement.Floating
 }
 
 @Composable

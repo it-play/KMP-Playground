@@ -73,6 +73,7 @@ import com.amond.kmpbook.presentation.news.buildNewsUiProjection
 import com.amond.kmpbook.presentation.protection.ProtectionUiProjection
 import com.amond.kmpbook.presentation.protection.buildProtectionUiProjection
 import com.amond.kmpbook.presentation.settings.AudioSettings
+import com.amond.kmpbook.presentation.settings.WindowDisplayMode
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
 import com.amond.kmpbook.presentation.simulator.SimulatorViewModel
@@ -177,6 +178,8 @@ fun App(
     audioSettings: AudioSettings,
     areAudioSettingsLoaded: Boolean,
     onAudioSettingsChange: (AudioSettings) -> Unit,
+    windowDisplayMode: WindowDisplayMode,
+    onWindowDisplayModeChange: (WindowDisplayMode) -> Unit,
     onExitRequest: () -> Unit = {},
     onExitBlockedChanged: (Boolean) -> Unit = {},
     escapeRequest: Int = 0,
@@ -704,6 +707,8 @@ fun App(
                         saveCount = saves.size,
                         audioSettings = audioSettings,
                         onAudioSettingsChanged = onAudioSettingsChange,
+                        windowDisplayMode = windowDisplayMode,
+                        onWindowDisplayModeChanged = onWindowDisplayModeChange,
                         onOpenSaveDirectory = openSaveDirectory,
                         onBack = { entryDestination = GameEntryDestination.LOBBY },
                     )
@@ -741,6 +746,8 @@ fun App(
                     deletingSaveFileName = deletingSaveFileName,
                     audioSettings = audioSettings,
                     onAudioSettingsChanged = onAudioSettingsChange,
+                    windowDisplayMode = windowDisplayMode,
+                    onWindowDisplayModeChanged = onWindowDisplayModeChange,
                     onSaveGame = saveGame,
                     onLoadGame = loadGame,
                     onDeleteSave = deleteSave,
@@ -884,6 +891,8 @@ private fun RunningGame(
     deletingSaveFileName: String?,
     audioSettings: AudioSettings,
     onAudioSettingsChanged: (AudioSettings) -> Unit,
+    windowDisplayMode: WindowDisplayMode,
+    onWindowDisplayModeChanged: (WindowDisplayMode) -> Unit,
     onSaveGame: (String) -> Unit,
     onLoadGame: (GameSaveEntry) -> Unit,
     onDeleteSave: (GameSaveEntry) -> Unit,
@@ -970,6 +979,8 @@ private fun RunningGame(
                         deletingSaveFileName = deletingSaveFileName,
                         audioSettings = audioSettings,
                         onAudioSettingsChanged = onAudioSettingsChanged,
+                        windowDisplayMode = windowDisplayMode,
+                        onWindowDisplayModeChanged = onWindowDisplayModeChanged,
                         onSaveGame = onSaveGame,
                         onLoadGame = onLoadGame,
                         onDeleteSave = onDeleteSave,
@@ -1113,6 +1124,8 @@ private fun ScreenContent(
     deletingSaveFileName: String?,
     audioSettings: AudioSettings,
     onAudioSettingsChanged: (AudioSettings) -> Unit,
+    windowDisplayMode: WindowDisplayMode,
+    onWindowDisplayModeChanged: (WindowDisplayMode) -> Unit,
     onSaveGame: (String) -> Unit,
     onLoadGame: (GameSaveEntry) -> Unit,
     onDeleteSave: (GameSaveEntry) -> Unit,
@@ -1256,6 +1269,8 @@ private fun ScreenContent(
             deletingSaveFileName = deletingSaveFileName,
             audioSettings = audioSettings,
             onAudioSettingsChanged = onAudioSettingsChanged,
+            windowDisplayMode = windowDisplayMode,
+            onWindowDisplayModeChanged = onWindowDisplayModeChanged,
             onSaveGame = onSaveGame,
             onLoadGame = onLoadGame,
             onDeleteSave = onDeleteSave,

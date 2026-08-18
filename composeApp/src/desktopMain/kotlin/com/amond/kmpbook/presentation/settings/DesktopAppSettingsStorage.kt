@@ -36,6 +36,27 @@ actual class AppSettingsStorage actual constructor() {
         }
     }
 
+    actual fun loadWindowDisplayMode(): WindowDisplayMode = try {
+        preferences
+            ?.get(KEY_WINDOW_DISPLAY_MODE, WindowDisplayMode.BORDERLESS.name)
+            ?.let { stored -> WindowDisplayMode.entries.firstOrNull { it.name == stored } }
+            ?: WindowDisplayMode.BORDERLESS
+    } catch (_: SecurityException) {
+        WindowDisplayMode.BORDERLESS
+    }
+
+    actual fun saveWindowDisplayMode(mode: WindowDisplayMode) {
+        val preferences = preferences ?: return
+        try {
+            preferences.put(KEY_WINDOW_DISPLAY_MODE, mode.name)
+            preferences.flush()
+        } catch (_: SecurityException) {
+            // The in-memory app setting remains usable when the OS preference store is unavailable.
+        } catch (_: BackingStoreException) {
+            // The in-memory app setting remains usable when the OS preference store is unavailable.
+        }
+    }
+
     private fun readVolume(key: String, defaultValue: Double): Double =
         preferences
             ?.getDouble(key, defaultValue)
@@ -48,5 +69,6 @@ actual class AppSettingsStorage actual constructor() {
         const val KEY_MUSIC_VOLUME: String = "audio.musicVolume"
         const val KEY_EFFECTS_VOLUME: String = "audio.effectsVolume"
         const val KEY_MUTED: String = "audio.muted"
+        const val KEY_WINDOW_DISPLAY_MODE: String = "window.displayMode"
     }
 }

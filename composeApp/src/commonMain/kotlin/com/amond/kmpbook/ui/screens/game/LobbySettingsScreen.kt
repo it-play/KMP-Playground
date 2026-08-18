@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.amond.kmpbook.presentation.settings.AudioSettings
+import com.amond.kmpbook.presentation.settings.WindowDisplayMode
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
 import com.amond.kmpbook.ui.components.MarketButton
@@ -36,6 +37,8 @@ fun LobbySettingsScreen(
     saveCount: Int,
     audioSettings: AudioSettings,
     onAudioSettingsChanged: (AudioSettings) -> Unit,
+    windowDisplayMode: WindowDisplayMode,
+    onWindowDisplayModeChanged: (WindowDisplayMode) -> Unit,
     onOpenSaveDirectory: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -65,6 +68,12 @@ fun LobbySettingsScreen(
                 settings = audioSettings,
                 onSettingsChanged = onAudioSettingsChanged,
                 modifier = Modifier.fillMaxWidth().height(410.dp),
+            )
+            Spacer(Modifier.height(16.dp))
+            WindowDisplaySettingsPanel(
+                selectedMode = windowDisplayMode,
+                onModeSelected = onWindowDisplayModeChanged,
+                modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(16.dp))
             LedgerPanel(Modifier.fillMaxWidth(), padding = 22.dp) {

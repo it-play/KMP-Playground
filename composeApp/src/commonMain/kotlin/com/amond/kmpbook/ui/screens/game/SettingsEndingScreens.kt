@@ -46,6 +46,7 @@ import com.amond.kmpbook.domain.simulation.market.MarketDynamicsSnapshot
 import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.persistence.model.GameSaveEntry
 import com.amond.kmpbook.presentation.settings.AudioSettings
+import com.amond.kmpbook.presentation.settings.WindowDisplayMode
 import com.amond.kmpbook.ui.charts.LineAreaChart
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
@@ -99,6 +100,8 @@ fun SettingsScreen(
     deletingSaveFileName: String?,
     audioSettings: AudioSettings,
     onAudioSettingsChanged: (AudioSettings) -> Unit,
+    windowDisplayMode: WindowDisplayMode,
+    onWindowDisplayModeChanged: (WindowDisplayMode) -> Unit,
     onSaveGame: (String) -> Unit,
     onLoadGame: (GameSaveEntry) -> Unit,
     onDeleteSave: (GameSaveEntry) -> Unit,
@@ -206,6 +209,11 @@ fun SettingsScreen(
                         }
                     }
                 }
+                WindowDisplaySettingsPanel(
+                    selectedMode = windowDisplayMode,
+                    onModeSelected = onWindowDisplayModeChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 LedgerPanel(Modifier.fillMaxWidth().weight(1f)) {
                     Column(Modifier.fillMaxSize()) {
                         SectionHeading("게임 저장")
