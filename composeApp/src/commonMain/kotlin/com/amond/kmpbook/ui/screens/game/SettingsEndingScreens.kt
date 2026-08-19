@@ -383,7 +383,7 @@ fun SettingsScreen(
                 AudioSettingsPanel(
                     settings = audioSettings,
                     onSettingsChanged = onAudioSettingsChanged,
-                    modifier = Modifier.fillMaxWidth().height(410.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 LedgerPanel(Modifier.fillMaxWidth().weight(1f)) {
                     Column(Modifier.fillMaxSize()) {
