@@ -189,9 +189,106 @@ private const val MAX_SAVED_FUND_REFERENCE_FLOAT_MARKET_VALUE: Double = 1e20
 
 private const val GAME_SAVE_EXTENSION: String = ".ml2"
 private const val MAX_GAME_SAVE_NAME_LENGTH: Int = 80
+private const val MAX_LOCAL_SAVE_PATH_LENGTH: Int = 32_768
+private const val MAX_FILE_PICKER_OUTPUT_BYTES: Int = MAX_LOCAL_SAVE_PATH_LENGTH * 4
 
 private fun defaultGameSaveDirectory(): Path {
     return DesktopGameDirectories.discover().saves
+}
+
+private fun selectSaveFileFromDesktop(): LocalSaveFileSelection {
+    val osName = System.getProperty("os.name").orEmpty()
+    val command = when {
+        osName.contains("Windows", ignoreCase = true) -> windowsSaveFilePickerCommand()
+        osName.contains("Mac", ignoreCase = true) -> macOsSaveFilePickerCommand()
+        else -> linuxSaveFilePickerCommand()
+    } ?: return LocalSaveFileSelection(
+        error = "이 환경에서는 로컬 파일 선택 창을 열 수 없습니다.",
+    )
+    return try {
+        val process = ProcessBuilder(command)
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .start()
+        val output = process.inputStream.use { input ->
+            input.readNBytes(MAX_FILE_PICKER_OUTPUT_BYTES + 1)
+        }
+        val exitCode = process.waitFor()
+        if (output.size > MAX_FILE_PICKER_OUTPUT_BYTES) {
+            return LocalSaveFileSelection(error = "선택한 파일 경로가 너무 깁니다.")
+        }
+        val path = output.toString(StandardCharsets.UTF_8).trimEnd('\r', '\n')
+        when {
+            exitCode != 0 || path.isBlank() -> LocalSaveFileSelection()
+            path.any { it == '\u0000' || it == '\r' || it == '\n' } ->
+                LocalSaveFileSelection(error = "선택한 파일 경로를 안전하게 읽을 수 없습니다.")
+            else -> LocalSaveFileSelection(path = path)
+        }
+    } catch (error: InterruptedException) {
+        Thread.currentThread().interrupt()
+        LocalSaveFileSelection(error = "파일 선택이 중단되었습니다.")
+    } catch (error: IOException) {
+        LocalSaveFileSelection(
+            error = "로컬 파일 선택 창을 열지 못했습니다: ${filePickerErrorMessage(error)}",
+        )
+    } catch (error: SecurityException) {
+        LocalSaveFileSelection(
+            error = "로컬 파일 선택 창을 열 권한이 없습니다: ${filePickerErrorMessage(error)}",
+        )
+    }
+}
+
+private fun filePickerErrorMessage(error: Throwable): String =
+    error.message?.take(220)?.takeIf(String::isNotBlank) ?: "알 수 없는 오류"
+
+private fun windowsSaveFilePickerCommand(): List<String> = listOf(
+    "powershell.exe",
+    "-NoProfile",
+    "-NonInteractive",
+    "-STA",
+    "-Command",
+    "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(\u0024false);" +
+        "Add-Type -AssemblyName System.Windows.Forms;" +
+        "\u0024dialog=New-Object System.Windows.Forms.OpenFileDialog;" +
+        "\u0024dialog.Title='Market Ledger 2040 저장 파일 열기';" +
+        "\u0024dialog.Filter='Market Ledger 저장 파일 (*.ml2)|*.ml2';" +
+        "\u0024dialog.Multiselect=\u0024false;\u0024dialog.RestoreDirectory=\u0024true;" +
+        "if(\u0024dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){" +
+        "[Console]::WriteLine(\u0024dialog.FileName)}",
+)
+
+private fun macOsSaveFilePickerCommand(): List<String> = listOf(
+    "/usr/bin/osascript",
+    "-e",
+    "set selectedFile to choose file with prompt \"Market Ledger 2040 저장 파일 열기\"",
+    "-e",
+    "POSIX path of selectedFile",
+)
+
+private fun linuxSaveFilePickerCommand(): List<String>? {
+    val zenity = listOf("/usr/bin/zenity", "/usr/local/bin/zenity")
+        .map(Path::of)
+        .firstOrNull(Files::isExecutable)
+    if (zenity != null) {
+        return listOf(
+            zenity.toString(),
+            "--file-selection",
+            "--title=Market Ledger 2040 저장 파일 열기",
+            "--file-filter=Market Ledger 저장 파일 | *.ml2",
+        )
+    }
+    val kdialog = listOf("/usr/bin/kdialog", "/usr/local/bin/kdialog")
+        .map(Path::of)
+        .firstOrNull(Files::isExecutable)
+    return kdialog?.let { executable ->
+        listOf(
+            executable.toString(),
+            "--getopenfilename",
+            "",
+            "*.ml2|Market Ledger 저장 파일",
+            "--title",
+            "Market Ledger 2040 저장 파일 열기",
+        )
+    }
 }
 
 actual class GameSaveStorage actual constructor() {
@@ -215,6 +312,10 @@ actual class GameSaveStorage actual constructor() {
         } catch (error: UnsupportedOperationException) {
             "이 환경에서는 저장 폴더를 탐색기로 열 수 없습니다."
         }
+    }
+
+    actual suspend fun selectLocalSaveFile(): LocalSaveFileSelection = withContext(Dispatchers.IO) {
+        selectSaveFileFromDesktop()
     }
 
     actual suspend fun save(state: SimulatorUiState, name: String): GameSaveResult = withContext(Dispatchers.IO) {
@@ -348,14 +449,48 @@ actual class GameSaveStorage actual constructor() {
                 ),
             )
         }
+        loadPath(targetPath)
+    }
+
+    actual suspend fun loadLocal(path: String): GameLoadResult = withContext(Dispatchers.IO) {
+        val targetPath = try {
+            require(path.isNotBlank()) { "불러올 저장 파일을 선택하세요." }
+            require(path.length <= MAX_LOCAL_SAVE_PATH_LENGTH) { "선택한 저장 파일 경로가 너무 깁니다." }
+            Path.of(path).toAbsolutePath().normalize().also { resolved ->
+                require(resolved.fileName.toString().endsWith(GAME_SAVE_EXTENSION, ignoreCase = true)) {
+                    ".ml2 저장 파일만 열 수 있습니다."
+                }
+            }
+        } catch (error: IllegalArgumentException) {
+            return@withContext GameLoadFailure(
+                path = path.take(MAX_LOCAL_SAVE_PATH_LENGTH),
+                error = GameSaveError(
+                    GameSaveErrorCode.INVALID_FILE_NAME,
+                    error.message ?: "선택한 저장 파일 경로가 올바르지 않습니다.",
+                ),
+            )
+        } catch (error: RuntimeException) {
+            return@withContext GameLoadFailure(
+                path = path.take(MAX_LOCAL_SAVE_PATH_LENGTH),
+                error = GameSaveError(
+                    GameSaveErrorCode.INVALID_FILE_NAME,
+                    "선택한 저장 파일 경로를 확인할 수 없습니다.",
+                    error::class.qualifiedName,
+                ),
+            )
+        }
+        loadPath(targetPath)
+    }
+
+    private fun loadPath(targetPath: Path): GameLoadResult {
         var rawTemporaryPath: Path? = null
         var typedStructureTemporaryPath: Path? = null
-        try {
+        return try {
             if (!Files.exists(targetPath, LinkOption.NOFOLLOW_LINKS)) {
-                return@withContext GameLoadNotFound(targetPath.toString())
+                return GameLoadNotFound(targetPath.toString())
             }
             if (!Files.isRegularFile(targetPath, LinkOption.NOFOLLOW_LINKS)) {
-                return@withContext GameLoadFailure(
+                return GameLoadFailure(
                     path = targetPath.toString(),
                     error = GameSaveError(
                         GameSaveErrorCode.IO_ERROR,
@@ -365,10 +500,16 @@ actual class GameSaveStorage actual constructor() {
             }
             val declaredSize = Files.size(targetPath)
             if (declaredSize > MAX_GAME_SAVE_FILE_BYTES) {
-                return@withContext GameLoadFailure(targetPath.toString(), tooLargeError(declaredSize))
+                return GameLoadFailure(targetPath.toString(), tooLargeError(declaredSize))
             }
             if (declaredSize <= GameSaveFrameHeader.BYTE_SIZE) {
-                return@withContext corrupted(targetPath, "저장 프레임 또는 payload가 비어 있습니다.")
+                return corrupted(targetPath, "저장 프레임 또는 payload가 비어 있습니다.")
+            }
+            Files.createDirectories(targetDirectory)
+            if (Files.isSymbolicLink(targetDirectory) ||
+                !Files.isDirectory(targetDirectory, LinkOption.NOFOLLOW_LINKS)
+            ) {
+                throw IOException("임시 검증 파일을 둘 안전한 저장 디렉터리가 없습니다.")
             }
             val rawPath = createPrivateTemporaryFile(
                 targetDirectory,
@@ -459,7 +600,7 @@ actual class GameSaveStorage actual constructor() {
             }
             val validationError = validateSimulatorUiStateIntrinsic(envelope.state)
             if (validationError != null) {
-                return@withContext GameLoadFailure(
+                return GameLoadFailure(
                     path = targetPath.toString(),
                     error = GameSaveError(GameSaveErrorCode.INVALID_STATE, validationError),
                 )

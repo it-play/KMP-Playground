@@ -10,8 +10,8 @@ const val CURRENT_GAME_SAVE_SCHEMA_VERSION: Int = 50
 const val GAME_SAVE_FORMAT_ID: String = "market-ledger-2040.game-save"
 
 /**
- * Named manual save-game storage. Construction, [list], and [load] never create a directory or file;
- * only [save] writes, while [delete] mutates only the selected save path.
+ * Named manual save-game storage. Only [save] and [delete] mutate persistent save data; loading may
+ * use short-lived private temporary files while validating an untrusted payload.
  *
  * The platform implementation owns the canonical Market Ledger 2040 save location and size limit.
  */
@@ -21,9 +21,15 @@ expect class GameSaveStorage() {
     /** Opens the save directory in the platform file browser. Returns an error message on failure. */
     suspend fun openSaveDirectory(): String?
 
+    /** Opens the platform file picker for a local .ml2 save. */
+    suspend fun selectLocalSaveFile(): LocalSaveFileSelection
+
     suspend fun save(state: SimulatorUiState, name: String): GameSaveResult
 
     suspend fun load(fileName: String): GameLoadResult
+
+    /** Loads a user-selected save outside the canonical save directory without copying it. */
+    suspend fun loadLocal(path: String): GameLoadResult
 
     suspend fun list(): GameSaveCatalog
 
