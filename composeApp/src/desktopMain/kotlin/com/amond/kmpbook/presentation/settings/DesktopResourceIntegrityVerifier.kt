@@ -38,6 +38,31 @@ private val EXPECTED_COMPOSE_RESOURCES: List<Triple<String, String, String>> = l
         "9b4eb7f1143a7f28217dac46f657a6ef269a511c6d8011d77bca89d66e0f1bdd",
     ),
     Triple(
+        "2026년 8월 역사 시나리오 manifest",
+        "files/scenarios/august_2026/historical_scenario_v1.json",
+        "80beed5bd469f89b54ffd2db4bd5c416ea5922af2fd79d648be05c355afddeaa",
+    ),
+    Triple(
+        "2026년 8월 역사 자료 출처",
+        "files/scenarios/august_2026/sources_v1.json",
+        "d8dc8f1c491d941da4cbdd35279821ab329b0d345f0bc4dbdfe2ed08858204d8",
+    ),
+    Triple(
+        "2026년 8월 역사 일봉",
+        "files/scenarios/august_2026/daily_bars_v1.json",
+        "7976613d63aeb8bf1b5a7b68aa9598d629ee53a04c895ebab467e16b540786a0",
+    ),
+    Triple(
+        "2026년 8월 역사 사건",
+        "files/scenarios/august_2026/events_v1.json",
+        "655ba18fe7f05f21ad3a4e1fc8eb4c11681e483736b3de0ef554783514a937e4",
+    ),
+    Triple(
+        "2026년 8월 역사 기업행동",
+        "files/scenarios/august_2026/corporate_actions_v1.json",
+        "a2398dd2c72a6aea47d8e930e5242c554734bb3da08b421276dfd890cb6e2664",
+    ),
+    Triple(
         "금융 사전",
         "files/dictionary/index.json",
         "4401b5e95a14cff9d70d27de99b03c664b245b1fa61712a7e45172dbf7f53678",
