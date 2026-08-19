@@ -239,7 +239,9 @@ fun SettingsScreen(
                         OutlinedTextField(
                             value = saveName,
                             onValueChange = { saveName = it.take(80) },
-                            modifier = Modifier.fillMaxWidth().height(MarketComponentSize.textFieldHeight),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(MarketComponentSize.textFieldHeight + 4.dp),
                             label = { Text("저장 파일 이름", style = MarketType.label) },
                             suffix = { Text(".ml2", style = MarketType.label, color = MarketColors.InkMuted) },
                             singleLine = true,
