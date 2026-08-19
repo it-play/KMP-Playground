@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Build deterministic August 2026 historical source and event resources.
+"""Incrementally build deterministic August 2026 source and event resources.
 
 The research candidate files intentionally carry annotations that are useful
 while auditing the material but are not part of the runtime JSON contract.
-This builder whitelists the runtime fields, merges any number of candidate
-files with the existing scenario resources, and validates all cross-resource
-references before replacing either output file.
+This builder whitelists the runtime fields, merges newly researched candidate
+files with the checked-in v2 scenario resources, and validates all
+cross-resource references before replacing either output file. Candidate files
+already incorporated into v2 must not be supplied again; use explicit
+``--base-sources`` and ``--base-events`` paths when rebuilding from a different
+baseline.
 
 Only the Python standard library is required.
 """
@@ -27,7 +30,7 @@ from pathlib import Path
 from typing import Any, Iterable, NoReturn
 
 
-COMPOSE_APP_ROOT = Path(__file__).resolve().parents[2]
+COMPOSE_APP_ROOT = Path(__file__).resolve().parents[4]
 SCENARIO_DIR = (
     COMPOSE_APP_ROOT
     / "src/commonMain/composeResources/files/scenarios/august_2026"

@@ -51,7 +51,7 @@ from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
 
-COMPOSE_APP_ROOT = Path(__file__).resolve().parents[2]
+COMPOSE_APP_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_CATALOG = (
     COMPOSE_APP_ROOT
     / "src/commonMain/composeResources/files/instruments/market_instrument_catalog_v6.json"
