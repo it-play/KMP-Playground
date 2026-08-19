@@ -86,10 +86,8 @@ import com.amond.kmpbook.ui.screens.dashboard.HomeDashboardScreen
 import com.amond.kmpbook.ui.screens.debug.DebugConsoleOverlay
 import com.amond.kmpbook.ui.screens.dictionary.DictionaryScreen
 import com.amond.kmpbook.ui.screens.game.EndingScreen
-import com.amond.kmpbook.ui.screens.game.GameEntryDestination
 import com.amond.kmpbook.ui.screens.game.GameLobbyScreen
 import com.amond.kmpbook.ui.screens.game.GameSettingsDisplay
-import com.amond.kmpbook.ui.screens.game.LobbySettingsScreen
 import com.amond.kmpbook.ui.screens.game.SettingsScreen
 import com.amond.kmpbook.ui.screens.game.TurnProcessingOverlay
 import com.amond.kmpbook.ui.screens.market.MarketTradingScreen
@@ -198,7 +196,6 @@ fun App(
     val resourceIntegrityVerifier = remember { ResourceIntegrityVerifier() }
     val scope = rememberCoroutineScope()
     val state by viewModel.uiState.collectAsState()
-    var entryDestination by remember { mutableStateOf(GameEntryDestination.LOBBY) }
     var saves by remember { mutableStateOf(emptyList<GameSaveEntry>()) }
     var saveStatus by remember { mutableStateOf("저장된 게임을 확인하고 있습니다.") }
     var isLoadingSaves by remember { mutableStateOf(true) }
@@ -212,7 +209,6 @@ fun App(
     var isScanningMods by remember { mutableStateOf(true) }
     var activeModMutations by remember { mutableStateOf(0) }
     var isStartingNewGame by remember { mutableStateOf(false) }
-    var newGameOperationDetail by remember { mutableStateOf<String?>(null) }
     var newGameError by remember { mutableStateOf<String?>(null) }
     var isResettingGame by remember { mutableStateOf(false) }
     var resetOperationDetail by remember { mutableStateOf<String?>(null) }
@@ -220,6 +216,7 @@ fun App(
     var modConsoleContribution by remember { mutableStateOf<ModConsoleContribution?>(null) }
     var isMarketFilterDialogVisible by remember { mutableStateOf(false) }
     var lobbyMaintenanceStatus by remember { mutableStateOf<String?>(null) }
+    var isOpeningGameDirectory by remember { mutableStateOf(false) }
     var isCheckingResources by remember { mutableStateOf(false) }
     val modMutationMutex = remember { Mutex() }
     val persistenceOperationMutex = remember { Mutex() }
@@ -231,6 +228,7 @@ fun App(
         isResettingGame ||
         activeModMutations > 0 ||
         isScanningMods ||
+        isOpeningGameDirectory ||
         isCheckingResources ||
         state.isAdvancing
     val activeConsoleMod = state.options.activeMods.firstOrNull { activeMod ->
@@ -390,7 +388,6 @@ fun App(
     val saveGame: (String) -> Unit = saveGameAction@{ name ->
         if (isPersistenceBusy || isResettingGame || isStartingNewGame) return@saveGameAction
         isSavingGame = true
-        persistenceOperationDetail = "현재 장부와 종목 방법론을 검증하고 있습니다."
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 persistenceOperationMutex.withLock {
@@ -403,7 +400,6 @@ fun App(
                             validationError
                         return@withLock
                     }
-                    persistenceOperationDetail = "검증된 장부를 압축해 저장 파일에 기록하고 있습니다."
                     when (val result = storage.save(stateToSave, name)) {
                         is GameSaveSuccess -> {
                             saveStatus = "${result.path.substringAfterLast('/').substringAfterLast('\\')} 파일로 저장했습니다."
@@ -490,48 +486,21 @@ fun App(
             }
         }
     }
-    val openLocalSaveFile: () -> Unit = openLocalSaveFileAction@{
-        if (isPersistenceBusy || isResettingGame || isStartingNewGame || isCheckingResources) {
-            return@openLocalSaveFileAction
-        }
-        if (isModCatalogBusy) {
-            lobbyMaintenanceStatus = "모드 목록을 확인한 뒤 로컬 파일을 열 수 있습니다."
-            return@openLocalSaveFileAction
-        }
-        isLoadingGame = true
-        lobbyMaintenanceStatus = "열 저장 파일을 선택하세요."
-        persistenceOperationDetail = "로컬 저장 파일을 선택하고 있습니다."
+    val openGameDirectory: () -> Unit = openGameDirectoryAction@{
+        if (isCriticalOperationActive) return@openGameDirectoryAction
+        isOpeningGameDirectory = true
+        lobbyMaintenanceStatus = "게임 폴더를 열고 있습니다."
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
-                persistenceOperationMutex.withLock {
-                    val selection = storage.selectLocalSaveFile()
-                    val selectedPath = selection.path
-                    when {
-                        selection.error != null -> lobbyMaintenanceStatus = selection.error
-                        selectedPath == null -> lobbyMaintenanceStatus = "파일 선택을 취소했습니다."
-                        else -> {
-                            persistenceOperationDetail = "저장 파일의 무결성과 장부 구조를 확인하고 있습니다."
-                            val selectedFileName = selectedPath
-                                .substringAfterLast('/')
-                                .substringAfterLast('\\')
-                            val displayName = selectedFileName.dropLast(4)
-                            val resultMessage = restoreLoadedGame(
-                                result = storage.loadLocal(selectedPath),
-                                displayName = displayName,
-                            )
-                            saveStatus = resultMessage
-                            lobbyMaintenanceStatus = resultMessage
-                        }
-                    }
-                }
+                val error = storage.openGameDirectory()
+                lobbyMaintenanceStatus = error ?: "게임 폴더를 탐색기로 열었습니다."
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: RuntimeException) {
-                lobbyMaintenanceStatus = "로컬 파일을 열지 못했습니다: " +
+                lobbyMaintenanceStatus = "게임 폴더를 열지 못했습니다: " +
                     (error.message?.take(220) ?: "알 수 없는 오류")
             } finally {
-                isLoadingGame = false
-                persistenceOperationDetail = null
+                isOpeningGameDirectory = false
             }
         }
     }
@@ -657,7 +626,6 @@ fun App(
                     saveStatus = "다른 게임 작업이 끝난 뒤 다시 초기화해 주세요."
                     return@launch
                 }
-                entryDestination = GameEntryDestination.LOBBY
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: RuntimeException) {
@@ -673,8 +641,7 @@ fun App(
     MarketSimulatorTheme {
         Box(Modifier.fillMaxSize()) {
             when (state.phase) {
-                GamePhase.SETUP -> when (entryDestination) {
-                    GameEntryDestination.LOBBY -> GameLobbyScreen(
+                GamePhase.SETUP -> GameLobbyScreen(
                         saves = saves,
                         saveStatus = saveStatus,
                         mods = installedMods,
@@ -687,7 +654,6 @@ fun App(
                         onDeleteSave = deleteSave,
                         isScanningMods = isScanningMods,
                         isMutatingMods = activeModMutations > 0,
-                        newGameBusyMessage = newGameOperationDetail,
                         newGameErrorMessage = newGameError,
                         onContinue = loadGame,
                         onLoad = loadGame,
@@ -697,7 +663,6 @@ fun App(
                             }
                             isStartingNewGame = true
                             newGameError = null
-                            newGameOperationDetail = "활성 모드와 종목팩을 다시 확인하고 있습니다."
                             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                                 try {
                                     val currentCatalog = refreshMods() ?: run {
@@ -711,7 +676,6 @@ fun App(
                                         newGameError = "활성 모드는 ${NewGameOptions.MAX_ACTIVE_MODS}개까지만 새 게임에 적용할 수 있습니다."
                                         return@launch
                                     }
-                                    newGameOperationDetail = "새 장부에 사용할 종목 카탈로그를 구성하고 있습니다."
                                     val resolvedCatalog = runCatching {
                                         withContext(Dispatchers.Default) {
                                             resolveInstrumentCatalog(baseInstrumentCatalog, enabledMods)
@@ -741,7 +705,6 @@ fun App(
                                             )
                                         },
                                     )
-                                    newGameOperationDetail = "시장 엔진과 초기 거래 원장을 생성하고 있습니다."
                                     viewModel.newGame(resolvedOptions, resolvedCatalog)?.let { errorMessage ->
                                         newGameError = errorMessage
                                         modStatusMessage = errorMessage
@@ -749,7 +712,6 @@ fun App(
                                     }
                                 } finally {
                                     isStartingNewGame = false
-                                    newGameOperationDetail = null
                                 }
                             }
                         },
@@ -757,24 +719,20 @@ fun App(
                         onModSettingChanged = updateModSetting,
                         onRefreshMods = refreshModsAction,
                         onOpenModsDirectory = openModsDirectory,
-                        onSettings = { entryDestination = GameEntryDestination.SETTINGS },
-                        onExit = {
-                            if (activeModMutations == 0) onExitRequest()
-                        },
-                    )
-                    GameEntryDestination.SETTINGS -> LobbySettingsScreen(
                         audioSettings = audioSettings,
                         onAudioSettingsChanged = onAudioSettingsChange,
                         windowDisplayMode = windowDisplayMode,
                         onWindowDisplayModeChanged = onWindowDisplayModeChange,
                         maintenanceStatus = lobbyMaintenanceStatus,
-                        isOpeningLocalFile = isLoadingGame,
+                        isOpeningGameDirectory = isOpeningGameDirectory,
                         isCheckingResources = isCheckingResources,
-                        onOpenLocalFile = openLocalSaveFile,
+                        onOpenGameDirectory = openGameDirectory,
                         onCheckResources = checkResources,
-                        onBack = { entryDestination = GameEntryDestination.LOBBY },
+                        escapeRequest = escapeRequest,
+                        onExit = {
+                            if (activeModMutations == 0) onExitRequest()
+                        },
                     )
-                }
 
                 GamePhase.SETTLEMENT,
                 GamePhase.FINISHED,
@@ -850,8 +808,6 @@ fun App(
                 when {
                     isSavingGame -> GameOperationLoadingDialog(
                         title = "게임 저장 중",
-                        detail = persistenceOperationDetail
-                            ?: "현재 게임 상태를 파일에 기록하고 있습니다.",
                     )
                     isLoadingGame -> GameOperationLoadingDialog(
                         title = "게임 불러오는 중",
@@ -864,8 +820,6 @@ fun App(
                     )
                     isStartingNewGame -> GameOperationLoadingDialog(
                         title = "새 게임 준비 중",
-                        detail = newGameOperationDetail
-                            ?: "새 시장 시뮬레이션을 준비하고 있습니다.",
                     )
                     isResettingGame -> GameOperationLoadingDialog(
                         title = "장부 초기화 중",
@@ -889,7 +843,7 @@ fun App(
 @Composable
 private fun GameOperationLoadingDialog(
     title: String,
-    detail: String,
+    detail: String? = null,
 ) {
     Dialog(onDismissRequest = {}) {
         Surface(
@@ -921,11 +875,13 @@ private fun GameOperationLoadingDialog(
                             style = MarketType.heading,
                             color = Color.White,
                         )
-                        Text(
-                            text = detail,
-                            style = MarketType.body,
-                            color = MarketColors.Grey200,
-                        )
+                        detail?.let { message ->
+                            Text(
+                                text = message,
+                                style = MarketType.body,
+                                color = MarketColors.Grey200,
+                            )
+                        }
                     }
                 }
                 LoadingFinancialFact(

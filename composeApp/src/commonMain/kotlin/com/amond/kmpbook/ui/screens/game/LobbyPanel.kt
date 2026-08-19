@@ -5,4 +5,5 @@ enum class LobbyPanel {
     LOAD_GAME,
     NEW_GAME,
     MODS,
+    SETTINGS,
 }

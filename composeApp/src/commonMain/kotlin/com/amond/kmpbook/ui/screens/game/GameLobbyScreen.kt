@@ -26,6 +26,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,6 +42,8 @@ import androidx.compose.ui.unit.sp
 import com.amond.kmpbook.modding.model.InstalledMod
 import com.amond.kmpbook.modding.model.ModLoadIssue
 import com.amond.kmpbook.persistence.model.GameSaveEntry
+import com.amond.kmpbook.presentation.settings.AudioSettings
+import com.amond.kmpbook.presentation.settings.WindowDisplayMode
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
@@ -68,14 +71,22 @@ fun GameLobbyScreen(
     onModSettingChanged: (InstalledMod, String, String) -> Unit,
     onRefreshMods: () -> Unit,
     onOpenModsDirectory: () -> Unit,
-    onSettings: () -> Unit,
+    audioSettings: AudioSettings,
+    onAudioSettingsChanged: (AudioSettings) -> Unit,
+    windowDisplayMode: WindowDisplayMode,
+    onWindowDisplayModeChanged: (WindowDisplayMode) -> Unit,
+    maintenanceStatus: String?,
+    isOpeningGameDirectory: Boolean,
+    isCheckingResources: Boolean,
+    onOpenGameDirectory: () -> Unit,
+    onCheckResources: () -> Unit,
     onExit: () -> Unit,
+    escapeRequest: Int = 0,
     isLoadingSaves: Boolean = false,
     deletingSaveFileName: String? = null,
     onDeleteSave: (GameSaveEntry) -> Unit = {},
     isScanningMods: Boolean = areModControlsBusy,
     isMutatingMods: Boolean = false,
-    newGameBusyMessage: String? = null,
     newGameErrorMessage: String? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -83,6 +94,12 @@ fun GameLobbyScreen(
     var selectedPanel by remember { mutableStateOf(LobbyPanel.MARKET) }
     val marketCarouselState = rememberLobbyMarketCarouselState()
     LobbyMarketIndexLoader(marketCarouselState)
+
+    LaunchedEffect(escapeRequest) {
+        if (escapeRequest > 0 && selectedPanel == LobbyPanel.SETTINGS) {
+            selectedPanel = LobbyPanel.MARKET
+        }
+    }
 
     Row(modifier.fillMaxSize().background(MarketColors.Ledger)) {
         Column(
@@ -150,7 +167,17 @@ fun GameLobbyScreen(
                     }
                 },
             )
-            LobbyMenuItem(label = "설정", onClick = onSettings)
+            LobbyMenuItem(
+                label = "설정",
+                selected = selectedPanel == LobbyPanel.SETTINGS,
+                onClick = {
+                    selectedPanel = if (selectedPanel == LobbyPanel.SETTINGS) {
+                        LobbyPanel.MARKET
+                    } else {
+                        LobbyPanel.SETTINGS
+                    }
+                },
+            )
             LobbyMenuItem(label = "종료하기", enabled = !areModControlsBusy, onClick = onExit)
             Spacer(Modifier.weight(1f))
         }
@@ -184,8 +211,6 @@ fun GameLobbyScreen(
                     },
                     onBack = { selectedPanel = LobbyPanel.MARKET },
                     isBusy = isModCatalogBusy,
-                    busyMessage = newGameBusyMessage
-                        ?: if (isModCatalogBusy) "모드와 시장 데이터를 준비하고 있습니다." else null,
                     errorMessage = newGameErrorMessage,
                     modifier = Modifier.fillMaxSize(),
                     embedded = true,
@@ -200,6 +225,19 @@ fun GameLobbyScreen(
                     onSettingChanged = onModSettingChanged,
                     onRefresh = onRefreshMods,
                     onOpenModsDirectory = onOpenModsDirectory,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                LobbyPanel.SETTINGS -> LobbySettingsScreen(
+                    audioSettings = audioSettings,
+                    onAudioSettingsChanged = onAudioSettingsChanged,
+                    windowDisplayMode = windowDisplayMode,
+                    onWindowDisplayModeChanged = onWindowDisplayModeChanged,
+                    maintenanceStatus = maintenanceStatus,
+                    isOpeningGameDirectory = isOpeningGameDirectory,
+                    isCheckingResources = isCheckingResources,
+                    onOpenGameDirectory = onOpenGameDirectory,
+                    onCheckResources = onCheckResources,
+                    onBack = { selectedPanel = LobbyPanel.MARKET },
                     modifier = Modifier.fillMaxSize(),
                 )
             }

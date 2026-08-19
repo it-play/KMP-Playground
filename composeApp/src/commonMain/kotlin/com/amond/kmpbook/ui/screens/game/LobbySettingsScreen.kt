@@ -13,10 +13,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.amond.kmpbook.presentation.settings.AudioSettings
 import com.amond.kmpbook.presentation.settings.WindowDisplayMode
@@ -36,15 +36,15 @@ fun LobbySettingsScreen(
     windowDisplayMode: WindowDisplayMode,
     onWindowDisplayModeChanged: (WindowDisplayMode) -> Unit,
     maintenanceStatus: String?,
-    isOpeningLocalFile: Boolean,
+    isOpeningGameDirectory: Boolean,
     isCheckingResources: Boolean,
-    onOpenLocalFile: () -> Unit,
+    onOpenGameDirectory: () -> Unit,
     onCheckResources: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
-    Box(modifier.fillMaxSize().background(MarketColors.Ledger), contentAlignment = Alignment.Center) {
+    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         VisibleVerticalScrollbar(
             state = scrollState,
             modifier = Modifier.fillMaxSize(),
@@ -57,80 +57,61 @@ fun LobbySettingsScreen(
                     .verticalScroll(scrollState)
                     .padding(vertical = 24.dp, horizontal = 13.dp),
             ) {
-            LedgerPanel(Modifier.fillMaxWidth(), padding = 22.dp) {
-                SectionHeading(title = "설정")
-            }
-            Spacer(Modifier.height(16.dp))
-            AudioSettingsPanel(
-                settings = audioSettings,
-                onSettingsChanged = onAudioSettingsChanged,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(16.dp))
-            WindowDisplaySettingsPanel(
-                selectedMode = windowDisplayMode,
-                onModeSelected = onWindowDisplayModeChanged,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(16.dp))
-            LedgerPanel(Modifier.fillMaxWidth(), padding = 22.dp) {
-                Column {
-                    SectionHeading("파일과 리소스")
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        "로컬 파일 열기",
-                        style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
-                        color = MarketColors.Ink,
+                LedgerPanel(Modifier.fillMaxWidth(), padding = 22.dp) {
+                    SectionHeading(
+                        title = "설정",
+                        action = {
+                            TextButton(onClick = onBack) {
+                                Text("닫기", style = MarketType.label, color = MarketColors.InkMuted)
+                            }
+                        },
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "저장 폴더 밖의 .ml2 파일도 검증한 뒤 바로 불러옵니다.",
-                        style = MarketType.body,
-                        color = MarketColors.InkMuted,
-                    )
-                    Spacer(Modifier.height(9.dp))
-                    MarketButton(
-                        text = if (isOpeningLocalFile) "파일 확인 중…" else "로컬 파일 선택",
-                        onClick = onOpenLocalFile,
-                        enabled = !isOpeningLocalFile && !isCheckingResources,
-                        modifier = Modifier.fillMaxWidth(),
-                        variant = MarketButtonVariant.Weak,
-                    )
-                    Spacer(Modifier.height(18.dp))
-                    Text(
-                        "리소스 무결성 검사",
-                        style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
-                        color = MarketColors.Ink,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "종목·사전·차트·글꼴·오디오 파일이 원본과 일치하는지 확인합니다.",
-                        style = MarketType.body,
-                        color = MarketColors.InkMuted,
-                    )
-                    Spacer(Modifier.height(9.dp))
-                    MarketButton(
-                        text = if (isCheckingResources) "검사 중…" else "무결성 검사 시작",
-                        onClick = onCheckResources,
-                        enabled = !isOpeningLocalFile && !isCheckingResources,
-                        modifier = Modifier.fillMaxWidth(),
-                        variant = MarketButtonVariant.Weak,
-                    )
-                    maintenanceStatus?.let { status ->
-                        Spacer(Modifier.height(14.dp))
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.small))
-                                .padding(14.dp),
-                        ) {
-                            Text(status, style = MarketType.body, color = MarketColors.Ink)
+                }
+                Spacer(Modifier.height(16.dp))
+                AudioSettingsPanel(
+                    settings = audioSettings,
+                    onSettingsChanged = onAudioSettingsChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(16.dp))
+                WindowDisplaySettingsPanel(
+                    selectedMode = windowDisplayMode,
+                    onModeSelected = onWindowDisplayModeChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(16.dp))
+                LedgerPanel(Modifier.fillMaxWidth(), padding = 22.dp) {
+                    Column {
+                        SectionHeading("파일과 리소스")
+                        Spacer(Modifier.height(16.dp))
+                        MarketButton(
+                            text = if (isOpeningGameDirectory) "폴더 여는 중…" else "로컬 파일 열기",
+                            onClick = onOpenGameDirectory,
+                            enabled = !isOpeningGameDirectory && !isCheckingResources,
+                            modifier = Modifier.fillMaxWidth(),
+                            variant = MarketButtonVariant.Weak,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        MarketButton(
+                            text = if (isCheckingResources) "검사 중…" else "리소스 무결성 검사",
+                            onClick = onCheckResources,
+                            enabled = !isOpeningGameDirectory && !isCheckingResources,
+                            modifier = Modifier.fillMaxWidth(),
+                            variant = MarketButtonVariant.Weak,
+                        )
+                        maintenanceStatus?.let { status ->
+                            Spacer(Modifier.height(14.dp))
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.small))
+                                    .padding(14.dp),
+                            ) {
+                                Text(status, style = MarketType.body, color = MarketColors.Ink)
+                            }
                         }
                     }
                 }
-            }
-            Spacer(Modifier.height(16.dp))
-            MarketButton("로비로 돌아가기", onBack, Modifier.fillMaxWidth(), variant = MarketButtonVariant.Weak)
             }
         }
     }

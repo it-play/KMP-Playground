@@ -12,8 +12,6 @@ import com.amond.kmpbook.ui.components.LedgerPanel
 import com.amond.kmpbook.ui.components.MarketCheckRow
 import com.amond.kmpbook.ui.components.MarketSlider
 import com.amond.kmpbook.ui.components.SectionHeading
-import com.amond.kmpbook.ui.components.StatusLabel
-import com.amond.kmpbook.ui.theme.MarketColors
 import kotlin.math.roundToInt
 
 @Composable
@@ -34,16 +32,7 @@ fun AudioSettingsContent(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        SectionHeading(
-            title = "사운드",
-            action = {
-                StatusLabel(
-                    text = if (settings.muted) "음소거" else "${settings.masterVolume.asPercent()}%",
-                    color = if (settings.muted) MarketColors.InkMuted else MarketColors.Primary,
-                    strong = true,
-                )
-            },
-        )
+        SectionHeading(title = "사운드")
         Spacer(Modifier.height(1.dp))
         MarketCheckRow(
             checked = settings.muted,

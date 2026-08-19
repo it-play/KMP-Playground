@@ -82,17 +82,10 @@ private fun WindowDisplayModeRow(
             color = if (selected) MarketColors.Primary else MarketColors.Grey400,
         )
         Spacer(Modifier.width(10.dp))
-        Column {
-            Text(
-                text = mode.displayName,
-                style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
-                color = MarketColors.Ink,
-            )
-            Text(
-                text = mode.description,
-                style = MarketType.caption,
-                color = MarketColors.InkMuted,
-            )
-        }
+        Text(
+            text = mode.displayName,
+            style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+            color = MarketColors.Ink,
+        )
     }
 }
