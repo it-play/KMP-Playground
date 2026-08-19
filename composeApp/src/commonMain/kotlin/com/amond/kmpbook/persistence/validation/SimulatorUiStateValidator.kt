@@ -31,6 +31,10 @@ import com.amond.kmpbook.domain.model.event.GameEventImpact
 import com.amond.kmpbook.domain.model.event.ImpactDirection
 import com.amond.kmpbook.domain.model.game.GamePhase
 import com.amond.kmpbook.domain.model.game.Screen
+import com.amond.kmpbook.domain.model.history.HistoricalDailyBar
+import com.amond.kmpbook.domain.model.history.HistoricalCorporateActionKind
+import com.amond.kmpbook.domain.model.history.HistoricalScenarioPack
+import com.amond.kmpbook.domain.model.history.HistoricalScenarioReference
 import com.amond.kmpbook.domain.model.fund.BenchmarkDefinition
 import com.amond.kmpbook.domain.model.fund.BenchmarkEngineKind
 import com.amond.kmpbook.domain.model.fund.BenchmarkRef
@@ -111,6 +115,7 @@ import com.amond.kmpbook.domain.model.marketaction.krxViOccurrenceId
 import com.amond.kmpbook.domain.model.marketaction.usLuldOccurrenceId
 import com.amond.kmpbook.domain.model.marketaction.usMwcbOccurrenceId
 import com.amond.kmpbook.domain.simulation.market.MarketMicrostructure
+import com.amond.kmpbook.domain.simulation.history.HistoricalNewsEventFactory
 import com.amond.kmpbook.domain.simulation.protection.TradingProtectionEngine
 import com.amond.kmpbook.domain.simulation.protection.TradingProtectionRules
 import com.amond.kmpbook.domain.model.venue.MarketSession
@@ -278,12 +283,141 @@ internal fun validateSimulatorUiState(
 internal fun validateSimulatorUiStateIntrinsic(state: SimulatorUiState): String? =
     validateSimulatorUiStateInternal(state, catalog = null)
 
+/** 저장 스냅샷이 현재 실행 중인 역사 팩과 정확히 같은 콘텐츠에 결박되었는지 확인한다. */
+internal fun validateHistoricalScenarioBinding(
+    state: SimulatorUiState,
+    currentScenario: HistoricalScenarioPack?,
+): String? {
+    val storedReference = state.historicalScenarioReference
+    val currentReference = currentScenario?.let(HistoricalScenarioReference::from)
+    if (storedReference != currentReference) {
+        return when {
+            storedReference == null ->
+                "저장 데이터에 현재 역사 시나리오 참조가 없습니다."
+            currentReference == null ->
+                "저장 데이터가 요구하는 역사 시나리오가 현재 실행 환경에 없습니다."
+            else ->
+                "저장 데이터의 역사 시나리오 ID·버전·콘텐츠 해시가 현재 팩과 일치하지 않습니다."
+        }
+    }
+    if (currentScenario == null) {
+        val hasHistoricalPrefix = state.chartPriceHistory.values.any { histories ->
+            histories[PriceBarInterval.ONE_DAY].orEmpty().any { bar ->
+                bar.endTime <= GameCalendar.startInstant
+            }
+        }
+        return if (hasHistoricalPrefix) {
+            "역사 시나리오가 없는 저장 데이터에 게임 시작 전 일봉이 포함되어 있습니다."
+        } else {
+            null
+        }
+    }
+    return validateHistoricalNewsLedger(state, currentScenario)
+        ?: validateHistoricalDailyPrefix(state, currentScenario)
+}
+
+private fun validateHistoricalNewsLedger(
+    state: SimulatorUiState,
+    scenario: HistoricalScenarioPack,
+): String? {
+    val stocksById = state.stocks.associateBy(StockDefinition::id)
+    val expectedNews = runCatching {
+        HistoricalNewsEventFactory.publishedNewsThrough(
+            pack = scenario,
+            stocksById = stocksById,
+            throughInclusive = minOf(state.currentTime, scenario.definition.historicalThroughAt),
+        )
+    }.getOrElse {
+        return "현재 역사 시나리오의 canonical 뉴스 원장을 재구성할 수 없습니다."
+    }
+    val savedById = state.newsEvents.associateBy(GameEvent::id)
+    if (expectedNews.any { expected -> savedById[expected.id] != expected }) {
+        return "저장된 역사 사건·배당 뉴스가 현재 시나리오의 원문·시각·대상·출처와 일치하지 않습니다."
+    }
+
+    val expectedIds = expectedNews.mapTo(hashSetOf(), GameEvent::id)
+    val dueSplits = scenario.corporateActions.asSequence()
+        .filter { action ->
+            action.kind == HistoricalCorporateActionKind.STOCK_SPLIT &&
+                action.effectiveAt <= state.currentTime
+        }
+        .toList()
+    val splitIds = dueSplits.asSequence()
+        .flatMap { action ->
+            val base = "${HistoricalNewsEventFactory.idPrefix(scenario)}${action.id}"
+            sequenceOf("$base:announcement", "$base:effective")
+        }
+        .toSet()
+    for (action in dueSplits) {
+        val stock = stocksById[action.stockId]
+            ?: return "현재 역사 시나리오 분할 대상 종목을 저장 카탈로그에서 찾을 수 없습니다."
+        val expectedPending = runCatching {
+            HistoricalNewsEventFactory.splitPending(scenario, action)
+        }.getOrElse {
+            return "현재 역사 시나리오의 분할 원장을 재구성할 수 없습니다."
+        }
+        val record = state.corporateActionLedger.singleOrNull { it.id == expectedPending.id }
+            ?: return "효력 시각이 지난 역사 주식분할 원장이 저장 데이터에 없습니다."
+        if (record.stockId != expectedPending.stockId || record.kind != expectedPending.kind ||
+            record.announcedAt != expectedPending.announcedAt ||
+            record.effectiveNotBefore != expectedPending.effectiveNotBefore ||
+            record.effectiveAt != action.effectiveAt ||
+            record.quantityMultiplier.toBits() != expectedPending.quantityMultiplier.toBits() ||
+            record.source != expectedPending.source || record.rationale != expectedPending.rationale ||
+            state.pendingCorporateActions.any { it.id == expectedPending.id }
+        ) {
+            return "저장된 역사 주식분할의 종목·비율·효력시각·출처 계보가 현재 시나리오와 다릅니다."
+        }
+        val expectedAnnouncement = HistoricalNewsEventFactory.splitAnnouncement(
+            scenario,
+            action,
+            stock,
+        )
+        if (savedById[expectedAnnouncement.id] != expectedAnnouncement) {
+            return "저장된 역사 주식분할 공시가 현재 시나리오의 canonical 뉴스와 다릅니다."
+        }
+        val savedEffective = savedById["${expectedPending.id}:effective"]
+        val permittedSettlementStates = if (
+            record.kind == CorporateActionKind.FORWARD_SPLIT || stock.supportsFractional
+        ) {
+            listOf(false)
+        } else {
+            // 역분할 당시 보유 lot의 단주 여부는 적용 뒤 상태만으로는 되돌릴 수 없고,
+            // 현금·FIFO 원장이 실제 정산의 유효성은 별도로 검증한다.
+            listOf(false, true)
+        }
+        val canonicalEffective = permittedSettlementStates.map { settledFraction ->
+            HistoricalNewsEventFactory.splitEffective(
+                pack = scenario,
+                action = action,
+                stock = stock,
+                record = record,
+                settledFraction = settledFraction,
+            )
+        }
+        if (savedEffective !in canonicalEffective) {
+            return "저장된 역사 주식분할 효력 뉴스가 현재 시나리오·적용 원장과 다릅니다."
+        }
+    }
+    val historicalPrefix = HistoricalNewsEventFactory.idPrefix(scenario)
+    if (state.newsEvents.any { event ->
+            event.id.startsWith(historicalPrefix) && event.id !in expectedIds && event.id !in splitIds
+        }
+    ) {
+        return "저장된 뉴스에 현재 시나리오가 알 수 없는 역사 사건 ID가 있습니다."
+    }
+    return null
+}
+
 private fun validateSimulatorUiStateInternal(
     state: SimulatorUiState,
     catalog: InstrumentCatalogSnapshot?,
 ): String? {
     if (!hasValidCatalogReference(state)) {
         return "저장 데이터의 종목 카탈로그 참조 구조가 유효하지 않습니다."
+    }
+    if (!hasValidHistoricalScenarioReference(state)) {
+        return "저장 데이터의 역사 시나리오 참조 구조가 유효하지 않습니다."
     }
     if (catalog != null && state.catalogReference != catalog.reference) {
         return "저장 데이터의 종목 카탈로그 참조가 현재 번들·모드 종목팩과 일치하지 않습니다."
@@ -590,6 +724,23 @@ private fun validateSimulatorUiStateInternal(
         }
     ) {
         return "주기별 차트 히스토리의 종목·주기·OHLCV·시간·보존 한도가 올바르지 않습니다."
+    }
+    if (state.chartPriceHistory.any { (stockId, histories) ->
+            val stock = stocksById.getValue(stockId)
+            histories.getValue(PriceBarInterval.ONE_DAY).any { bar ->
+                when {
+                    bar.endTime <= GameCalendar.startInstant -> {
+                        val date = GameCalendar.marketLocalDateTime(stock.market, bar.startTime).date
+                        val session = GameCalendar.regularSessionWindow(stock.market, date)
+                        session == null || bar.startTime != session.opensAt || bar.endTime != session.closesAt
+                    }
+                    bar.startTime < GameCalendar.startInstant -> true
+                    else -> false
+                }
+            }
+        }
+    ) {
+        return "게임 시작 전 일봉 prefix가 거래소 정규장 경계와 일치하지 않습니다."
     }
     if (state.portfolioSnapshots.any { snapshot ->
             snapshot.holdingCostBasisKrw.keys != snapshot.holdings.mapTo(linkedSetOf()) { it.stockId } ||
@@ -1716,7 +1867,7 @@ private fun validateSimulatorUiStateInternal(
             } == true
         }
     }
-    val incompleteDailyCoverage = stocksById.any { (stockId, stock) ->
+    val incompleteDailyCoverageStockId = stocksById.entries.firstOrNull { (stockId, stock) ->
         val canonicalRetainedBars = canonicalRetainedDailyBarsByStockId.getValue(stockId)
         val canonicalCompletedBars = canonicalDailyBarsByStockId.getValue(stockId)
         val completedDates = canonicalCompletedBars.map { bar ->
@@ -1749,7 +1900,9 @@ private fun validateSimulatorUiStateInternal(
         val expectedSavedDates = (
             expectedChronologicalCompletedDates + incompleteDates + protectedPositiveDates
             ).distinct().sorted()
-        val savedBars = oneDayChartBarsByStockId.getValue(stockId)
+        val savedBars = oneDayChartBarsByStockId.getValue(stockId).filter { bar ->
+            bar.endTime > GameCalendar.startInstant
+        }
         val savedDates = savedBars.map { bar ->
             GameCalendar.marketLocalDateTime(stock.market, bar.startTime).date
         }
@@ -1762,9 +1915,10 @@ private fun validateSimulatorUiStateInternal(
                 val date = GameCalendar.marketLocalDateTime(stock.market, canonical.startTime).date
                 savedByDate[date] != canonical
             }
-    }
-    if (incompleteDailyCoverage) {
-        return "시간봉에서 독립 재구성한 최근 거래일과 일봉·시장감시 의사결정 구간이 다릅니다."
+    }?.key
+    if (incompleteDailyCoverageStockId != null) {
+        return "시간봉에서 독립 재구성한 최근 거래일과 일봉·시장감시 의사결정 구간이 다릅니다: " +
+            incompleteDailyCoverageStockId
     }
     val requiredSurveillanceTailByStockId = canonicalDailyBarsByStockId.mapValues { (_, bars) ->
         bars.filter { bar -> bar.volume > 0L }.takeLast(REQUIRED_SURVEILLANCE_DECISION_POINTS)
@@ -1839,25 +1993,29 @@ private fun validateSimulatorUiStateInternal(
                 .mapTo(this) { stock -> stock.market to date }
         }
     }
-    if (state.dailyTradingSurveillance.keys != stockIds ||
-        state.dailyTradingSurveillance.any { (stockId, points) ->
-                val stock = stocksById.getValue(stockId)
-                points.size > SimulatorRuntime.MAX_DAILY_SURVEILLANCE_POINTS ||
-                points.zipWithNext().any { (previous, next) -> previous.date >= next.date } ||
-                invalidDailyTradingSurveillanceHistory(
-                    stock = stock,
-                    points = points,
-                    listingEvents = listingEventsByStockId[stockId].orEmpty(),
-                    krxProxyAvailableAt = krxProxyAvailableAt,
-                    requiredTailBars = requiredSurveillanceTailByStockId.getValue(stockId),
-                    expectedKrxProxyByStockDate = expectedKrxProxyByStockDate,
-                    expectedKrxRankByStockDate = expectedKrxRankByStockDate,
-                    debugPriceFactsAllowed = debugPriceFactsAllowed,
-                    currentDate = state.currentDate,
-                )
-        }
-    ) {
-        return "일별 시장감시 이력의 종목·값·거래일·날짜 순서·보존 한도가 올바르지 않습니다."
+    if (state.dailyTradingSurveillance.keys != stockIds) {
+        return "일별 시장감시 이력의 종목 집합이 현재 카탈로그와 다릅니다."
+    }
+    val invalidSurveillanceStockId = state.dailyTradingSurveillance.entries.firstOrNull {
+            (stockId, points) ->
+        val stock = stocksById.getValue(stockId)
+        points.size > SimulatorRuntime.MAX_DAILY_SURVEILLANCE_POINTS ||
+            points.zipWithNext().any { (previous, next) -> previous.date >= next.date } ||
+            invalidDailyTradingSurveillanceHistory(
+                stock = stock,
+                points = points,
+                listingEvents = listingEventsByStockId[stockId].orEmpty(),
+                krxProxyAvailableAt = krxProxyAvailableAt,
+                requiredTailBars = requiredSurveillanceTailByStockId.getValue(stockId),
+                expectedKrxProxyByStockDate = expectedKrxProxyByStockDate,
+                expectedKrxRankByStockDate = expectedKrxRankByStockDate,
+                debugPriceFactsAllowed = debugPriceFactsAllowed,
+                currentDate = state.currentDate,
+            )
+    }?.key
+    if (invalidSurveillanceStockId != null) {
+        return "일별 시장감시 이력의 값·거래일·날짜 순서·보존 한도가 올바르지 않습니다: " +
+            invalidSurveillanceStockId
     }
     return null
 }
@@ -2214,6 +2372,90 @@ private fun hasValidCatalogReference(state: SimulatorUiState): Boolean = runCatc
     )
     reconstructed == stored
 }.getOrDefault(false)
+
+private fun hasValidHistoricalScenarioReference(state: SimulatorUiState): Boolean = runCatching {
+    val stored = state.historicalScenarioReference ?: return@runCatching true
+    HistoricalScenarioReference(
+        scenarioId = stored.scenarioId,
+        scenarioVersion = stored.scenarioVersion,
+        contentSha256 = stored.contentSha256,
+    ) == stored
+}.getOrDefault(false)
+
+private fun validateHistoricalDailyPrefix(
+    state: SimulatorUiState,
+    scenario: HistoricalScenarioPack,
+): String? {
+    val stocksById = state.stocks.associateBy(StockDefinition::id)
+    val scenarioInstrumentIds = scenario.dailyBars.mapTo(linkedSetOf(), HistoricalDailyBar::instrumentId)
+    if (!stocksById.keys.containsAll(scenarioInstrumentIds)) {
+        return "현재 역사 시나리오 일봉에 저장 종목 카탈로그에 없는 종목이 있습니다."
+    }
+    val scenarioBarsByStockId = scenario.dailyBars.groupBy(HistoricalDailyBar::instrumentId)
+    val unitAdjustmentsByStockId = state.corporateActionLedger.asSequence()
+        .filter { action -> action.effectiveAt <= state.currentTime }
+        .sortedWith(
+            compareBy<CorporateActionRecord>(CorporateActionRecord::effectiveAt)
+                .thenBy(CorporateActionRecord::accountingSequence),
+        )
+        .groupBy(CorporateActionRecord::stockId)
+
+    for ((stockId, stock) in stocksById) {
+        val expectedPrefix = mutableListOf<PriceBar>()
+        for (historicalBar in scenarioBarsByStockId[stockId].orEmpty()) {
+            val session = GameCalendar.regularSessionWindow(stock.market, historicalBar.tradingDate)
+                ?: return "현재 역사 시나리오 일봉의 거래일에 정규장 구간이 없습니다: $stockId"
+            if (session.closesAt > GameCalendar.startInstant) continue
+            var expected = PriceBar(
+                stockId = stockId,
+                startTime = session.opensAt,
+                endTime = session.closesAt,
+                step = PriceBarInterval.ONE_DAY,
+                open = MarketMicrostructure.roundNearest(stock, historicalBar.open),
+                high = MarketMicrostructure.roundUp(stock, historicalBar.high),
+                low = MarketMicrostructure.roundDown(stock, historicalBar.low),
+                close = MarketMicrostructure.roundNearest(stock, historicalBar.close),
+                volume = historicalBar.volume,
+            )
+            unitAdjustmentsByStockId[stockId].orEmpty().forEach { action ->
+                if (action.effectiveAt <= expected.endTime) return@forEach
+                fun adjustedPrice(value: Double): Double = MarketMicrostructure.roundNearest(
+                    stock,
+                    (value / action.quantityMultiplier).coerceAtLeast(
+                        MarketMicrostructure.minimumPrice(stock.market),
+                    ),
+                )
+                expected = expected.copy(
+                    open = adjustedPrice(expected.open),
+                    high = adjustedPrice(expected.high),
+                    low = adjustedPrice(expected.low),
+                    close = adjustedPrice(expected.close),
+                    volume = round(expected.volume.toDouble() * action.quantityMultiplier)
+                        .toLong()
+                        .coerceAtLeast(0L),
+                )
+            }
+            expectedPrefix += expected
+        }
+
+        val savedDailyBars = state.chartPriceHistory.getValue(stockId)
+            .getValue(PriceBarInterval.ONE_DAY)
+        val savedPostStartSuffix = savedDailyBars.filter { bar ->
+            bar.endTime > GameCalendar.startInstant
+        }
+        val expectedRetainedPrefix = CanonicalPriceHistoryRetention.oneDay(
+            stock.market,
+            (expectedPrefix + savedPostStartSuffix).sortedBy(PriceBar::startTime),
+        ).filter { bar -> bar.endTime <= GameCalendar.startInstant }
+        val savedPrefix = savedDailyBars.filter { bar ->
+            bar.endTime <= GameCalendar.startInstant
+        }
+        if (savedPrefix != expectedRetainedPrefix) {
+            return "게임 시작 전 일봉 prefix가 현재 역사 시나리오의 OHLCV·거래일·보존 구간과 다릅니다: $stockId"
+        }
+    }
+    return null
+}
 
 private fun invalidInstrumentTradingHalt(halt: InstrumentTradingHalt): Boolean {
     val reason = halt.reason as TradingHaltReason?
@@ -3198,16 +3440,19 @@ private fun validateReferencePortfolioPersistenceState(
         }
         val canonicalBootstrap = if (definition != null && schedule != null) {
             val campaignStart = GameCalendar.startInstant
-            runCatching {
-                engine.initialState(
+            val bootstrapResult = runCatching {
+                engine.initialStateForReplay(
                     portfolioId = portfolioId,
                     definition = definition,
                     atDate = schedule.marketDate(campaignStart),
                     at = campaignStart,
                 )
-            }.getOrNull()
-                ?.also { bootstrap -> canonicalBootstrapStates[portfolioId] = bootstrap }
-                ?: return "기준 포트폴리오의 캠페인 시작 구성을 재구축할 수 없습니다."
+            }
+            bootstrapResult.getOrElse { error ->
+                val detail = error.message?.take(180)?.takeIf(String::isNotBlank)
+                    ?: error::class.simpleName.orEmpty()
+                return "기준 포트폴리오 $portfolioId 캠페인 시작 구성을 재구축할 수 없습니다: $detail"
+            }.also { bootstrap -> canonicalBootstrapStates[portfolioId] = bootstrap }
         } else {
             null
         }
@@ -4113,14 +4358,7 @@ private fun validateReferencePortfolioPersistenceState(
 
             fun bootstrapPendingCorporateExecutions(): Set<ReferenceCorporateExecutionKey>? {
                 bootstrapPendingCorporateExecutionCache?.let { return it }
-                val bootstrap = runCatching {
-                    engine.initialState(
-                        portfolioId = portfolioId,
-                        definition = definition,
-                        atDate = schedule.marketDate(GameCalendar.startInstant),
-                        at = GameCalendar.startInstant,
-                    )
-                }.getOrNull() ?: return null
+                val bootstrap = canonicalBootstrapStates[portfolioId] ?: return null
                 return bootstrap.pendingPlans.mapNotNullTo(linkedSetOf()) { plan ->
                     plan.corporateAction?.let { action ->
                         ReferenceCorporateExecutionKey(action.eventId, plan.kind, plan.effectiveDate)
@@ -7372,7 +7610,7 @@ private fun validateStructuredReferencePersistenceState(
                         definition,
                         catalog.equityMethodologyRegistry,
                     )
-                    val initial = methodologyEngine.initialState(
+                    val initial = methodologyEngine.initialStateForReplay(
                         portfolioId = ReferencePortfolioEngine.portfolioIdFor(definition.ref),
                         definition = definition,
                         atDate = compiled.schedule.marketDate(campaignStart),

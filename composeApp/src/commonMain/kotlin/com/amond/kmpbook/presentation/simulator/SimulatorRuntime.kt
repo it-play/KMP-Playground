@@ -1,6 +1,7 @@
 package com.amond.kmpbook.presentation.simulator
 
 import com.amond.kmpbook.modding.model.ModCapability
+import com.amond.kmpbook.persistence.validation.validateHistoricalScenarioBinding
 import com.amond.kmpbook.persistence.validation.validateSimulatorUiState
 import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.model.corporateaction.CorporateActionKind
@@ -89,6 +90,12 @@ import com.amond.kmpbook.domain.model.game.GameEndReason
 import com.amond.kmpbook.domain.model.game.GamePhase
 import com.amond.kmpbook.domain.model.game.Screen
 import com.amond.kmpbook.domain.model.game.TurnStep
+import com.amond.kmpbook.domain.model.history.HistoricalCorporateAction
+import com.amond.kmpbook.domain.model.history.HistoricalCorporateActionKind
+import com.amond.kmpbook.domain.model.history.HistoricalDailyBar
+import com.amond.kmpbook.domain.model.history.HistoricalEventOccurrence
+import com.amond.kmpbook.domain.model.history.HistoricalScenarioPack
+import com.amond.kmpbook.domain.model.history.HistoricalScenarioReference
 import com.amond.kmpbook.domain.model.index.MarketIndexId
 import com.amond.kmpbook.domain.model.index.MarketIndexSnapshot
 import com.amond.kmpbook.domain.model.instrument.DistributionFrequency
@@ -207,6 +214,9 @@ import com.amond.kmpbook.domain.simulation.fundstructure.ClosedEndFundAdvanceInp
 import com.amond.kmpbook.domain.simulation.fundstructure.ClosedEndFundEngine
 import com.amond.kmpbook.domain.simulation.fundstructure.EtnAdvanceInput
 import com.amond.kmpbook.domain.simulation.fundstructure.EtnEngine
+import com.amond.kmpbook.domain.simulation.history.HistoricalDailyPathEngine
+import com.amond.kmpbook.domain.simulation.history.HistoricalNewsEventFactory
+import com.amond.kmpbook.domain.simulation.history.HistoricalScenarioEngine
 import com.amond.kmpbook.domain.simulation.reference.FixedIncomeReferenceBookEngine
 import com.amond.kmpbook.domain.simulation.reference.AlternativeRiskPremiaBookEngine
 import com.amond.kmpbook.domain.simulation.reference.CommodityMarketModel
@@ -295,6 +305,7 @@ import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.round
 import kotlin.math.sqrt
+import kotlin.math.pow
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.nanoseconds
@@ -663,7 +674,9 @@ private fun krxWarningAdditionalRiseEvaluationDate(
 internal class SimulatorRuntime(
     initialOptions: NewGameOptions,
     private val instrumentCatalog: InstrumentCatalogSnapshot,
+    private val historicalScenarioPack: HistoricalScenarioPack? = null,
     startInSetup: Boolean = false,
+    private val performReferencePortfolioPreflight: Boolean = !startInSetup,
 ) {
     var options: NewGameOptions = initialOptions
         private set
@@ -698,7 +711,7 @@ internal class SimulatorRuntime(
     private val chartPriceHistory =
         linkedMapOf<String, MutableMap<PriceBarInterval, ArrayDeque<PriceBar>>>()
     private val pendingEtfReferenceReturns = mutableMapOf<String, Double>()
-    /** Event level changes observed while a listing is closed, consumed by its next opening auction. */
+    /** 휴장 사건과 플레이어 체결의 가격 괴리, 다음 거래 가능 구간에서 한 번 소비된다. */
     private val pendingClosedEventLogReturns = mutableMapOf<String, Double>()
     private val corporateFundamentals = linkedMapOf<String, CorporateFundamentalState>()
     private val fundFinancialStates = linkedMapOf<String, FundFinancialState>()
@@ -905,6 +918,8 @@ internal class SimulatorRuntime(
     private val scheduledEventEngine = ScheduledEventEngine(
         DeterministicRandom.mixSeed(options.seed, ScheduledEventEngine.STREAM_ID),
     )
+    private val historicalScenarioEngine = historicalScenarioPack?.let(::HistoricalScenarioEngine)
+    private val historicalDailyPathEngine = historicalScenarioEngine?.let(::HistoricalDailyPathEngine)
     private val instrumentMetricsEngine = InstrumentMetricsEngine(
         DeterministicRandom.mixSeed(options.seed, InstrumentMetricsEngine.STREAM_ID),
     )
@@ -912,6 +927,18 @@ internal class SimulatorRuntime(
 
     init {
         require(stocks.size >= 24) { "기본 종목 카탈로그가 충분하지 않습니다." }
+        historicalScenarioPack?.definition?.let { definition ->
+            require(
+                instrumentCatalog.reference.orderedSources.any { source ->
+                    source.sourceId == definition.catalogSourceId &&
+                        source.contentSha256 == definition.catalogContentSha256
+                },
+            ) { "역사 시나리오와 기본 종목 카탈로그의 버전이 일치하지 않습니다." }
+            require(historicalScenarioEngine?.instrumentIds.orEmpty().all(stockById::containsKey)) {
+                "역사 시나리오에 현재 종목 카탈로그에 없는 일봉이 있습니다."
+            }
+            validateHistoricalScenarioCoverage()
+        }
         val initialDynamics = marketDynamicsEngine.snapshot()
         macro = macro.copy(
             volatilityRegime = initialDynamics.resolvedVolatilityRegime,
@@ -924,6 +951,7 @@ internal class SimulatorRuntime(
         stocks.associateTo(listingLifecycleStates) { stock -> stock.id to listingLifecycleEngine.initialState(stock) }
         initializeMarketData()
         initializeInstrumentFinancialStates()
+        initializeHistoricalNews()
         initializeMarketIndices(currentTime)
         initializeTradingProtections(currentTime)
         recalculateAnnualTax(gameDate(currentTime).year)
@@ -1523,6 +1551,7 @@ internal class SimulatorRuntime(
         return SimulatorUiState(
             options = options,
             catalogReference = instrumentCatalog.reference,
+            historicalScenarioReference = historicalScenarioPack?.let(HistoricalScenarioReference::from),
             phase = phase,
             screen = screen,
             currentTime = currentTime,
@@ -2158,6 +2187,67 @@ internal class SimulatorRuntime(
         }
     }
 
+    /**
+     * 기본 종목팩의 기준일과 역사 기준 구간 거래일은 하나라도 빠지면 확률 경로로
+     * 조용히 대체하지 않고 시작 단계에서 실패시킨다. 활성 모드 종목은 시나리오에
+     * 포함되지 않으므로 기존 합성 가격 엔진을 계속 사용한다.
+     */
+    private fun validateHistoricalScenarioCoverage() {
+        val engine = requireNotNull(historicalScenarioEngine)
+        val definition = engine.pack.definition
+        val basePack = instrumentCatalog.packs.single { it.sourceId == definition.catalogSourceId }
+        val expectedInstrumentIds = basePack.definitions.mapTo(linkedSetOf(), StockDefinition::id)
+        require(engine.instrumentIds == expectedInstrumentIds) {
+            "역사 일봉 종목 집합이 기준 종목팩과 정확히 일치하지 않습니다."
+        }
+        require(engine.pack.events.all { event ->
+            event.affectedInstrumentIds.all(stockById::containsKey)
+        }) { "역사 사건에 현재 종목 카탈로그에 없는 대상 종목이 있습니다." }
+        require(engine.pack.corporateActions.all { action -> action.stockId in expectedInstrumentIds }) {
+            "역사 기업행동에 기준 종목팩에 없는 종목이 있습니다."
+        }
+        require(
+            engine.pack.events.map(HistoricalEventOccurrence::id).toSet()
+                .intersect(engine.pack.corporateActions.map { it.id }.toSet())
+                .isEmpty(),
+        ) { "역사 사건과 기업행동 사이에 중복된 발생 ID가 있습니다." }
+
+        for (stock in basePack.definitions) {
+            require(engine.dailyBar(stock.id, definition.baselineTradingDate) != null) {
+                "역사 기준 종가가 없습니다: ${stock.id}/${definition.baselineTradingDate}"
+            }
+            var date = definition.anchorStartsOn
+            val finalLocalDate = marketDate(stock.market, definition.historicalThroughAt)
+            while (date <= finalLocalDate) {
+                val session = GameCalendar.regularSessionWindow(
+                    stock.market,
+                    date,
+                    runtimeClosedDates(stock.market, date),
+                )
+                val isAnchoredSession = session != null &&
+                    session.closesAt > definition.gameplayStartsAt &&
+                    session.opensAt < definition.historicalThroughAt
+                require(!isAnchoredSession || engine.dailyBar(stock.id, date) != null) {
+                    "역사 기준 구간의 거래일 일봉이 없습니다: ${stock.id}/$date"
+                }
+                date = date.plus(1, DateTimeUnit.DAY)
+            }
+        }
+    }
+
+    /** 게임 시작 전에 공개된 사건도 첫 화면의 뉴스 원장에 보존한다. */
+    private fun initializeHistoricalNews() {
+        val engine = historicalScenarioEngine ?: return
+        val definition = engine.pack.definition
+        val queryEnd = minOf(currentTime, definition.historicalThroughAt) + 1.nanoseconds
+        val preloaded = engine.eventsPublishedBetween(definition.eventLookbackStartsAt, queryEnd)
+            .map(::historicalGameEvent)
+        val dividends = historicalDividendNews(definition.eventLookbackStartsAt, queryEnd)
+        newsEvents += (preloaded + dividends)
+            .distinctBy(GameEvent::id)
+            .sortedWith(compareBy(GameEvent::startsAt, GameEvent::id))
+    }
+
     private fun initializeInstrumentFinancialStates() {
         corporateFundamentals.clear()
         fundFinancialStates.clear()
@@ -2186,6 +2276,7 @@ internal class SimulatorRuntime(
         futuresRollLedger.clear()
         futuresAllocationLedger.clear()
         for (stock in stocks) {
+            val openingPrice = quotes.getValue(stock.id).price
             if (stock.hasCorporateEarnings) {
                 corporateFundamentals[stock.id] =
                     instrumentMetricsEngine.initialCorporateState(stock, currentTime)
@@ -2196,6 +2287,7 @@ internal class SimulatorRuntime(
                         stock = stock,
                         at = currentTime,
                         openingAnnualDistributionYield = openingAnnualDistributionYield(stock),
+                        openingPrice = openingPrice,
                     )
                 FundLegalStructure.EXCHANGE_TRADED_NOTE -> etnStates[stock.id] =
                     initialEtnState(stock)
@@ -2208,7 +2300,7 @@ internal class SimulatorRuntime(
                 dailyResetStates[stock.id] = dailyResetEngine.initialState(
                     productId = stock.id,
                     referenceLevel = DAILY_RESET_INITIAL_REFERENCE_LEVEL,
-                    nav = stock.initialPrice,
+                    nav = openingPrice,
                     tradingDate = lastCompletedRegularTradingDate(referenceMarket, currentTime),
                     at = currentTime,
                     targetLeverage = terms.targetLeverage,
@@ -2219,7 +2311,7 @@ internal class SimulatorRuntime(
                 optionStrategyStates[stock.id] = optionStrategyEngine.initialState(
                     terms = terms,
                     referenceLevel = OPTION_INITIAL_REFERENCE_LEVEL,
-                    nav = stock.initialPrice,
+                    nav = openingPrice,
                     cashRateAnnual = macro.policyRate.coerceIn(-0.10, 1.0),
                     annualizedImpliedVolatility = optionImpliedVolatility(stock),
                     tradingDate = lastCompletedRegularTradingDate(referenceMarket, currentTime),
@@ -2233,7 +2325,7 @@ internal class SimulatorRuntime(
                         terms = terms,
                         cashReferenceLevel = OPTION_INITIAL_REFERENCE_LEVEL,
                         optionReferenceLevel = OPTION_INITIAL_REFERENCE_LEVEL,
-                        nav = stock.initialPrice,
+                        nav = openingPrice,
                         optionDiscountRateAnnual = macro.policyRate.coerceIn(-0.10, 1.0),
                         annualizedImpliedVolatility = optionImpliedVolatility(stock),
                         tradingDate = lastCompletedRegularTradingDate(referenceMarket, currentTime),
@@ -2242,14 +2334,25 @@ internal class SimulatorRuntime(
             }
         }
         if (executableBenchmarkDefinitions.isNotEmpty()) {
-            referencePortfolioStates.putAll(
+            val initialReferenceBook = if (performReferencePortfolioPreflight) {
                 referencePortfolioEngine.initialBook(
                     definitions = executableBenchmarkDefinitions,
                     referenceDates = compiledExecutableMethodologies.mapValues { (_, methodology) ->
                         methodology.schedule.marketDate(currentTime)
                     },
                     at = currentTime,
-                ).states,
+                )
+            } else {
+                referencePortfolioEngine.initialBookForReplay(
+                    definitions = executableBenchmarkDefinitions,
+                    referenceDates = compiledExecutableMethodologies.mapValues { (_, methodology) ->
+                        methodology.schedule.marketDate(currentTime)
+                    },
+                    at = currentTime,
+                )
+            }
+            referencePortfolioStates.putAll(
+                initialReferenceBook.states,
             )
         }
         if (equityReferenceBenchmarkDefinitions.isNotEmpty()) {
@@ -2390,10 +2493,11 @@ internal class SimulatorRuntime(
         val terms = requireNotNull(profile.etnProductTerms)
         val credit = requireNotNull(profile.etnIssuerCreditModelParameters)
         require(terms.productId == stock.id && credit.issuerId == terms.issuerId)
+        val openingPrice = quotes.getValue(stock.id).price
         return EtnState(
             productId = stock.id,
             referenceLevel = OPTION_INITIAL_REFERENCE_LEVEL,
-            feeAdjustedIndicativeValuePerNote = stock.initialPrice,
+            feeAdjustedIndicativeValuePerNote = openingPrice,
             notesOutstanding = stock.sharesOutstanding,
             accruedCouponPerNote = 0.0,
             issuerCreditSpread = credit.initialCreditSpread,
@@ -2412,19 +2516,29 @@ internal class SimulatorRuntime(
         val terms = requireNotNull(profile.closedEndFundTerms)
         val parameters = requireNotNull(profile.closedEndFundMarketModelParameters)
         require(terms.fundId == stock.id && parameters.fundId == stock.id)
-        val initialNav = stock.initialPrice / (1.0 + parameters.targetMarketDiscountRate)
-        val commonNetAssets = initialNav * stock.sharesOutstanding.toDouble()
+        val commonShares = stock.sharesOutstanding.toDouble()
+        val canonicalInitialNav = stock.initialPrice /
+            (1.0 + parameters.targetMarketDiscountRate)
+        val canonicalCommonNetAssets = canonicalInitialNav * commonShares
         val netAssetFraction = 1.0 - parameters.initialDebtToGrossAssets -
             parameters.initialPreferredToGrossAssets
         require(netAssetFraction > 0.0)
-        val grossAssets = commonNetAssets / netAssetFraction
+        // Debt and preferred liabilities are legal balances reconstructed by the save validator
+        // from the immutable catalog basis. Historical quotes may replace the opening market mark,
+        // but must not silently rewrite those balances without a financing ledger entry.
+        val canonicalGrossAssets = canonicalCommonNetAssets / netAssetFraction
+        val debtLiability = canonicalGrossAssets * parameters.initialDebtToGrossAssets
+        val preferredShareLiability = canonicalGrossAssets * parameters.initialPreferredToGrossAssets
+        val historicalOpeningNav = quotes.getValue(stock.id).price /
+            (1.0 + parameters.targetMarketDiscountRate)
+        val grossAssets = historicalOpeningNav * commonShares + debtLiability + preferredShareLiability
         return ClosedEndFundState(
             fundId = stock.id,
             grossAssets = grossAssets,
-            commonSharesOutstanding = stock.sharesOutstanding.toDouble(),
-            debtLiability = grossAssets * parameters.initialDebtToGrossAssets,
-            preferredShareLiability = grossAssets * parameters.initialPreferredToGrossAssets,
-            navPerCommonShare = initialNav,
+            commonSharesOutstanding = commonShares,
+            debtLiability = debtLiability,
+            preferredShareLiability = preferredShareLiability,
+            navPerCommonShare = historicalOpeningNav,
             undistributedNetInvestmentIncome = 0.0,
             distributionReserve = 0.0,
             marketDiscountRate = parameters.targetMarketDiscountRate,
@@ -2612,12 +2726,18 @@ internal class SimulatorRuntime(
     }
 
     private fun initializeInstrumentMarketData(stock: StockDefinition, at: Instant) {
+        val completedHistoricalBars = completedHistoricalDailyBars(stock, at)
+        val historicalClose = completedHistoricalBars.lastOrNull()?.close
+        val openingPrice = MarketMicrostructure.roundNearest(
+            stock,
+            historicalClose ?: stock.initialPrice,
+        )
         val session = marketSession(stock.market, at)
         quotes[stock.id] = Quote(
             stockId = stock.id,
             timestamp = at,
-            price = stock.initialPrice,
-            previousClose = stock.initialPrice,
+            price = openingPrice,
+            previousClose = openingPrice,
             session = session,
         )
         history[stock.id] = ArrayDeque<PriceBar>().apply {
@@ -2627,23 +2747,71 @@ internal class SimulatorRuntime(
                     startTime = at - 1.hours,
                     endTime = at,
                     step = PriceBarInterval.ONE_HOUR,
-                    open = stock.initialPrice,
-                    high = stock.initialPrice,
-                    low = stock.initialPrice,
-                    close = stock.initialPrice,
+                    open = openingPrice,
+                    high = openingPrice,
+                    low = openingPrice,
+                    close = openingPrice,
                     volume = 0L,
                 ),
             )
         }
         chartPriceHistory[stock.id] = CHART_INTERVALS.associateWithTo(linkedMapOf()) { ArrayDeque() }
+        completedHistoricalBars.forEach { historicalBar ->
+            appendHistoricalChartBar(stock, historicalBar)
+        }
         dailyTrackers[stock.id] = DailyPriceTracker(
             date = marketDate(stock.market, at),
-            basePrice = stock.initialPrice,
-            open = stock.initialPrice,
-            high = stock.initialPrice,
-            low = stock.initialPrice,
+            basePrice = openingPrice,
+            open = openingPrice,
+            high = openingPrice,
+            low = openingPrice,
             hasRegularTrading = false,
         )
+    }
+
+    private fun completedHistoricalDailyBars(
+        stock: StockDefinition,
+        at: Instant,
+    ): List<HistoricalDailyBar> {
+        val engine = historicalScenarioEngine ?: return emptyList()
+        val definition = engine.pack.definition
+        val localDate = marketDate(stock.market, at)
+        return engine.dailyBars(
+            instrumentId = stock.id,
+            fromInclusive = definition.dailyBarCoverageStartsOn,
+            throughInclusive = localDate,
+        ).filter { bar ->
+            GameCalendar.regularSessionWindow(
+                stock.market,
+                bar.tradingDate,
+                runtimeClosedDates(stock.market, bar.tradingDate),
+            )?.closesAt?.let { it <= at } == true
+        }
+    }
+
+    private fun appendHistoricalChartBar(
+        stock: StockDefinition,
+        historicalBar: HistoricalDailyBar,
+    ) {
+        val window = requireNotNull(
+            GameCalendar.regularSessionWindow(
+                stock.market,
+                historicalBar.tradingDate,
+                runtimeClosedDates(stock.market, historicalBar.tradingDate),
+            ),
+        ) { "역사 일봉 거래일에 정규장 구간이 없습니다: ${stock.id}/${historicalBar.tradingDate}" }
+        val bar = PriceBar(
+            stockId = stock.id,
+            startTime = window.opensAt,
+            endTime = window.closesAt,
+            step = PriceBarInterval.ONE_DAY,
+            open = MarketMicrostructure.roundNearest(stock, historicalBar.open),
+            high = MarketMicrostructure.roundUp(stock, historicalBar.high),
+            low = MarketMicrostructure.roundDown(stock, historicalBar.low),
+            close = MarketMicrostructure.roundNearest(stock, historicalBar.close),
+            volume = historicalBar.volume,
+        )
+        CHART_INTERVALS.forEach { interval -> appendChartPriceHistory(stock, bar, interval) }
     }
 
     /**
@@ -2659,9 +2827,11 @@ internal class SimulatorRuntime(
         val fromGameDate = gameDate(from)
         val toGameDate = gameDate(to)
         val crossesGameDateBoundary = toGameDate != fromGameDate
+        val historicalBaselineInterval = isHistoricalBaselineInterval(from, to)
 
         processInstrumentLifecycle(from)
         advanceProtectionClock(from)
+        if (historicalBaselineInterval) applyHistoricalStockSplits(from, to)
         applyDueCorporateActions(from, to)
         updateMacro(from)
         generateEvents(from, to)
@@ -2672,7 +2842,11 @@ internal class SimulatorRuntime(
                 state.isTerminal || state.isSettlementPending
             }
         }
-        val scheduledImpactEvents = scheduledEventEngine.impactEventsBetween(from, to, activeStocks)
+        val scheduledImpactEvents = if (historicalBaselineInterval) {
+            emptyList()
+        } else {
+            scheduledEventEngine.impactEventsBetween(from, to, activeStocks)
+        }
 
         val previousClosesByStockId = quotes.mapValues { (_, quote) -> quote.price }
         val turnEvents = activeEvents + scheduledImpactEvents
@@ -2729,14 +2903,20 @@ internal class SimulatorRuntime(
             previousClosesByStockId = previousClosesByStockId,
             fractions = provisionalMarketFractions,
         )
-        val protectionImpact = evaluateTradingProtections(
-            from = from,
-            to = to,
-            bars = provisional.bars,
-            previousPrices = previousClosesByStockId,
-            provisionalIndices = provisionalIndices,
-            ordinaryTradingFractions = ordinaryTradingFractions,
-        )
+        val protectionImpact = if (historicalBaselineInterval) {
+            // 일봉만으로 장중 VI/LULD 발생을 역추론하면 실제로 관측되지 않은 정지를 만들 수 있다.
+            // 역사 구간은 확정 OHLCV를 우선하고, 기준 경로 뒤부터 canonical 보호 엔진을 재개한다.
+            TurnProtectionImpact()
+        } else {
+            evaluateTradingProtections(
+                from = from,
+                to = to,
+                bars = provisional.bars,
+                previousPrices = previousClosesByStockId,
+                provisionalIndices = provisionalIndices,
+                ordinaryTradingFractions = ordinaryTradingFractions,
+            )
+        }
         val tradingFractions = Market.entries.associateWith { market ->
             marketProtectionTradingFraction(
                 market,
@@ -2777,6 +2957,9 @@ internal class SimulatorRuntime(
             commit = true,
         )
         advanceFundFinancialStates(from, to, finalized)
+        if (historicalBaselineInterval) {
+            reconcileHistoricalProductStatesAtObservedCloses(from, to)
+        }
 
         updateMarketIndices(to, finalized.bars, previousClosesByStockId, tradingFractions)
         updateMarketChange(finalized.bars, tradingFractions)
@@ -2793,7 +2976,11 @@ internal class SimulatorRuntime(
             protectionBeforeObservation,
             protectionImpact,
         )
-        processDailyListingSurveillance(from, to)
+        processDailyListingSurveillance(
+            from = from,
+            to = to,
+            evaluateActions = !historicalBaselineInterval,
+        )
         reconcileStructuredSourceAvailability(to)
         processInstrumentLifecycle(to)
         if (!crossesGameDateBoundary) {
@@ -2801,11 +2988,18 @@ internal class SimulatorRuntime(
             // KRX local midnight is the game-date boundary and is applied after the completed-day
             // snapshot below so its ex/pay accounting cannot leak into the preceding date.
             processTaxExchangeRateSettlements(to)
-            processScheduledEtfDistributions(from, to)
-            processScheduledDividends(from, to)
+            if (historicalBaselineInterval) {
+                recordHistoricalDistributionEvaluationBoundaries(from, to)
+            } else {
+                processScheduledEtfDistributions(from, to)
+                processScheduledDividends(from, to)
+            }
         }
-        maybeAnnounceCorporateActions(from, to)
-        if (!crossesGameDateBoundary) applyDueCorporateActionsAtBoundary(to)
+        if (!historicalBaselineInterval) maybeAnnounceCorporateActions(from, to)
+        if (!crossesGameDateBoundary) {
+            if (historicalBaselineInterval) applyHistoricalStockSplits(to, to + 1.nanoseconds)
+            applyDueCorporateActionsAtBoundary(to)
+        }
         updateHoldingPrices()
         expireDayOrders(to)
         updateBenchmark(finalized.bars, tradingFractions)
@@ -2825,8 +3019,13 @@ internal class SimulatorRuntime(
             recordDailySnapshot(fromGameDate, to - 1.nanoseconds)
 
             processTaxExchangeRateSettlements(to)
-            processScheduledEtfDistributions(from, to)
-            processScheduledDividends(from, to)
+            if (historicalBaselineInterval) {
+                recordHistoricalDistributionEvaluationBoundaries(from, to)
+            } else {
+                processScheduledEtfDistributions(from, to)
+                processScheduledDividends(from, to)
+            }
+            if (historicalBaselineInterval) applyHistoricalStockSplits(to, to + 1.nanoseconds)
             applyDueCorporateActionsAtBoundary(to)
             updateHoldingPrices()
 
@@ -3774,6 +3973,26 @@ internal class SimulatorRuntime(
                     ).coerceIn(-2.5, 2.5)
             }
             val firstRegularBar = fraction > 0.0 && !tracker.hasRegularTrading
+            val historicalDailyBar = historicalScenarioEngine?.dailyBar(
+                stock.id,
+                marketDateAtStart,
+            )
+            val historicalAnchor = historicalDailyBar?.let { dailyBar ->
+                historicalDailyPathEngine?.intervalAnchor(
+                    instrumentId = stock.id,
+                    market = stock.market,
+                    from = from,
+                    to = to,
+                    playerDeviationAtOpen = historicalPlayerLogDeviation(
+                        stock = stock,
+                        at = from,
+                    ),
+                    playerDeviationAtClose = historicalPlayerLogDeviation(
+                        stock = stock,
+                        at = to,
+                    ),
+                )
+            }
             val currentReferenceValue = fundFinancialStates[stock.id]?.navPerUnit
                 ?: etnStates[stock.id]?.let { state ->
                     val terms = requireNotNull(stock.fundProductProfile?.etnProductTerms)
@@ -3815,6 +4034,7 @@ internal class SimulatorRuntime(
                     carriedPriceDislocationLogReturn = carriedPriceDislocation,
                     priceToReferenceLogGap = priceToReferenceLogGap,
                     isFirstRegularBarOfDay = firstRegularBar,
+                    historicalAnchor = historicalAnchor,
                 ),
                 flatBar = null,
             )
@@ -4531,6 +4751,115 @@ internal class SimulatorRuntime(
         }
     }
 
+    /**
+     * 확정 역사 종가를 사용하면서 상품 계약 상태만 합성 경로에 남아 경계 뒤 가격이
+     * 튀지 않도록, 각 실제 장 마감에서 비플레이어 기준가 계층을 같은 basis로 잇는다.
+     * 플레이어 주문에 따른 시장가격 괴리는 의도적으로 이 bridge에서 제외한다.
+     */
+    private fun reconcileHistoricalProductStatesAtObservedCloses(from: Instant, to: Instant) {
+        val engine = historicalScenarioEngine ?: return
+        for (stock in stocks) {
+            val tradingDate = marketDate(stock.market, from)
+            val session = GameCalendar.regularSessionWindow(
+                stock.market,
+                tradingDate,
+                runtimeClosedDates(stock.market, tradingDate),
+            ) ?: continue
+            if (session.closesAt <= from || session.closesAt > to) continue
+            val dailyBar = engine.dailyBar(stock.id, tradingDate) ?: continue
+            val target = MarketMicrostructure.roundNearest(stock, dailyBar.close)
+
+            fundFinancialStates[stock.id]?.let { state ->
+                val factor = target / state.navPerUnit
+                fundFinancialStates[stock.id] = state.copy(
+                    navPerUnit = state.navPerUnit * factor,
+                    indicativeValuePerUnit = state.indicativeValuePerUnit * factor,
+                    lastNetFlow = state.lastNetFlow * factor,
+                    accruedDistributionPerUnit = state.accruedDistributionPerUnit * factor,
+                )
+            }
+            dailyResetStates[stock.id]?.takeIf { it.lifecycle == DailyResetLifecycle.ACTIVE }
+                ?.let { state ->
+                    val factor = target / state.currentNav
+                    dailyResetStates[stock.id] = state.copy(
+                        navAtReset = state.navAtReset * factor,
+                        currentNav = state.currentNav * factor,
+                        exposureNotional = state.exposureNotional * factor,
+                        collateralBalance = state.collateralBalance * factor,
+                    )
+                }
+            optionStrategyStates[stock.id]
+                ?.takeIf { it.lifecycle != OptionStrategyLifecycle.VALUE_EXHAUSTED }
+                ?.let { state ->
+                    val factor = target / state.currentNav
+                    optionStrategyStates[stock.id] = state.copy(
+                        currentNav = state.currentNav * factor,
+                        underlyingUnits = state.underlyingUnits * factor,
+                        cashBalance = state.cashBalance * factor,
+                        optionNotionalAtRoll = state.optionNotionalAtRoll * factor,
+                        longCallUnits = state.longCallUnits * factor,
+                        shortCallUnits = state.shortCallUnits * factor,
+                        longPutUnits = state.longPutUnits * factor,
+                        shortPutUnits = state.shortPutUnits * factor,
+                        netOptionMark = state.netOptionMark * factor,
+                        cycleGrossPremiumReceived = state.cycleGrossPremiumReceived * factor,
+                        cycleGrossPremiumPaid = state.cycleGrossPremiumPaid * factor,
+                        cycleImplementationCost = state.cycleImplementationCost * factor,
+                        cumulativePremiumReceived = state.cumulativePremiumReceived * factor,
+                        cumulativePremiumPaid = state.cumulativePremiumPaid * factor,
+                        cumulativeSettlementCashFlow = state.cumulativeSettlementCashFlow * factor,
+                        cumulativeImplementationCost = state.cumulativeImplementationCost * factor,
+                    )
+                }
+            cashCollateralizedPutSpreadStates[stock.id]
+                ?.takeIf { it.lifecycle != CashCollateralizedPutSpreadLifecycle.VALUE_EXHAUSTED }
+                ?.let { state ->
+                    val factor = target / state.currentNav
+                    cashCollateralizedPutSpreadStates[stock.id] = state.copy(
+                        currentNav = state.currentNav * factor,
+                        cashBalance = state.cashBalance * factor,
+                        navAtRoll = state.navAtRoll * factor,
+                        optionNotionalAtRoll = state.optionNotionalAtRoll * factor,
+                        maximumSettlementLossAtRoll = state.maximumSettlementLossAtRoll * factor,
+                        longPutUnits = state.longPutUnits * factor,
+                        shortPutUnits = state.shortPutUnits * factor,
+                        netOptionMark = state.netOptionMark * factor,
+                        cycleGrossPremiumReceived = state.cycleGrossPremiumReceived * factor,
+                        cycleGrossPremiumPaid = state.cycleGrossPremiumPaid * factor,
+                        cycleImplementationCost = state.cycleImplementationCost * factor,
+                        cumulativePremiumReceived = state.cumulativePremiumReceived * factor,
+                        cumulativePremiumPaid = state.cumulativePremiumPaid * factor,
+                        cumulativeSettlementCashFlow = state.cumulativeSettlementCashFlow * factor,
+                        cumulativeImplementationCost = state.cumulativeImplementationCost * factor,
+                    )
+                }
+            etnStates[stock.id]?.takeIf { it.lifecycle == EtnLifecycle.ACTIVE }?.let { state ->
+                val terms = requireNotNull(stock.fundProductProfile?.etnProductTerms)
+                val marked = etnCreditMarkedValue(state, terms.maturityDate, tradingDate)
+                val factor = target / marked
+                etnStates[stock.id] = state.copy(
+                    referenceLevel = state.referenceLevel * factor,
+                    feeAdjustedIndicativeValuePerNote =
+                        state.feeAdjustedIndicativeValuePerNote * factor,
+                    accruedCouponPerNote = state.accruedCouponPerNote * factor,
+                    indicativeValueObservationWindow = state.indicativeValueObservationWindow.map { observation ->
+                        observation.copy(
+                            indicativeValuePerNote = observation.indicativeValuePerNote * factor,
+                        )
+                    },
+                )
+            }
+            closedEndFundStates[stock.id]?.let { state ->
+                val targetNav = target / (1.0 + state.marketDiscountRate)
+                closedEndFundStates[stock.id] = state.copy(
+                    grossAssets = targetNav * state.commonSharesOutstanding +
+                        state.debtLiability + state.preferredShareLiability,
+                    navPerCommonShare = targetNav,
+                )
+            }
+        }
+    }
+
     private fun dailyTrackerSnapshot(
         stock: StockDefinition,
         time: Instant,
@@ -4618,7 +4947,11 @@ internal class SimulatorRuntime(
     }
 
     /** Runs once at each listing venue's local close and turns news/price data into exchange state. */
-    private fun processDailyListingSurveillance(from: Instant, to: Instant) {
+    private fun processDailyListingSurveillance(
+        from: Instant,
+        to: Instant,
+        evaluateActions: Boolean,
+    ) {
         val krxProjection = projectKrxDailySurveillance(marketDate(Market.KOSPI, from))
         for (stock in stocks) {
             val previous = listingLifecycleStates.getValue(stock.id)
@@ -4630,6 +4963,31 @@ internal class SimulatorRuntime(
                 runtimeClosedDates(stock.market, tradingDate),
             )?.closesAt ?: continue
             if (venueCloseAt <= from || venueCloseAt > to) continue
+            val dayVolume = history.getValue(stock.id)
+                .asSequence()
+                .filter { bar -> marketDate(stock.market, bar.endTime) == tradingDate }
+                .sumOf(PriceBar::volume)
+            val hadTradableObservation = history.getValue(stock.id).any { bar ->
+                bar.volume > 0L && marketDate(stock.market, bar.endTime) == tradingDate
+            }
+            val quote = quotes.getValue(stock.id)
+            val surveillance = dailyTradingSurveillance.getOrPut(stock.id) { ArrayDeque() }
+            if (hadTradableObservation && surveillance.lastOrNull()?.date != tradingDate) {
+                surveillance.addLast(
+                    DailyTradingSurveillancePoint(
+                        date = tradingDate,
+                        close = quote.price,
+                        volume = dayVolume,
+                        turnoverRate = dayVolume.toDouble() / stock.sharesOutstanding.toDouble(),
+                        marketProxyClose = krxProjection.marketProxyByStockId[stock.id],
+                        krxMarketCapRank = krxProjection.marketCapRankByStockId[stock.id],
+                    ),
+                )
+                while (surveillance.size > MAX_DAILY_SURVEILLANCE_POINTS) surveillance.removeFirst()
+            }
+            // Historical OHLCV still supplies canonical surveillance facts. All synthetic news,
+            // alerts and listing-state decisions stay beyond this boundary.
+            if (!evaluateActions) continue
             // The regular session is half-open; sample its final representable instant so an
             // event that starts during this hour is included, while a post-close event is not.
             val surveillanceAt = venueCloseAt - 1.nanoseconds
@@ -4681,28 +5039,6 @@ internal class SimulatorRuntime(
                     at = venueCloseAt,
                     activeRiskEvents = directListingRiskEvents,
                 )?.let(::add)
-            }
-            val dayVolume = history.getValue(stock.id)
-                .asSequence()
-                .filter { bar -> marketDate(stock.market, bar.endTime) == tradingDate }
-                .sumOf(PriceBar::volume)
-            val hadTradableObservation = history.getValue(stock.id).any { bar ->
-                bar.volume > 0L && marketDate(stock.market, bar.endTime) == tradingDate
-            }
-            val quote = quotes.getValue(stock.id)
-            val surveillance = dailyTradingSurveillance.getOrPut(stock.id) { ArrayDeque() }
-            if (hadTradableObservation && surveillance.lastOrNull()?.date != tradingDate) {
-                surveillance.addLast(
-                    DailyTradingSurveillancePoint(
-                        date = tradingDate,
-                        close = quote.price,
-                        volume = dayVolume,
-                        turnoverRate = dayVolume.toDouble() / stock.sharesOutstanding.toDouble(),
-                        marketProxyClose = krxProjection.marketProxyByStockId[stock.id],
-                        krxMarketCapRank = krxProjection.marketCapRankByStockId[stock.id],
-                    ),
-                )
-                while (surveillance.size > MAX_DAILY_SURVEILLANCE_POINTS) surveillance.removeFirst()
             }
             if (stock.market.isKorean) {
                 refreshInvestmentAlertNoticeEnd(stock, venueCloseAt, surveillance.toList())
@@ -6559,27 +6895,40 @@ internal class SimulatorRuntime(
             replayTaxAccountingLedger().forEach(::recalculateAnnualTax)
         }
         val ratioLabel = corporateActionRatioLabel(action)
-        appendNewsEvent(GameEvent(
-            id = "${action.id}:effective",
-            title = "${stock.name} ${action.kind.displayName} 효력 발생",
-            description = if (settledFraction) {
-                "${ratioLabel}이 반영됐습니다. 정수 거래단위 미만 단주는 조정가격으로 현금정산하고 FIFO 원가와 양도손익 원장에 기록했습니다."
+        val historicalAction = historicalCorporateAction(action)
+        appendNewsEvent(
+            if (historicalAction != null) {
+                HistoricalNewsEventFactory.splitEffective(
+                    pack = requireNotNull(historicalScenarioPack),
+                    action = historicalAction,
+                    stock = stock,
+                    record = record,
+                    settledFraction = settledFraction,
+                )
             } else {
-                "${ratioLabel}이 반영됐습니다. 보유 수량과 주당원가를 서로 반대 비율로 조정해 총 평가액과 FIFO 총원가는 보존했습니다."
+                GameEvent(
+                    id = "${action.id}:effective",
+                    title = "${stock.name} ${action.kind.displayName} 효력 발생",
+                    description = if (settledFraction) {
+                        "${ratioLabel}이 반영됐습니다. 정수 거래단위 미만 단주는 조정가격으로 현금정산하고 FIFO 원가와 양도손익 원장에 기록했습니다."
+                    } else {
+                        "${ratioLabel}이 반영됐습니다. 보유 수량과 주당원가를 서로 반대 비율로 조정해 총 평가액과 FIFO 총원가는 보존했습니다."
+                    },
+                    scope = EventScope.STOCK,
+                    type = EventType.CORPORATE_ACTION,
+                    severity = EventSeverity.MINOR,
+                    impact = GameEventImpact(direction = ImpactDirection.NEUTRAL),
+                    startsAt = effectiveAt,
+                    durationHours = 24,
+                    recordKind = EventRecordKind.CORPORATE_ACTION,
+                    corporateActionReference = record.toAppliedNewsReference(),
+                    affectedMarkets = setOf(stock.market),
+                    affectedSectors = setOf(stock.sector),
+                    affectedStockIds = setOf(stock.id),
+                    sourceLabel = action.source.displayName,
+                )
             },
-            scope = EventScope.STOCK,
-            type = EventType.CORPORATE_ACTION,
-            severity = EventSeverity.MINOR,
-            impact = GameEventImpact(direction = ImpactDirection.NEUTRAL),
-            startsAt = effectiveAt,
-            durationHours = 24,
-            recordKind = EventRecordKind.CORPORATE_ACTION,
-            corporateActionReference = record.toAppliedNewsReference(),
-            affectedMarkets = setOf(stock.market),
-            affectedSectors = setOf(stock.sector),
-            affectedStockIds = setOf(stock.id),
-            sourceLabel = action.source.displayName,
-        ))
+        )
         lastMessage = "${stock.name} ${action.kind.displayName}($ratioLabel)을 반영했습니다."
     }
 
@@ -6876,12 +7225,22 @@ internal class SimulatorRuntime(
         }
     }
 
-    private fun corporateActionRatioLabel(action: PendingCorporateAction): String =
-        if (action.quantityMultiplier > 1.0) {
-            "1:${action.quantityMultiplier.toInt()} 분할"
-        } else {
-            "${kotlin.math.round(1.0 / action.quantityMultiplier).toInt()}:1 병합"
+    private fun historicalCorporateAction(action: PendingCorporateAction): HistoricalCorporateAction? =
+        historicalScenarioPack?.let { pack ->
+            val prefix = HistoricalNewsEventFactory.idPrefix(pack)
+            action.takeIf { it.id.startsWith(prefix) }
+                ?.id
+                ?.removePrefix(prefix)
+                ?.let { occurrenceId -> pack.corporateActions.singleOrNull { it.id == occurrenceId } }
         }
+
+    private fun corporateActionRatioLabel(action: PendingCorporateAction): String =
+        historicalCorporateAction(action)?.let(HistoricalNewsEventFactory::splitRatioLabel)
+            ?: if (action.quantityMultiplier > 1.0) {
+                "1:${action.quantityMultiplier.toInt()} 분할"
+            } else {
+                "${kotlin.math.round(1.0 / action.quantityMultiplier).toInt()}:1 병합"
+            }
 
     private fun updateMacro(time: Instant) {
         // Exactly one path-dependent frame is resolved for this hour. The provisional and final
@@ -7009,6 +7368,20 @@ internal class SimulatorRuntime(
     }
 
     private fun generateEvents(from: Instant, to: Instant) {
+        if (isHistoricalBaselineInterval(from, to)) {
+            val existingIds = newsEvents.mapTo(mutableSetOf(), GameEvent::id)
+            val definition = requireNotNull(historicalScenarioPack).definition
+            // 시각 경계에 도달한 공시는 즉시 보이게 하고 다음 턴의 [from,to] 재조회는
+            // existingIds로 제거한다. historicalThroughAt 자체도 포함 경계다.
+            val queryEnd = minOf(to, definition.historicalThroughAt) + 1.nanoseconds
+            val historicalEvents = historicalScenarioEngine
+                ?.eventsPublishedBetween(from, queryEnd)
+                .orEmpty()
+                .map(::historicalGameEvent)
+            val dividendEvents = historicalDividendNews(from, queryEnd)
+            appendNewsEvents((historicalEvents + dividendEvents).filter { existingIds.add(it.id) })
+            return
+        }
         val eligibleStocks = eventEligibleStocks()
 
         // Calendar releases own their reported fact and direct repricing. Emit them first so a
@@ -7049,6 +7422,140 @@ internal class SimulatorRuntime(
         // Direct repricing is consumed this hour by EventShockCalculator. Sentiment and news
         // clustering enter only the next dynamics frame, preventing same-hour double counting.
         marketDynamicsEngine.recordEvents(allNewEvents)
+    }
+
+    private fun isHistoricalBaselineInterval(from: Instant, to: Instant): Boolean {
+        val definition = historicalScenarioPack?.definition ?: return false
+        return to > definition.gameplayStartsAt && from < definition.historicalThroughAt
+    }
+
+    private fun historicalGameEvent(event: HistoricalEventOccurrence): GameEvent =
+        HistoricalNewsEventFactory.event(
+            pack = requireNotNull(historicalScenarioPack),
+            occurrence = event,
+            stocksById = stockById,
+        )
+
+    private fun historicalDividendNews(from: Instant, to: Instant): List<GameEvent> {
+        val engine = historicalScenarioEngine ?: return emptyList()
+        return stocks.flatMap { stock ->
+            engine.corporateActions(stock.id, from, to).mapNotNull { action ->
+                if (action.kind != HistoricalCorporateActionKind.CASH_DIVIDEND) return@mapNotNull null
+                HistoricalNewsEventFactory.cashDividend(engine.pack, action, stock)
+            }
+        }
+    }
+
+    private fun applyHistoricalStockSplits(from: Instant, to: Instant) {
+        val engine = historicalScenarioEngine ?: return
+        for (stock in stocks) {
+            val actions = engine.corporateActions(stock.id, from, to)
+                .filter { it.kind == HistoricalCorporateActionKind.STOCK_SPLIT }
+            for (action in actions) {
+                val pending = HistoricalNewsEventFactory.splitPending(engine.pack, action)
+                if (corporateActionLedger.any { it.id == pending.id }) continue
+                if (!isCorporateActionProductStateEligible(stock)) continue
+                appendNewsEvent(HistoricalNewsEventFactory.splitAnnouncement(engine.pack, action, stock))
+                applyCorporateAction(pending, action.effectiveAt)
+            }
+        }
+    }
+
+    private fun historicalPlayerLogDeviation(
+        stock: StockDefinition,
+        at: Instant,
+    ): Double {
+        if (trades.isEmpty()) return 0.0
+        val signedQuantityByExecution = linkedMapOf<Instant, Double>()
+        for (trade in trades) {
+            if (trade.stockId != stock.id || trade.executedAt > at) continue
+            val direction = if (trade.side == OrderSide.BUY) 1.0 else -1.0
+            signedQuantityByExecution[trade.executedAt] =
+                (signedQuantityByExecution[trade.executedAt] ?: 0.0) + direction * trade.quantity
+        }
+        var deviation = 0.0
+        for ((executedAt, signedQuantity) in signedQuantityByExecution) {
+            if (abs(signedQuantity) <= QUANTITY_EPSILON) continue
+            val (averageDailyVolume, dailyVolatility) = historicalImpactInputs(stock, executedAt)
+            val ageHours = ((at - executedAt).inWholeMilliseconds / MILLIS_PER_HOUR)
+                .coerceAtLeast(0.0)
+            val participation = (abs(signedQuantity) / averageDailyVolume).coerceIn(0.0, 1.0)
+            val instantaneous = HISTORICAL_IMPACT_COEFFICIENT * dailyVolatility * sqrt(participation)
+            val persistence = HISTORICAL_PERMANENT_IMPACT_SHARE +
+                (1.0 - HISTORICAL_PERMANENT_IMPACT_SHARE) *
+                2.0.pow(-ageHours / HISTORICAL_TRANSIENT_HALF_LIFE_HOURS)
+            val direction = if (signedQuantity > 0.0) 1.0 else -1.0
+            deviation += direction * instantaneous * persistence
+        }
+        return deviation.coerceIn(-HISTORICAL_MAX_PLAYER_DEVIATION, HISTORICAL_MAX_PLAYER_DEVIATION)
+    }
+
+    /** 체결 당시 이미 끝난 세션만 사용해 ADV·변동성을 고정하므로 미래 일봉을 보지 않는다. */
+    private fun historicalImpactInputs(
+        stock: StockDefinition,
+        executedAt: Instant,
+    ): Pair<Double, Double> {
+        val engine = historicalScenarioEngine
+        val executedOn = marketDate(stock.market, executedAt)
+        val trailingBars = engine?.dailyBars(
+            instrumentId = stock.id,
+            fromInclusive = engine.pack.definition.dailyBarCoverageStartsOn,
+            throughInclusive = executedOn,
+        ).orEmpty().filter { it.tradingDate < executedOn }.takeLast(HISTORICAL_IMPACT_LOOKBACK_DAYS)
+        val fallbackVolume = PriceGenerationInput.defaultAverageDailyVolume(stock).toDouble()
+        val averageDailyVolume = trailingBars.takeIf { it.isNotEmpty() }
+            ?.map { it.volume.toDouble() }
+            ?.average()
+            ?.coerceAtLeast(fallbackVolume * HISTORICAL_MINIMUM_ADV_FRACTION)
+            ?: fallbackVolume
+        val dailyVolatility = trailingBars.takeIf { it.isNotEmpty() }
+            ?.map { bar -> ln(bar.high / bar.low) / HISTORICAL_RANGE_SIGMA_DIVISOR }
+            ?.average()
+            ?.coerceIn(HISTORICAL_MIN_DAILY_VOLATILITY, HISTORICAL_MAX_DAILY_VOLATILITY)
+            ?: (stock.volatility / sqrt(252.0))
+                .coerceIn(HISTORICAL_MIN_DAILY_VOLATILITY, HISTORICAL_MAX_DAILY_VOLATILITY)
+        return averageDailyVolume to dailyVolatility
+    }
+
+    /**
+     * 역사 기준 구간 뒤에도 플레이어 주문이 완전히 무시되지 않도록 다음 거래 구간의
+     * 가격 괴리에 제한된 square-root impact를 남긴다. 대형·고유동 종목에서는 사실상
+     * 미미하고, 일평균 거래량 대비 주문 비중이 큰 종목에서만 눈에 띈다.
+     */
+    private fun recordPlayerMarketImpact(stock: StockDefinition, trade: Trade) {
+        val (averageDailyVolume, dailyVolatility) = historicalImpactInputs(stock, trade.executedAt)
+        val tradeDirection = if (trade.side == OrderSide.BUY) 1.0 else -1.0
+        val signedQuantityAfter = trades.asSequence()
+            .filter { candidate ->
+                candidate.stockId == stock.id && candidate.executedAt == trade.executedAt
+            }
+            .sumOf { candidate ->
+                val direction = if (candidate.side == OrderSide.BUY) 1.0 else -1.0
+                direction * candidate.quantity
+            }
+        val signedQuantityBefore = signedQuantityAfter - tradeDirection * trade.quantity
+        fun signedSquareRootImpact(quantity: Double): Double {
+            val direction = when {
+                quantity > QUANTITY_EPSILON -> 1.0
+                quantity < -QUANTITY_EPSILON -> -1.0
+                else -> 0.0
+            }
+            return direction * sqrt((abs(quantity) / averageDailyVolume).coerceIn(0.0, 1.0))
+        }
+        // 같은 시각 주문을 여러 건으로 쪼개도 net quantity 한 건과 같은 충격만 남긴다.
+        val impact = HISTORICAL_IMPACT_COEFFICIENT * dailyVolatility *
+            (signedSquareRootImpact(signedQuantityAfter) -
+                signedSquareRootImpact(signedQuantityBefore))
+        val boundedPlayerImpact = impact.coerceIn(
+            -HISTORICAL_MAX_PLAYER_DEVIATION,
+            HISTORICAL_MAX_PLAYER_DEVIATION,
+        )
+        // This map also contains potentially much larger news carry accumulated while a market is
+        // closed. Clamp only the player component here; otherwise one small order at the opening
+        // boundary could truncate a legitimate weekend event gap to eight percent.
+        pendingClosedEventLogReturns[stock.id] = (
+            (pendingClosedEventLogReturns[stock.id] ?: 0.0) + boundedPlayerImpact
+            ).coerceIn(-MAX_PENDING_CLOSED_EVENT_LOG_RETURN, MAX_PENDING_CLOSED_EVENT_LOG_RETURN)
     }
 
     private fun eventEligibleStocks(): List<StockDefinition> = stocks.filterNot { stock ->
@@ -7277,6 +7784,9 @@ internal class SimulatorRuntime(
 
     private fun isProtectedLedgerNews(event: GameEvent): Boolean =
         event.recordKind != EventRecordKind.NEWS ||
+            historicalScenarioPack?.let { pack ->
+                event.id.startsWith(HistoricalNewsEventFactory.idPrefix(pack))
+            } == true ||
             event.marketAction != null ||
             event.listingRiskTags.isNotEmpty() ||
             event.listingRecoveryConditions.isNotEmpty() ||
@@ -7378,6 +7888,8 @@ internal class SimulatorRuntime(
         }
         val bars = history.getValue(stockId)
         if (bars.size == 1 && bars.first().volume == 0L &&
+            bars.first().startTime == GameCalendar.startInstant - 1.hours &&
+            bars.first().endTime == GameCalendar.startInstant &&
             bars.first().endTime <= bar.startTime
         ) {
             bars.clear()
@@ -7505,9 +8017,18 @@ internal class SimulatorRuntime(
             compareBy<Triple<Int, Double, Instant>> { candidate -> candidate.third }
                 .thenBy { candidate -> candidate.first },
         )
+        val remainingParticipationByStockId = bars.mapValues { (stockId, bar) ->
+            val stock = stockById.getValue(stockId)
+            floor(bar.volume.toDouble() * MAX_BAR_VOLUME_PARTICIPATION / stock.quantityStep) *
+                stock.quantityStep
+        }.toMutableMap()
         for ((index, fillPrice, executionAt) in candidates) {
             val order = orders[index]
             val stock = stockById.getValue(order.stockId)
+            val remainingParticipation = remainingParticipationByStockId.getValue(stock.id)
+            // 현재 canonical 주문 원장은 단일 체결만 허용한다. 참여 한도보다 큰 주문을
+            // 가짜 전량체결하지 않고 다음 유동성 구간까지 그대로 대기시킨다.
+            if (order.remainingQuantity > remainingParticipation + QUANTITY_EPSILON) continue
             val newlyRestrictedAt = protectionImpact.firstNewRestrictionAt(stock)
             val executionSnapshot = if (newlyRestrictedAt != null && executionAt < newlyRestrictedAt) {
                 protectionBeforeObservation
@@ -7515,6 +8036,10 @@ internal class SimulatorRuntime(
                 tradingProtectionSnapshot
             }
             executeOrder(index, fillPrice, executionAt, executionSnapshot)
+            if (!orders[index].isOpen) {
+                remainingParticipationByStockId[stock.id] =
+                    (remainingParticipation - order.remainingQuantity).coerceAtLeast(0.0)
+            }
         }
     }
 
@@ -7530,6 +8055,9 @@ internal class SimulatorRuntime(
         if (!listingLifecycleStates.getValue(stock.id).isTradable) return
         val session = marketSessionAtCurrentTime(stock.market)
         if (session != MarketSession.REGULAR) return
+        // Historical bars carry the observed hourly volume envelope. Queue these orders so all
+        // fills share the aggregate five-percent participation budget in processOpenOrders.
+        if (isHistoricalBaselineInterval(currentTime, currentTime + 1.hours)) return
         // At an hourly opening boundary the ETF quote still represents yesterday's
         // close until the opening bar consumes its fair-value carry. Queue the order so
         // processOpenOrders fills it at that bar's gap open instead of the stale quote.
@@ -7537,6 +8065,18 @@ internal class SimulatorRuntime(
         val quote = quotes.getValue(stock.id)
         val book = orderBook(stock, quote, session)
         val order = orders[index]
+        val topLevelQuantity = when (order.side) {
+            OrderSide.BUY -> book.bestAsk?.quantity ?: 0.0
+            OrderSide.SELL -> book.bestBid?.quantity ?: 0.0
+        }
+        val alreadyConsumedTopLevel = trades.asSequence()
+            .filter { trade ->
+                trade.stockId == stock.id && trade.side == order.side &&
+                    trade.executedAt == currentTime
+            }
+            .sumOf(Trade::quantity)
+        val remainingTopLevelQuantity = (topLevelQuantity - alreadyConsumedTopLevel).coerceAtLeast(0.0)
+        if (order.remainingQuantity > remainingTopLevelQuantity + QUANTITY_EPSILON) return
         val price = when (order.side) {
             OrderSide.BUY -> book.bestAsk?.price ?: quote.price
             OrderSide.SELL -> book.bestBid?.price ?: quote.price
@@ -7709,6 +8249,7 @@ internal class SimulatorRuntime(
             accountingSequence = accountingSequence,
         )
         trades += trade
+        recordPlayerMarketImpact(stock, trade)
         transactionCosts += TransactionCostRecord(
             tradeId = tradeId,
             stockId = stock.id,
@@ -8070,6 +8611,37 @@ internal class SimulatorRuntime(
         dividends += plannedDividends
         nextSequence = plannedNextSequence
         plannedTaxProjections.forEach { (year, projection) -> applyAnnualTaxProjection(year, projection) }
+    }
+
+    /**
+     * Actual daily bars already contain ex-distribution repricing during the historical baseline.
+     * Advance only the holder-independent idempotency checkpoint so synthetic cash/NAV actions are
+     * neither applied nor replayed after restore.
+     */
+    private fun recordHistoricalDistributionEvaluationBoundaries(from: Instant, to: Instant) {
+        for (stock in stocks) {
+            if (isInstrumentMatured(stock, to)) continue
+            if (listingLifecycleStates[stock.id]?.isSettlementPending == true) continue
+            val fromDate = marketDate(stock.market, from)
+            val evaluationDate = marketDate(stock.market, to)
+            if (fromDate == evaluationDate) continue
+            val isEvaluationDate = if (stock.instrumentType == InstrumentType.ETF) {
+                DistributionSchedule.eventOnExDate(stock, evaluationDate) != null
+            } else {
+                DistributionSchedule.isDistributionDate(
+                    date = evaluationDate,
+                    frequency = stock.behavior.distributionFrequency,
+                    calendar = stock.behavior.distributionCalendar,
+                )
+            }
+            if (!isEvaluationDate) continue
+            val previous = lastEvaluatedDistributionDateByStock[stock.id]
+            require(previous == null || previous <= evaluationDate) {
+                "Historical distribution evaluation date moved backwards for ${stock.id}: " +
+                    "last=$previous, next=$evaluationDate"
+            }
+            lastEvaluatedDistributionDateByStock[stock.id] = evaluationDate
+        }
     }
 
     private fun processScheduledDividends(from: Instant, to: Instant) {
@@ -10399,7 +10971,11 @@ internal class SimulatorRuntime(
         quote: Quote,
         session: MarketSession,
     ): OrderBookSnapshot {
-        val scheduledActive = scheduledEventEngine.activeImpactEventsAt(currentTime, stocks)
+        val scheduledActive = if (isHistoricalBaselineInterval(currentTime, currentTime + 1.hours)) {
+            emptyList()
+        } else {
+            scheduledEventEngine.activeImpactEventsAt(currentTime, stocks)
+        }
         return canonicalSimulatorOrderBook(
             campaignSeed = options.seed,
             stock = stock,
@@ -10455,6 +11031,18 @@ internal class SimulatorRuntime(
         const val MAX_DEBUG_PRICE_CHANGE_PERCENT = 100_000.0
         const val MAX_MARKET_ACTION_OCCURRENCE_GROUPS = 4_000
         const val NARRATIVE_FAMILY_COOLDOWN_HOURS = 72
+        const val HISTORICAL_IMPACT_COEFFICIENT = 0.35
+        const val HISTORICAL_PERMANENT_IMPACT_SHARE = 0.05
+        const val HISTORICAL_TRANSIENT_HALF_LIFE_HOURS = 4.0
+        const val HISTORICAL_MINIMUM_ADV_FRACTION = 0.10
+        const val HISTORICAL_RANGE_SIGMA_DIVISOR = 3.29
+        const val HISTORICAL_MIN_DAILY_VOLATILITY = 0.005
+        const val HISTORICAL_MAX_DAILY_VOLATILITY = 0.12
+        const val HISTORICAL_MAX_PLAYER_DEVIATION = 0.08
+        const val MAX_PENDING_CLOSED_EVENT_LOG_RETURN = 2.5
+        const val HISTORICAL_IMPACT_LOOKBACK_DAYS = 20
+        const val MAX_BAR_VOLUME_PARTICIPATION = 0.05
+        const val MILLIS_PER_HOUR = 3_600_000.0
         /** 축소 게임 유니버스에서 2026 KRX 합산 시총 상위100 제외를 재현하는 기준일 프록시. */
         const val KRX_TOP_100_MARKET_CAP_PROXY_KRW = 3_000_000_000_000.0
         const val BENCHMARK_START = 100.0
@@ -10549,10 +11137,20 @@ internal class SimulatorRuntime(
         fun restore(
             state: SimulatorUiState,
             catalog: InstrumentCatalogSnapshot,
+            historicalScenario: HistoricalScenarioPack? = null,
         ): SimulatorRuntime? {
-            if (validateSimulatorUiState(state, catalog) != null) return null
+            if (validateSimulatorUiState(state, catalog) != null ||
+                validateHistoricalScenarioBinding(state, historicalScenario) != null
+            ) {
+                return null
+            }
             return runCatching {
-                SimulatorRuntime(state.options, catalog).apply { restoreFrom(state) }
+                SimulatorRuntime(
+                    initialOptions = state.options,
+                    instrumentCatalog = catalog,
+                    historicalScenarioPack = historicalScenario,
+                    performReferencePortfolioPreflight = false,
+                ).apply { restoreFrom(state) }
             }.getOrElse { error ->
                 if (error is CancellationException) throw error
                 null

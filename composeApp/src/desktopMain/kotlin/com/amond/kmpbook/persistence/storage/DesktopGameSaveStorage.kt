@@ -73,6 +73,7 @@ import com.amond.kmpbook.domain.model.fundstructure.EtnState
 import com.amond.kmpbook.domain.model.fundstructure.EtnSettlementValuationMethod
 import com.amond.kmpbook.domain.model.fundstructure.FundStructureModelParameterOrigin
 import com.amond.kmpbook.domain.model.fundstructure.FundStructureTermsProvenance
+import com.amond.kmpbook.domain.model.history.HistoricalScenarioReference
 import com.amond.kmpbook.domain.model.instrument.EtfExposureRegion
 import com.amond.kmpbook.domain.model.instrument.DistributionAmountBasis
 import com.amond.kmpbook.domain.model.instrument.InstrumentType
@@ -1282,6 +1283,29 @@ actual class GameSaveStorage actual constructor() {
                 InstrumentCatalogReference(schemaVersion, decodedSources)
             } catch (error: IllegalArgumentException) {
                 throw JsonParseException("필드 '$path'이 유효하지 않습니다: ${error.message}", error)
+            }
+        }
+
+        state.get("historicalScenarioReference").also { element ->
+            if (element != null && !element.isJsonNull) {
+                val path = "state.historicalScenarioReference"
+                val reference = element.requireObject(path)
+                reference.requireExactFields(HISTORICAL_SCENARIO_REFERENCE_FIELDS, path)
+                try {
+                    HistoricalScenarioReference(
+                        scenarioId = reference.requiredStrictString(
+                            "scenarioId",
+                            "$path.scenarioId",
+                        ),
+                        scenarioVersion = reference.requiredInt("scenarioVersion"),
+                        contentSha256 = reference.requiredStrictString(
+                            "contentSha256",
+                            "$path.contentSha256",
+                        ),
+                    )
+                } catch (error: IllegalArgumentException) {
+                    throw JsonParseException("필드 '$path'이 유효하지 않습니다: ${error.message}", error)
+                }
             }
         }
 
@@ -5192,6 +5216,7 @@ actual class GameSaveStorage actual constructor() {
         val CURRENT_STATE_FIELDS: Set<String> = setOf(
             "options",
             "catalogReference",
+            "historicalScenarioReference",
             "phase",
             "screen",
             "currentTime",
@@ -5280,9 +5305,16 @@ actual class GameSaveStorage actual constructor() {
         )
 
         val CURRENT_NULLABLE_STATE_FIELDS: Set<String> = setOf(
+            "historicalScenarioReference",
             "selectedStockId",
             "selectedOrderBook",
             "lastMessage",
+        )
+
+        val HISTORICAL_SCENARIO_REFERENCE_FIELDS: Set<String> = setOf(
+            "scenarioId",
+            "scenarioVersion",
+            "contentSha256",
         )
 
         val DIVIDEND_LEDGER_FIELDS: Set<String> = setOf(

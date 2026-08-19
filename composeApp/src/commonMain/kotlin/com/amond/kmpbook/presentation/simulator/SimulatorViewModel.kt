@@ -6,6 +6,7 @@ import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.model.game.GamePhase
 import com.amond.kmpbook.domain.model.game.Screen
 import com.amond.kmpbook.domain.model.game.TurnStep
+import com.amond.kmpbook.domain.model.history.HistoricalScenarioPack
 import com.amond.kmpbook.domain.model.market.Currency
 import com.amond.kmpbook.domain.model.market.Market
 import com.amond.kmpbook.domain.model.trading.OrderSide
@@ -17,6 +18,7 @@ import com.amond.kmpbook.domain.simulation.event.DebugEventGuide
 import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.modding.model.ModCapability
 import com.amond.kmpbook.persistence.validation.validateSimulatorUiState
+import com.amond.kmpbook.persistence.validation.validateHistoricalScenarioBinding
 import com.amond.kmpbook.presentation.trading.OrderRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -43,10 +45,16 @@ import kotlin.time.TimeSource
 class SimulatorViewModel(
     initialCatalog: InstrumentCatalogSnapshot,
     initialOptions: NewGameOptions = NewGameOptions(),
+    private val historicalScenario: HistoricalScenarioPack? = null,
 ) : ViewModel() {
     private var lastOptions: NewGameOptions = initialOptions.withDetachedActiveMods()
     private var lastCatalog: InstrumentCatalogSnapshot = initialCatalog
-    private var runtime: SimulatorRuntime = SimulatorRuntime(lastOptions, lastCatalog, startInSetup = true)
+    private var runtime: SimulatorRuntime = SimulatorRuntime(
+        lastOptions,
+        lastCatalog,
+        historicalScenario,
+        startInSetup = true,
+    )
     private val _uiState = MutableStateFlow(runtime.snapshot())
     private val _stateChanges = MutableSharedFlow<SimulatorStateChange>(
         replay = MOD_EVENT_REPLAY_CAPACITY,
@@ -73,7 +81,13 @@ class SimulatorViewModel(
      * executable catalog; canonical methodology checks therefore belong at this boundary.
      */
     fun validateStateForPersistence(state: SimulatorUiState): String? =
-        validateSimulatorUiState(state, lastCatalog)
+        validateAgainstActiveContent(state, lastCatalog)
+
+    private fun validateAgainstActiveContent(
+        state: SimulatorUiState,
+        catalog: InstrumentCatalogSnapshot,
+    ): String? = validateSimulatorUiState(state, catalog)
+        ?: validateHistoricalScenarioBinding(state, historicalScenario)
 
     suspend fun newGame(
         options: NewGameOptions = NewGameOptions(),
@@ -82,7 +96,7 @@ class SimulatorViewModel(
         val detachedOptions = options.withDetachedActiveMods()
         val (candidateRuntime, candidateSnapshot) = runCatching {
             withContext(Dispatchers.Default) {
-                val candidate = SimulatorRuntime(detachedOptions, catalog)
+                val candidate = SimulatorRuntime(detachedOptions, catalog, historicalScenario)
                 candidate to candidate.snapshot()
             }
         }.getOrElse { error ->
@@ -107,7 +121,12 @@ class SimulatorViewModel(
         val options = lastOptions
         val catalog = lastCatalog
         val (resetRuntime, resetSnapshot) = withContext(Dispatchers.Default) {
-            val candidate = SimulatorRuntime(options, catalog, startInSetup = true)
+            val candidate = SimulatorRuntime(
+                options,
+                catalog,
+                historicalScenario,
+                startInSetup = true,
+            )
             candidate to candidate.snapshot()
         }
         return withContext(Dispatchers.Main.immediate) {
@@ -143,9 +162,14 @@ class SimulatorViewModel(
         }
         val candidate = state.withDetachedActiveMods()
         val (restored, restoredSnapshot, validationError) = withContext(Dispatchers.Default) {
-            val preparedRuntime = SimulatorRuntime.restore(candidate, catalog)
+            val candidateError = validateAgainstActiveContent(candidate, catalog)
+            val preparedRuntime = if (candidateError == null) {
+                SimulatorRuntime.restore(candidate, catalog, historicalScenario)
+            } else {
+                null
+            }
             if (preparedRuntime == null) {
-                Triple(null, null, validateSimulatorUiState(candidate, catalog))
+                Triple(null, null, candidateError)
             } else {
                 Triple(preparedRuntime, preparedRuntime.snapshot(), null)
             }
@@ -835,7 +859,7 @@ class SimulatorViewModel(
     }
 
     internal fun debugValidationStatus(): DebugRuntimeResult {
-        val problem = validateSimulatorUiState(currentState, lastCatalog)
+        val problem = validateAgainstActiveContent(currentState, lastCatalog)
         return if (problem == null) {
             DebugRuntimeResult.success("현재 게임 상태가 저장 불변식 검사를 통과했습니다.")
         } else {
@@ -1030,9 +1054,11 @@ class SimulatorViewModel(
                 return@withRuntimeAccess result
             }
             val candidate = runtime.snapshot().withDetachedActiveMods()
-            val problem = validateSimulatorUiState(candidate, lastCatalog)
+            val problem = validateAgainstActiveContent(candidate, lastCatalog)
             if (problem != null) {
-                runtime = requireNotNull(SimulatorRuntime.restore(before, lastCatalog))
+                runtime = requireNotNull(
+                    SimulatorRuntime.restore(before, lastCatalog, historicalScenario),
+                )
                 publish()
                 return@withRuntimeAccess DebugRuntimeResult.failure(
                     "변경이 게임 불변식을 위반해 되돌렸습니다: $problem",
@@ -1057,7 +1083,9 @@ class SimulatorViewModel(
                 lastMessage = message.take(300),
             )
         val restoredRuntime = withContext(Dispatchers.Default) {
-            checkNotNull(SimulatorRuntime.restore(canonicalState, commandCatalog)) {
+            checkNotNull(
+                SimulatorRuntime.restore(canonicalState, commandCatalog, historicalScenario),
+            ) {
                 "A Runtime-generated command boundary could not be restored"
             }
         }

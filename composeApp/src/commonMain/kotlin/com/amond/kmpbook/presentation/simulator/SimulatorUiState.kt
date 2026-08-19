@@ -32,6 +32,7 @@ import com.amond.kmpbook.domain.model.reference.CompositeReferenceState
 import com.amond.kmpbook.domain.model.game.GamePhase
 import com.amond.kmpbook.domain.model.game.Screen
 import com.amond.kmpbook.domain.model.game.TurnStep
+import com.amond.kmpbook.domain.model.history.HistoricalScenarioReference
 import com.amond.kmpbook.domain.model.index.MarketIndexId
 import com.amond.kmpbook.domain.model.index.MarketIndexSnapshot
 import com.amond.kmpbook.domain.model.instrument.FundFinancialState
@@ -86,6 +87,8 @@ data class SimulatorUiState(
     val options: NewGameOptions,
     /** 번들 및 활성 모드 종목팩의 순서와 SHA-256을 캠페인에 고정한다. */
     val catalogReference: InstrumentCatalogReference,
+    /** 캠페인이 사용하는 역사 시나리오의 ID·버전·콘텐츠 해시를 저장 게임에 고정한다. */
+    val historicalScenarioReference: HistoricalScenarioReference?,
     val phase: GamePhase,
     val screen: Screen,
     val currentTime: Instant,
