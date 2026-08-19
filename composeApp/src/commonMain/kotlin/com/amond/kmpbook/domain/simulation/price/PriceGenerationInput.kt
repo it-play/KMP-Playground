@@ -4,6 +4,7 @@ import com.amond.kmpbook.domain.model.instrument.StockDefinition
 import com.amond.kmpbook.domain.model.market.Sector
 import com.amond.kmpbook.domain.model.venue.MarketSession
 import com.amond.kmpbook.domain.simulation.market.MacroEnvironment
+import com.amond.kmpbook.domain.simulation.history.HistoricalIntervalPriceAnchor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.time.Duration.Companion.hours
@@ -59,6 +60,8 @@ data class PriceGenerationInput(
     val priceToReferenceLogGap: Double = 0.0,
     /** 이번 봉이 현지 거래일의 첫 정규장 봉인지를 런타임이 지정한다. */
     val isFirstRegularBarOfDay: Boolean = false,
+    /** 실제 일봉에서 재구성한 기준 구간. 존재하면 확률 가격 과정 대신 이 OHLCV를 사용한다. */
+    val historicalAnchor: HistoricalIntervalPriceAnchor? = null,
 ) {
     init {
         require(previousPrice > 0.0 && previousPrice.isFinite()) {

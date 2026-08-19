@@ -17,6 +17,7 @@ import com.amond.kmpbook.domain.model.venue.MarketSession
 import com.amond.kmpbook.domain.simulation.market.DailyPriceLimits
 import com.amond.kmpbook.domain.simulation.market.MacroEnvironment
 import com.amond.kmpbook.domain.simulation.market.MarketMicrostructure
+import com.amond.kmpbook.domain.simulation.history.HistoricalIntervalPriceAnchor
 import com.amond.kmpbook.domain.simulation.protection.TradingStabilizer
 import kotlin.math.abs
 import kotlin.math.exp
@@ -50,6 +51,9 @@ class PriceEngine(private val seed: Long) {
         }
         if (!input.session.isTradable || input.regularTradingFraction == 0.0) {
             return closedResult(input, endTime)
+        }
+        input.historicalAnchor?.let { anchor ->
+            return historicalResult(input, anchor, endTime)
         }
 
         val random = DeterministicRandom(
@@ -261,6 +265,72 @@ class PriceEngine(private val seed: Long) {
                 ) ||
                 boundedClose.wasClamped || open.wasClamped || high.wasClamped ||
                 low.wasClamped || volatilityPause,
+        )
+    }
+
+    private fun historicalResult(
+        input: PriceGenerationInput,
+        anchor: HistoricalIntervalPriceAnchor,
+        endTime: Instant,
+    ): PriceGenerationResult {
+        val stock = input.stock
+        val open = MarketMicrostructure.roundNearest(stock, anchor.open)
+        val close = MarketMicrostructure.roundNearest(stock, anchor.close)
+        val high = max(
+            max(open, close),
+            MarketMicrostructure.roundUp(stock, anchor.high),
+        )
+        val low = min(
+            min(open, close),
+            MarketMicrostructure.roundDown(stock, anchor.low)
+                .coerceAtLeast(MarketMicrostructure.minimumPrice(stock.market)),
+        )
+        val bar = PriceBar(
+            stockId = stock.id,
+            startTime = input.startTime,
+            endTime = endTime,
+            step = PriceBarInterval.ONE_HOUR,
+            open = open,
+            high = high,
+            low = low,
+            close = close,
+            volume = anchor.volume,
+        )
+        val playerDeviationChange = anchor.playerDeviationAtClose - anchor.playerDeviationAtOpen
+        val attribution = PriceAttribution(
+            market = ln(close / input.previousPrice) - playerDeviationChange,
+            sector = 0.0,
+            ratesAndInflation = 0.0,
+            growthAndSentiment = 0.0,
+            orderFlow = 0.0,
+            foreignExchange = 0.0,
+            referenceEvent = 0.0,
+            directProductEvent = 0.0,
+            fundCosts = 0.0,
+            carriedReference = 0.0,
+            carriedPriceDislocation = 0.0,
+            referenceResidual = 0.0,
+            priceDislocation = playerDeviationChange,
+        )
+        val quote = Quote(
+            stockId = stock.id,
+            timestamp = endTime,
+            price = close,
+            previousClose = input.dailyBasePrice,
+            open = if (input.isFirstRegularBarOfDay) open else input.dayOpen,
+            high = if (input.isFirstRegularBarOfDay) high else max(input.dayHigh, high),
+            low = if (input.isFirstRegularBarOfDay) low else min(input.dayLow, low),
+            volume = anchor.volume,
+            session = input.session,
+        )
+        return PriceGenerationResult(
+            bar = bar,
+            quote = quote,
+            closeValueKrw = if (stock.currency == Currency.USD) close * input.macro.usdKrw else close,
+            attribution = attribution,
+            stabilizer = TradingStabilizer.NONE,
+            wasClamped = open != anchor.open || high != anchor.high || low != anchor.low ||
+                close != anchor.close,
         )
     }
 
