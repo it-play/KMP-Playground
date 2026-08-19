@@ -1,7 +1,6 @@
 package com.amond.kmpbook.ui.screens.dictionary
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -73,13 +72,12 @@ internal fun DictionaryHome(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(MarketSpacing.sm),
     ) {
-        DictionaryHeader(articleCount = articles.size)
+        DictionaryHeader()
         Row(
             modifier = Modifier.fillMaxWidth().weight(1f),
             horizontalArrangement = Arrangement.spacedBy(MarketSpacing.sm),
         ) {
             DictionaryCategoryIndex(
-                articles = articles,
                 selectedCategory = selectedCategory,
                 onCategorySelect = onCategorySelect,
                 modifier = Modifier.width(238.dp).fillMaxHeight(),
@@ -97,7 +95,7 @@ internal fun DictionaryHome(
 }
 
 @Composable
-private fun DictionaryHeader(articleCount: Int) {
+private fun DictionaryHeader() {
     LedgerPanel(Modifier.fillMaxWidth().height(104.dp), background = MarketColors.NavyRaised) {
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -126,21 +124,12 @@ private fun DictionaryHeader(articleCount: Int) {
                     color = MarketColors.Grey200,
                 )
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Text("사전 문서", style = MarketType.caption, color = MarketColors.SignalLine)
-                Text(
-                    text = "${articleCount}개 문서",
-                    style = MarketType.number.copy(fontWeight = FontWeight.SemiBold),
-                    color = Color.White,
-                )
-            }
         }
     }
 }
 
 @Composable
 private fun DictionaryCategoryIndex(
-    articles: List<DictionaryArticle>,
     selectedCategory: DictionaryCategory?,
     onCategorySelect: (DictionaryCategory?) -> Unit,
     modifier: Modifier,
@@ -148,20 +137,15 @@ private fun DictionaryCategoryIndex(
     LedgerPanel(modifier, padding = MarketSpacing.sm) {
         Column(Modifier.fillMaxSize().selectableGroup()) {
             Text("분류 색인", style = MarketType.label.copy(fontWeight = FontWeight.SemiBold), color = MarketColors.Ink)
-            Text("문서의 성격으로 좁혀봅니다.", style = MarketType.caption, color = MarketColors.InkMuted)
-            Spacer(Modifier.height(MarketSpacing.md))
+            Spacer(Modifier.height(MarketSpacing.sm))
             DictionaryCategoryRow(
-                code = "ALL",
                 label = "전체",
-                count = articles.size,
                 selected = selectedCategory == null,
                 onClick = { onCategorySelect(null) },
             )
             DictionaryCategory.entries.forEach { category ->
                 DictionaryCategoryRow(
-                    code = category.indexCode.toString().padStart(2, '0'),
                     label = category.displayName,
-                    count = articles.count { it.category == category },
                     selected = selectedCategory == category,
                     onClick = { onCategorySelect(category) },
                 )
@@ -178,9 +162,7 @@ private fun DictionaryCategoryIndex(
 
 @Composable
 private fun DictionaryCategoryRow(
-    code: String,
     label: String,
-    count: Int,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -195,20 +177,13 @@ private fun DictionaryCategoryRow(
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = MarketSpacing.sm, vertical = MarketSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(MarketSpacing.sm),
     ) {
-        Text(
-            text = code,
-            style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
-            color = if (selected) MarketColors.PrimaryText else MarketColors.Grey400,
-        )
         Text(
             text = label,
             modifier = Modifier.weight(1f),
             style = MarketType.label.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium),
             color = if (selected) MarketColors.PrimaryText else MarketColors.Ink,
         )
-        Text(count.toString(), style = MarketType.number, color = MarketColors.InkMuted)
     }
 }
 
@@ -259,11 +234,9 @@ private fun DictionaryArticleIndex(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = selectedCategory?.displayName ?: "전체 문서",
-                        modifier = Modifier.weight(1f),
                         style = MarketType.heading.copy(fontWeight = FontWeight.SemiBold),
                         color = MarketColors.Ink,
                     )
-                    Text("${articles.size}개", style = MarketType.number, color = MarketColors.InkMuted)
                 }
             }
             LedgerDivider()
@@ -298,18 +271,19 @@ private fun DictionaryArticleRow(article: DictionaryArticle, onClick: () -> Unit
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(MarketSpacing.md),
     ) {
-        Text(
-            text = article.category.indexCode.toString().padStart(2, '0'),
-            modifier = Modifier
-                .width(34.dp)
-                .border(1.dp, MarketColors.Line, RoundedCornerShape(MarketRadii.small))
-                .padding(vertical = 6.dp),
-            style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
-            color = MarketColors.PrimaryText,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(MarketSpacing.xxs)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(MarketSpacing.sm),
+            ) {
+                Text(
+                    text = article.category.displayName,
+                    modifier = Modifier
+                        .background(MarketColors.PrimaryWeak, RoundedCornerShape(MarketRadii.pill))
+                        .padding(horizontal = MarketSpacing.sm, vertical = MarketSpacing.xxs),
+                    style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                    color = MarketColors.PrimaryText,
+                )
                 Text(
                     text = article.title,
                     modifier = Modifier.weight(1f),
@@ -318,7 +292,6 @@ private fun DictionaryArticleRow(article: DictionaryArticle, onClick: () -> Unit
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(article.category.displayName, style = MarketType.caption, color = MarketColors.PrimaryText)
             }
             Text(
                 text = article.summary,
