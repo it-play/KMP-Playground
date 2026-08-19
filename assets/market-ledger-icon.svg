@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Market Ledger 2040 app icon</title>
+  <desc id="desc">A neo-brutalist ledger page with three rising candlesticks.</desc>
+  <rect x="52" y="52" width="920" height="920" rx="172" fill="#17222D"/>
+  <rect x="52" y="52" width="888" height="888" rx="156" fill="#625CF6" stroke="#17222D" stroke-width="28"/>
+  <path d="M278 232H682L806 356V748L730 824H278Z" fill="#17222D" transform="translate(28 32)"/>
+  <path d="M278 232H682L806 356V748L730 824H278Z" fill="#FCFDFE" stroke="#17222D" stroke-width="30" stroke-linejoin="miter"/>
+  <path d="M682 232V356H806" fill="#625CF6" stroke="#17222D" stroke-width="30" stroke-linejoin="miter"/>
+  <path d="M388 476V686" fill="none" stroke="#17222D" stroke-width="30" stroke-linecap="square"/>
+  <rect x="342" y="532" width="92" height="104" fill="#FCFDFE" stroke="#17222D" stroke-width="30"/>
+  <path d="M522 402V648" fill="none" stroke="#17222D" stroke-width="30" stroke-linecap="square"/>
+  <rect x="476" y="458" width="92" height="134" fill="#FCFDFE" stroke="#17222D" stroke-width="30"/>
+  <path d="M656 330V604" fill="none" stroke="#17222D" stroke-width="30" stroke-linecap="square"/>
+  <rect x="606" y="386" width="100" height="162" fill="#E34D5B" stroke="#17222D" stroke-width="30"/>
+</svg>
