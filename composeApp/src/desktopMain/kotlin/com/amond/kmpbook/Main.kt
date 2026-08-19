@@ -44,6 +44,7 @@ import com.amond.kmpbook.audio.DesktopBackgroundMusicPlayer
 import com.amond.kmpbook.domain.data.DesktopInstrumentPackParser
 import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.data.InstrumentPack
+import com.amond.kmpbook.domain.history.DesktopHistoricalScenarioLoader
 import com.amond.kmpbook.presentation.settings.AudioSettings
 import com.amond.kmpbook.presentation.settings.AppSettingsStorage
 import com.amond.kmpbook.presentation.settings.DesktopAudioSettingsPersistence
@@ -367,9 +368,14 @@ fun main() {
                     try {
                         val catalog = loadBaseInstrumentCatalog()
                         bootstrapStage = 1
+                        bootstrapStatus = "역사 일봉과 사건 원장을 읽고 있습니다."
+                        val historicalScenario = DesktopHistoricalScenarioLoader.loadAugust2026()
                         bootstrapStatus = "시장 엔진과 거래 원장을 준비하고 있습니다."
                         val viewModel = withContext(Dispatchers.Default) {
-                            SimulatorViewModel(catalog)
+                            SimulatorViewModel(
+                                initialCatalog = catalog,
+                                historicalScenario = historicalScenario,
+                            )
                         }
                         bootstrapStage = 2
                         bootstrapStatus = "화면을 준비하고 있습니다."
