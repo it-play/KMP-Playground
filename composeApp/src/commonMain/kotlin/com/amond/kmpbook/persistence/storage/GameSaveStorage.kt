@@ -21,15 +21,12 @@ expect class GameSaveStorage() {
     /** Opens the save directory in the platform file browser. Returns an error message on failure. */
     suspend fun openSaveDirectory(): String?
 
-    /** Opens the platform file picker for a local .ml2 save. */
-    suspend fun selectLocalSaveFile(): LocalSaveFileSelection
+    /** Opens the game data root containing saves, mods, and resources. */
+    suspend fun openGameDirectory(): String?
 
     suspend fun save(state: SimulatorUiState, name: String): GameSaveResult
 
     suspend fun load(fileName: String): GameLoadResult
-
-    /** Loads a user-selected save outside the canonical save directory without copying it. */
-    suspend fun loadLocal(path: String): GameLoadResult
 
     suspend fun list(): GameSaveCatalog
 
