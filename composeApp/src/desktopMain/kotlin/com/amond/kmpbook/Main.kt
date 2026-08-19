@@ -34,6 +34,7 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
@@ -58,6 +59,10 @@ import com.amond.kmpbook.ui.theme.MarketType
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
+import dev.nucleusframework.window.TitleBar
+import dev.nucleusframework.window.styling.TitleBarColors
+import dev.nucleusframework.window.styling.TitleBarMetrics
+import dev.nucleusframework.window.styling.TitleBarStyle
 import kmpbook.composeapp.generated.resources.Res
 import kmpbook.composeapp.generated.resources.app_icon_market_ledger
 import kotlinx.coroutines.CancellationException
@@ -72,6 +77,20 @@ private const val BASE_INSTRUMENT_SOURCE_ID: String = "builtin:base"
 private const val BACKGROUND_MUSIC_RECOVERY_DELAY_MILLIS: Long = 3_000L
 private const val BACKGROUND_MUSIC_RECOVERY_RESET_MILLIS: Long = 60_000L
 private const val MAX_BACKGROUND_MUSIC_RECOVERY_ATTEMPTS: Int = 3
+
+private val MARKET_WINDOW_TITLE_BAR_STYLE = TitleBarStyle(
+    colors = TitleBarColors(
+        background = MarketColors.Navy,
+        inactiveBackground = MarketColors.NavyRaised,
+        content = MarketColors.Grey200,
+        border = MarketColors.Grey700,
+        iconButtonHoveredBackground = MarketColors.Grey700,
+        iconButtonPressedBackground = MarketColors.Grey900,
+        controlButtonIconColor = MarketColors.Grey200,
+        controlButtonIconHoverColor = Color.White,
+    ),
+    metrics = TitleBarMetrics(height = 38.dp),
+)
 
 private fun backgroundMusicErrorMessage(error: Throwable): String =
     error.message?.take(300)?.takeIf(String::isNotBlank)
@@ -296,6 +315,18 @@ fun main() {
                 }
             },
         ) {
+            if (windowDisplayMode == WindowDisplayMode.WINDOWED) {
+                MarketSimulatorTheme {
+                    TitleBar(style = MARKET_WINDOW_TITLE_BAR_STYLE) {
+                        Text(
+                            text = "MARKET LEDGER 2040",
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
+                            style = MarketType.caption.copy(fontWeight = FontWeight.SemiBold),
+                            color = MarketColors.Grey200,
+                        )
+                    }
+                }
+            }
             Box(modifier = Modifier.fillMaxSize()) {
                 val openingLoadingStatus = when {
                     hasEnteredSlideshow &&

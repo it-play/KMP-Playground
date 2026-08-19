@@ -15,6 +15,6 @@ enum class WindowDisplayMode(
     ),
     WINDOWED(
         displayName = "창화면",
-        description = "크기와 위치를 직접 조절할 수 있는 일반 창으로 표시합니다.",
+        description = "상단 창 핸들로 이동하고 크기를 직접 조절할 수 있습니다.",
     ),
 }
