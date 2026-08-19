@@ -31,7 +31,6 @@ import com.amond.kmpbook.domain.model.event.GameEventImpact
 import com.amond.kmpbook.domain.model.event.ImpactDirection
 import com.amond.kmpbook.domain.model.game.GamePhase
 import com.amond.kmpbook.domain.model.game.Screen
-import com.amond.kmpbook.domain.model.history.HistoricalDailyBar
 import com.amond.kmpbook.domain.model.history.HistoricalCorporateActionKind
 import com.amond.kmpbook.domain.model.history.HistoricalScenarioPack
 import com.amond.kmpbook.domain.model.history.HistoricalScenarioReference
@@ -302,12 +301,12 @@ internal fun validateHistoricalScenarioBinding(
     }
     if (currentScenario == null) {
         val hasHistoricalPrefix = state.chartPriceHistory.values.any { histories ->
-            histories[PriceBarInterval.ONE_DAY].orEmpty().any { bar ->
-                bar.endTime <= GameCalendar.startInstant
+            histories.values.any { bars ->
+                bars.any { bar -> bar.endTime <= GameCalendar.startInstant }
             }
         }
         return if (hasHistoricalPrefix) {
-            "역사 시나리오가 없는 저장 데이터에 게임 시작 전 일봉이 포함되어 있습니다."
+            "역사 시나리오가 없는 저장 데이터에 게임 시작 전 가격 prefix가 포함되어 있습니다."
         } else {
             null
         }
@@ -2386,73 +2385,18 @@ private fun validateHistoricalDailyPrefix(
     state: SimulatorUiState,
     scenario: HistoricalScenarioPack,
 ): String? {
-    val stocksById = state.stocks.associateBy(StockDefinition::id)
-    val scenarioInstrumentIds = scenario.dailyBars.mapTo(linkedSetOf(), HistoricalDailyBar::instrumentId)
-    if (!stocksById.keys.containsAll(scenarioInstrumentIds)) {
+    val scenarioInstrumentIds = scenario.dailyBarsByInstrument.keys
+    if (!state.stocks.mapTo(hashSetOf(), StockDefinition::id).containsAll(scenarioInstrumentIds)) {
         return "현재 역사 시나리오 일봉에 저장 종목 카탈로그에 없는 종목이 있습니다."
     }
-    val scenarioBarsByStockId = scenario.dailyBars.groupBy(HistoricalDailyBar::instrumentId)
-    val unitAdjustmentsByStockId = state.corporateActionLedger.asSequence()
-        .filter { action -> action.effectiveAt <= state.currentTime }
-        .sortedWith(
-            compareBy<CorporateActionRecord>(CorporateActionRecord::effectiveAt)
-                .thenBy(CorporateActionRecord::accountingSequence),
-        )
-        .groupBy(CorporateActionRecord::stockId)
-
-    for ((stockId, stock) in stocksById) {
-        val expectedPrefix = mutableListOf<PriceBar>()
-        for (historicalBar in scenarioBarsByStockId[stockId].orEmpty()) {
-            val session = GameCalendar.regularSessionWindow(stock.market, historicalBar.tradingDate)
-                ?: return "현재 역사 시나리오 일봉의 거래일에 정규장 구간이 없습니다: $stockId"
-            if (session.closesAt > GameCalendar.startInstant) continue
-            var expected = PriceBar(
-                stockId = stockId,
-                startTime = session.opensAt,
-                endTime = session.closesAt,
-                step = PriceBarInterval.ONE_DAY,
-                open = MarketMicrostructure.roundNearest(stock, historicalBar.open),
-                high = MarketMicrostructure.roundUp(stock, historicalBar.high),
-                low = MarketMicrostructure.roundDown(stock, historicalBar.low),
-                close = MarketMicrostructure.roundNearest(stock, historicalBar.close),
-                volume = historicalBar.volume,
-            )
-            unitAdjustmentsByStockId[stockId].orEmpty().forEach { action ->
-                if (action.effectiveAt <= expected.endTime) return@forEach
-                fun adjustedPrice(value: Double): Double = MarketMicrostructure.roundNearest(
-                    stock,
-                    (value / action.quantityMultiplier).coerceAtLeast(
-                        MarketMicrostructure.minimumPrice(stock.market),
-                    ),
-                )
-                expected = expected.copy(
-                    open = adjustedPrice(expected.open),
-                    high = adjustedPrice(expected.high),
-                    low = adjustedPrice(expected.low),
-                    close = adjustedPrice(expected.close),
-                    volume = round(expected.volume.toDouble() * action.quantityMultiplier)
-                        .toLong()
-                        .coerceAtLeast(0L),
-                )
-            }
-            expectedPrefix += expected
+    val embeddedImmutablePrefix = state.chartPriceHistory.entries.firstOrNull { (_, histories) ->
+        histories.values.any { bars ->
+            bars.any { bar -> bar.endTime <= scenario.definition.gameplayStartsAt }
         }
-
-        val savedDailyBars = state.chartPriceHistory.getValue(stockId)
-            .getValue(PriceBarInterval.ONE_DAY)
-        val savedPostStartSuffix = savedDailyBars.filter { bar ->
-            bar.endTime > GameCalendar.startInstant
-        }
-        val expectedRetainedPrefix = CanonicalPriceHistoryRetention.oneDay(
-            stock.market,
-            (expectedPrefix + savedPostStartSuffix).sortedBy(PriceBar::startTime),
-        ).filter { bar -> bar.endTime <= GameCalendar.startInstant }
-        val savedPrefix = savedDailyBars.filter { bar ->
-            bar.endTime <= GameCalendar.startInstant
-        }
-        if (savedPrefix != expectedRetainedPrefix) {
-            return "게임 시작 전 일봉 prefix가 현재 역사 시나리오의 OHLCV·거래일·보존 구간과 다릅니다: $stockId"
-        }
+    }
+    if (embeddedImmutablePrefix != null) {
+        return "불변 게임 시작 전 가격 prefix가 저장 데이터에 중복 포함되어 있습니다: " +
+            embeddedImmutablePrefix.key
     }
     return null
 }

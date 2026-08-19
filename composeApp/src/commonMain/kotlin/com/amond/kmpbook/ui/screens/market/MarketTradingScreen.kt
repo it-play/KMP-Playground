@@ -110,6 +110,10 @@ import com.amond.kmpbook.ui.theme.MarketComponentSize
 import com.amond.kmpbook.ui.theme.MarketLayout
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.minus
 
 @Composable
 fun MarketTradingScreen(
@@ -117,6 +121,7 @@ fun MarketTradingScreen(
     quotes: Map<String, Quote>,
     hourlyPriceHistory: Map<String, List<PriceBar>>,
     chartPriceHistory: Map<String, Map<PriceBarInterval, List<PriceBar>>>,
+    selectedHistoricalDailyPrefix: List<PriceBar> = emptyList(),
     trades: List<Trade>,
     isAdvancing: Boolean,
     isFilterDialogVisible: Boolean,
@@ -152,7 +157,16 @@ fun MarketTradingScreen(
     val selectedStock = stocks.firstOrNull { it.id == selectedStockId } ?: stocks.firstOrNull()
     val quote = selectedStock?.let { quotes[it.id] }
     val hourlyBars = selectedStock?.let { hourlyPriceHistory[it.id].orEmpty() }.orEmpty()
-    val chartBars = selectedStock?.let { chartPriceHistory[it.id].orEmpty() }.orEmpty()
+    val retainedChartBars = selectedStock?.let { chartPriceHistory[it.id].orEmpty() }.orEmpty()
+    val chartBars = remember(selectedStock, retainedChartBars, selectedHistoricalDailyPrefix) {
+        selectedStock?.let { stock ->
+            chartBarsWithImmutableHistoricalPrefix(
+                stock = stock,
+                retainedChartBars = retainedChartBars,
+                historicalDailyPrefix = selectedHistoricalDailyPrefix,
+            )
+        }.orEmpty()
+    }
     var showSelectedProtectionDetail by remember(selectedStock?.id) { mutableStateOf(false) }
     var orderSide by remember(selectedStock?.id) { mutableStateOf(OrderSide.BUY) }
     var orderType by remember(selectedStock?.id) { mutableStateOf(OrderType.MARKET) }
@@ -1205,11 +1219,8 @@ private fun resolveChartInterval(
         }
     }
     if (period == MarketChartPeriod.ALL) {
-        val nonEmpty = availableBars.filterValues(List<PriceBar>::isNotEmpty)
-        val earliestTime = nonEmpty.values.minOfOrNull { bars -> bars.first().startTime }
-            ?: return MarketCandleInterval.ONE_HOUR
-        return MarketCandleInterval.entries.firstOrNull { interval ->
-            availableBars.getValue(interval).firstOrNull()?.startTime == earliestTime
+        return MarketCandleInterval.entries.asReversed().firstOrNull { interval ->
+            availableBars.getValue(interval).isNotEmpty()
         } ?: MarketCandleInterval.ONE_HOUR
     }
 
@@ -1218,6 +1229,129 @@ private fun resolveChartInterval(
     return candidates.firstOrNull { interval -> availableBars.getValue(interval).size >= 3 }
         ?: candidates.firstOrNull { interval -> availableBars.getValue(interval).isNotEmpty() }
         ?: preferred
+}
+
+/**
+ * The five-year prefix belongs to the immutable scenario pack, not a save snapshot. Only the
+ * selected instrument is projected, then weekly/monthly/quarterly views are derived on demand.
+ */
+private fun chartBarsWithImmutableHistoricalPrefix(
+    stock: StockDefinition,
+    retainedChartBars: Map<PriceBarInterval, List<PriceBar>>,
+    historicalDailyPrefix: List<PriceBar>,
+): Map<PriceBarInterval, List<PriceBar>> {
+    if (historicalDailyPrefix.isEmpty()) return retainedChartBars
+    val mutableDailySuffix = retainedChartBars[PriceBarInterval.ONE_DAY]
+        .orEmpty()
+        .filter { bar -> bar.endTime > GameCalendar.startInstant }
+    val combinedDaily = (historicalDailyPrefix + mutableDailySuffix)
+        .distinctBy(PriceBar::startTime)
+        .sortedBy(PriceBar::startTime)
+    return retainedChartBars.toMutableMap().apply {
+        put(PriceBarInterval.ONE_DAY, combinedDaily)
+        listOf(
+            PriceBarInterval.ONE_WEEK,
+            PriceBarInterval.ONE_MONTH,
+            PriceBarInterval.THREE_MONTHS,
+        ).forEach { interval ->
+            val immutablePrefix = aggregateDailyChartBars(
+                stock.market,
+                historicalDailyPrefix,
+                interval,
+            )
+            val mutableSuffix = retainedChartBars[interval]
+                .orEmpty()
+                .filter { bar -> bar.endTime > GameCalendar.startInstant }
+            put(
+                interval,
+                mergeChartPrefixAndSuffix(stock.market, immutablePrefix, mutableSuffix, interval),
+            )
+        }
+    }
+}
+
+private fun mergeChartPrefixAndSuffix(
+    market: Market,
+    immutablePrefix: List<PriceBar>,
+    mutableSuffix: List<PriceBar>,
+    interval: PriceBarInterval,
+): List<PriceBar> {
+    if (immutablePrefix.isEmpty()) return mutableSuffix
+    if (mutableSuffix.isEmpty()) return immutablePrefix
+    val result = immutablePrefix.toMutableList()
+    mutableSuffix.forEach { suffixBar ->
+        val previous = result.lastOrNull()
+        if (previous != null && sameChartPeriod(market, previous, suffixBar, interval)) {
+            result[result.lastIndex] = previous.copy(
+                endTime = maxOf(previous.endTime, suffixBar.endTime),
+                high = maxOf(previous.high, suffixBar.high),
+                low = minOf(previous.low, suffixBar.low),
+                close = suffixBar.close,
+                volume = previous.volume + suffixBar.volume,
+            )
+        } else {
+            result += suffixBar
+        }
+    }
+    return result
+}
+
+private fun aggregateDailyChartBars(
+    market: Market,
+    dailyBars: List<PriceBar>,
+    interval: PriceBarInterval,
+): List<PriceBar> {
+    require(interval !in setOf(PriceBarInterval.ONE_HOUR, PriceBarInterval.ONE_DAY))
+    val result = mutableListOf<PriceBar>()
+    dailyBars.forEach { dailyBar ->
+        val previous = result.lastOrNull()
+        if (previous != null && sameChartPeriod(market, previous, dailyBar, interval)) {
+            result[result.lastIndex] = previous.copy(
+                endTime = maxOf(previous.endTime, dailyBar.endTime),
+                high = maxOf(previous.high, dailyBar.high),
+                low = minOf(previous.low, dailyBar.low),
+                close = dailyBar.close,
+                volume = previous.volume + dailyBar.volume,
+            )
+        } else {
+            result += dailyBar.copy(step = interval)
+        }
+    }
+    return result
+}
+
+private fun sameChartPeriod(
+    market: Market,
+    previous: PriceBar,
+    next: PriceBar,
+    interval: PriceBarInterval,
+): Boolean {
+    val previousDate = GameCalendar.marketLocalDateTime(market, previous.startTime).date
+    val nextDate = GameCalendar.marketLocalDateTime(market, next.startTime).date
+    return when (interval) {
+        PriceBarInterval.ONE_HOUR -> false
+        PriceBarInterval.ONE_DAY -> previousDate == nextDate
+        PriceBarInterval.ONE_WEEK -> weekStart(previousDate) == weekStart(nextDate)
+        PriceBarInterval.ONE_MONTH ->
+            previousDate.year == nextDate.year && previousDate.month == nextDate.month
+
+        PriceBarInterval.THREE_MONTHS ->
+            previousDate.year == nextDate.year &&
+                previousDate.month.ordinal / 3 == nextDate.month.ordinal / 3
+    }
+}
+
+private fun weekStart(date: LocalDate): LocalDate {
+    val daysSinceMonday = when (date.dayOfWeek) {
+        DayOfWeek.MONDAY -> 0
+        DayOfWeek.TUESDAY -> 1
+        DayOfWeek.WEDNESDAY -> 2
+        DayOfWeek.THURSDAY -> 3
+        DayOfWeek.FRIDAY -> 4
+        DayOfWeek.SATURDAY -> 5
+        DayOfWeek.SUNDAY -> 6
+    }
+    return date.minus(daysSinceMonday, DateTimeUnit.DAY)
 }
 
 @Composable

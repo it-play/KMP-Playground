@@ -2756,9 +2756,6 @@ internal class SimulatorRuntime(
             )
         }
         chartPriceHistory[stock.id] = CHART_INTERVALS.associateWithTo(linkedMapOf()) { ArrayDeque() }
-        completedHistoricalBars.forEach { historicalBar ->
-            appendHistoricalChartBar(stock, historicalBar)
-        }
         dailyTrackers[stock.id] = DailyPriceTracker(
             date = marketDate(stock.market, at),
             basePrice = openingPrice,
@@ -2787,31 +2784,6 @@ internal class SimulatorRuntime(
                 runtimeClosedDates(stock.market, bar.tradingDate),
             )?.closesAt?.let { it <= at } == true
         }
-    }
-
-    private fun appendHistoricalChartBar(
-        stock: StockDefinition,
-        historicalBar: HistoricalDailyBar,
-    ) {
-        val window = requireNotNull(
-            GameCalendar.regularSessionWindow(
-                stock.market,
-                historicalBar.tradingDate,
-                runtimeClosedDates(stock.market, historicalBar.tradingDate),
-            ),
-        ) { "역사 일봉 거래일에 정규장 구간이 없습니다: ${stock.id}/${historicalBar.tradingDate}" }
-        val bar = PriceBar(
-            stockId = stock.id,
-            startTime = window.opensAt,
-            endTime = window.closesAt,
-            step = PriceBarInterval.ONE_DAY,
-            open = MarketMicrostructure.roundNearest(stock, historicalBar.open),
-            high = MarketMicrostructure.roundUp(stock, historicalBar.high),
-            low = MarketMicrostructure.roundDown(stock, historicalBar.low),
-            close = MarketMicrostructure.roundNearest(stock, historicalBar.close),
-            volume = historicalBar.volume,
-        )
-        CHART_INTERVALS.forEach { interval -> appendChartPriceHistory(stock, bar, interval) }
     }
 
     /**

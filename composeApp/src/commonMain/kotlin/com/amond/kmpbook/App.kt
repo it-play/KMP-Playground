@@ -1186,11 +1186,19 @@ private fun ScreenContent(
         Screen.STOCK_DETAIL,
         -> {
             val selectedMetrics = rememberSelectedInstrumentMetrics(state)
+            val historicalDailyPrefix = remember(
+                state.selectedStockId,
+                state.corporateActionLedger,
+                state.historicalScenarioReference,
+            ) {
+                viewModel.historicalDailyPrefixForDisplay(state)
+            }
             MarketTradingScreen(
                 stocks = state.stocks,
                 quotes = state.quotes,
                 hourlyPriceHistory = state.priceHistory,
                 chartPriceHistory = state.chartPriceHistory,
+                selectedHistoricalDailyPrefix = historicalDailyPrefix,
                 trades = state.trades,
                 isAdvancing = state.isAdvancing,
                 isFilterDialogVisible = isMarketFilterDialogVisible,

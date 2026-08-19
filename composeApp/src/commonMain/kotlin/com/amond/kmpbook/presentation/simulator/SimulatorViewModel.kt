@@ -3,29 +3,35 @@ package com.amond.kmpbook.presentation.simulator
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
+import com.amond.kmpbook.domain.model.corporateaction.CorporateActionRecord
 import com.amond.kmpbook.domain.model.game.GamePhase
 import com.amond.kmpbook.domain.model.game.Screen
 import com.amond.kmpbook.domain.model.game.TurnStep
 import com.amond.kmpbook.domain.model.history.HistoricalScenarioPack
 import com.amond.kmpbook.domain.model.market.Currency
 import com.amond.kmpbook.domain.model.market.Market
+import com.amond.kmpbook.domain.model.pricing.PriceBar
+import com.amond.kmpbook.domain.model.pricing.PriceBarInterval
 import com.amond.kmpbook.domain.model.trading.OrderSide
 import com.amond.kmpbook.domain.model.trading.OrderType
 import com.amond.kmpbook.domain.model.trading.TimeInForce
 import com.amond.kmpbook.domain.model.venue.MarketSession
 import com.amond.kmpbook.domain.simulation.market.ExternalMarketForces
+import com.amond.kmpbook.domain.simulation.market.MarketMicrostructure
 import com.amond.kmpbook.domain.simulation.event.DebugEventGuide
 import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.modding.model.ModCapability
 import com.amond.kmpbook.persistence.validation.validateSimulatorUiState
 import com.amond.kmpbook.persistence.validation.validateHistoricalScenarioBinding
 import com.amond.kmpbook.presentation.trading.OrderRequest
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -36,8 +42,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
+import kotlin.math.round
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Instant
 import kotlin.time.TimeSource
@@ -74,6 +79,61 @@ class SimulatorViewModel(
     internal val stateChanges: SharedFlow<SimulatorStateChange> = _stateChanges.asSharedFlow()
     internal val currentStateChangeSequence: Long get() = stateChangeSequence
     val currentState: SimulatorUiState get() = _uiState.value
+
+    /**
+     * 저장 상태에는 게임 시작 뒤의 가변 suffix만 유지한다. 선택 종목의 불변 게임 시작 전
+     * prefix는 번들에서 필요할 때 투영해 5년 일봉 차트를 제공한다.
+     */
+    fun historicalDailyPrefixForDisplay(state: SimulatorUiState): List<PriceBar> {
+        val scenario = historicalScenario ?: return emptyList()
+        val stockId = state.selectedStockId ?: return emptyList()
+        val stock = state.stocks.firstOrNull { candidate -> candidate.id == stockId } ?: return emptyList()
+        val appliedActions = state.corporateActionLedger.asSequence()
+            .filter { action -> action.stockId == stockId && action.effectiveAt <= state.currentTime }
+            .sortedWith(
+                compareBy<CorporateActionRecord>(CorporateActionRecord::effectiveAt)
+                    .thenBy(CorporateActionRecord::accountingSequence),
+            )
+            .toList()
+        return scenario.dailyBarsByInstrument[stockId].orEmpty().mapNotNull { historicalBar ->
+            val session = GameCalendar.regularSessionWindow(stock.market, historicalBar.tradingDate)
+                ?: return@mapNotNull null
+            if (session.closesAt > scenario.definition.gameplayStartsAt) return@mapNotNull null
+            val pregameFactor = historicalBar.pregameSplitAdjustedPriceFactor
+            var projected = PriceBar(
+                stockId = stockId,
+                startTime = session.opensAt,
+                endTime = session.closesAt,
+                step = PriceBarInterval.ONE_DAY,
+                open = MarketMicrostructure.roundNearest(stock, historicalBar.open * pregameFactor),
+                high = MarketMicrostructure.roundUp(stock, historicalBar.high * pregameFactor),
+                low = MarketMicrostructure.roundDown(stock, historicalBar.low * pregameFactor),
+                close = MarketMicrostructure.roundNearest(stock, historicalBar.close * pregameFactor),
+                volume = round(historicalBar.volume.toDouble() / pregameFactor)
+                    .toLong()
+                    .coerceAtLeast(0L),
+            )
+            appliedActions.forEach { action ->
+                if (action.effectiveAt <= projected.endTime) return@forEach
+                fun adjustedPrice(value: Double): Double = MarketMicrostructure.roundNearest(
+                    stock,
+                    (value / action.quantityMultiplier).coerceAtLeast(
+                        MarketMicrostructure.minimumPrice(stock.market),
+                    ),
+                )
+                projected = projected.copy(
+                    open = adjustedPrice(projected.open),
+                    high = adjustedPrice(projected.high),
+                    low = adjustedPrice(projected.low),
+                    close = adjustedPrice(projected.close),
+                    volume = round(projected.volume.toDouble() * action.quantityMultiplier)
+                        .toLong()
+                        .coerceAtLeast(0L),
+                )
+            }
+            projected
+        }
+    }
 
     /**
      * Validates the exact snapshot that will be handed to persistence against the active catalog.
