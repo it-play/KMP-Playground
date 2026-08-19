@@ -20,12 +20,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.amond.kmpbook.presentation.settings.AudioSettings
 import com.amond.kmpbook.presentation.settings.WindowDisplayMode
-import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
 import com.amond.kmpbook.ui.components.MarketButton
 import com.amond.kmpbook.ui.components.MarketButtonVariant
 import com.amond.kmpbook.ui.components.SectionHeading
-import com.amond.kmpbook.ui.components.StatusLabel
 import com.amond.kmpbook.ui.components.VisibleVerticalScrollbar
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketRadii
@@ -33,13 +31,15 @@ import com.amond.kmpbook.ui.theme.MarketType
 
 @Composable
 fun LobbySettingsScreen(
-    saveDirectory: String,
-    saveCount: Int,
     audioSettings: AudioSettings,
     onAudioSettingsChanged: (AudioSettings) -> Unit,
     windowDisplayMode: WindowDisplayMode,
     onWindowDisplayModeChanged: (WindowDisplayMode) -> Unit,
-    onOpenSaveDirectory: () -> Unit,
+    maintenanceStatus: String?,
+    isOpeningLocalFile: Boolean,
+    isCheckingResources: Boolean,
+    onOpenLocalFile: () -> Unit,
+    onCheckResources: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -58,16 +58,13 @@ fun LobbySettingsScreen(
                     .padding(vertical = 24.dp, horizontal = 13.dp),
             ) {
             LedgerPanel(Modifier.fillMaxWidth(), padding = 22.dp) {
-                SectionHeading(
-                    title = "설정",
-                    action = { StatusLabel(".ml2 · ${saveCount}개", MarketColors.Positive) },
-                )
+                SectionHeading(title = "설정")
             }
             Spacer(Modifier.height(16.dp))
             AudioSettingsPanel(
                 settings = audioSettings,
                 onSettingsChanged = onAudioSettingsChanged,
-                modifier = Modifier.fillMaxWidth().height(410.dp),
+                modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(16.dp))
             WindowDisplaySettingsPanel(
@@ -78,35 +75,58 @@ fun LobbySettingsScreen(
             Spacer(Modifier.height(16.dp))
             LedgerPanel(Modifier.fillMaxWidth(), padding = 22.dp) {
                 Column {
-                    SectionHeading("저장과 조작")
+                    SectionHeading("파일과 리소스")
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        "저장 폴더",
+                        "로컬 파일 열기",
                         style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
                         color = MarketColors.Ink,
                     )
-                    Spacer(Modifier.height(7.dp))
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.small))
-                            .padding(14.dp),
-                    ) {
-                        Text(saveDirectory, style = MarketType.number, color = MarketColors.Ink)
-                    }
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "저장 폴더 밖의 .ml2 파일도 검증한 뒤 바로 불러옵니다.",
+                        style = MarketType.body,
+                        color = MarketColors.InkMuted,
+                    )
+                    Spacer(Modifier.height(9.dp))
                     MarketButton(
-                        text = "탐색기로 보기",
-                        onClick = onOpenSaveDirectory,
+                        text = if (isOpeningLocalFile) "파일 확인 중…" else "로컬 파일 선택",
+                        onClick = onOpenLocalFile,
+                        enabled = !isOpeningLocalFile && !isCheckingResources,
                         modifier = Modifier.fillMaxWidth(),
                         variant = MarketButtonVariant.Weak,
                     )
                     Spacer(Modifier.height(18.dp))
-                    LedgerDivider()
-                    Spacer(Modifier.height(14.dp))
-                    Text("ESC", style = MarketType.label.copy(fontWeight = FontWeight.SemiBold), color = MarketColors.Ink)
-                    Spacer(Modifier.height(5.dp))
-                    Text("게임 중 설정 열기", style = MarketType.body, color = MarketColors.InkMuted)
+                    Text(
+                        "리소스 무결성 검사",
+                        style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                        color = MarketColors.Ink,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "종목·사전·차트·글꼴·오디오 파일이 원본과 일치하는지 확인합니다.",
+                        style = MarketType.body,
+                        color = MarketColors.InkMuted,
+                    )
+                    Spacer(Modifier.height(9.dp))
+                    MarketButton(
+                        text = if (isCheckingResources) "검사 중…" else "무결성 검사 시작",
+                        onClick = onCheckResources,
+                        enabled = !isOpeningLocalFile && !isCheckingResources,
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = MarketButtonVariant.Weak,
+                    )
+                    maintenanceStatus?.let { status ->
+                        Spacer(Modifier.height(14.dp))
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(MarketColors.PaperMuted, RoundedCornerShape(MarketRadii.small))
+                                .padding(14.dp),
+                        ) {
+                            Text(status, style = MarketType.body, color = MarketColors.Ink)
+                        }
+                    }
                 }
             }
             Spacer(Modifier.height(16.dp))

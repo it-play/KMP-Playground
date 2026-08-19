@@ -60,6 +60,7 @@ import com.amond.kmpbook.modding.storage.ModStorage
 import com.amond.kmpbook.persistence.model.GameSaveEntry
 import com.amond.kmpbook.persistence.result.GameLoadFailure
 import com.amond.kmpbook.persistence.result.GameLoadNotFound
+import com.amond.kmpbook.persistence.result.GameLoadResult
 import com.amond.kmpbook.persistence.result.GameLoadSuccess
 import com.amond.kmpbook.persistence.result.GameSaveDeleteFailure
 import com.amond.kmpbook.persistence.result.GameSaveDeleteNotFound
@@ -73,6 +74,7 @@ import com.amond.kmpbook.presentation.news.buildNewsUiProjection
 import com.amond.kmpbook.presentation.protection.ProtectionUiProjection
 import com.amond.kmpbook.presentation.protection.buildProtectionUiProjection
 import com.amond.kmpbook.presentation.settings.AudioSettings
+import com.amond.kmpbook.presentation.settings.ResourceIntegrityVerifier
 import com.amond.kmpbook.presentation.settings.WindowDisplayMode
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
@@ -193,6 +195,7 @@ fun App(
     val executableModRuntime = remember { ExecutableModRuntime() }
     val storage = remember { GameSaveStorage() }
     val modStorage = remember { ModStorage() }
+    val resourceIntegrityVerifier = remember { ResourceIntegrityVerifier() }
     val scope = rememberCoroutineScope()
     val state by viewModel.uiState.collectAsState()
     var entryDestination by remember { mutableStateOf(GameEntryDestination.LOBBY) }
@@ -216,6 +219,8 @@ fun App(
     var isDebugConsoleVisible by remember { mutableStateOf(false) }
     var modConsoleContribution by remember { mutableStateOf<ModConsoleContribution?>(null) }
     var isMarketFilterDialogVisible by remember { mutableStateOf(false) }
+    var lobbyMaintenanceStatus by remember { mutableStateOf<String?>(null) }
+    var isCheckingResources by remember { mutableStateOf(false) }
     val modMutationMutex = remember { Mutex() }
     val persistenceOperationMutex = remember { Mutex() }
     val isModCatalogBusy = isScanningMods || activeModMutations > 0 || isStartingNewGame
@@ -226,6 +231,7 @@ fun App(
         isResettingGame ||
         activeModMutations > 0 ||
         isScanningMods ||
+        isCheckingResources ||
         state.isAdvancing
     val activeConsoleMod = state.options.activeMods.firstOrNull { activeMod ->
         activeMod.executableFingerprint != null &&
@@ -359,13 +365,6 @@ fun App(
             isMarketFilterDialogVisible = false
         } else if (isDebugConsoleVisible) {
             isDebugConsoleVisible = false
-        } else if (
-            escapeRequest > 0 &&
-            !isCriticalOperationActive &&
-            !state.isAdvancing &&
-            state.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED)
-        ) {
-            viewModel.selectScreen(Screen.SETTINGS)
         }
     }
     LaunchedEffect(state.phase, state.screen) {
@@ -424,6 +423,42 @@ fun App(
             }
         }
     }
+    suspend fun restoreLoadedGame(result: GameLoadResult, displayName: String): String {
+        return when (result) {
+            is GameLoadSuccess -> {
+                persistenceOperationDetail = "현재 모드와 저장 게임의 종목 구성을 맞추고 있습니다."
+                val currentCatalog = refreshMods()
+                    ?: return "현재 모드 목록을 확인하지 못해 게임을 불러오지 않았습니다."
+                val modCompatibilityError = activeModCompatibilityError(
+                    required = result.state.options.activeMods,
+                    installed = currentCatalog.mods,
+                )
+                if (modCompatibilityError != null) return modCompatibilityError
+                val installedById = currentCatalog.mods.associateBy(InstalledMod::id)
+                val requiredMods = result.state.options.activeMods.map { required ->
+                    installedById.getValue(required.id)
+                }
+                val resolvedCatalog = try {
+                    withContext(Dispatchers.Default) {
+                        resolveInstrumentCatalog(baseInstrumentCatalog, requiredMods)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: RuntimeException) {
+                    return "저장 게임의 종목 카탈로그를 구성하지 못했습니다: " +
+                        (error.message ?: "알 수 없는 오류")
+                }
+                persistenceOperationDetail = "시장 엔진과 거래 원장을 복원하고 있습니다."
+                if (viewModel.restoreGame(result.state, resolvedCatalog)) {
+                    "$displayName 게임을 불러왔습니다."
+                } else {
+                    "저장된 게임을 확인할 수 없습니다."
+                }
+            }
+            is GameLoadNotFound -> result.message
+            is GameLoadFailure -> result.error.message
+        }
+    }
     val loadGame: (GameSaveEntry) -> Unit = loadGameAction@{ save ->
         if (isPersistenceBusy || isResettingGame || isStartingNewGame) return@loadGameAction
         if (isModCatalogBusy) {
@@ -442,46 +477,7 @@ fun App(
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 persistenceOperationMutex.withLock {
-                    when (val result = storage.load(save.fileName)) {
-                        is GameLoadSuccess -> {
-                            persistenceOperationDetail = "현재 모드와 저장 게임의 종목 구성을 맞추고 있습니다."
-                            val currentCatalog = refreshMods()
-                            if (currentCatalog == null) {
-                                saveStatus = "현재 모드 목록을 확인하지 못해 게임을 불러오지 않았습니다."
-                            } else {
-                                val modCompatibilityError = activeModCompatibilityError(
-                                    required = result.state.options.activeMods,
-                                    installed = currentCatalog.mods,
-                                )
-                                if (modCompatibilityError != null) {
-                                    saveStatus = modCompatibilityError
-                                } else {
-                                    val installedById = currentCatalog.mods.associateBy(InstalledMod::id)
-                                    val requiredMods = result.state.options.activeMods.map { required ->
-                                        installedById.getValue(required.id)
-                                    }
-                                    val resolvedCatalog = runCatching {
-                                        withContext(Dispatchers.Default) {
-                                            resolveInstrumentCatalog(baseInstrumentCatalog, requiredMods)
-                                        }
-                                    }.getOrElse { error ->
-                                        if (error is CancellationException) throw error
-                                        saveStatus = "저장 게임의 종목 카탈로그를 구성하지 못했습니다: " +
-                                            (error.message ?: "알 수 없는 오류")
-                                        return@withLock
-                                    }
-                                    persistenceOperationDetail = "시장 엔진과 거래 원장을 복원하고 있습니다."
-                                    if (viewModel.restoreGame(result.state, resolvedCatalog)) {
-                                        saveStatus = "${save.name} 게임을 불러왔습니다."
-                                    } else {
-                                        saveStatus = "저장된 게임을 확인할 수 없습니다."
-                                    }
-                                }
-                            }
-                        }
-                        is GameLoadNotFound -> saveStatus = result.message
-                        is GameLoadFailure -> saveStatus = result.error.message
-                    }
+                    saveStatus = restoreLoadedGame(storage.load(save.fileName), save.name)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -491,6 +487,69 @@ fun App(
             } finally {
                 isLoadingGame = false
                 persistenceOperationDetail = null
+            }
+        }
+    }
+    val openLocalSaveFile: () -> Unit = openLocalSaveFileAction@{
+        if (isPersistenceBusy || isResettingGame || isStartingNewGame || isCheckingResources) {
+            return@openLocalSaveFileAction
+        }
+        if (isModCatalogBusy) {
+            lobbyMaintenanceStatus = "모드 목록을 확인한 뒤 로컬 파일을 열 수 있습니다."
+            return@openLocalSaveFileAction
+        }
+        isLoadingGame = true
+        lobbyMaintenanceStatus = "열 저장 파일을 선택하세요."
+        persistenceOperationDetail = "로컬 저장 파일을 선택하고 있습니다."
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                persistenceOperationMutex.withLock {
+                    val selection = storage.selectLocalSaveFile()
+                    val selectedPath = selection.path
+                    when {
+                        selection.error != null -> lobbyMaintenanceStatus = selection.error
+                        selectedPath == null -> lobbyMaintenanceStatus = "파일 선택을 취소했습니다."
+                        else -> {
+                            persistenceOperationDetail = "저장 파일의 무결성과 장부 구조를 확인하고 있습니다."
+                            val selectedFileName = selectedPath
+                                .substringAfterLast('/')
+                                .substringAfterLast('\\')
+                            val displayName = selectedFileName.dropLast(4)
+                            val resultMessage = restoreLoadedGame(
+                                result = storage.loadLocal(selectedPath),
+                                displayName = displayName,
+                            )
+                            saveStatus = resultMessage
+                            lobbyMaintenanceStatus = resultMessage
+                        }
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: RuntimeException) {
+                lobbyMaintenanceStatus = "로컬 파일을 열지 못했습니다: " +
+                    (error.message?.take(220) ?: "알 수 없는 오류")
+            } finally {
+                isLoadingGame = false
+                persistenceOperationDetail = null
+            }
+        }
+    }
+    val checkResources: () -> Unit = checkResourcesAction@{
+        if (isCriticalOperationActive) return@checkResourcesAction
+        isCheckingResources = true
+        lobbyMaintenanceStatus = "핵심 게임 리소스를 검사하고 있습니다."
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                val error = resourceIntegrityVerifier.verify()
+                lobbyMaintenanceStatus = error ?: "핵심 게임 리소스가 모두 원본과 일치합니다."
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: RuntimeException) {
+                lobbyMaintenanceStatus = "리소스 검사를 완료하지 못했습니다: " +
+                    (error.message?.take(220) ?: "알 수 없는 오류")
+            } finally {
+                isCheckingResources = false
             }
         }
     }
@@ -704,13 +763,15 @@ fun App(
                         },
                     )
                     GameEntryDestination.SETTINGS -> LobbySettingsScreen(
-                        saveDirectory = storage.saveDirectory,
-                        saveCount = saves.size,
                         audioSettings = audioSettings,
                         onAudioSettingsChanged = onAudioSettingsChange,
                         windowDisplayMode = windowDisplayMode,
                         onWindowDisplayModeChanged = onWindowDisplayModeChange,
-                        onOpenSaveDirectory = openSaveDirectory,
+                        maintenanceStatus = lobbyMaintenanceStatus,
+                        isOpeningLocalFile = isLoadingGame,
+                        isCheckingResources = isCheckingResources,
+                        onOpenLocalFile = openLocalSaveFile,
+                        onCheckResources = checkResources,
                         onBack = { entryDestination = GameEntryDestination.LOBBY },
                     )
                 }
