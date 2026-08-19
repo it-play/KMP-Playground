@@ -1,4 +1,4 @@
-name: Market Ledger Offline Windows Package
+name: Kotlin Multiplatform Automation Workflow
 
 on:
   workflow_dispatch:
@@ -12,34 +12,34 @@ permissions:
 
 jobs:
   validate-offline-package:
-    name: Validate offline signed package
+    name: Validate Offline Signed Package
     if: github.event_name == 'pull_request'
     runs-on: windows-latest
     timeout-minutes: 45
 
     steps:
-      - name: Check out source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check out Source
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Set up Java 21
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Set up Node.js 24
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@v7
         with:
           node-version: "24.19.0"
           package-manager-cache: false
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        uses: gradle/actions/setup-gradle@v6
 
-      - name: Create ephemeral PR trust inputs
+      - name: Create Ephemeral PR Trust Inputs
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -88,11 +88,11 @@ jobs:
           "ML_WINDOWS_SIGNING_CERT_SHA1=$($prCertificate.Thumbprint)" >> $env:GITHUB_ENV
           "PR_WINDOWS_SIGNING_CERT_SHA1=$($prCertificate.Thumbprint)" >> $env:GITHUB_ENV
 
-      - name: Build and verify ephemeral offline Windows package
+      - name: Build and Verify Ephemeral Offline Windows Package
         shell: pwsh
         run: .\gradlew.bat clean buildWindowsRelease --configuration-cache --no-daemon
 
-      - name: Remove ephemeral PR trust material
+      - name: Remove Ephemeral PR Trust Material
         if: always()
         shell: pwsh
         run: |
@@ -107,7 +107,7 @@ jobs:
           }
 
   package-stable-release:
-    name: Package offline stable game and launcher
+    name: Package Offline Stable Game and Launcher
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: windows-latest
     timeout-minutes: 45
@@ -117,28 +117,28 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Check out source
+      - name: Check out Source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Java 21
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Set up Node.js 24
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@v7
         with:
           node-version: "24.19.0"
           package-manager-cache: false
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        uses: gradle/actions/setup-gradle@v6
 
-      - name: Compile desktop projects
+      - name: Compile Desktop Projects
         shell: pwsh
         run: >-
           .\gradlew.bat
@@ -148,7 +148,7 @@ jobs:
           --configuration-cache
           --no-daemon
 
-      - name: Decide whether to package a version
+      - name: Decide Whether to Package a Version
         id: version
         shell: pwsh
         env:
@@ -219,7 +219,7 @@ jobs:
             "Offline packaging skipped because appVersion remains $appVersion." >> $env:GITHUB_STEP_SUMMARY
           }
 
-      - name: Configure one package trust cohort
+      - name: Configure one Package Trust Cohort
         id: package_trust
         if: steps.version.outputs.should_package == 'true'
         shell: pwsh
@@ -232,7 +232,7 @@ jobs:
           "cohort=$cohort" >> $env:GITHUB_OUTPUT
           "package_timestamp=$packageTimestamp" >> $env:GITHUB_OUTPUT
 
-      - name: Import Windows code-signing certificate
+      - name: Import Windows Code-Signing Certificate
         id: windows_signing
         if: steps.version.outputs.should_package == 'true'
         shell: pwsh
@@ -292,7 +292,7 @@ jobs:
           'Windows artifacts use the project-owned, SHA-256-pinned internal signing certificate without timestamping.' >> `
             $env:GITHUB_STEP_SUMMARY
 
-      - name: Build one fully signed offline Windows package
+      - name: Build one Fully Signed Offline Windows Package
         if: steps.version.outputs.should_package == 'true'
         shell: pwsh
         env:
@@ -307,7 +307,7 @@ jobs:
           ML_WINDOWS_SIGNING_CERT_SHA1: ${{ steps.windows_signing.outputs.thumbprint }}
         run: .\gradlew.bat clean buildWindowsRelease --configuration-cache --no-daemon
 
-      - name: Remove materialized package private key file
+      - name: Remove Materialized Package Private Key File
         if: always() && steps.version.outputs.should_package == 'true'
         shell: pwsh
         run: |
@@ -374,7 +374,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'signtool rejected an offline launcher package artifact.' }
           }
 
-      - name: Verify embedded release closure and stage launcher MSI
+      - name: Verify Embedded Release Closure and Stage Launcher MSI
         if: steps.version.outputs.should_package == 'true'
         shell: pwsh
         env:
@@ -416,7 +416,7 @@ jobs:
 
       - name: Upload verified offline Windows package
         if: steps.version.outputs.should_package == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7
         with:
           name: MarketLedger2040-${{ steps.version.outputs.appVersion }}-Offline-Windows-x64
           path: ${{ runner.temp }}/market-ledger-offline-package/*
