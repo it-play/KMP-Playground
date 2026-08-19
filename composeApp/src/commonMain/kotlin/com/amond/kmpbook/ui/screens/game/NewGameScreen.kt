@@ -27,7 +27,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,7 +54,6 @@ import com.amond.kmpbook.domain.simulation.market.ExternalMarketForces
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.ui.components.LedgerDivider
 import com.amond.kmpbook.ui.components.LedgerPanel
-import com.amond.kmpbook.ui.components.LoadingFinancialFact
 import com.amond.kmpbook.ui.components.MarketButton
 import com.amond.kmpbook.ui.components.MarketButtonVariant
 import com.amond.kmpbook.ui.components.MarketCheckRow
@@ -85,7 +83,6 @@ fun NewGameScreen(
     onStart: (NewGameOptions) -> Unit,
     onBack: () -> Unit = {},
     isBusy: Boolean = false,
-    busyMessage: String? = null,
     errorMessage: String? = null,
     modifier: Modifier = Modifier,
     embedded: Boolean = false,
@@ -210,24 +207,17 @@ fun NewGameScreen(
                     Spacer(Modifier.height(24.dp))
                     LedgerDivider()
                     Spacer(Modifier.height(18.dp))
-                    when {
-                        isBusy -> NewGameOperationStatus(
-                            message = busyMessage ?: "새 게임에 필요한 시장 데이터를 준비하고 있습니다.",
-                            isBusy = true,
-                        )
-                        !errorMessage.isNullOrBlank() -> NewGameOperationStatus(
-                            message = errorMessage,
-                            isBusy = false,
-                        )
+                    if (!errorMessage.isNullOrBlank()) {
+                        NewGameOperationStatus(message = errorMessage)
                     }
-                    if (isBusy || !errorMessage.isNullOrBlank()) Spacer(Modifier.height(12.dp))
+                    if (!errorMessage.isNullOrBlank()) Spacer(Modifier.height(12.dp))
                     Box(
                         Modifier
                             .fillMaxWidth()
                             .semantics { stateDescription = if (isBusy) "게임 준비 중" else "게임 시작 가능" },
                     ) {
                         MarketButton(
-                            text = if (isBusy) "" else "게임 시작  →",
+                            text = if (isBusy) "게임 준비 중" else "게임 시작  →",
                             onClick = {
                                 onStart(
                                     NewGameOptions(
@@ -245,24 +235,6 @@ fun NewGameScreen(
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !isBusy,
                         )
-                        if (isBusy) {
-                            Row(
-                                modifier = Modifier.align(Alignment.Center),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(9.dp),
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(17.dp),
-                                    color = MarketColors.Grey400,
-                                    strokeWidth = 2.dp,
-                                )
-                                Text(
-                                    "게임 준비 중",
-                                    style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
-                                    color = MarketColors.Grey400,
-                                )
-                            }
-                        }
                     }
                     TextButton(
                         onClick = {
@@ -399,13 +371,11 @@ private fun SetupSectionTitle(title: String, detail: String? = null) {
 }
 
 @Composable
-private fun NewGameOperationStatus(message: String, isBusy: Boolean) {
-    val accent = if (isBusy) MarketColors.Primary else MarketColors.Rise
-    val background = if (isBusy) MarketColors.PrimaryWeak else MarketColors.RiseSoft
-    val textColor = if (isBusy) MarketColors.PrimaryText else MarketColors.RiseText
+private fun NewGameOperationStatus(message: String) {
+    val accent = MarketColors.Rise
     LedgerPanel(
         modifier = Modifier.fillMaxWidth(),
-        background = background,
+        background = MarketColors.RiseSoft,
         padding = 13.dp,
     ) {
         Row(
@@ -413,37 +383,22 @@ private fun NewGameOperationStatus(message: String, isBusy: Boolean) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(11.dp),
         ) {
-            if (isBusy) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(19.dp),
-                    color = accent,
-                    strokeWidth = 2.dp,
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(19.dp)
-                        .background(accent, RoundedCornerShape(MarketRadii.pill)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("!", style = MarketType.label, color = Color.White)
-                }
+            Box(
+                modifier = Modifier
+                    .size(19.dp)
+                    .background(accent, RoundedCornerShape(MarketRadii.pill)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("!", style = MarketType.label, color = Color.White)
             }
             Column(Modifier.weight(1f)) {
                 Text(
-                    if (isBusy) "새 게임 준비 중" else "게임을 시작하지 못했습니다",
+                    "게임을 시작하지 못했습니다",
                     style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
-                    color = textColor,
+                    color = MarketColors.RiseText,
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(message, style = MarketType.caption, color = MarketColors.Ink)
-                if (isBusy) {
-                    Spacer(Modifier.height(7.dp))
-                    LoadingFinancialFact(
-                        factKey = "new-game-preparation",
-                        compact = true,
-                    )
-                }
             }
         }
     }
