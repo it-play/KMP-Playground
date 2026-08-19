@@ -14,6 +14,8 @@ data class HistoricalDailyBar(
     val low: Double,
     val close: Double,
     val adjustedClose: Double? = null,
+    /** 게임 시작 전에 끝난 분할만 반영해 과거 차트를 시작시점 주식 단위로 잇는 가격 계수다. */
+    val pregameSplitAdjustedPriceFactor: Double = 1.0,
     val volume: Long,
     val priceBasis: HistoricalPriceBasis,
     val sourceId: String,
@@ -37,6 +39,10 @@ data class HistoricalDailyBar(
         require(adjustedClose == null || adjustedClose.isFinite() && adjustedClose > 0.0) {
             "역사 일봉 조정종가는 유한한 양수여야 합니다."
         }
+        require(
+            pregameSplitAdjustedPriceFactor.isFinite() &&
+                pregameSplitAdjustedPriceFactor > 0.0,
+        ) { "게임 시작 전 분할 조정 가격 계수는 유한한 양수여야 합니다." }
         require(volume >= 0L) { "역사 일봉 거래량은 음수일 수 없습니다." }
         require(sourceId.isNotBlank() && sourceId == sourceId.trim()) {
             "역사 일봉 출처 ID는 비어 있거나 앞뒤 공백을 가질 수 없습니다."

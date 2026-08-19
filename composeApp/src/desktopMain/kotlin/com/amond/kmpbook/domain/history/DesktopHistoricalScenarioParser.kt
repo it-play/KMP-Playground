@@ -20,12 +20,12 @@ import com.amond.kmpbook.domain.model.schedule.ReportedFact
 import com.google.gson.Strictness
 import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonToken
-import java.io.StringReader
-import java.nio.ByteBuffer
-import java.nio.charset.CharacterCodingException
+import java.io.ByteArrayInputStream
+import java.io.InputStreamReader
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.util.zip.GZIPInputStream
 import kotlinx.datetime.LocalDate
 import kotlin.time.Instant
 
@@ -59,6 +59,8 @@ object DesktopHistoricalScenarioParser {
         val dailyBars = mutableListOf<HistoricalDailyBar>()
         val events = mutableListOf<HistoricalEventOccurrence>()
         val corporateActions = mutableListOf<HistoricalCorporateAction>()
+        val dailyBarStringPool = hashMapOf<String, String>()
+        var totalUncompressedBytes = 0L
         definition.resources.forEach { reference ->
             val bytes = requireNotNull(resourceBytesByPath[reference.path])
             require(bytes.isNotEmpty() && bytes.size <= MAX_RESOURCE_BYTES) {
@@ -67,12 +69,22 @@ object DesktopHistoricalScenarioParser {
             require(bytes.sha256Lowercase() == reference.contentSha256) {
                 "$ERROR_PREFIX ${reference.path} 콘텐츠 해시가 manifest와 일치하지 않습니다."
             }
+            val documentBytes = if (reference.isGzip) {
+                decompressGzip(bytes, reference.path)
+            } else {
+                bytes
+            }
+            totalUncompressedBytes += documentBytes.size
+            require(totalUncompressedBytes <= MAX_TOTAL_UNCOMPRESSED_RESOURCE_BYTES) {
+                "$ERROR_PREFIX 역사 시나리오 압축 해제 합계가 256 MiB를 초과합니다."
+            }
             val recordCount = when (reference.kind) {
-                HistoricalScenarioResourceKind.SOURCES -> parseSources(bytes).also(sources::addAll).size
-                HistoricalScenarioResourceKind.DAILY_BARS -> parseDailyBars(bytes).also(dailyBars::addAll).size
-                HistoricalScenarioResourceKind.EVENTS -> parseEvents(bytes).also(events::addAll).size
+                HistoricalScenarioResourceKind.SOURCES -> parseSources(documentBytes).also(sources::addAll).size
+                HistoricalScenarioResourceKind.DAILY_BARS ->
+                    parseDailyBars(documentBytes, dailyBarStringPool).also(dailyBars::addAll).size
+                HistoricalScenarioResourceKind.EVENTS -> parseEvents(documentBytes).also(events::addAll).size
                 HistoricalScenarioResourceKind.CORPORATE_ACTIONS ->
-                    parseCorporateActions(bytes).also(corporateActions::addAll).size
+                    parseCorporateActions(documentBytes).also(corporateActions::addAll).size
             }
             require(recordCount == reference.recordCount) {
                 "$ERROR_PREFIX ${reference.path} 레코드 수가 manifest 선언과 일치하지 않습니다."
@@ -103,8 +115,11 @@ object DesktopHistoricalScenarioParser {
     private fun parseSources(bytes: ByteArray): List<HistoricalSourceReference> =
         readDocument(bytes, "출처") { it.readSourcesDocument() }
 
-    private fun parseDailyBars(bytes: ByteArray): List<HistoricalDailyBar> =
-        readDocument(bytes, "일봉") { it.readDailyBarsDocument() }
+    private fun parseDailyBars(
+        bytes: ByteArray,
+        canonicalStrings: MutableMap<String, String>,
+    ): List<HistoricalDailyBar> =
+        readDocument(bytes, "일봉", canonicalStrings) { it.readDailyBarsDocument() }
 
     private fun parseEvents(bytes: ByteArray): List<HistoricalEventOccurrence> =
         readDocument(bytes, "사건") { it.readEventsDocument() }
@@ -115,13 +130,16 @@ object DesktopHistoricalScenarioParser {
     private fun <T> readDocument(
         bytes: ByteArray,
         label: String,
+        canonicalStrings: MutableMap<String, String>? = null,
         block: (StrictHistoricalJsonReader) -> T,
     ): T {
-        val json = decodeUtf8(bytes)
         return try {
-            JsonReader(StringReader(json)).use { reader ->
+            val decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+            JsonReader(InputStreamReader(ByteArrayInputStream(bytes), decoder)).use { reader ->
                 reader.strictness = Strictness.STRICT
-                val strictReader = StrictHistoricalJsonReader(reader)
+                val strictReader = StrictHistoricalJsonReader(reader, canonicalStrings)
                 block(strictReader).also {
                     if (reader.peek() != JsonToken.END_DOCUMENT) {
                         throw fail("$label JSON 뒤에 추가 값이 있습니다.")
@@ -138,15 +156,23 @@ object DesktopHistoricalScenarioParser {
         }
     }
 
-    private fun decodeUtf8(bytes: ByteArray): String = try {
-        StandardCharsets.UTF_8.newDecoder()
-            .onMalformedInput(CodingErrorAction.REPORT)
-            .onUnmappableCharacter(CodingErrorAction.REPORT)
-            .decode(ByteBuffer.wrap(bytes))
-            .toString()
-    } catch (error: CharacterCodingException) {
-        throw fail("올바른 UTF-8 문서가 아닙니다.", error)
+    private fun decompressGzip(bytes: ByteArray, label: String): ByteArray = try {
+        GZIPInputStream(ByteArrayInputStream(bytes)).use { input ->
+            val decoded = input.readNBytes(MAX_UNCOMPRESSED_RESOURCE_BYTES + 1)
+            require(decoded.size <= MAX_UNCOMPRESSED_RESOURCE_BYTES) {
+                "$ERROR_PREFIX $label gzip JSON의 압축 해제 크기가 32 MiB를 초과합니다."
+            }
+            decoded
+        }
+    } catch (error: Exception) {
+        if (error is IllegalArgumentException && error.message?.startsWith(ERROR_PREFIX) == true) {
+            throw error
+        }
+        throw fail("$label gzip JSON의 압축 형식이 올바르지 않습니다.", error)
     }
+
+    private val HistoricalScenarioResourceReference.isGzip: Boolean
+        get() = path.endsWith(".json.gz")
 
     private fun ByteArray.sha256Lowercase(): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(this)
@@ -163,6 +189,8 @@ object DesktopHistoricalScenarioParser {
         IllegalArgumentException("$ERROR_PREFIX$message", cause)
 
     private const val SCHEMA_VERSION: Int = 1
+    private const val MAX_UNCOMPRESSED_RESOURCE_BYTES: Int = 32 * 1024 * 1024
+    private const val MAX_TOTAL_UNCOMPRESSED_RESOURCE_BYTES: Long = 256L * 1024L * 1024L
     private const val ERROR_PREFIX: String = "역사 시나리오를 해석할 수 없습니다: "
     private const val MAX_ERROR_DETAIL_LENGTH: Int = 300
     private const val HEX_DIGITS: String = "0123456789abcdef"
@@ -170,6 +198,7 @@ object DesktopHistoricalScenarioParser {
     /** 파싱 중 중복 키·깊이·노드 제한을 즉시 검사하므로 wire 레코드를 이 경계에 함께 둔다. */
     private class StrictHistoricalJsonReader(
         private val reader: JsonReader,
+        private val canonicalStrings: MutableMap<String, String>? = null,
     ) {
         private var depth: Int = 0
         private var nodeCount: Int = 0
@@ -350,21 +379,24 @@ object DesktopHistoricalScenarioParser {
             var low: Double? = null
             var close: Double? = null
             var adjustedClose: Double? = null
+            var pregameSplitAdjustedPriceFactor: Double = 1.0
             var volume: Long? = null
             var priceBasis: HistoricalPriceBasis? = null
             var sourceId: String? = null
             readObject("dailyBar", DAILY_BAR_FIELDS) { field ->
                 when (field) {
-                    "instrumentId" -> instrumentId = readString(field)
+                    "instrumentId" -> instrumentId = readCanonicalString(field)
                     "tradingDate" -> tradingDate = readLocalDate(field)
                     "open" -> open = readDouble(field)
                     "high" -> high = readDouble(field)
                     "low" -> low = readDouble(field)
                     "close" -> close = readDouble(field)
                     "adjustedClose" -> adjustedClose = readDouble(field)
+                    "pregameSplitAdjustedPriceFactor" ->
+                        pregameSplitAdjustedPriceFactor = readDouble(field)
                     "volume" -> volume = readLong(field)
                     "priceBasis" -> priceBasis = readEnum(field, HistoricalPriceBasis.entries)
-                    "sourceId" -> sourceId = readString(field)
+                    "sourceId" -> sourceId = readCanonicalString(field)
                 }
             }
             return HistoricalDailyBar(
@@ -375,10 +407,17 @@ object DesktopHistoricalScenarioParser {
                 low = low ?: missing("dailyBar.low"),
                 close = close ?: missing("dailyBar.close"),
                 adjustedClose = adjustedClose,
+                pregameSplitAdjustedPriceFactor = pregameSplitAdjustedPriceFactor,
                 volume = volume ?: missing("dailyBar.volume"),
                 priceBasis = priceBasis ?: missing("dailyBar.priceBasis"),
                 sourceId = sourceId ?: missing("dailyBar.sourceId"),
             )
+        }
+
+        private fun readCanonicalString(field: String): String {
+            val value = readString(field)
+            val pool = canonicalStrings ?: return value
+            return pool.getOrPut(value) { value }
         }
 
         private fun readEvent(): HistoricalEventOccurrence {
@@ -674,6 +713,7 @@ object DesktopHistoricalScenarioParser {
                 "low",
                 "close",
                 "adjustedClose",
+                "pregameSplitAdjustedPriceFactor",
                 "volume",
                 "priceBasis",
                 "sourceId",

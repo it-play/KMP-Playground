@@ -1,6 +1,7 @@
 package com.amond.kmpbook.presentation.settings
 
 import com.amond.kmpbook.audio.resolveBackgroundMusicPlaylist
+import com.amond.kmpbook.domain.history.DesktopHistoricalScenarioParser
 import java.security.MessageDigest
 import kmpbook.composeapp.generated.resources.Res
 import kotlinx.coroutines.CancellationException
@@ -14,6 +15,12 @@ actual class ResourceIntegrityVerifier actual constructor() {
                 val bytes = Res.readBytes(path)
                 if (bytes.sha256() != expectedHash) {
                     return@withContext "$label 리소스가 원본과 일치하지 않습니다."
+                }
+            }
+            val manifestBytes = Res.readBytes(HISTORICAL_SCENARIO_MANIFEST_PATH)
+            DesktopHistoricalScenarioParser.resourceReferences(manifestBytes).forEach { reference ->
+                if (Res.readBytes(reference.path).sha256() != reference.contentSha256) {
+                    return@withContext "역사 시나리오 조각이 manifest와 일치하지 않습니다: ${reference.path}"
                 }
             }
             resolveBackgroundMusicPlaylist()
@@ -39,28 +46,8 @@ private val EXPECTED_COMPOSE_RESOURCES: List<Triple<String, String, String>> = l
     ),
     Triple(
         "2026년 8월 역사 시나리오 manifest",
-        "files/scenarios/august_2026/historical_scenario_v1.json",
-        "80beed5bd469f89b54ffd2db4bd5c416ea5922af2fd79d648be05c355afddeaa",
-    ),
-    Triple(
-        "2026년 8월 역사 자료 출처",
-        "files/scenarios/august_2026/sources_v1.json",
-        "d8dc8f1c491d941da4cbdd35279821ab329b0d345f0bc4dbdfe2ed08858204d8",
-    ),
-    Triple(
-        "2026년 8월 역사 일봉",
-        "files/scenarios/august_2026/daily_bars_v1.json",
-        "7976613d63aeb8bf1b5a7b68aa9598d629ee53a04c895ebab467e16b540786a0",
-    ),
-    Triple(
-        "2026년 8월 역사 사건",
-        "files/scenarios/august_2026/events_v1.json",
-        "655ba18fe7f05f21ad3a4e1fc8eb4c11681e483736b3de0ef554783514a937e4",
-    ),
-    Triple(
-        "2026년 8월 역사 기업행동",
-        "files/scenarios/august_2026/corporate_actions_v1.json",
-        "a2398dd2c72a6aea47d8e930e5242c554734bb3da08b421276dfd890cb6e2664",
+        HISTORICAL_SCENARIO_MANIFEST_PATH,
+        "08c11bd8d186693888b6ce3f6b922897707e79f79bb8ace8f2eabc748d2a834a",
     ),
     Triple(
         "금융 사전",
@@ -103,3 +90,6 @@ private val EXPECTED_COMPOSE_RESOURCES: List<Triple<String, String, String>> = l
         "2e91915fab54df71cc9598ebf608b2bdb54c6fe3c066ac61dff0bc44fca71cc7",
     ),
 )
+
+private const val HISTORICAL_SCENARIO_MANIFEST_PATH: String =
+    "files/scenarios/august_2026/historical_scenario_v2.json"

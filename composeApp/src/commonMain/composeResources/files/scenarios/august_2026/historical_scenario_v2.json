@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "scenario": {
+    "id": "historical:august-2026",
+    "version": 2,
+    "displayName": "2026년 8월 역사 시나리오",
+    "description": "2021년 8월부터 5년간의 실제 일봉과 2026년 7월 1일부터 8월 18일까지 검증된 사건·기업행동·휴장 후 가격발견 흐름을 기준 경로로 제공한다.",
+    "eventLookbackStartsAt": "2026-07-01T00:00:00Z",
+    "gameplayStartsAt": "2026-08-01T00:00:00Z",
+    "historicalThroughAt": "2026-08-18T20:00:00Z",
+    "dailyBarCoverageStartsOn": "2021-08-01",
+    "anchorStartsOn": "2026-07-31",
+    "baselineTradingDate": "2026-07-31",
+    "catalogSourceId": "builtin:base",
+    "catalogContentSha256": "9b4eb7f1143a7f28217dac46f657a6ef269a511c6d8011d77bca89d66e0f1bdd",
+    "resources": [
+      {
+        "kind": "SOURCES",
+        "path": "files/scenarios/august_2026/sources_v2.json",
+        "contentSha256": "32f11ee8cd9220c26663d5a9a229c7f3c0fe5b08b8d0d9a2f1b728aa028f747c",
+        "recordCount": 284
+      },
+      {
+        "kind": "DAILY_BARS",
+        "path": "files/scenarios/august_2026/daily_bars_000_049_v2.json.gz",
+        "contentSha256": "cccd58ec1d3e5297530ef7c2105379d4a7640c896762dc7afaad20d64833a355",
+        "recordCount": 59026
+      },
+      {
+        "kind": "DAILY_BARS",
+        "path": "files/scenarios/august_2026/daily_bars_050_099_v2.json.gz",
+        "contentSha256": "9be9ecdd08fbf4b2c6ae27f82bda9609bf607b57d1c746938200ff7ef3a74334",
+        "recordCount": 47518
+      },
+      {
+        "kind": "DAILY_BARS",
+        "path": "files/scenarios/august_2026/daily_bars_100_149_v2.json.gz",
+        "contentSha256": "68f82a82615b6da66d550071dc727710d5853ec6d396506edfdbd4ce93294872",
+        "recordCount": 46344
+      },
+      {
+        "kind": "DAILY_BARS",
+        "path": "files/scenarios/august_2026/daily_bars_150_199_v2.json.gz",
+        "contentSha256": "4c8ff2e274b4d0d9447d144c79f031f57dbc5aca740329f30a944a99e0f912ba",
+        "recordCount": 63350
+      },
+      {
+        "kind": "DAILY_BARS",
+        "path": "files/scenarios/august_2026/daily_bars_200_249_v2.json.gz",
+        "contentSha256": "60a6d15eea97a9f626a22733556a96164c6651cf202b8de217aa695d03cc38ca",
+        "recordCount": 63350
+      },
+      {
+        "kind": "DAILY_BARS",
+        "path": "files/scenarios/august_2026/daily_bars_250_299_v2.json.gz",
+        "contentSha256": "ae91834eeb6608b4bbac819865bf98f27dfd16007ac875f04c9df3b4f6f69ec3",
+        "recordCount": 63350
+      },
+      {
+        "kind": "DAILY_BARS",
+        "path": "files/scenarios/august_2026/daily_bars_300_349_v2.json.gz",
+        "contentSha256": "e312026ab078341bb30f1d88fe23708cd0155a0a3de6e14d722f697086460ba8",
+        "recordCount": 61075
+      },
+      {
+        "kind": "DAILY_BARS",
+        "path": "files/scenarios/august_2026/daily_bars_350_399_v2.json.gz",
+        "contentSha256": "e98ad919a0176a504204d6ec1bfccac8445b7bad95721dccf15eaa2d546b781c",
+        "recordCount": 57945
+      },
+      {
+        "kind": "DAILY_BARS",
+        "path": "files/scenarios/august_2026/daily_bars_400_449_v2.json.gz",
+        "contentSha256": "5db3e19f8a807a1371d8d0ed484da483197cad048e94b500e8a957633c7299b9",
+        "recordCount": 52253
+      },
+      {
+        "kind": "DAILY_BARS",
+        "path": "files/scenarios/august_2026/daily_bars_450_499_v2.json.gz",
+        "contentSha256": "d1b6b6971b1ce1ce6f09531638d5642b133ac159c44fcd331d325d8d5b05773e",
+        "recordCount": 43553
+      },
+      {
+        "kind": "DAILY_BARS",
+        "path": "files/scenarios/august_2026/daily_bars_500_549_v2.json.gz",
+        "contentSha256": "a2f84943c440b1cf97bc40fa3af13f866d849d96cc388f1f80a7fa735c91b8da",
+        "recordCount": 48956
+      },
+      {
+        "kind": "DAILY_BARS",
+        "path": "files/scenarios/august_2026/daily_bars_550_553_v2.json.gz",
+        "contentSha256": "ccd6ba58208e03354cd2019ead9dbbb56abde77e4460c507440650dbb6a78c82",
+        "recordCount": 4206
+      },
+      {
+        "kind": "EVENTS",
+        "path": "files/scenarios/august_2026/events_v2.json",
+        "contentSha256": "2d3148a52b644eba311ae37f2a9ed158d18fc998b6604624a8dc963db976986b",
+        "recordCount": 271
+      },
+      {
+        "kind": "CORPORATE_ACTIONS",
+        "path": "files/scenarios/august_2026/corporate_actions_v2.json",
+        "contentSha256": "a2398dd2c72a6aea47d8e930e5242c554734bb3da08b421276dfd890cb6e2664",
+        "recordCount": 111
+      }
+    ]
+  }
+}

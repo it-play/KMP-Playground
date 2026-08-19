@@ -1,0 +1,2235 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "id": "aaplq3",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Apple 8-K fiscal Q3 results",
+      "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000018/aapl-20260730.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "advance6",
+      "publisher": "U.S. Census Bureau",
+      "title": "Census Advance Economic Indicators June 2026",
+      "url": "https://www.census.gov/econ/indicators/2026/advance_report2606.pdf",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "amznq2",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Amazon 8-K Q2 results",
+      "url": "https://www.sec.gov/Archives/edgar/data/1018724/000101872426000024/amzn-20260730.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "ap-hormuz-2026-08-02",
+      "publisher": "Associated Press",
+      "title": "Trump says Gulf leaders' input weighed heavily in holding off new Iran strikes",
+      "url": "https://apnews.com/article/f4c225f6667d9fd171616304701825a0",
+      "publishedOn": "2026-08-02",
+      "accessedOn": "2026-08-19",
+      "note": "04:09:13 UTC 미국의 추가 공습 유예와 호르무즈 재개 협상 기대"
+    },
+    {
+      "id": "ap-hormuz-2026-08-03",
+      "publisher": "Associated Press",
+      "title": "Trump optimistic Iran talks will reopen strait",
+      "url": "https://apnews.com/article/3b92568b6f2eec283eb51d0327ee682a",
+      "publishedOn": "2026-08-03",
+      "accessedOn": "2026-08-19",
+      "note": "09:49:38 UTC 확인된 미국·이란 협상 재개와 공습 유예"
+    },
+    {
+      "id": "ap-hormuz-2026-08-05",
+      "publisher": "Associated Press",
+      "title": "Iran and the U.S. say a Strait of Hormuz deal is close",
+      "url": "https://apnews.com/article/ecdbd96f2b46c70beb5926d8508f9c55",
+      "publishedOn": "2026-08-05",
+      "accessedOn": "2026-08-19",
+      "note": "05:35:35 UTC 이란·오만 합의문 최종 작성 단계 보도"
+    },
+    {
+      "id": "ap-hormuz-2026-08-08",
+      "publisher": "Associated Press",
+      "title": "Iran makes new strait demands and UAE says a ship was targeted",
+      "url": "https://apnews.com/article/feb75871fb82c44b3f7fd0ee02bb24b4",
+      "publishedOn": "2026-08-08",
+      "accessedOn": "2026-08-19",
+      "note": "10:41:36 UTC 이란의 재개 조건과 ADNOC 선박 피격 확인"
+    },
+    {
+      "id": "ap-hormuz-2026-08-14",
+      "publisher": "Associated Press",
+      "title": "Two UAE tankers attacked while transiting Strait of Hormuz",
+      "url": "https://apnews.com/article/e8565c608ac5283ec8103c85df924b13",
+      "publishedOn": "2026-08-14",
+      "accessedOn": "2026-08-19",
+      "note": "09:07:17 UTC UAE의 이란 드론 공격·해적행위 규정"
+    },
+    {
+      "id": "ap-hormuz-2026-08-15",
+      "publisher": "Associated Press",
+      "title": "Iran claims Qatar is holding pilots and UAE reports another vessel attack",
+      "url": "https://apnews.com/article/ba738b9fb8803f28313a19df8bbcac19",
+      "publishedOn": "2026-08-15",
+      "accessedOn": "2026-08-19",
+      "note": "07:13:24 UTC 주말 호르무즈 선박 공격과 역내 긴장"
+    },
+    {
+      "id": "ap-hormuz-2026-08-16",
+      "publisher": "Associated Press",
+      "title": "Top U.S. commander visits aircraft carrier during Iran war",
+      "url": "https://apnews.com/article/98f43f920c102080a3526981cf0dd7b8",
+      "publishedOn": "2026-08-16",
+      "accessedOn": "2026-08-19",
+      "note": "07:53:18 UTC 미 중부사령관의 항모 방문과 봉쇄 지속 배경"
+    },
+    {
+      "id": "ap-hormuz-2026-08-18",
+      "publisher": "Associated Press",
+      "title": "Trump says U.S. has no talks planned with Iran",
+      "url": "https://apnews.com/article/9c48af23b713709e8e170191fbc78c2a",
+      "publishedOn": "2026-08-18",
+      "accessedOn": "2026-08-19",
+      "note": "08:20:03 UTC 선박 피격·사우디 정유시설 드론 주장·협상 부재"
+    },
+    {
+      "id": "ap-hormuz-deadline-2026-08-17",
+      "publisher": "Associated Press",
+      "title": "The 60-day deadline for an Iran peace deal is expiring",
+      "url": "https://apnews.com/article/258e9c556fc861c05ccf6ed2b38515d6",
+      "publishedOn": "2026-08-17",
+      "accessedOn": "2026-08-19",
+      "note": "08:33:16 UTC 협상 시한 만료와 양측 교착 확인"
+    },
+    {
+      "id": "ap-hormuz-oman-2026-08-18",
+      "publisher": "Associated Press",
+      "title": "Trump threatened to bomb Oman over its deal with Iran",
+      "url": "https://apnews.com/article/a8298715a51159225d2f37a6d50ce682",
+      "publishedOn": "2026-08-18",
+      "accessedOn": "2026-08-19",
+      "note": "14:30:04 UTC 오만·이란 공동관리안에 대한 미국의 위협"
+    },
+    {
+      "id": "ap-hormuz-trump-2026-08-17",
+      "publisher": "Associated Press",
+      "title": "Trump floats declaring Strait of Hormuz a U.S. territory and threatens Oman",
+      "url": "https://apnews.com/article/5583cdf41326e4305f56a70f47d2b66d",
+      "publishedOn": "2026-08-17",
+      "accessedOn": "2026-08-19",
+      "note": "11:49:48 UTC 영토화 발언과 오만 위협"
+    },
+    {
+      "id": "ap-reddit-sp500-2026-08-14",
+      "publisher": "Associated Press",
+      "title": "Reddit will join the S&P 500 index",
+      "url": "https://apnews.com/article/2decd233724da9249e86f6ccab8a86be",
+      "publishedOn": "2026-08-14",
+      "accessedOn": "2026-08-19",
+      "note": "8월 13일 장후 발표, 14일 12.6% 반응, 18일 장전 효력"
+    },
+    {
+      "id": "ap-us-close-2026-08-03",
+      "publisher": "Associated Press",
+      "title": "How major US stock indexes fared Monday 8/3/2026",
+      "url": "https://apnews.com/article/f8e5f81b45c83878f5b7f69832bb0c95",
+      "publishedOn": "2026-08-03",
+      "accessedOn": "2026-08-19",
+      "note": "미국 지수 종가, 브렌트유 하락과 이란 공습 유예 반응"
+    },
+    {
+      "id": "ap-us-close-2026-08-04",
+      "publisher": "Associated Press",
+      "title": "How major US stock indexes fared Tuesday 8/4/2026",
+      "url": "https://apnews.com/article/41726508095971a7ee425362f7669c0f",
+      "publishedOn": "2026-08-04",
+      "accessedOn": "2026-08-19",
+      "note": "미국 지수 사상 최고 종가와 유가·금리 흐름"
+    },
+    {
+      "id": "ap-us-close-2026-08-05",
+      "publisher": "Associated Press",
+      "title": "How major US stock indexes fared Wednesday 8/5/2026",
+      "url": "https://apnews.com/article/cb27a1f9f4298b2a4dd595169bb17d16",
+      "publishedOn": "2026-08-05",
+      "accessedOn": "2026-08-19",
+      "note": "미국 지수 종가와 기술주·유가 흐름"
+    },
+    {
+      "id": "ap-us-close-2026-08-06",
+      "publisher": "Associated Press",
+      "title": "How major US stock indexes fared Thursday 8/6/2026",
+      "url": "https://apnews.com/article/b13b60e192e74e6dc6ab222dc296b5d2",
+      "publishedOn": "2026-08-06",
+      "accessedOn": "2026-08-19",
+      "note": "미국 지수 종가와 브렌트유 급등·국채금리 상승"
+    },
+    {
+      "id": "ap-us-close-2026-08-07",
+      "publisher": "Associated Press",
+      "title": "How major US stock indexes fared Friday 8/7/2026",
+      "url": "https://apnews.com/article/9d586bdbf1fb230dcf1f915dcaf50858",
+      "publishedOn": "2026-08-07",
+      "accessedOn": "2026-08-19",
+      "note": "약한 고용 뒤 미국 지수·국채·유가 종가"
+    },
+    {
+      "id": "ap-us-close-2026-08-10",
+      "publisher": "Associated Press",
+      "title": "How major US stock indexes fared Monday 8/10/2026",
+      "url": "https://apnews.com/article/37588f23787295860e468d19399b56ca",
+      "publishedOn": "2026-08-10",
+      "accessedOn": "2026-08-19",
+      "note": "호르무즈 불확실성 속 미국 지수·유가 종가"
+    },
+    {
+      "id": "ap-us-close-2026-08-11",
+      "publisher": "Associated Press",
+      "title": "How major US stock indexes fared Tuesday 8/11/2026",
+      "url": "https://apnews.com/article/e5e8f3360f8d30714778761e3a483347",
+      "publishedOn": "2026-08-11",
+      "accessedOn": "2026-08-19",
+      "note": "미국 지수 종가와 브렌트유·국채 흐름"
+    },
+    {
+      "id": "ap-us-close-2026-08-12",
+      "publisher": "Associated Press",
+      "title": "How major US stock indexes fared Wednesday 8/12/2026",
+      "url": "https://apnews.com/article/c2b9200bd737220ef848a37ffea21f95",
+      "publishedOn": "2026-08-12",
+      "accessedOn": "2026-08-19",
+      "note": "CPI 발표일 미국 지수 종가와 AI 반도체 강세"
+    },
+    {
+      "id": "ap-us-close-2026-08-13",
+      "publisher": "Associated Press",
+      "title": "How major US stock indexes fared Thursday 8/13/2026",
+      "url": "https://apnews.com/article/892c5409d8ed26bfd5965eb2a89d9005",
+      "publishedOn": "2026-08-13",
+      "accessedOn": "2026-08-19",
+      "note": "PPI 발표일 미국 지수 사상 최고 종가"
+    },
+    {
+      "id": "ap-us-close-2026-08-14",
+      "publisher": "Associated Press",
+      "title": "How major US stock indexes fared Friday 8/14/2026",
+      "url": "https://apnews.com/article/41b7cf2acc6562758183b1c5eae73635",
+      "publishedOn": "2026-08-14",
+      "accessedOn": "2026-08-19",
+      "note": "소매판매·소비심리 약화 뒤 미국 지수와 유가 종가"
+    },
+    {
+      "id": "ap-us-close-2026-08-17",
+      "publisher": "Associated Press",
+      "title": "How major US stock indexes fared Monday 8/17/2026",
+      "url": "https://apnews.com/article/b20808a2f37a7c505013c9b301c8ebe0",
+      "publishedOn": "2026-08-17",
+      "accessedOn": "2026-08-19",
+      "note": "유가·인플레이션 우려와 버크셔 보유공시 반응을 포함한 미국 종가"
+    },
+    {
+      "id": "ap-us-close-2026-08-18",
+      "publisher": "Associated Press",
+      "title": "How major US stock indexes fared Tuesday 8/18/2026",
+      "url": "https://apnews.com/article/63300d6f51d4d27ce881cc6c11719171",
+      "publishedOn": "2026-08-18",
+      "accessedOn": "2026-08-19",
+      "note": "AI 고평가 우려 속 미국 지수와 반도체 종가"
+    },
+    {
+      "id": "ap14",
+      "publisher": "Associated Press",
+      "title": "AP: U.S. strikes and Iran attacks Bahrain, Jordan, tankers",
+      "url": "https://apnews.com/article/27d166510dda957bb0d4e4d1b1b11e23",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "ap20",
+      "publisher": "Associated Press",
+      "title": "AP: Tanker attacked and abandoned",
+      "url": "https://apnews.com/article/8b37952906cbec6351fdcc47a0fa6297",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "ap21a",
+      "publisher": "Associated Press",
+      "title": "AP: U.S. and Iran bombing continues",
+      "url": "https://apnews.com/article/8c42c6ddc0c32d53ce452ace92a62b9a",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "ap21b",
+      "publisher": "Associated Press",
+      "title": "AP: Iran war cost, casualties and Brent above $90",
+      "url": "https://apnews.com/article/08d075c3d9cd01653b99149a8dd51adb",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "ap22",
+      "publisher": "Associated Press",
+      "title": "AP: House war budget and 12th night of strikes",
+      "url": "https://apnews.com/article/e5b480c965ad192b71998e6b9c9991d4",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "ap24",
+      "publisher": "Associated Press",
+      "title": "AP: U.S. expands strikes to infrastructure",
+      "url": "https://apnews.com/article/d7744d3063116944d49a616c007d669c",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "ap26",
+      "publisher": "Associated Press",
+      "title": "AP: U.S.-Iran attacks paused second day",
+      "url": "https://apnews.com/article/ad9fa27d5b1b5fd51e30d923ee738238",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "ap7",
+      "publisher": "Associated Press",
+      "title": "AP: Iran accused of striking 3 tankers; U.S. retaliates",
+      "url": "https://apnews.com/article/3f5033e82933afe6d70d8bb3cbf9fd1d",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "attnotes",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "AT&T 8-K multicurrency notes",
+      "url": "https://www.sec.gov/Archives/edgar/data/732717/000119312526354091/d153710d8k.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "attq2",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "AT&T 8-K Q2 results",
+      "url": "https://www.sec.gov/Archives/edgar/data/732717/000073271726000294/t-20260722.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "avgoapple",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Broadcom 8-K expanded Apple ASIC collaboration",
+      "url": "https://www.sec.gov/Archives/edgar/data/1730168/000119312526295589/d84378d8k.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "beadi",
+      "publisher": "U.S. Bureau of Economic Analysis",
+      "title": "BEA Direct Investment by Country and Industry 2025",
+      "url": "https://www.bea.gov/news/2026/direct-investment-country-and-industry-2025",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "beamne",
+      "publisher": "U.S. Bureau of Economic Analysis",
+      "title": "BEA Activities of U.S. Affiliates of Foreign MNEs 2024",
+      "url": "https://www.bea.gov/index.php/news/2026/activities-us-affiliates-foreign-multinational-enterprises-2024",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "beige7",
+      "publisher": "Board of Governors of the Federal Reserve System",
+      "title": "Federal Reserve Beige Book July 2026",
+      "url": "https://www.federalreserve.gov/monetarypolicy/beigebook202607-summary.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "berkshire-13f-2026-q2",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Berkshire Hathaway Form 13F-HR for June 30, 2026",
+      "url": "https://www.sec.gov/Archives/edgar/data/1067983/000119312526352200/0001193125-26-352200-index.html",
+      "publishedOn": "2026-08-14",
+      "accessedOn": "2026-08-19",
+      "note": "20:05:04 UTC 접수된 Alphabet 등 보유내역 공식 공시"
+    },
+    {
+      "id": "berkshire-q2-2026",
+      "publisher": "Berkshire Hathaway",
+      "title": "Second Quarter 2026 Form 10-Q",
+      "url": "https://www.berkshirehathaway.com/qtrly/2ndqtr26.pdf",
+      "publishedOn": "2026-08-08",
+      "accessedOn": "2026-08-19",
+      "note": "주말 공개된 버크셔 해서웨이 2분기 공식 보고서"
+    },
+    {
+      "id": "bls-2026-08-schedule",
+      "publisher": "U.S. Bureau of Labor Statistics",
+      "title": "2026 Release Calendar",
+      "url": "https://www.bls.gov/schedule/2026/home.htm",
+      "publishedOn": "2026-01-01",
+      "accessedOn": "2026-08-19",
+      "note": "미국 주요 노동·물가 통계의 공식 공개 일자와 시각"
+    },
+    {
+      "id": "bls-cpi-2026-07",
+      "publisher": "U.S. Bureau of Labor Statistics",
+      "title": "Consumer Price Index - July 2026",
+      "url": "https://www.bls.gov/news.release/cpi.nr0.htm",
+      "publishedOn": "2026-08-12",
+      "accessedOn": "2026-08-19",
+      "note": "미국 헤드라인·근원 CPI 공식 발표"
+    },
+    {
+      "id": "bls-employment-2026-07",
+      "publisher": "U.S. Bureau of Labor Statistics",
+      "title": "The Employment Situation - July 2026",
+      "url": "https://www.bls.gov/news.release/empsit.nr0.htm",
+      "publishedOn": "2026-08-07",
+      "accessedOn": "2026-08-19",
+      "note": "비농업 고용·실업률·임금·과거치 수정 공식 발표"
+    },
+    {
+      "id": "bls-import-export-prices-2026-07",
+      "publisher": "U.S. Bureau of Labor Statistics",
+      "title": "U.S. Import and Export Price Indexes - July 2026",
+      "url": "https://www.bls.gov/news.release/ximpim.nr0.htm",
+      "publishedOn": "2026-08-18",
+      "accessedOn": "2026-08-19",
+      "note": "수입·수출물가와 연료·비연료 구성 공식 발표"
+    },
+    {
+      "id": "bls-jolts-2026-06",
+      "publisher": "U.S. Bureau of Labor Statistics",
+      "title": "Job Openings and Labor Turnover - June 2026",
+      "url": "https://www.bls.gov/news.release/jolts.nr0.htm",
+      "publishedOn": "2026-08-04",
+      "accessedOn": "2026-08-19",
+      "note": "JOLTS 구인·채용·이직 공식 발표"
+    },
+    {
+      "id": "bls-ppi-2026-07",
+      "publisher": "U.S. Bureau of Labor Statistics",
+      "title": "Producer Price Index - July 2026",
+      "url": "https://www.bls.gov/news.release/ppi.nr0.htm",
+      "publishedOn": "2026-08-13",
+      "accessedOn": "2026-08-19",
+      "note": "미국 최종수요 생산자물가 공식 발표"
+    },
+    {
+      "id": "bls-productivity-2026-q2",
+      "publisher": "U.S. Bureau of Labor Statistics",
+      "title": "Productivity and Costs - Second Quarter 2026",
+      "url": "https://www.bls.gov/news.release/prod2.nr0.htm",
+      "publishedOn": "2026-08-06",
+      "accessedOn": "2026-08-19",
+      "note": "비농업 생산성·단위노동비용 공식 발표"
+    },
+    {
+      "id": "blsjul",
+      "publisher": "U.S. Bureau of Labor Statistics",
+      "title": "BLS July 2026 Release Calendar",
+      "url": "https://www.bls.gov/schedule/2026/07_sched_list.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "bok7",
+      "publisher": "한국은행",
+      "title": "한국은행 2026년 7월 통계 공표일정",
+      "url": "https://www.bok.or.kr/portal/stats/statsPublictSchdul/listCldr.do?date=2026-07&menuNo=200775",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "bok8",
+      "publisher": "한국은행",
+      "title": "한국은행 2026년 8월 통계 공표일정",
+      "url": "https://www.bok.or.kr/portal/stats/statsPublictSchdul/listCldr.do?date=2026-08&menuNo=200775",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "bokgdp2",
+      "publisher": "한국은행",
+      "title": "한국은행 2026년 2분기 GDP 속보",
+      "url": "https://www.bok.or.kr/portal/bbs/B0000501/view.do?depth=201264&menuNo=201264&nttId=11063107&programType=newsData&relate=Y",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "bokrat7",
+      "publisher": "한국은행",
+      "title": "한국은행 2026년 7월 통화정책방향",
+      "url": "https://www.bok.or.kr/portal/bbs/P0000559/view.do?depth=200690&menuNo=200690&nttId=11062942&programType=newsData&relate=Y",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "candidate-source:0254d38f6b1009a82e1945cbf639da71f7d575589c2f96d5b726d7bf393d83db",
+      "publisher": "Korea Exchange KIND",
+      "title": "SK하이닉스 — 신규시설투자등 (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260807000613&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:0b9ca09f7428fecba02619be9c1490399685c76daea605e241e726b06243e86b",
+      "publisher": "samsungbiologics.com",
+      "title": "Samsung Biologics Reports Second Quarter 2026 Financial Results",
+      "url": "https://samsungbiologics.com/media/company-news/samsung-biologics-reports-second-quarter-2026-financial-results",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_COMPANY_IR)."
+    },
+    {
+      "id": "candidate-source:10362ab8a09939b49104cfb1d028e623d842ff2a23aa0b0d4aaebaad25b5c001",
+      "publisher": "bnkfg.com",
+      "title": "BNK Financial Group Q2 2026 Results",
+      "url": "https://www.bnkfg.com/02/03.jsp?dataSeqNo=6929",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_COMPANY_IR)."
+    },
+    {
+      "id": "candidate-source:1516da222c3636ddfb9e48334a4a2ce69c9d14085c53a1cab2868765f371bcee",
+      "publisher": "Korea Exchange KIND",
+      "title": "한화에어로스페이스 — 타법인주식및출자증권취득결정 (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260708000679&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:17c8dd334df2a3ddbc86810be2ef52c18563a8eaea5aba9d8b872a8960c1e490",
+      "publisher": "Korea Exchange KIND",
+      "title": "현대차 — 영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260803000709&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:185dd83cb527bffe59849ac72047a0096f47913919c73990140d212e2894daf4",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "AT&T Form 8-K — EchoStar Spectrum License Acquisition",
+      "url": "https://www.sec.gov/Archives/edgar/data/732717/000119312526321053/d142142d8k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:1890f882f62b3c367552cccdffd13b3f593c154d25cad64c464297e7008513b3",
+      "publisher": "U.S. Department of the Treasury",
+      "title": "Treasury Targets Key Supreme Leader Financier and Iran’s Shadow Exchange Houses",
+      "url": "https://home.treasury.gov/news/press-releases/sb0558",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_US_TREASURY)."
+    },
+    {
+      "id": "candidate-source:18f371604946b13c292b2d1e019a5d6d3166d17ee8d7f630fcf281fb880a170e",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Orchid Island Capital Form 8-K — August Distribution",
+      "url": "https://www.sec.gov/Archives/edgar/data/1518621/000143774926027362/orc20260811_8k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:1b2b4437bcba8dfe13eefcbc80e1166ed1fc6b19012aacd9b14777bcbcc86180",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Amazon.com Form 8-K — Senior Notes Closing",
+      "url": "https://www.sec.gov/Archives/edgar/data/1018724/000110465926082293/tm2619352d4_8k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:24009586d27475f806c58a0e10aedc6e5f3719c32b8a7ec2d871f7d712860f3c",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Alphabet Inc. Form 8-K — $25 Billion Senior Notes",
+      "url": "https://www.sec.gov/Archives/edgar/data/1652044/000119312526342390/d171253d8k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:247146fddc7160aa2eb941d65712819a18c69564f3c80b7038e4ff8d0672bbdf",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Visa Inc. Form 8-K — Fiscal Third Quarter Results and Dividend",
+      "url": "https://www.sec.gov/Archives/edgar/data/1403161/000140316126000103/v-20260728.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:249502113d4141b25916e42046c2dd18dabd8f37ab35493d033f389066532d32",
+      "publisher": "Korea Exchange KIND",
+      "title": "알테오젠 — 무상증자결정 (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260716000540&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:26a7aadd275cd4505c070bae8371e36b4a16babba6a124098ff7f8989d3d3b53",
+      "publisher": "Korea Exchange KIND",
+      "title": "삼성전자 — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260730000077&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:26b074e960b79b652ca6df4f71bed0eeb621146cb493b329f29a2839a5a4f53f",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Itaú Unibanco Form 6-K — Minas Gerais Payroll Services Tender",
+      "url": "https://www.sec.gov/Archives/edgar/data/1132597/000113259726000189/itub_6-kx0702026.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_6_K)."
+    },
+    {
+      "id": "candidate-source:2c6ff1a8ca200eb6043dca761022434daa2d15d3da0b6f34293d342f466d4dd9",
+      "publisher": "Korea Exchange KIND",
+      "title": "BNK금융지주 — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260728000461&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:2ed4a0b50ec185dcb991e8a82bfbca91dc6421fa95655bb3306609ab50d2ae8e",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "The Coca-Cola Company Form 8-K — fairlife Cybersecurity Incident",
+      "url": "https://www.sec.gov/Archives/edgar/data/21344/000162828026048466/ko-20260716.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:37644634bee857154a23eddc1ca16a082e1bc9d5060c07d6d2c9377c017646ba",
+      "publisher": "newsroom.posco.com",
+      "title": "POSCO Holdings Announces Q2 2026 Results",
+      "url": "https://newsroom.posco.com/en/posco-holdings-announces-q2-2026-results-profitability-improved-on-visible-gains-centered-on-lithium-and-lng-resources/",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_COMPANY_IR)."
+    },
+    {
+      "id": "candidate-source:3c09b6e86ff09a214f548cb1a4542cf23c3df8a646a0770e882516f4ca8248a2",
+      "publisher": "news.samsung.com",
+      "title": "Samsung Galaxy Z Fold8 Ultra, Fold8 and Flip8 — Foldables Perfected",
+      "url": "https://news.samsung.com/global/samsung-galaxy-z-fold8-ultra-fold8-and-flip8foldables-perfected-for-every-way-of-living",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_COMPANY_NEWSROOM)."
+    },
+    {
+      "id": "candidate-source:44cd1d895edfed80376cce4bcc533c3580989db4bd08c6f885dfd0bf80a02d45",
+      "publisher": "news.samsung.com",
+      "title": "Samsung Global Newsroom RSS — Galaxy Z Fold8 Ultra, Fold8 and Flip8",
+      "url": "https://news.samsung.com/global/feed",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_COMPANY_RSS)."
+    },
+    {
+      "id": "candidate-source:46d054515a551d6d89b10ece17164d1a057f8793a3741c036dfbb95ae74bcc26",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "NVIDIA Corp. Form 8-K — Executive Leadership Change",
+      "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000060/nvda-20260628.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:46dfbf5bb6b6bafdb5ca4b6a7a971b0b178eb5b45df12a99eb6dbf5308996a43",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Amazon.com Form 8-K — Second Quarter Results",
+      "url": "https://www.sec.gov/Archives/edgar/data/1018724/000101872426000024/amzn-20260730.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:48343d8f5180e0f336c58af47a4f0c6df2edeb3f89b5c1f83606384a6c82111f",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "TSMC Form 6-K — Second Quarter Results",
+      "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000451/tsm-20260716x6k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_6_K)."
+    },
+    {
+      "id": "candidate-source:48aba39e2d6c3d4c9e971a232d16b2ff13a2868de9e986ea55ae2f46f696a55e",
+      "publisher": "Korea Exchange KIND",
+      "title": "POSCO홀딩스 — 기업가치 제고 계획(자율공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260730000722&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:49ba1d41d6365b1b2b1c8188b69f032b4a2180d795ed002e0fdff4cd3a7a7339",
+      "publisher": "hyundai.com",
+      "title": "Hyundai Motor Announces Q2 2026 Business Results",
+      "url": "https://www.hyundai.com/content/hyundai/worldwide/en/newsroom/detail/0000001234.html",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_COMPANY_IR)."
+    },
+    {
+      "id": "candidate-source:4a13eb651178c3315eea9e6d2bb51e35f6cb634b424141ebb7ccae37b258223c",
+      "publisher": "Korea Exchange KIND",
+      "title": "삼성바이오로직스 — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260723000003&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:4c80c31cfddcb003608c4b88d67dc7e4cdf6af9c8976d291d2088bfdd7678b6d",
+      "publisher": "news.skhynix.co.kr",
+      "title": "SK hynix 2Q 2026 Business Results",
+      "url": "https://news.skhynix.co.kr/q2-2026-business-results-yb/",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_COMPANY_IR)."
+    },
+    {
+      "id": "candidate-source:50c82d0b495bbf7fabf0518144a45620c8ef53bbfc4c79dcaa4384717e0884e4",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "AT&T Form 8-K — Second Quarter Results",
+      "url": "https://www.sec.gov/Archives/edgar/data/732717/000073271726000294/t-20260722.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:539510a5b969765a89a6799aec705313fc8464e21694367246415dece70760b5",
+      "publisher": "news.samsung.com",
+      "title": "Samsung Electronics Announces Second Quarter 2026 Results",
+      "url": "https://news.samsung.com/global/samsung-electronics-announces-second-quarter-2026-results",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_COMPANY_IR)."
+    },
+    {
+      "id": "candidate-source:5761c5de9908a07a63b7cee30fe3b6fc3eb96712f7b9fef958d2bbf9c5cb452c",
+      "publisher": "Korea Exchange KIND",
+      "title": "에코프로비엠 — 연결재무제표 기준 영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260731000486&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:58a879226a9c3afb6aece0bf8e8317423ed682f52829e1ad5f8bf4adbfba4ac3",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Realty Income Form 8-K — Second Quarter Investment Activity",
+      "url": "https://www.sec.gov/Archives/edgar/data/726728/000110465926094098/tm2622133d1_8k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:5a00ac05a70c3ec892cf93b231b25245b81987237569716438772fdafc3f76a1",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "KULR Technology Group Form 8-K — Bitcoin Sale and Debt Repayment",
+      "url": "https://www.sec.gov/Archives/edgar/data/1662684/000110465926086506/tm2621256d1_8k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:5b558d64dead96f3a8c52a206d18a449c19266817bb1c4298bbf211a84d58b20",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Alphabet Inc. Form 8-K — Second Quarter Results",
+      "url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000066/goog-20260722.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:5f6b46d1063b194ea1c0fe963322ed21c3dbedc788815ba5fec9174a3b6a1de2",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "JPMorgan Chase Form 8-K — Second Quarter Results",
+      "url": "https://www.sec.gov/Archives/edgar/data/19617/000162828026048078/jpm-20260714.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:612a0d72b8873c16d119a8dc9651d540d85e05449712e46cfe8c80c0a49ead55",
+      "publisher": "Korea Exchange KIND",
+      "title": "HLB — 기타 경영사항(자율공시)(HLB 간암 1차 치료제(리보세라닙,캄렐리주맙 병용요법)FDA로부터 보완요구서한(CRL,Complete Response Letter)수령) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260710000006&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:626e75b2abb49b0184a7382f25ec3cbd592a33f36b5a62ff6c3b2ad336f3995b",
+      "publisher": "Korea Exchange KIND",
+      "title": "KB금융 — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260723000451&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:66d99ee5e7e78661e50d0a15406bf924a77a785b54e19172e0e4480294c200ee",
+      "publisher": "S&P Global",
+      "title": "S&P Dow Jones Indices and Pantera Capital Launch New Index for Digital Assets",
+      "url": "https://press.spglobal.com/2026-07-21-S-P-Dow-Jones-Indices-and-Pantera-Capital-Launch-New-Index-for-Digital-Assets",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_INDEX_PROVIDER)."
+    },
+    {
+      "id": "candidate-source:680fdbfd1965d3b3748dd5504b8d079f3fe460ee8dd487161cdb943435afbbf8",
+      "publisher": "Korea Exchange KIND",
+      "title": "NAVER — 장래사업ㆍ경영 계획(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260727000006&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:6b963542be4267ec31913a1a15db7ca2e25b189298dc00b616c7fc49abc99fea",
+      "publisher": "Korea Exchange KIND",
+      "title": "카카오게임즈 — 수시공시의무관련사항(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260708000680&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:727ea7dc80181dc08e050bea68ba0c6f4d3a559b3acde668b8353621ee351793",
+      "publisher": "celltrion.com",
+      "title": "Celltrion Preliminary Q2 2026 Results",
+      "url": "https://www.celltrion.com/ko-kr/company/media-center/press-release/4837",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_COMPANY_IR)."
+    },
+    {
+      "id": "candidate-source:76fab88b618aa13eee3d8b048aa08987d0328b58a6c92a3502ca80a6769278f8",
+      "publisher": "hanwhaaerospace.com",
+      "title": "Hanwha Aerospace 2026 Earnings Release",
+      "url": "https://www.hanwhaaerospace.com/kor/ir/earning-release.do?param1=2026",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_COMPANY_IR)."
+    },
+    {
+      "id": "candidate-source:775f58fc348e6538f021df48f7b234685404ef4a209a9043b312f91c8eeb326e",
+      "publisher": "Korea Exchange KIND",
+      "title": "NAVER — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260807000026&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:786daf16fc1bd010109712c26d8b63cc1b3f7985d9936f4eb33f3666ca5997e3",
+      "publisher": "U.S. Department of the Treasury",
+      "title": "Treasury Intensifies Pressure on Shamkhani’s Expansive Illicit Shipping Empire",
+      "url": "https://home.treasury.gov/news/press-releases/sb0562",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_US_TREASURY)."
+    },
+    {
+      "id": "candidate-source:79471f7e1d9ce0cea1a806571cfa4f9dd910487d9ccf2c0fc98f7fb5af29a2db",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Meta Platforms Form 8-K — Second Quarter Results",
+      "url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026050596/meta-20260729.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:79b437c13e6e63717616070199cebcf47539902e9e8b7704043a4c03127fdb8d",
+      "publisher": "Korea Exchange KIND",
+      "title": "POSCO홀딩스 — 타법인주식및출자증권처분결정 (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260807000838&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:7b97fbf33d1ece9aae851394d9b621ffb8f683908582d644bca64e2533716212",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "JPMorgan Chase Form 8-K — $9 Billion Notes",
+      "url": "https://www.sec.gov/Archives/edgar/data/19617/000119312526314128/d103985d8k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:7cb43929d72698f4c5ebdd3445c53023ba0086a91c76510d54f325ccd112e200",
+      "publisher": "OPEC",
+      "title": "Saudi Arabia, Russia, Iraq, Kuwait, Kazakhstan, Algeria, and Oman adjust production and reaffirm commitment to market stability",
+      "url": "https://www.opec.org/pr-detail/1835609-5-july-2026.html",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_OPEC)."
+    },
+    {
+      "id": "candidate-source:7f11f0a323da325224c96ae095293f0a552c1eb07d6b18126c595c0da96a5f00",
+      "publisher": "Saudi Press Agency",
+      "title": "Saudi Arabia, Russia, Iraq, Kuwait, Kazakhstan, Algeria, and Oman Adjust Production and Reaffirm Commitment to Market Stability — SPA",
+      "url": "https://www.spa.gov.sa/en/N2627610",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_GOVERNMENT_WIRE)."
+    },
+    {
+      "id": "candidate-source:802eed40ec5c175755cb8d198b88468397ee94440ea2eae1929d09d19a7eeed9",
+      "publisher": "Korea Exchange KIND",
+      "title": "LG에너지솔루션 — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260730000128&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:81291b9201fadf8cf1b3ace8a9973e726789fccafd47d371c812dca63c3579a5",
+      "publisher": "Korea Exchange KIND",
+      "title": "알테오젠 — 연결재무제표 기준 영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260807000145&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:81cb379d456f2b4d136501cb135e8d38f9944ba6d1d3bc8977d80aadbaa5c7bd",
+      "publisher": "Korea Exchange KIND",
+      "title": "SK하이닉스 — 유상증자결정 (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260710000080&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:838ace1e2a6789b5a4b1671199c11fe8fbcc921cda979d4669bb67a5f2ae49c6",
+      "publisher": "PR Newswire",
+      "title": "S&P Pantera Digital Asset Index Launch — Authorized PR Newswire Distribution",
+      "url": "https://www.prnewswire.com/news-releases/sp-dow-jones-indices-and-pantera-capital-launch-new-index-for-digital-assets-302831133.html",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_AUTHORIZED_DISTRIBUTION)."
+    },
+    {
+      "id": "candidate-source:8477f9d774f8df1b52bd57453053fd692f237951f2b43ef3d4a74cc3a3cf7902",
+      "publisher": "Korea Exchange KIND",
+      "title": "한화에어로스페이스 — 단일판매ㆍ공급계약 해지 (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260803000622&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:8610aff7b86c47d51611823926f568ef664c03702e80039cef1203fd4a7e8812",
+      "publisher": "Korea Exchange KIND",
+      "title": "NAVER — 유상증자결정 (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260727000002&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:8650d406580fbdd8b3ebb1adce3c50d2483f8d1f2b724b3e713fe835a6f561bb",
+      "publisher": "Korea Exchange KIND",
+      "title": "HLB — 전환사채권발행결정(제44회차) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260805000805&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:86b24c93c6d48436c4ff88f528eb84bfba94543434e365871a8c6c599d443788",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "The Coca-Cola Company Form 8-K — Second Quarter Results",
+      "url": "https://www.sec.gov/Archives/edgar/data/21344/000162828026049922/ko-20260728.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:8b516938eb03a935271949508e3ee162c1bec1a7c5382bbfe9a4c47c7e6d1c8a",
+      "publisher": "samsungbiologics.com",
+      "title": "Samsung Biologics Announces All-Cash Offer to Acquire PolyPeptide",
+      "url": "https://samsungbiologics.com/media/company-news/samsung-biologics-announces-all-cash-offer-to-acquire-polypeptide",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_COMPANY_IR)."
+    },
+    {
+      "id": "candidate-source:8c83bb14f6bb87a2708c2315532035f7f0b90f0e306a843e7d004d941e654b80",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "AT&T Form 8-K — Floating Rate Notes",
+      "url": "https://www.sec.gov/Archives/edgar/data/732717/000119312526354091/d153710d8k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:8d97c66ff9227dd24e64fb5a8c83c736bf010cbb6d3f103c9c241a4f5a2965e6",
+      "publisher": "Korea Exchange KIND",
+      "title": "SK하이닉스 — 신규시설투자등 (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260807000602&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:8dff652bae61c942b9a37b97be11c3e08d489245dfaa002cb883c1d3bd0b73a9",
+      "publisher": "Korea Exchange KIND",
+      "title": "한화에어로스페이스 — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260731000455&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:8f7916e461e30bae4f22becb73ba955a6d6dd6a317968752bea28cd0cbb56ad9",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "TSMC Form 6-K — June 2026 Revenue",
+      "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000447/tsm-revenue20260713.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_6_K)."
+    },
+    {
+      "id": "candidate-source:8fc7040b6d60a3bfb0fa15cddc62bbb2c79d5bc18f1edfb57787a81457442793",
+      "publisher": "Korea Exchange KIND",
+      "title": "레인보우로보틱스 — 신규시설투자등 (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260713000609&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:95668ffd795aef56493b01c98cb8201b0bd188247ef3a579e810dc1e61ff1833",
+      "publisher": "Korea Exchange KIND",
+      "title": "카카오게임즈 — 연결재무제표 기준 영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260805000059&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:964c03fc9331d1fdfd5c913f0e45d4ef615771104acc7adade82b0586f6df3f7",
+      "publisher": "U.S. Department of the Treasury",
+      "title": "Treasury Cracks Down on Global Networks Enabling Iran’s Mahan Air and IRGC",
+      "url": "https://home.treasury.gov/news/press-releases/sb0582",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_US_TREASURY)."
+    },
+    {
+      "id": "candidate-source:96cc6d5525278b41907816b036f3532b841066f526807d3aa925608edc00c6be",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Exxon Mobil Form 8-K — Second Quarter Results",
+      "url": "https://www.sec.gov/Archives/edgar/data/2115436/000211543626000006/xom-20260731.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:a1d494faf9495d5c0d888dafb104fd2cd75e6347a512a0045a3494b2c3559967",
+      "publisher": "inside.lgensol.com",
+      "title": "LG Energy Solution Releases 2026 Second-Quarter Financial Results",
+      "url": "https://inside.lgensol.com/en/2026/07/lg-energy-solution-releases-2026-second-quarter-financial-results/",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_COMPANY_IR)."
+    },
+    {
+      "id": "candidate-source:a270e36f331c79a362f629939c5c8dda7c2455e5655b540ef98aafe74d9dc1b7",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Broadcom Inc. Form 8-K — Apple Custom ASIC Agreements",
+      "url": "https://www.sec.gov/Archives/edgar/data/1730168/000119312526295589/d84378d8k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:a4a0854a2d68c17f1d0043cb61e73034eee39da62dec3fb359d0d07f7dc674c6",
+      "publisher": "Korea Exchange KIND",
+      "title": "SK하이닉스 — 신규시설투자등 (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260722000829&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:a6af2a8bca23523766e479ddf747dae4aee064d3adf5c1631f4c62e767e73d36",
+      "publisher": "Korea Exchange KIND",
+      "title": "POSCO홀딩스 — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260730000403&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:a7c56480aac87fb1cc0d87a51c2ae14e5d306c2def0f8b813bc10b159b61efb9",
+      "publisher": "U.S. Department of the Treasury",
+      "title": "Treasury Disrupts Iranian Regime’s Strait of Hormuz Extortion Network",
+      "url": "https://home.treasury.gov/news/press-releases/sb0581",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_US_TREASURY)."
+    },
+    {
+      "id": "candidate-source:aa443ad72cdd9d980132957f9452e5bad5662ab8381f4ce3dd32d80d7ae0d128",
+      "publisher": "PR Newswire",
+      "title": "S&P DJI and MSCI GICS Consultation — Authorized PR Newswire Distribution",
+      "url": "https://www.prnewswire.com/news-releases/sp-dow-jones-indices-and-msci-announce-consultation-on-potential-changes-to-the-global-industry-classification-standard-gics-302828876.html",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_AUTHORIZED_DISTRIBUTION)."
+    },
+    {
+      "id": "candidate-source:b001ccf9a9b9d635a35dbbf92a2b17f57d811971b9ebb2f968db9eaeea72e18b",
+      "publisher": "Korea Exchange KIND",
+      "title": "한화에어로스페이스 — 투자판단 관련 주요경영사항 (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260727000020&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:b2aa3a1dbcfc5b94bf97800afc86d4876bd4e678330211a525f6a596aa677cc1",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "NVIDIA Corp. Form 8-K — PORTS AI Data Center Agreements",
+      "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000069/nvda-20260817.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:b4a810bf699c01eb361862c394ae5bafe02075c856398469baa10fb18851817d",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Core Molding Technologies Form 8-K — Third Credit Agreement Amendment",
+      "url": "https://www.sec.gov/Archives/edgar/data/1026655/000102665526000043/cmt-20260702.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:b59bc84a95430b96f18f47ac009d5c29d3325685e3aa3411d40df6f0a3ac1333",
+      "publisher": "Korea Exchange KIND",
+      "title": "삼성전자 — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260707000004&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:b5f1e3bf5e2863fdae6a24d60b870f683a98af82ca8884822a0b2239cdf83472",
+      "publisher": "Korea Exchange KIND",
+      "title": "현대차 — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260723000315&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:c3236d10ceac9278b49f87831fec125d98428b83517697e7172e9fad46995f5c",
+      "publisher": "Korea Exchange KIND",
+      "title": "JYP Ent. — 연결재무제표 기준 영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260812000607&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:c697d9ca3636cb48776622e7246ad545fee388d0315ea0f2ac96f3c1bb08aa7b",
+      "publisher": "Korea Exchange KIND",
+      "title": "셀트리온 — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260727000078&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:c76832ee498856a79d6608c8a77d63f8d5d29d3949a54bf853490fe1b659527d",
+      "publisher": "hyundai.com",
+      "title": "Hyundai Motor July 2026 Sales Notice",
+      "url": "https://www.hyundai.com/worldwide/en/company/ir/notices/view-0000000374-en-10-1-",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_COMPANY_IR)."
+    },
+    {
+      "id": "candidate-source:d48e7216fd14d35dfe53fe9b8824d98b31c5494ec7d62cbf7b31f47819cdbb2d",
+      "publisher": "U.S. Department of the Treasury",
+      "title": "Issuance of Amended Iran-related General License — U.S. Treasury Bulletin",
+      "url": "https://content.govdelivery.com/accounts/USTREAS/bulletins/41f7470",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_US_TREASURY_BULLETIN)."
+    },
+    {
+      "id": "candidate-source:d615f83d363731b4324ec6faa6128b9b1fb7bc3eb55fa80f7547311484374be2",
+      "publisher": "Korea Exchange KIND",
+      "title": "LS ELECTRIC — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260723000150&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:d68a7fed27d2ef3c1b8cbd130eeefceff8a4540dbf3e486be7e05d277d7996f4",
+      "publisher": "S&P Global",
+      "title": "S&P Dow Jones Indices and MSCI Announce Consultation on Potential Changes to GICS",
+      "url": "https://press.spglobal.com/2026-07-17-S-P-DOW-JONES-INDICES-AND-MSCI-ANNOUNCE-CONSULTATION-ON-POTENTIAL-CHANGES-TO-THE-GLOBAL-INDUSTRY-CLASSIFICATION-STANDARD-GICS-R",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_INDEX_PROVIDER)."
+    },
+    {
+      "id": "candidate-source:db7d33c42ecbd5ebbb28a05405cb989037c6fbdde764ae07c6b8cdce1787099d",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Realty Income Form 8-K — Amended Revolving Credit Facility",
+      "url": "https://www.sec.gov/Archives/edgar/data/726728/000110465926083103/tm2619513d3_8k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:dc5bb60d2ded51e2c0c7d035b3124f208d082c35d48d27b1c156595a8b4221d4",
+      "publisher": "U.S. Department of the Treasury, Office of Foreign Assets Control",
+      "title": "Issuance of Amended Iran-related General License",
+      "url": "https://ofac.treasury.gov/recent-actions/20260707",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_US_TREASURY_OFAC)."
+    },
+    {
+      "id": "candidate-source:de79b051ca3611e35f30ca321e1c8dfe99a829f26a83239e4a8c906103b2146c",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Microsoft Corp. Form 8-K — Quarterly Results",
+      "url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323632/msft-20260729.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:deefc8be45fa41a10a9429e716c90c3f88dc9c15f91cc70d0ae5a95a6f81bc1f",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "UnitedHealth Group Form 8-K — Second Quarter Results",
+      "url": "https://www.sec.gov/Archives/edgar/data/731766/000073176626000191/unh-20260716.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:df98bb27e4ad8f8498267b9f476fc734d13d63cb2fa45295afeddfcd6173eeb9",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Realty Income Form 8-K — €600 Million Notes",
+      "url": "https://www.sec.gov/Archives/edgar/data/726728/000110465926080984/tm2619513d1_8k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:e06ae19be285787dd07e690fd6cb0abff60a54b9530a0768e6858b3ce13c1324",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Tesla Inc. Form 8-K — Second Quarter Results",
+      "url": "https://www.sec.gov/Archives/edgar/data/1318605/000162828026049213/tsla-20260722.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:e08e2173a21598ab3fea325d969cd04e2911470cde1427885ad59e351b2b6960",
+      "publisher": "Korea Exchange KIND",
+      "title": "삼성바이오로직스 — 타법인 주식 및 출자증권 양수결정 (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260720000001&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:e19b79d5a8ee763f30dff796bed2904b3a0d740bdc772c45ce6e33749a963c99",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Orchid Island Capital Form 8-K — July Distribution",
+      "url": "https://www.sec.gov/Archives/edgar/data/1518621/000143774926023058/orc20260707_8k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:e3329b946bb9f9ffc7f6ca26677febe994a2077e7a7fddaa328ad52f0cec56fb",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Itaú Unibanco Form 6-K — Tier 1 Subordinated Financial Bills",
+      "url": "https://www.sec.gov/Archives/edgar/data/1132597/000113259726000198/a6-k_itubx14072026x.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_6_K)."
+    },
+    {
+      "id": "candidate-source:e58c395cf296790180e6848de43acec993cb58170ac270341e6a02678f988298",
+      "publisher": "Korea Exchange KIND",
+      "title": "POSCO홀딩스 — 타법인주식및출자증권처분결정(자율공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260807000867&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:e5f4ae45354e9de33bef221952491fd485caa9a9440a0ea5dc5ed0369e5b5bef",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Tesla Inc. Form 8-K — Quarterly Production and Deliveries",
+      "url": "https://www.sec.gov/Archives/edgar/data/1318605/000162828026046717/tsla-20260702.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:e90c7caef188eb48cf21fe7110d4ae12515714a9c156b76720d1b179c15ab397",
+      "publisher": "Korea Exchange KIND",
+      "title": "SK하이닉스 — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260729000013&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:e9c7db770c3b9e0062e5f5adcda5bc5b506e834e00ac017164024c2b5b00a27a",
+      "publisher": "Korea Exchange KIND",
+      "title": "LG에너지솔루션 — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260707000074&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:eab3c6495838131218f12fdb89c6591fad888d058def92b1cefb44d7855e34ff",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Apple Inc. Form 8-K — Fiscal Third Quarter Results",
+      "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000018/aapl-20260730.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:eace3c0bce457c9d63e843a06af5e46e41b55f769acf1ae2726b76fafdbf7f96",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Itaú Unibanco Form 6-K — Completion of Itaú Colombia Transaction",
+      "url": "https://www.sec.gov/Archives/edgar/data/1132597/000113259726000203/a6-k_itubx31072026x.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_6_K)."
+    },
+    {
+      "id": "candidate-source:edc4fffc7a62a868cbe04052fda24ed7cd4083df70f1086918b282d9cc922338",
+      "publisher": "Korea Exchange KIND",
+      "title": "셀트리온 — 연결재무제표기준영업(잠정)실적(공정공시) (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260703000022&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:f23fd6e2fc4440c5e4a457a5282c496cccf9692771d188328101d29456a0e898",
+      "publisher": "Korea Exchange KIND",
+      "title": "NAVER — 주식 소각 결정 (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260727000009&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "candidate-source:f74cc3df0f4e56ba1c0983cba74f047d95fb786c09e561c8a9cfd182bbdeffa0",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Orchid Island Capital Form 8-K — Estimated Book Value and Q2 Income",
+      "url": "https://www.sec.gov/Archives/edgar/data/1518621/000143774926023434/orc20260712_8k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:f9ca3221155d84cd2f8e6bf3c8a0bf563540f60e0a6515ba7a0a51bc12de21a1",
+      "publisher": "celltrion.com",
+      "title": "Celltrion Final Q2 2026 Results",
+      "url": "https://www.celltrion.com/ko-kr/company/media-center/press-release/4862",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_COMPANY_IR)."
+    },
+    {
+      "id": "candidate-source:fa485369ae6d8fdc3b1c4ac5c3067f6af8f0002444e02af97c7a9b6bcd949f68",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Orchid Island Capital Form 8-K — Second Quarter Results",
+      "url": "https://www.sec.gov/Archives/edgar/data/1518621/000143774926024318/orc20260427_8k.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_SEC_8_K)."
+    },
+    {
+      "id": "candidate-source:fc3602f056c0995b251e8552048ff9d89c02ffac06fe3fc71dc34fff6866e0e6",
+      "publisher": "Korea Exchange KIND",
+      "title": "카카오게임즈 — 주식소각 결정 (KRX/KIND)",
+      "url": "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260708000662&docno=&viewerhost=&viewerport=",
+      "accessedOn": "2026-08-19",
+      "note": "Primary candidate research source (PRIMARY_KRX_KIND)."
+    },
+    {
+      "id": "cencal",
+      "publisher": "U.S. Census Bureau",
+      "title": "U.S. Census Bureau Economic Indicators Calendar",
+      "url": "https://www.census.gov/economic-indicators/calendar-listview.html",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "census-housing-2026-07",
+      "publisher": "U.S. Census Bureau",
+      "title": "New Residential Construction - July 2026",
+      "url": "https://www.census.gov/construction/nrc/current/index.html",
+      "publishedOn": "2026-08-18",
+      "accessedOn": "2026-08-19",
+      "note": "주택착공과 건축허가 공식 발표"
+    },
+    {
+      "id": "census-retail-sales-2026-07",
+      "publisher": "U.S. Census Bureau",
+      "title": "Advance Monthly Sales for Retail and Food Services - July 2026",
+      "url": "https://www.census.gov/retail/sales.html",
+      "publishedOn": "2026-08-14",
+      "accessedOn": "2026-08-19",
+      "note": "미국 소매판매 공식 발표"
+    },
+    {
+      "id": "chosun-msci-korea-2026-08",
+      "publisher": "조선비즈",
+      "title": "MSCI 한국지수 LG이노텍 편입과 HLB 등 편출",
+      "url": "https://biz.chosun.com/stock/stock_general/2026/08/13/3YW2AFCLTBGV7JZRITKCRWSCKE/",
+      "publishedOn": "2026-08-13",
+      "accessedOn": "2026-08-19",
+      "note": "한국 구성종목 상세와 8월 31일 종가 후 효력"
+    },
+    {
+      "id": "claims",
+      "publisher": "U.S. Department of Labor",
+      "title": "DOL Unemployment Insurance Weekly Claims",
+      "url": "https://www.dol.gov/ui/data.pdf",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "coingecko-bitcoin-2026-08-01-18",
+      "publisher": "CoinGecko",
+      "title": "Bitcoin USD market chart range",
+      "url": "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range?vs_currency=usd&from=1785513600&to=1787184000",
+      "accessedOn": "2026-08-19",
+      "note": "24시간 거래되는 비트코인의 UTC 일별 기준가와 주말 가격발견"
+    },
+    {
+      "id": "cpi6",
+      "publisher": "U.S. Bureau of Labor Statistics",
+      "title": "BLS CPI June 2026",
+      "url": "https://www.bls.gov/news.release/cpi.htm?lv=true",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "dol-weekly-claims-2026-08",
+      "publisher": "U.S. Department of Labor",
+      "title": "Unemployment Insurance Weekly Claims Data",
+      "url": "https://www.dol.gov/ui/data.pdf",
+      "publishedOn": "2026-08-13",
+      "accessedOn": "2026-08-19",
+      "note": "8월 6일과 13일 주간 신규·계속 실업수당 청구 공식 자료"
+    },
+    {
+      "id": "durable6",
+      "publisher": "U.S. Census Bureau",
+      "title": "Census Durable Goods June 2026",
+      "url": "https://www.census.gov/manufacturing/m3/adv/current/index.html",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "ecom",
+      "publisher": "U.S. Census Bureau",
+      "title": "Census Quarterly Retail E-Commerce Release Schedule",
+      "url": "https://www.census.gov/retail/release_schedule.html",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "eiaw",
+      "publisher": "U.S. Energy Information Administration",
+      "title": "EIA Weekly Petroleum Status Report",
+      "url": "https://www.eia.gov/petroleum/supply/weekly/index.php",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "emp6",
+      "publisher": "U.S. Bureau of Labor Statistics",
+      "title": "BLS Employment Situation June 2026",
+      "url": "https://www.bls.gov/news.release/archives/empsit_07022026.pdf",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "fed-cook-speech-2026-08-05",
+      "publisher": "Board of Governors of the Federal Reserve System",
+      "title": "Speech by Governor Cook on inflation and monetary policy",
+      "url": "https://www.federalreserve.gov/newsevents/speech/cook20260805a.htm",
+      "publishedOn": "2026-08-05",
+      "accessedOn": "2026-08-19",
+      "note": "인플레이션 상방 위험과 필요시 금리 인상 준비에 관한 공식 연설"
+    },
+    {
+      "id": "fed-industrial-production-2026-07",
+      "publisher": "Board of Governors of the Federal Reserve System",
+      "title": "Industrial Production and Capacity Utilization - July 2026",
+      "url": "https://www.federalreserve.gov/releases/g17/current/default.htm",
+      "publishedOn": "2026-08-18",
+      "accessedOn": "2026-08-19",
+      "note": "산업생산·설비가동률 공식 발표"
+    },
+    {
+      "id": "fed-sloos-2026-07",
+      "publisher": "Board of Governors of the Federal Reserve System",
+      "title": "July 2026 Senior Loan Officer Opinion Survey",
+      "url": "https://www.federalreserve.gov/data/sloos/sloos-202607.htm",
+      "publishedOn": "2026-08-03",
+      "accessedOn": "2026-08-19",
+      "note": "은행 대출기준과 기업·가계 대출수요 공식 조사"
+    },
+    {
+      "id": "fedaug",
+      "publisher": "Board of Governors of the Federal Reserve System",
+      "title": "Federal Reserve Calendar: August 2026",
+      "url": "https://www.federalreserve.gov/newsevents/2026-august.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "fedjul",
+      "publisher": "Board of Governors of the Federal Reserve System",
+      "title": "Federal Reserve Calendar: July 2026",
+      "url": "https://www.federalreserve.gov/newsevents/2026-july.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "financecharts-xagg-history",
+      "publisher": "FinanceCharts",
+      "title": "Eaton Vance Income Opportunities ETF historical prices",
+      "url": "https://www.financecharts.com/etfs/XAGG/summary/price",
+      "accessedOn": "2026-08-19",
+      "note": "Audited fallback for XAGG on 2025-11-11, when Yahoo emitted an all-null row despite an open NYSE Arca session. OHLCV 50.09/50.15/50.05/50.08 and 115,644 shares matches the adjacent raw price unit; adjustedClose is omitted because this source does not provide Yahoo's total-return series."
+    },
+    {
+      "id": "fomc7",
+      "publisher": "Board of Governors of the Federal Reserve System",
+      "title": "Fed FOMC Statement July 29 2026",
+      "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260729a.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "fomcmin",
+      "publisher": "Board of Governors of the Federal Reserve System",
+      "title": "Fed releases June FOMC minutes",
+      "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260708a.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "fred-us-10y-2026-08",
+      "publisher": "Federal Reserve Bank of St. Louis",
+      "title": "Market Yield on U.S. Treasury Securities at 10-Year Constant Maturity",
+      "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10&cosd=2026-08-01&coed=2026-08-18",
+      "accessedOn": "2026-08-19",
+      "note": "8월 3일부터 17일까지 미국 10년 국채 수익률 일별 관측치"
+    },
+    {
+      "id": "fred-usdkrw-2026-08",
+      "publisher": "Federal Reserve Bank of St. Louis",
+      "title": "South Korean Won to U.S. Dollar Exchange Rate",
+      "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXKOUS&cosd=2026-08-01&coed=2026-08-18",
+      "accessedOn": "2026-08-19",
+      "note": "8월 3일부터 14일까지 원·달러 일별 관측치"
+    },
+    {
+      "id": "fsc-single-stock-leverage-2026-08-04",
+      "publisher": "대한민국 금융위원회",
+      "title": "단일종목 레버리지 상품 관련 설명",
+      "url": "https://fsc.go.kr/no010102/87468",
+      "publishedOn": "2026-08-04",
+      "accessedOn": "2026-08-19",
+      "note": "시가총액·거래대금·파생상품 점검과 투자자 보호장치에 대한 공식 설명"
+    },
+    {
+      "id": "fsc-single-stock-leverage-2026-08-10",
+      "publisher": "대한민국 금융위원회",
+      "title": "단일종목 레버리지 상품 투자자 유의사항 관련 설명",
+      "url": "https://www.fsc.go.kr/no010102/87492",
+      "publishedOn": "2026-08-10",
+      "accessedOn": "2026-08-19",
+      "note": "기본예탁금·심화교육·손실 시나리오 안내에 대한 후속 설명"
+    },
+    {
+      "id": "fscai",
+      "publisher": "금융위원회",
+      "title": "FSC frontier-AI security guidance",
+      "url": "https://www.fsc.go.kr/no010101/87240",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "fsccbdc",
+      "publisher": "금융위원회",
+      "title": "FSC Project Hangang phase 2 designation",
+      "url": "https://www.fsc.go.kr/no010101/87338",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "fscdual",
+      "publisher": "금융위원회",
+      "title": "FSC asymmetric dual-listing draft rules",
+      "url": "https://www.fsc.go.kr/no010101/87260",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "fscesg",
+      "publisher": "금융위원회",
+      "title": "FSC sustainability disclosure final plan",
+      "url": "https://www.fsc.go.kr/no010101/87280",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "fscfinal",
+      "publisher": "금융위원회",
+      "title": "FSC dual-listing reform final implementation",
+      "url": "https://www.fsc.go.kr/no010101/87456",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "fsclev",
+      "publisher": "금융위원회",
+      "title": "FSC single-stock leveraged ETF/ETN remedies",
+      "url": "https://www.fsc.go.kr/no010101/87353",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "fsclow",
+      "publisher": "금융위원회",
+      "title": "FSC low-PBR disclosure criteria",
+      "url": "https://www.fsc.go.kr/no010101/87419",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "fscmanip",
+      "publisher": "금융위원회",
+      "title": "FSC market-manipulation joint team",
+      "url": "https://www.fsc.go.kr/no010101/87278",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "g19",
+      "publisher": "Board of Governors of the Federal Reserve System",
+      "title": "Federal Reserve Consumer Credit G.19",
+      "url": "https://www.federalreserve.gov/releases/g19/current/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "gdp2",
+      "publisher": "U.S. Bureau of Economic Analysis",
+      "title": "BEA GDP Advance Estimate Q2 2026",
+      "url": "https://www.bea.gov/news/2026/gdp-advance-estimate-2nd-quarter-2026",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "gilead-q2-2026",
+      "publisher": "Gilead Sciences",
+      "title": "Gilead Sciences Announces Second Quarter 2026 Financial Results",
+      "url": "https://investors.gilead.com/news/news-details/2026/Gilead-Sciences-Announces-Second-Quarter-2026-Financial-Results/default.aspx",
+      "publishedOn": "2026-08-04",
+      "accessedOn": "2026-08-19",
+      "note": "16:01 EDT 장후 실적·가이던스 공식 발표"
+    },
+    {
+      "id": "global-x-canada-soxs-consolidation",
+      "publisher": "Global X Investments Canada",
+      "title": "Global X ETFs Announces Share Consolidations and Splits",
+      "url": "https://newsfile.moomoo.com/public/NN-PersistNoticeAttachment/7781/20260515/SEDAR_PLUS/CSA_SEDAR_PLUS_NOTICE_RECORD_ID_2407699.pdf",
+      "accessedOn": "2026-08-19",
+      "note": "Confirms that the 1:15 SOXS consolidation belonged to the Canadian BetaPro -3x Semiconductor Daily Leveraged Bear Alternative ETF, not the U.S. Direxion fund in this catalog."
+    },
+    {
+      "id": "goognotes",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Alphabet 8-K $25B notes",
+      "url": "https://www.sec.gov/Archives/edgar/data/1652044/000119312526342390/d171253d8k.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "googq2",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Alphabet 8-K Q2 results",
+      "url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000066/goog-20260722.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "housing6",
+      "publisher": "U.S. Census Bureau",
+      "title": "Census New Residential Construction June 2026",
+      "url": "https://www.census.gov/construction/nrc/current/index.html",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "hyuq2",
+      "publisher": "Hyundai Motor Company",
+      "title": "Hyundai Motor Q2 2026 business results",
+      "url": "https://www.hyundai.com/content/hyundai/worldwide/en/newsroom/detail/0000001234.html",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "import6",
+      "publisher": "U.S. Bureau of Labor Statistics",
+      "title": "BLS Import and Export Prices June 2026",
+      "url": "https://www.bls.gov/news.release/archives/ximpim_07172026.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "ip6",
+      "publisher": "Board of Governors of the Federal Reserve System",
+      "title": "Federal Reserve Industrial Production June 2026",
+      "url": "https://www.federalreserve.gov/RELEASES/G17/current/g17.pdf",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "ismm6",
+      "publisher": "Institute for Supply Management",
+      "title": "June 2026 Manufacturing ISM Report",
+      "url": "https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/pmi/june/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "ismm7",
+      "publisher": "Institute for Supply Management",
+      "title": "July 2026 Manufacturing ISM Report",
+      "url": "https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/pmi/july/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "isms6",
+      "publisher": "Institute for Supply Management",
+      "title": "June 2026 Services ISM Report",
+      "url": "https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/services/june/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "isms7",
+      "publisher": "Institute for Supply Management",
+      "title": "July 2026 Services ISM Report",
+      "url": "https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/services/july/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "itau-q2-2026",
+      "publisher": "Itaú Unibanco",
+      "title": "Second Quarter 2026 Earnings Release",
+      "url": "https://www.itau.com.br/download-file/v2/d/42787847-4cf6-4461-94a5-40ed237dca33/8695429d-79a8-1f3b-11bc-5f794394539a?origin=2",
+      "publishedOn": "2026-08-04",
+      "accessedOn": "2026-08-19",
+      "note": "2분기 반복관리이익·ROE·대출자산·연체율 공식 자료"
+    },
+    {
+      "id": "jpmq2",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "JPMorgan 8-K Q2 results",
+      "url": "https://www.sec.gov/Archives/edgar/data/19617/000162828026048078/jpm-20260714.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "kcs10",
+      "publisher": "관세청",
+      "title": "관세청 2026년 7월 1~10일 수출입",
+      "url": "https://www.customs.go.kr/kcs/na/ntt/selectNttInfo.do?bbsId=1362&mi=2891&nttSn=10169503&nttSnUrl=be8cdd187fb1efe4fe4c464b1cb3a147",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "kcs20",
+      "publisher": "관세청",
+      "title": "관세청 2026년 7월 1~20일 수출입",
+      "url": "https://www.customs.go.kr/kcs/na/ntt/selectNttInfo.do?nttSn=10170523&nttSnUrl=0cf5ecc6b10e0e5e7d8aed6856284263",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "kocyber",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Coca-Cola 8-K fairlife ransomware",
+      "url": "https://www.sec.gov/Archives/edgar/data/21344/000162828026048466/ko-20260716.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "koq2",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Coca-Cola 8-K Q2 results",
+      "url": "https://www.sec.gov/Archives/edgar/data/21344/000162828026049922/ko-20260728.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "krx-trading-holidays",
+      "publisher": "Korea Exchange",
+      "title": "Trading Hours and Holidays",
+      "url": "https://global.krx.co.kr/contents/GLB/06/0602/0602020204/GLB0602020204T1.jsp",
+      "accessedOn": "2026-08-19",
+      "note": "공휴일에는 한국 주식시장이 휴장한다는 거래소 규칙"
+    },
+    {
+      "id": "kulr-q2-2026",
+      "publisher": "KULR Technology Group",
+      "title": "KULR Technology Group Reports Second Quarter 2026 Financial Results",
+      "url": "https://kulr.ai/kulr-technology-group-reports-second-quarter-2026-financial-results/",
+      "publishedOn": "2026-08-13",
+      "accessedOn": "2026-08-19",
+      "note": "20:16:48 UTC 장후 실적과 비트코인 공정가치 손실 공식 발표"
+    },
+    {
+      "id": "lgq2",
+      "publisher": "LG Corporation",
+      "title": "LG Energy Solution Q2 2026 results",
+      "url": "https://www.lg.co.kr/media/release/30407",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "lilly-q2-2026",
+      "publisher": "Eli Lilly and Company",
+      "title": "Lilly reports second-quarter 2026 financial results and raises guidance",
+      "url": "https://investor.lilly.com/static-files/1ce8d384-21b5-45a4-bafb-b981dc2d5e04",
+      "publishedOn": "2026-08-05",
+      "accessedOn": "2026-08-19",
+      "note": "06:45 EDT 장전 실적·가이던스 공식 PDF"
+    },
+    {
+      "id": "metaq2",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Meta 8-K Q2 results",
+      "url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026050596/meta-20260729.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "mods-korea-cpi-2026-07",
+      "publisher": "대한민국 국가데이터처",
+      "title": "2026년 7월 소비자물가동향",
+      "url": "https://mods.go.kr/board.es?act=view&bid=213&list_no=446338&mid=b70203010000",
+      "publishedOn": "2026-08-04",
+      "accessedOn": "2026-08-19",
+      "note": "한국 7월 CPI와 근원·생활·신선식품 지수 공식 발표"
+    },
+    {
+      "id": "mods-korea-release-plan-2026-08",
+      "publisher": "대한민국 국가데이터처",
+      "title": "2026년 8월 보도계획",
+      "url": "https://www.mods.go.kr/newsPln.es?mid=a10305000000&oa_mm=08",
+      "publishedOn": "2026-08-01",
+      "accessedOn": "2026-08-19",
+      "note": "한국 7월 고용동향의 8월 12일 08:00 KST 공개 시각"
+    },
+    {
+      "id": "modscpi6",
+      "publisher": "국가데이터처",
+      "title": "국가데이터처 2026년 6월 소비자물가동향",
+      "url": "https://www.mods.go.kr/board.es?act=view&bid=213&keyField=T&list_no=445720&mid=b70203010000&nPage=1&ref_bid=213",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "modsemp",
+      "publisher": "국가데이터처",
+      "title": "국가데이터처 고용동향 보도자료",
+      "url": "https://www.mods.go.kr/board.es?bid=210&mid=a10301010000",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "modsind6",
+      "publisher": "국가데이터처",
+      "title": "국가데이터처 2026년 6월 산업활동동향",
+      "url": "https://mods.go.kr/board.es?act=view&bid=216&list_no=446305&mid=a10301050100",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "msci-august-2026-review",
+      "publisher": "MSCI",
+      "title": "MSCI Equity Indexes August 2026 Index Review",
+      "url": "https://marketchameleon.com/PressReleases/i/2357622/MSCI/msci-equity-indexes-august-2026-index-review",
+      "publishedOn": "2026-08-12",
+      "accessedOn": "2026-08-19",
+      "note": "MSCI가 배포한 8월 정기 리뷰 원문 재배포"
+    },
+    {
+      "id": "msftq4",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Microsoft 8-K fiscal Q4 results",
+      "url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323632/msft-20260729.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "nasdaq-aapl-historical",
+      "publisher": "Nasdaq",
+      "title": "Apple Inc. Common Stock Historical Quotes",
+      "url": "https://www.nasdaq.com/market-activity/stocks/aapl/historical",
+      "accessedOn": "2026-08-19",
+      "note": "원시 일봉 OHLC와 거래량의 확인 출처"
+    },
+    {
+      "id": "naver-finance-daily-chart",
+      "publisher": "NAVER Finance",
+      "title": "NAVER Finance daily price chart",
+      "url": "https://api.finance.naver.com/siseJson.naver",
+      "accessedOn": "2026-08-19",
+      "note": "Five-year KRX date-discovery and cross-check input. The chart endpoint is not used as an OHLCV source because it can expose dividend-adjusted ETF prices and volumes; every substituted row is read from the separately catalogued unadjusted NAVER daily table."
+    },
+    {
+      "id": "naver-finance-raw-daily-table",
+      "publisher": "NAVER Finance",
+      "title": "NAVER Finance unadjusted daily price table",
+      "url": "https://finance.naver.com/item/sise_day.naver?code={symbol}",
+      "accessedOn": "2026-08-19",
+      "note": "Unadjusted HTML daily table used for complete 310970 history, 477080 before Yahoo history begins, three independently checked 012450 anomalies, invalid Yahoo OHLC envelopes, and every traded KRX row omitted or null-filled by Yahoo. Six covered-call ETF gaps are retained as fixed audit samples proving that the chart endpoint's dividend-adjusted units must not be mixed with RAW OHLCV. adjustedClose is omitted because this table has no separate adjusted series."
+    },
+    {
+      "id": "naver-kosdaq-daily-2026-08",
+      "publisher": "NAVER Finance",
+      "title": "KOSDAQ 일별 시세",
+      "url": "https://finance.naver.com/sise/sise_index_day.naver?code=KOSDAQ&page=1",
+      "accessedOn": "2026-08-19",
+      "note": "2026년 8월 KOSDAQ 장마감 수치의 재배포 화면"
+    },
+    {
+      "id": "naver-kospi-daily-2026-08",
+      "publisher": "NAVER Finance",
+      "title": "KOSPI 일별 시세",
+      "url": "https://finance.naver.com/sise/sise_index_day.naver?code=KOSPI&page=1",
+      "accessedOn": "2026-08-19",
+      "note": "2026년 8월 KOSPI 장마감 수치의 재배포 화면"
+    },
+    {
+      "id": "newhome6",
+      "publisher": "U.S. Census Bureau",
+      "title": "Census New Residential Sales June 2026",
+      "url": "https://www.census.gov/construction/nrs/pdf/newressales.pdf",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "nvdaai",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "NVIDIA 8-K Portsmouth AI campus",
+      "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000069/nvda-20260817.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "nvdachg",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "NVIDIA 8-K executive transition",
+      "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000060/nvda-20260628.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "nyfed",
+      "publisher": "Federal Reserve Bank of New York",
+      "title": "New York Fed Empire State Manufacturing Survey",
+      "url": "https://www.newyorkfed.org/survey/empire/empiresurvey_overview",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "oeuro",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Realty Income 8-K euro notes",
+      "url": "https://www.sec.gov/Archives/edgar/data/726728/000110465926080984/tm2619513d1_8k.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "orcdiv7",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Orchid Island 8-K July dividend",
+      "url": "https://www.sec.gov/Archives/edgar/data/1518621/000143774926023058/orc20260707_8k.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "orcdiv8",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Orchid Island 8-K August dividend",
+      "url": "https://www.sec.gov/Archives/edgar/data/1518621/000143774926027362/orc20260811_8k.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "orcpre",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Orchid Island preliminary book value",
+      "url": "https://www.sec.gov/Archives/edgar/data/1518621/000143774926023434/orc20260712_8k.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "orcq2",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Orchid Island 8-K Q2 results",
+      "url": "https://www.sec.gov/Archives/edgar/data/1518621/000143774926024318/orc20260427_8k.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "orevolver",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Realty Income 8-K $5.5B revolver",
+      "url": "https://www.sec.gov/Archives/edgar/data/726728/000110465926083103/tm2619513d3_8k.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "pfizer-q2-2026",
+      "publisher": "Pfizer",
+      "title": "Pfizer Reports Second-Quarter Results and Raises Revenue Guidance Midpoint",
+      "url": "https://www.nasdaq.com/press-release/pfizer-reports-second-quarter-results-and-raises-midpoint-2026-revenue-guidance-2026",
+      "publishedOn": "2026-08-04",
+      "accessedOn": "2026-08-19",
+      "note": "Pfizer가 배포한 06:45 EDT 실적 발표의 Nasdaq 원문 재배포"
+    },
+    {
+      "id": "pio6",
+      "publisher": "U.S. Bureau of Economic Analysis",
+      "title": "BEA Personal Income and Outlays June 2026",
+      "url": "https://www.bea.gov/news/2026/personal-income-and-outlays-june-2026",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "ppi6",
+      "publisher": "U.S. Bureau of Labor Statistics",
+      "title": "BLS PPI June 2026",
+      "url": "https://www.bls.gov/news.release/ppi.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "realty-income-notes-close-2026-08-14",
+      "publisher": "Realty Income",
+      "title": "Realty Income Announces Closing of $1.0 Billion Convertible Senior Notes Offering",
+      "url": "https://www.realtyincome.com/investors/press-releases/realty-income-announces-closing-10-billion-convertible-senior-notes",
+      "publishedOn": "2026-08-14",
+      "accessedOn": "2026-08-19",
+      "note": "20:06:03 UTC 증액된 전환사채 발행 종결 공식 발표"
+    },
+    {
+      "id": "realty-income-notes-proposed-2026-08-11",
+      "publisher": "Realty Income",
+      "title": "Realty Income Announces Proposed Convertible Senior Notes Offering",
+      "url": "https://www.realtyincome.com/investors/press-releases/realty-income-announces-proposed-convertible-senior-notes-offering-0",
+      "publishedOn": "2026-08-11",
+      "accessedOn": "2026-08-19",
+      "note": "20:06:04 UTC 7억5천만 달러 전환사채 제안 공식 발표"
+    },
+    {
+      "id": "realty-income-q2-2026",
+      "publisher": "Realty Income",
+      "title": "Realty Income Announces Operating Results for Q2 2026",
+      "url": "https://www.realtyincome.com/investors/press-releases/realty-income-announces-operating-results-three-and-six-months-ended-4",
+      "publishedOn": "2026-08-05",
+      "accessedOn": "2026-08-19",
+      "note": "20:07:02 UTC 장후 실적·AFFO 가이던스 공식 발표"
+    },
+    {
+      "id": "retail6",
+      "publisher": "U.S. Census Bureau",
+      "title": "Census Retail Sales June 2026",
+      "url": "https://www.census.gov/retail/sales.html",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "reuters-hormuz-oil-2026-08-06",
+      "publisher": "Reuters",
+      "title": "Oil settles up as Iran reviews bill to ban U.S. and Israeli vessels",
+      "url": "https://in.marketscreener.com/news/oil-prices-slip-as-iran-cites-progress-with-oman-on-hormuz-agreement-ce7f50dcde8af425",
+      "publishedOn": "2026-08-06",
+      "accessedOn": "2026-08-19",
+      "note": "이란 의회 예비 법안과 브렌트·WTI 결제가격을 전한 Reuters 재배포"
+    },
+    {
+      "id": "sambioacq",
+      "publisher": "Samsung Biologics",
+      "title": "Samsung Biologics offer for PolyPeptide",
+      "url": "https://samsungbiologics.com/media/company-news/samsung-biologics-announces-all-cash-offer-to-acquire-polypeptide",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "sambioq2",
+      "publisher": "Samsung Biologics",
+      "title": "Samsung Biologics Q2 2026 results",
+      "url": "https://samsungbiologics.com/media/company-news/samsung-biologics-reports-second-quarter-2026-financial-results",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "samfms",
+      "publisher": "Samsung Electronics",
+      "title": "Samsung next-generation 3D memory at FMS 2026",
+      "url": "https://news.samsung.com/global/samsung-unveils-next-gen-3d-memory-vision-at-fms-2026-charting-the-future-of-ai-infrastructure",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "samgal",
+      "publisher": "Samsung Electronics",
+      "title": "Samsung launches Galaxy Z8 family",
+      "url": "https://news.samsung.com/global/samsung-officially-launches-galaxy-z-fold8-ultra-fold8-flip8-watch-ultra2-and-watch9",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "samguide",
+      "publisher": "Samsung Electronics",
+      "title": "Samsung Electronics Q2 2026 earnings guidance",
+      "url": "https://news.samsung.com/global/samsung-electronics-announces-earnings-guidance-for-second-quarter-2026",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "samq2",
+      "publisher": "Samsung Electronics",
+      "title": "Samsung Electronics Q2 2026 results",
+      "url": "https://news.samsung.com/global/samsung-electronics-announces-second-quarter-2026-results",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "samsung-biologics-equity-spinoff",
+      "publisher": "Samsung Biologics / Korea Exchange KIND",
+      "title": "Samsung Biologics equity spin-off and surviving-company consolidation",
+      "url": "https://kind.krx.co.kr/external/2025/09/02/000316/20250902000908/10085.htm",
+      "accessedOn": "2026-08-19",
+      "note": "Official filing confirms one 0.6503913 surviving-company share consolidation. Used to remove Yahoo's duplicate 2025-09-29 marker while retaining the revised 2025-10-30 trading-halt boundary marker."
+    },
+    {
+      "id": "sec-cmt-q2-2026",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Core Molding Technologies Q2 2026 earnings release exhibit",
+      "url": "https://www.sec.gov/Archives/edgar/data/1026655/000102665526000049/a8-k991pressreleaseq22026.htm",
+      "publishedOn": "2026-08-04",
+      "accessedOn": "2026-08-19",
+      "note": "CMT 공식 8-K 첨부 실적 발표"
+    },
+    {
+      "id": "sk54",
+      "publisher": "SK hynix",
+      "title": "SK hynix 54T-won Yongin/Cheongju investment",
+      "url": "https://news.skhynix.com/en/fab-facility-investment-2026/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "skadr",
+      "publisher": "SK hynix",
+      "title": "SK hynix lists ADRs on NASDAQ",
+      "url": "https://news.skhynix.com/en/skhynix-lists-adrs-on-nasdaq/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "skchung",
+      "publisher": "SK hynix",
+      "title": "SK hynix Chungcheong investment plan",
+      "url": "https://news.skhynix.com/en/fact-07/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "skhbf",
+      "publisher": "SK hynix",
+      "title": "SK hynix first HBF standard",
+      "url": "https://news.skhynix.com/en/hbf-at-fms-2026/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "sknvda",
+      "publisher": "SK hynix",
+      "title": "SK Group and NVIDIA expand partnership",
+      "url": "https://news.skhynix.com/en/skhynix-nvidia-partnership-2026/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "skq2",
+      "publisher": "SK hynix",
+      "title": "SK hynix Q2 2026 results",
+      "url": "https://news.skhynix.com/en/q2-2026-business-results/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "sp-ferguson-2026-07-31",
+      "publisher": "S&P Dow Jones Indices",
+      "title": "Ferguson Enterprises Set to Join S&P 500",
+      "url": "https://press.spglobal.com/2026-07-31-Ferguson-Enterprises-Set-to-Join-S-P-500-and-ADI-Global-Distribution-to-Join-S-P-SmallCap-600",
+      "publishedOn": "2026-07-31",
+      "accessedOn": "2026-08-19",
+      "note": "8월 5일 장전 S&P 500 구성 변경 공식 발표"
+    },
+    {
+      "id": "steel6",
+      "publisher": "U.S. Census Bureau",
+      "title": "Census Preliminary Steel Imports June 2026",
+      "url": "https://www.census.gov/foreign-trade/Press-Release/steel/steelp_2606.pdf",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "steo7",
+      "publisher": "U.S. Energy Information Administration",
+      "title": "EIA Short-Term Energy Outlook July 2026",
+      "url": "https://www.eia.gov/outlooks/steo/archives/jul26.pdf",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "stockanalysis-soxs-history",
+      "publisher": "StockAnalysis",
+      "title": "Direxion Daily Semiconductor Bear 3X ETF historical prices",
+      "url": "https://stockanalysis.com/etf/soxs/history/",
+      "accessedOn": "2026-08-19",
+      "note": "U.S. SOXS cross-check used to remove a 15x same-ticker Canadian corporate-action contamination from Yahoo's pre-2026-05-26 rows."
+    },
+    {
+      "id": "tcb",
+      "publisher": "The Conference Board",
+      "title": "Conference Board Economic Data",
+      "url": "https://www.conference-board.org/topics/economic-data-analysis",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "tcbconf",
+      "publisher": "The Conference Board",
+      "title": "Conference Board Consumer Confidence July 2026",
+      "url": "https://www.conference-board.org/topics/consumer-confidence/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "trade7",
+      "publisher": "국가물류통합정보센터",
+      "title": "산업통상부 2026년 7월 수출입 동향 정부 미러",
+      "url": "https://www.nlic.go.kr/nlic/logpolDt.action?command=VIEW&fldLogpolRefSeq=2019",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "tsladel",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Tesla 8-K Q2 production and deliveries",
+      "url": "https://www.sec.gov/Archives/edgar/data/1318605/000162828026046717/tsla-20260702.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "tslaq2",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Tesla 8-K Q2 results",
+      "url": "https://www.sec.gov/Archives/edgar/data/1318605/000162828026049213/tsla-20260722.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "tsmc-board-2026-08-11",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "TSMC Board of Directors Meeting Resolutions",
+      "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000536/tsm-boardx20260811.htm",
+      "publishedOn": "2026-08-11",
+      "accessedOn": "2026-08-19",
+      "note": "11:45:48 UTC 배당·설비투자·합작 승인 공식 6-K"
+    },
+    {
+      "id": "tsmc-revenue-2026-07",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "TSMC July 2026 Revenue Report",
+      "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000471/tsm-revenue20260810.htm",
+      "publishedOn": "2026-08-10",
+      "accessedOn": "2026-08-19",
+      "note": "TSMC 월간매출 공식 6-K와 05:30 UTC 회사 발표"
+    },
+    {
+      "id": "tsmc-sony-jv-2026-08-11",
+      "publisher": "U.S. Securities and Exchange Commission",
+      "title": "Sony Semiconductor Solutions and TSMC Agree to Establish Joint Venture",
+      "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000539/sonysemiconductorsolutions.htm",
+      "publishedOn": "2026-08-11",
+      "accessedOn": "2026-08-19",
+      "note": "12:25:45 UTC 차세대 이미지센서 일본 합작 공식 6-K"
+    },
+    {
+      "id": "tsmq2",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "TSMC 6-K Q2 results",
+      "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000451/tsm-20260716x6k.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "tsmrev6",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "TSMC 6-K June revenue",
+      "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000447/tsm-revenue20260713.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "umich",
+      "publisher": "University of Michigan Surveys of Consumers",
+      "title": "University of Michigan Surveys of Consumers",
+      "url": "https://www.sca.isr.umich.edu/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "umich-sentiment-2026-08",
+      "publisher": "University of Michigan Surveys of Consumers",
+      "title": "Surveys of Consumers - August 2026 preliminary results",
+      "url": "https://www.sca.isr.umich.edu/",
+      "publishedOn": "2026-08-14",
+      "accessedOn": "2026-08-19",
+      "note": "미시간대 8월 예비 소비자심리지수"
+    },
+    {
+      "id": "unhq2",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "UnitedHealth 8-K Q2 results",
+      "url": "https://www.sec.gov/Archives/edgar/data/731766/000073176626000191/unh-20260716.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "visaq3",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Visa 8-K fiscal Q3 results",
+      "url": "https://www.sec.gov/Archives/edgar/data/1403161/000140316126000103/v-20260728.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "wh28",
+      "publisher": "The White House",
+      "title": "White House: maximum pressure and Hormuz control",
+      "url": "https://www.whitehouse.gov/releases/2026/07/president-trump-on-fox-friends-americas-unrelenting-strength-keeps-maximum-pressure-on-iran/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "wh8",
+      "publisher": "The White House",
+      "title": "White House update on retaliatory strikes against Iran",
+      "url": "https://www.whitehouse.gov/videos/president-donald-j-trump-provides-an-update-on-u-s-forces-retaliatory-strikes-against-iran/",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "xomlook",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Exxon 8-K Q2 earnings considerations",
+      "url": "https://www.sec.gov/Archives/edgar/data/2115436/000211543626000003/xom-20260707.htm",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "xomq2",
+      "publisher": "U.S. Securities and Exchange Commission (EDGAR)",
+      "title": "Exxon Q2 SEC filing index",
+      "url": "https://www.sec.gov/Archives/edgar/data/34088/000211543626000006/0002115436-26-000006-index.html",
+      "accessedOn": "2026-08-19"
+    },
+    {
+      "id": "yahoo-finance-chart-api",
+      "publisher": "Yahoo Finance",
+      "title": "Yahoo Finance Chart API historical daily bars and corporate actions",
+      "url": "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}",
+      "accessedOn": "2026-08-19",
+      "note": "fixed period1=1627776000, period2=1787097600, interval=1d, events=div,splits,capitalGains, includeAdjustedClose=true; market-local date <=2026-08-18. All 75 provider-reported in-window splits were reversed to RAW OHLCV using cumulative ratios; OHLC and inverse-volume half-up rounding follows the generator. Adjusted integer volume cannot be inverted losslessly and may differ from tape by several/tens of shares; Yahoo adjustedClose is preserved."
+    },
+    {
+      "id": "yonhap-kosdaq-sidecar-2026-08-10",
+      "publisher": "연합뉴스",
+      "title": "코스닥 급등에 매수 사이드카 발동",
+      "url": "https://www.yna.co.kr/amp/view/AKR20260810108000008",
+      "publishedOn": "2026-08-10",
+      "accessedOn": "2026-08-19",
+      "note": "09:50:48 KST 코스닥 프로그램 매수호가 효력정지"
+    },
+    {
+      "id": "yonhap-kospi-close-2026-08-06",
+      "publisher": "연합뉴스",
+      "title": "외국인 대규모 매도와 반도체 급락으로 코스피 하락",
+      "url": "https://www.yna.co.kr/amp/view/AKR20260806124300008",
+      "publishedOn": "2026-08-06",
+      "accessedOn": "2026-08-19",
+      "note": "삼성전자·SK하이닉스 하락, 외국인 순매도와 매도 사이드카"
+    },
+    {
+      "id": "yonhap-kospi-sidecar-2026-08-12",
+      "publisher": "연합뉴스",
+      "title": "반도체 급등에 코스피 매수 사이드카 발동",
+      "url": "https://www.yna.co.kr/view/AKR20260812128600008",
+      "publishedOn": "2026-08-12",
+      "accessedOn": "2026-08-19",
+      "note": "11:57 KST 코스피200선물 급등과 외국인·기관 순매수"
+    }
+  ]
+}

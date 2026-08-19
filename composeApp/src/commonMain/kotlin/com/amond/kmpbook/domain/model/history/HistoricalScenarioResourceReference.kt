@@ -8,8 +8,8 @@ data class HistoricalScenarioResourceReference(
     val recordCount: Int,
 ) {
     init {
-        require(path.startsWith(RESOURCE_PATH_PREFIX) && path.endsWith(".json")) {
-            "역사 시나리오 리소스는 $RESOURCE_PATH_PREFIX 아래 JSON이어야 합니다."
+        require(path.startsWith(RESOURCE_PATH_PREFIX) && SUPPORTED_SUFFIXES.any(path::endsWith)) {
+            "역사 시나리오 리소스는 $RESOURCE_PATH_PREFIX 아래 JSON 또는 gzip JSON이어야 합니다."
         }
         require(path == path.trim() && '\\' !in path && ".." !in path.split('/')) {
             "역사 시나리오 리소스 경로가 안전하지 않습니다."
@@ -26,6 +26,7 @@ data class HistoricalScenarioResourceReference(
         const val RESOURCE_PATH_PREFIX: String = "files/scenarios/"
         const val MAX_RECORDS_PER_RESOURCE: Int = 100_000
 
+        private val SUPPORTED_SUFFIXES: Set<String> = setOf(".json", ".json.gz")
         private val SHA_256_PATTERN: Regex = Regex("[0-9a-f]{64}")
     }
 }

@@ -18,11 +18,7 @@ import kotlin.time.Instant
 class HistoricalScenarioEngine(
     val pack: HistoricalScenarioPack,
 ) {
-    private val barsByInstrument: Map<String, List<HistoricalDailyBar>> = pack.dailyBars
-        .groupBy(HistoricalDailyBar::instrumentId)
-        .mapValues { (_, bars) -> bars.sortedBy(HistoricalDailyBar::tradingDate) }
-    private val barsByKey: Map<Pair<String, LocalDate>, HistoricalDailyBar> = pack.dailyBars
-        .associateBy { it.instrumentId to it.tradingDate }
+    private val barsByInstrument: Map<String, List<HistoricalDailyBar>> = pack.dailyBarsByInstrument
     private val eventsById: Map<String, HistoricalEventOccurrence> = pack.events
         .associateBy(HistoricalEventOccurrence::id)
     private val eventsByPublishedAt: List<HistoricalEventOccurrence> = pack.events
@@ -33,8 +29,11 @@ class HistoricalScenarioEngine(
 
     val instrumentIds: Set<String> = barsByInstrument.keys
 
-    fun dailyBar(instrumentId: String, tradingDate: LocalDate): HistoricalDailyBar? =
-        barsByKey[instrumentId to tradingDate]
+    fun dailyBar(instrumentId: String, tradingDate: LocalDate): HistoricalDailyBar? {
+        val bars = barsByInstrument[instrumentId].orEmpty()
+        val index = bars.binarySearch { bar -> bar.tradingDate.compareTo(tradingDate) }
+        return bars.getOrNull(index)
+    }
 
     fun dailyBars(
         instrumentId: String,
@@ -42,20 +41,21 @@ class HistoricalScenarioEngine(
         throughInclusive: LocalDate,
     ): List<HistoricalDailyBar> {
         require(fromInclusive <= throughInclusive) { "역사 일봉 조회 시작일은 종료일보다 늦을 수 없습니다." }
-        return barsByInstrument[instrumentId]
-            .orEmpty()
-            .filter { it.tradingDate in fromInclusive..throughInclusive }
+        val bars = barsByInstrument[instrumentId].orEmpty()
+        val fromIndex = bars.lowerBound(fromInclusive)
+        val throughIndex = bars.upperBound(throughInclusive)
+        return if (fromIndex >= throughIndex) emptyList() else bars.subList(fromIndex, throughIndex)
     }
 
-    fun latestDailyBarOnOrBefore(instrumentId: String, tradingDate: LocalDate): HistoricalDailyBar? =
-        barsByInstrument[instrumentId]
-            .orEmpty()
-            .lastOrNull { it.tradingDate <= tradingDate }
+    fun latestDailyBarOnOrBefore(instrumentId: String, tradingDate: LocalDate): HistoricalDailyBar? {
+        val bars = barsByInstrument[instrumentId].orEmpty()
+        return bars.getOrNull(bars.upperBound(tradingDate) - 1)
+    }
 
-    fun nextDailyBarAfter(instrumentId: String, tradingDate: LocalDate): HistoricalDailyBar? =
-        barsByInstrument[instrumentId]
-            .orEmpty()
-            .firstOrNull { it.tradingDate > tradingDate }
+    fun nextDailyBarAfter(instrumentId: String, tradingDate: LocalDate): HistoricalDailyBar? {
+        val bars = barsByInstrument[instrumentId].orEmpty()
+        return bars.getOrNull(bars.upperBound(tradingDate))
+    }
 
     fun closeToCloseLogReturn(
         instrumentId: String,
@@ -119,4 +119,24 @@ class HistoricalScenarioEngine(
 
     fun sourcesFor(event: HistoricalEventOccurrence): List<HistoricalSourceReference> =
         pack.sources.filter { it.id in event.sourceIds }
+
+    private fun List<HistoricalDailyBar>.lowerBound(date: LocalDate): Int {
+        var low = 0
+        var high = size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (this[middle].tradingDate < date) low = middle + 1 else high = middle
+        }
+        return low
+    }
+
+    private fun List<HistoricalDailyBar>.upperBound(date: LocalDate): Int {
+        var low = 0
+        var high = size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (this[middle].tradingDate <= date) low = middle + 1 else high = middle
+        }
+        return low
+    }
 }

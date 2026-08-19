@@ -13,6 +13,8 @@ class HistoricalScenarioPack(
 ) {
     val sources: List<HistoricalSourceReference> = sources.toList()
     val dailyBars: List<HistoricalDailyBar> = dailyBars.toList()
+    val dailyBarsByInstrument: Map<String, List<HistoricalDailyBar>> = this.dailyBars
+        .groupByTo(linkedMapOf(), HistoricalDailyBar::instrumentId)
     val events: List<HistoricalEventOccurrence> = events.toList()
     val corporateActions: List<HistoricalCorporateAction> = corporateActions.toList()
 
@@ -24,9 +26,9 @@ class HistoricalScenarioPack(
         require(this.sources.distinctBy(HistoricalSourceReference::id).size == this.sources.size) {
             "역사 시나리오에 중복된 출처 ID가 있습니다."
         }
-        require(
-            this.dailyBars.distinctBy { it.instrumentId to it.tradingDate }.size == this.dailyBars.size,
-        ) { "역사 시나리오에 같은 종목·거래일의 일봉이 중복되었습니다." }
+        require(this.dailyBarsByInstrument.values.all { bars ->
+            bars.zipWithNext().all { (previous, next) -> previous.tradingDate < next.tradingDate }
+        }) { "역사 시나리오 일봉은 종목별 거래일 오름차순이며 중복이 없어야 합니다." }
         require(this.events.distinctBy(HistoricalEventOccurrence::id).size == this.events.size) {
             "역사 시나리오에 중복된 사건 ID가 있습니다."
         }
