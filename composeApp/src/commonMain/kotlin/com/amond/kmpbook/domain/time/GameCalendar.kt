@@ -41,8 +41,6 @@ object GameCalendar {
     val start: Instant get() = startInstant
     val end: Instant get() = endInstant
 
-    private val krxOpen: LocalTime = LocalTime(9, 0)
-    private val krxClose: LocalTime = LocalTime(15, 30)
     private val usRegularOpen: LocalTime = LocalTime(9, 30)
 
     fun timeZoneFor(market: Market): TimeZone = when {
@@ -138,7 +136,12 @@ object GameCalendar {
         if (isClosed(market, local.date, closedDates)) return MarketSession.CLOSED
 
         if (market.isKorean) {
-            return if (local.time.isInHalfOpenRange(krxOpen, krxClose)) {
+            return if (
+                local.time.isInHalfOpenRange(
+                    KrxSessionCalendar.regularSessionOpen(local.date),
+                    KrxSessionCalendar.regularSessionClose(local.date),
+                )
+            ) {
                 MarketSession.REGULAR
             } else {
                 MarketSession.CLOSED
@@ -180,8 +183,16 @@ object GameCalendar {
     ): MarketSessionWindow? {
         if (isClosed(market, localDate, closedDates)) return null
         val zone = timeZoneFor(market)
-        val openTime = if (market.isKorean) krxOpen else usRegularOpen
-        val closeTime = if (market.isKorean) krxClose else usRegularClose(localDate)
+        val openTime = if (market.isKorean) {
+            KrxSessionCalendar.regularSessionOpen(localDate)
+        } else {
+            usRegularOpen
+        }
+        val closeTime = if (market.isKorean) {
+            KrxSessionCalendar.regularSessionClose(localDate)
+        } else {
+            usRegularClose(localDate)
+        }
         return MarketSessionWindow(
             market = market,
             localDate = localDate,

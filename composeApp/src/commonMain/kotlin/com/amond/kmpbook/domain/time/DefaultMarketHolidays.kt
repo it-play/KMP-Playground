@@ -7,7 +7,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
 
 /**
- * Deterministic full-day exchange calendars for the 2026–2040 campaign.
+ * Deterministic full-day exchange calendars for the bundled 2021–2040 history and campaign.
  *
  * Korean statutory and substitute holidays, regular election days, Korean
  * lunisolar holidays, KRX year-end closure, and the NYSE recurring holiday set
@@ -19,12 +19,12 @@ object DefaultMarketHolidays {
     fun supportsYear(year: Int): Boolean = year in CALENDAR_YEARS
 
     fun closedDates(market: Market, year: Int): Set<LocalDate> {
-        require(supportsYear(year)) { "기본 휴장일 달력은 2025~2041년을 지원합니다." }
+        require(supportsYear(year)) { "기본 휴장일 달력은 2021~2041년을 지원합니다." }
         return CLOSED_DATES_BY_YEAR.getValue(year).getValue(market)
     }
 
     fun closedDatesByMarket(year: Int): Map<Market, Set<LocalDate>> {
-        require(supportsYear(year)) { "기본 휴장일 달력은 2025~2041년을 지원합니다." }
+        require(supportsYear(year)) { "기본 휴장일 달력은 2021~2041년을 지원합니다." }
         return CLOSED_DATES_BY_YEAR.getValue(year)
     }
 
@@ -32,7 +32,7 @@ object DefaultMarketHolidays {
      * KSD를 포함한 한국 금융업무 공휴일이다. KRX만 쉬는 연말 폐장일은 포함하지 않는다.
      */
     fun koreanFinancialClosedDates(year: Int): Set<LocalDate> {
-        require(supportsYear(year)) { "기본 한국 금융업무 달력은 2025~2041년을 지원합니다." }
+        require(supportsYear(year)) { "기본 한국 금융업무 달력은 2021~2041년을 지원합니다." }
         return koreanFinancialClosedDatesForCalendarYear(year)
     }
 
@@ -53,7 +53,7 @@ object DefaultMarketHolidays {
         return holidays
     }
 
-    private val CALENDAR_YEARS: IntRange = 2025..2041
+    private val CALENDAR_YEARS: IntRange = 2021..2041
     private val WEEKEND: Set<DayOfWeek> = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
 
     /**

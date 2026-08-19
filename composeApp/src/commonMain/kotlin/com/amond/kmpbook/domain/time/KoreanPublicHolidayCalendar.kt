@@ -9,6 +9,7 @@ import kotlinx.datetime.plus
 internal object KoreanPublicHolidayCalendar {
     fun closedDates(year: Int): Set<LocalDate> {
         require(year in SUPPORTED_YEARS) { "한국 공휴일 계산 범위를 벗어났습니다: $year" }
+        HISTORICAL_CLOSED_DATES[year]?.let { return it }
         val occasions = holidayOccasions(year)
         val originalDates = occasions.flatMapTo(mutableSetOf()) { occasion -> occasion.dates }
         val occurrencesByDate = occasions
@@ -168,6 +169,50 @@ internal object KoreanPublicHolidayCalendar {
         SATURDAY_OR_SUNDAY,
     }
 
-    private val SUPPORTED_YEARS: IntRange = 2025..2041
+    /**
+     * 2021~2024는 대체공휴일 대상 확대와 임시공휴일이 연중 바뀐 경계라, 당시 확정된
+     * 금융시장 휴업일을 명시한다. 2025년 이후는 위 규칙 계산 경로를 사용한다.
+     * KRX 휴장 규칙: https://global.krx.co.kr/contents/GLB/06/0602/0602020204/GLB0602020204T1.jsp
+     */
+    private val HISTORICAL_CLOSED_DATES: Map<Int, Set<LocalDate>> = mapOf(
+        2021 to setOf(
+            LocalDate(2021, 1, 1),
+            LocalDate(2021, 2, 11), LocalDate(2021, 2, 12), LocalDate(2021, 2, 13),
+            LocalDate(2021, 3, 1), LocalDate(2021, 5, 1), LocalDate(2021, 5, 5),
+            LocalDate(2021, 5, 19), LocalDate(2021, 6, 6), LocalDate(2021, 8, 15),
+            LocalDate(2021, 8, 16), LocalDate(2021, 9, 20), LocalDate(2021, 9, 21),
+            LocalDate(2021, 9, 22), LocalDate(2021, 10, 3), LocalDate(2021, 10, 4),
+            LocalDate(2021, 10, 9), LocalDate(2021, 10, 11), LocalDate(2021, 12, 25),
+        ),
+        2022 to setOf(
+            LocalDate(2022, 1, 1), LocalDate(2022, 1, 31), LocalDate(2022, 2, 1),
+            LocalDate(2022, 2, 2), LocalDate(2022, 3, 1), LocalDate(2022, 3, 9),
+            LocalDate(2022, 5, 1), LocalDate(2022, 5, 5), LocalDate(2022, 5, 8),
+            LocalDate(2022, 6, 1), LocalDate(2022, 6, 6), LocalDate(2022, 8, 15),
+            LocalDate(2022, 9, 9), LocalDate(2022, 9, 10), LocalDate(2022, 9, 11),
+            LocalDate(2022, 9, 12), LocalDate(2022, 10, 3), LocalDate(2022, 10, 9),
+            LocalDate(2022, 10, 10), LocalDate(2022, 12, 25),
+        ),
+        2023 to setOf(
+            LocalDate(2023, 1, 1), LocalDate(2023, 1, 21), LocalDate(2023, 1, 22),
+            LocalDate(2023, 1, 23), LocalDate(2023, 1, 24), LocalDate(2023, 3, 1),
+            LocalDate(2023, 5, 1), LocalDate(2023, 5, 5), LocalDate(2023, 5, 27),
+            LocalDate(2023, 5, 29), LocalDate(2023, 6, 6), LocalDate(2023, 8, 15),
+            LocalDate(2023, 9, 28), LocalDate(2023, 9, 29), LocalDate(2023, 9, 30),
+            LocalDate(2023, 10, 2), LocalDate(2023, 10, 3), LocalDate(2023, 10, 9),
+            LocalDate(2023, 12, 25),
+        ),
+        2024 to setOf(
+            LocalDate(2024, 1, 1), LocalDate(2024, 2, 9), LocalDate(2024, 2, 10),
+            LocalDate(2024, 2, 11), LocalDate(2024, 2, 12), LocalDate(2024, 3, 1),
+            LocalDate(2024, 4, 10), LocalDate(2024, 5, 1), LocalDate(2024, 5, 5),
+            LocalDate(2024, 5, 6), LocalDate(2024, 5, 15), LocalDate(2024, 6, 6),
+            LocalDate(2024, 8, 15), LocalDate(2024, 9, 16), LocalDate(2024, 9, 17),
+            LocalDate(2024, 9, 18), LocalDate(2024, 10, 1), LocalDate(2024, 10, 3),
+            LocalDate(2024, 10, 9), LocalDate(2024, 12, 25),
+        ),
+    )
+
+    private val SUPPORTED_YEARS: IntRange = 2021..2041
     private val WEEKEND: Set<DayOfWeek> = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
 }

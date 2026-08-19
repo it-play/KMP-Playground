@@ -20,7 +20,8 @@ internal object NyseHolidayCalendar {
         add(nthWeekday(year, 2, DayOfWeek.MONDAY, 3))
         add(easterSunday(year).minus(2, DateTimeUnit.DAY))
         add(lastWeekday(year, 5, DayOfWeek.MONDAY))
-        add(observedFixedHoliday(LocalDate(year, 6, 19)))
+        // NYSE/Nasdaq began observing Juneteenth as a full-day market holiday in 2022.
+        if (year >= 2022) add(observedFixedHoliday(LocalDate(year, 6, 19)))
         add(observedFixedHoliday(LocalDate(year, 7, 4)))
         add(nthWeekday(year, 9, DayOfWeek.MONDAY, 1))
         add(nthWeekday(year, 11, DayOfWeek.THURSDAY, 4))
@@ -32,7 +33,7 @@ internal object NyseHolidayCalendar {
      * 후보일이 주말이거나 관측 공휴일이면 다른 날짜로 이동시키지 않고 제외한다.
      */
     fun earlyCloseDates(year: Int): Set<LocalDate> {
-        require(year in SUPPORTED_YEARS) { "NYSE 조기폐장 달력은 2025~2041년을 지원합니다." }
+        require(year in SUPPORTED_YEARS) { "NYSE 조기폐장 달력은 2021~2041년을 지원합니다." }
         return EARLY_CLOSE_DATES_BY_YEAR.getValue(year)
     }
 
@@ -117,7 +118,7 @@ internal object NyseHolidayCalendar {
         return LocalDate(year, month, day)
     }
 
-    private val SUPPORTED_YEARS: IntRange = 2025..2041
+    private val SUPPORTED_YEARS: IntRange = 2021..2041
     private val EARLY_CLOSE: LocalTime = LocalTime(13, 0)
     private val EARLY_EXTENDED_CLOSE: LocalTime = LocalTime(17, 0)
     private val FULL_DAY_CLOSE: LocalTime = LocalTime(16, 0)
