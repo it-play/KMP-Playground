@@ -162,7 +162,8 @@ internal class LauncherFrame(
     }
 
     fun showReady(prepared: PreparedLaunch) = onEdt {
-        statusLabel.isVisible = false
+        statusLabel.text = if (prepared.warning == null) "실행 준비 완료" else "기존 버전 실행 가능"
+        statusLabel.isVisible = true
         versionLabel.text = "v${prepared.installation.record.document.feed.version}"
         versionLabel.isVisible = true
         progressBar.isIndeterminate = false

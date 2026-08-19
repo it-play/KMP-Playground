@@ -73,6 +73,7 @@ internal class LauncherUpdateService(
         progress.report(ProgressUpdate("확인 중", 0.02))
         val document = releaseSource.load()
         enforceMonotonicRelease(document.feed, activeFeed)
+        resolveCurrentInstallation(progress, document.feed, activeFeed)?.let { return it }
 
         progress.report(ProgressUpdate("설치 준비 중", 0.06))
         val inventoryPath = artifacts.obtain(document.feed.game.inventory, "json") { copied, total ->
@@ -121,6 +122,33 @@ internal class LauncherUpdateService(
         val record = InstallationRecord(document, inventoryBytes, inventory)
         progress.report(ProgressUpdate("마무리 중", 1.0))
         return ActiveInstallation(directoryName, gameRoot, executable, record)
+    }
+
+    private fun resolveCurrentInstallation(
+        progress: ProgressSink,
+        candidate: StableFeed,
+        activeFeed: StableFeed?,
+    ): ActiveInstallation? {
+        if (candidate != activeFeed) return null
+
+        progress.report(ProgressUpdate("파일 확인 중", 0.08))
+        val active = try {
+            activeResolver.resolveOrNull()
+        } catch (error: LauncherException) {
+            logger.error(error)
+            return null
+        } ?: return null
+        if (active.record.document.feed != candidate) return null
+
+        progress.report(ProgressUpdate("파일 확인 중", 0.88))
+        val debugArchive = artifacts.obtain(candidate.debugBundle, "zip") { copied, total ->
+            progress.report(ProgressUpdate("파일 확인 중", scaled(copied, total, 0.88, 0.96)))
+        }
+        if (!debugInstaller.isInstalledFrom(debugArchive, candidate.buildCohort)) return null
+
+        logger.info("release-current:${active.directoryName}")
+        progress.report(ProgressUpdate("실행 준비 중", 1.0))
+        return active
     }
 
     private fun loadTrustedActiveFeedOrNull(): StableFeed? {

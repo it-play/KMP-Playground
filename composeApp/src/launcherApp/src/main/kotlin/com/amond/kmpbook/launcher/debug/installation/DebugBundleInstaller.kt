@@ -6,6 +6,7 @@ import com.amond.kmpbook.launcher.filesystem.SafeFiles
 import com.amond.kmpbook.launcher.filesystem.SafePathPolicy
 import com.amond.kmpbook.launcher.filesystem.SecureZipExtractor
 import com.amond.kmpbook.launcher.filesystem.ZipExtractionLimits
+import com.amond.kmpbook.launcher.foundation.DigestUtils
 import com.amond.kmpbook.launcher.foundation.LauncherException
 import com.amond.kmpbook.launcher.release.artifact.ArtifactStore
 import com.amond.kmpbook.launcher.verification.BuildCohortVerifier
@@ -13,6 +14,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.util.UUID
+import java.util.zip.ZipFile
 import kotlin.io.path.invariantSeparatorsPathString
 
 internal class DebugBundleInstaller(
@@ -42,6 +44,29 @@ internal class DebugBundleInstaller(
                 .forEach { stale -> SafeFiles.deleteOwnedTree(stale, paths.mods) }
         }
     }
+
+    fun isInstalledFrom(archive: Path, expectedCohort: String): Boolean = runCatching {
+        if (!Files.exists(target, LinkOption.NOFOLLOW_LINKS)) return false
+        verifyClosure(target)
+        cohortVerifier.verifyDebugBundle(target, expectedCohort)
+        ZipFile(archive.toFile()).use { zip ->
+            val entries = zip.entries().asSequence().toList()
+            if (entries.any { it.isDirectory } || entries.map { it.name }.toSet() != EXPECTED_FILES ||
+                entries.size != EXPECTED_FILES.size
+            ) {
+                throw LauncherException("debug-archive-closure", "디버그 번들 원본의 파일 집합이 올바르지 않습니다.")
+            }
+            entries.forEach { entry ->
+                val installed = SafePathPolicy.resolve(target, entry.name)
+                val archiveHash = zip.getInputStream(entry).use(DigestUtils::sha256)
+                if (Files.size(installed) != entry.size ||
+                    !DigestUtils.constantTimeEquals(DigestUtils.sha256(installed), archiveHash)
+                ) {
+                    throw LauncherException("debug-installed-integrity", "설치된 디버그 번들이 원본과 일치하지 않습니다.")
+                }
+            }
+        }
+    }.isSuccess
 
     private fun isBundleForCohort(root: Path, cohort: String): Boolean = runCatching {
         verifyClosure(root)
