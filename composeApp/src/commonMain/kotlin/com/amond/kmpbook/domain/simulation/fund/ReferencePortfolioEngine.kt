@@ -380,7 +380,7 @@ class ReferencePortfolioEngine private constructor(
     ): ReferencePortfolioState = canonicalStateAtCache.getOrPut(definition.ref to at) {
         val methodology = compile(definition)
         val referenceDate = methodology.schedule.marketDate(at)
-        val replayed = initialState(
+        val replayed = initialStateForReplay(
             portfolioId = portfolioIdFor(definition.ref),
             definition = definition,
             atDate = referenceDate,
@@ -413,6 +413,30 @@ class ReferencePortfolioEngine private constructor(
         definitions: Collection<BenchmarkDefinition>,
         referenceDates: Map<BenchmarkRef, LocalDate>,
         at: Instant,
+    ): ReferencePortfolioBook = buildInitialBook(
+        definitions = definitions,
+        referenceDates = referenceDates,
+        at = at,
+        performFullCampaignPreflight = true,
+    )
+
+    /** Rebuilds a canonical book whose identical campaign already passed game-creation preflight. */
+    internal fun initialBookForReplay(
+        definitions: Collection<BenchmarkDefinition>,
+        referenceDates: Map<BenchmarkRef, LocalDate>,
+        at: Instant,
+    ): ReferencePortfolioBook = buildInitialBook(
+        definitions = definitions,
+        referenceDates = referenceDates,
+        at = at,
+        performFullCampaignPreflight = false,
+    )
+
+    private fun buildInitialBook(
+        definitions: Collection<BenchmarkDefinition>,
+        referenceDates: Map<BenchmarkRef, LocalDate>,
+        at: Instant,
+        performFullCampaignPreflight: Boolean,
     ): ReferencePortfolioBook {
         val definitionsByRef = definitionsByRef(definitions)
         require(referenceDates.keys == definitionsByRef.keys) {
@@ -420,8 +444,9 @@ class ReferencePortfolioEngine private constructor(
         }
         val states = linkedMapOf<String, ReferencePortfolioState>()
         definitionsByRef.values.sortedBy(BenchmarkDefinition::ref).forEach { definition ->
+            if (performFullCampaignPreflight) preflightScenario(compile(definition))
             val portfolioId = portfolioIdFor(definition.ref)
-            states[portfolioId] = initialState(
+            states[portfolioId] = initialStateForReplay(
                 portfolioId = portfolioId,
                 definition = definition,
                 atDate = referenceDates.getValue(definition.ref),
@@ -687,7 +712,8 @@ class ReferencePortfolioEngine private constructor(
         return reviewDate
     }
 
-    internal fun initialState(
+    /** Replays one canonical starting state without the game-creation full-campaign preflight. */
+    internal fun initialStateForReplay(
         portfolioId: String,
         definition: BenchmarkDefinition,
         atDate: LocalDate,
@@ -696,7 +722,6 @@ class ReferencePortfolioEngine private constructor(
         val methodology = compile(definition)
         val profile = methodology.profile
         val schedule = methodology.schedule
-        preflightScenario(methodology)
         require(atDate == schedule.marketDate(at)) {
             "The initial reference date must come from the compiled methodology schedule."
         }

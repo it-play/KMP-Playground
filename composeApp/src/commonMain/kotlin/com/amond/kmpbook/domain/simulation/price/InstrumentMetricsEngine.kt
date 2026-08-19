@@ -70,19 +70,22 @@ class InstrumentMetricsEngine(private val seed: Long) {
         stock: StockDefinition,
         at: Instant,
         openingAnnualDistributionYield: Double = stock.dividendYield,
+        openingPrice: Double = stock.initialPrice,
     ): FundFinancialState {
         require(stock.isFundLike)
         require(openingAnnualDistributionYield.isFinite() && openingAnnualDistributionYield in 0.0..1.0)
+        require(openingPrice.isFinite() && openingPrice > 0.0)
         return FundFinancialState(
             stockId = stock.id,
-            navPerUnit = stock.initialPrice,
-            indicativeValuePerUnit = stock.initialPrice,
+            navPerUnit = openingPrice,
+            indicativeValuePerUnit = openingPrice,
             unitsOrNotesOutstanding = stock.sharesOutstanding.toDouble(),
             lastNetFlow = 0.0,
             accruedDistributionPerUnit = openingDistributionAccrualPerUnit(
                 stock,
                 at,
                 openingAnnualDistributionYield,
+                openingPrice,
             ),
             asOf = at,
         )
@@ -97,6 +100,7 @@ class InstrumentMetricsEngine(private val seed: Long) {
         stock: StockDefinition,
         at: Instant,
         openingAnnualDistributionYield: Double,
+        openingPrice: Double,
     ): Double {
         if (stock.instrumentType != InstrumentType.ETF ||
             stock.behavior.distributionFrequency.periodsPerYear <= 0 ||
@@ -131,7 +135,7 @@ class InstrumentMetricsEngine(private val seed: Long) {
                 }
             candidate = candidate.plus(1, DateTimeUnit.DAY)
         }
-        return (stock.initialPrice * openingAnnualDistributionYield *
+        return (openingPrice * openingAnnualDistributionYield *
             stock.behavior.distributionCoverageRatio *
             completedTradingHours / FUND_TRADING_HOURS_PER_YEAR)
             .coerceIn(0.0, MAX_FUND_REFERENCE_VALUE)

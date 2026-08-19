@@ -7,9 +7,10 @@ import com.amond.kmpbook.domain.time.GameCalendar
 /** Shared bounded retention for the recent session grid and the 16-point surveillance window. */
 object CanonicalPriceHistoryRetention {
     const val MAX_HOURLY_BARS: Int = 384
-    const val MAX_ONE_DAY_BARS: Int = 100
+    /** 약 1년의 거래일을 보존해 번들 역사 일봉이 차트에서 잘리지 않게 한다. */
+    const val MAX_ONE_DAY_BARS: Int = 256
     const val CHRONOLOGICAL_HOURLY_TAIL: Int = 256
-    const val CHRONOLOGICAL_ONE_DAY_TAIL: Int = 84
+    const val CHRONOLOGICAL_ONE_DAY_TAIL: Int = 240
     const val POSITIVE_DECISION_DAYS: Int = 16
 
     fun hourly(market: Market, bars: List<PriceBar>): List<PriceBar> {
