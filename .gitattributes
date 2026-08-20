@@ -1,7 +1,9 @@
-*.properties linguist-detectable=true
-*.yaml       linguist-detectable=true
-*.yml        linguist-detectable=true
-*.json       linguist-detectable=true
-*.md         linguist-detectable=true
+*.properties text eol=lf linguist-detectable=true
+*.yaml       text eol=lf linguist-detectable=true
+*.yml        text eol=lf linguist-detectable=true
+*.json       text eol=lf linguist-detectable=true
+*.md         text eol=lf linguist-detectable=true
+*.js         text eol=lf linguist-detectable=true
 
 *.dat -text
+*.gz  -text

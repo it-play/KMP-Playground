@@ -380,7 +380,7 @@ def fetch_text(url: str, retries: int, context: ssl.SSLContext) -> str:
 def atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(text, encoding="utf-8")
+    temporary.write_bytes(text.encode("utf-8"))
     os.replace(temporary, path)
 
 
