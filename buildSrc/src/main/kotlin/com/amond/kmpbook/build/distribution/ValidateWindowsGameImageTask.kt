@@ -23,5 +23,14 @@ abstract class ValidateWindowsGameImageTask : DefaultTask() {
         require(image.resolve("MarketLedger2040.exe").isFile) {
             "The Windows app-image is missing MarketLedger2040.exe: $image"
         }
+        val packagedAppJars = image.resolve("app").listFiles()
+            .orEmpty()
+            .filter { file ->
+                file.isFile && file.name.startsWith("composeApp-desktop-") && file.extension == "jar"
+            }
+        require(packagedAppJars.size == 1) {
+            "The Windows app-image must contain exactly one Compose app JAR: $image"
+        }
+        HistoricalScenarioJarVerifier.verify(packagedAppJars.single().toPath())
     }
 }

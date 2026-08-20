@@ -1,5 +1,7 @@
+import com.amond.kmpbook.build.distribution.ValidateHistoricalScenarioJarTask
 import com.amond.kmpbook.build.distribution.ValidateWindowsGameImageTask
 import org.gradle.api.tasks.bundling.Zip
+import org.gradle.jvm.tasks.Jar
 
 val appVersion = providers.gradleProperty("appVersion").get()
 val appVersionMatch = Regex("""^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$""").matchEntire(appVersion)
@@ -95,10 +97,19 @@ tasks.register("packageDebugBundle") {
 }
 
 val windowsGameImage = layout.buildDirectory.dir("compose/binaries/main/app/MarketLedger2040")
+val validateHistoricalScenarioJar = tasks.register<ValidateHistoricalScenarioJarTask>(
+    "validateHistoricalScenarioJar",
+) {
+    group = "verification"
+    description = "Validates historical scenario and catalog hashes in the packaged Compose JAR."
+    val desktopJar = tasks.named<Jar>("desktopJar")
+    dependsOn(desktopJar)
+    jarFile.set(desktopJar.flatMap(Jar::getArchiveFile))
+}
 val validateWindowsGameImage = tasks.register<ValidateWindowsGameImageTask>("validateWindowsGameImage") {
     group = "verification"
     description = "Validates the Nucleus Windows app-image before release ZIP creation."
-    dependsOn("createDistributable")
+    dependsOn("createDistributable", validateHistoricalScenarioJar)
     imageDirectory.set(windowsGameImage)
 }
 
