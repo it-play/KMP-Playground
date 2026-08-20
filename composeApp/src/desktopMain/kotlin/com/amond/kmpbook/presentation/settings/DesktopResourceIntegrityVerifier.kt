@@ -24,11 +24,11 @@ actual class ResourceIntegrityVerifier actual constructor() {
             val manifestBytes = Res.readBytes(
                 DesktopHistoricalScenarioLoader.AUGUST_2026_MANIFEST_PATH,
             )
-            DesktopHistoricalScenarioParser.resourceReferences(manifestBytes).forEach { reference ->
-                if (Res.readBytes(reference.path).sha256() != reference.contentSha256) {
-                    return@withContext "역사 시나리오 조각이 manifest와 일치하지 않습니다: ${reference.path}"
-                }
-            }
+            val scenarioResourceBytes = DesktopHistoricalScenarioParser
+                .resourceReferences(manifestBytes)
+                .associate { reference -> reference.path to Res.readBytes(reference.path) }
+            // Parser가 child SHA, strict JSON, 선언 레코드 수와 의미 제약을 한 번에 검사한다.
+            DesktopHistoricalScenarioParser.parse(manifestBytes, scenarioResourceBytes)
             resolveBackgroundMusicPlaylist()
             null
         } catch (cancelled: CancellationException) {
@@ -49,11 +49,6 @@ private val EXPECTED_COMPOSE_RESOURCES: List<Triple<String, String, String>> = l
         "종목 카탈로그",
         "files/instruments/market_instrument_catalog_v6.json",
         "9b4eb7f1143a7f28217dac46f657a6ef269a511c6d8011d77bca89d66e0f1bdd",
-    ),
-    Triple(
-        "2026년 8월 역사 시나리오 manifest",
-        DesktopHistoricalScenarioLoader.AUGUST_2026_MANIFEST_PATH,
-        DesktopHistoricalScenarioLoader.AUGUST_2026_MANIFEST_SHA256,
     ),
     Triple(
         "금융 사전",
