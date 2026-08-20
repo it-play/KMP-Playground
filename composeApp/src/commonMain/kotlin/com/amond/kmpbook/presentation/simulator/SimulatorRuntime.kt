@@ -1,8 +1,6 @@
 package com.amond.kmpbook.presentation.simulator
 
 import com.amond.kmpbook.modding.model.ModCapability
-import com.amond.kmpbook.persistence.validation.validateHistoricalScenarioBinding
-import com.amond.kmpbook.persistence.validation.validateSimulatorUiState
 import com.amond.kmpbook.domain.data.InstrumentCatalogSnapshot
 import com.amond.kmpbook.domain.model.corporateaction.CorporateActionKind
 import com.amond.kmpbook.domain.model.corporateaction.CorporateActionMath
@@ -267,7 +265,6 @@ import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.domain.time.KofrBusinessCalendar
 import com.amond.kmpbook.domain.time.SecuritiesSettlementCalendar
 import com.amond.kmpbook.presentation.portfolio.AnnualTaxProjectionEngine
-import com.amond.kmpbook.presentation.portfolio.CanonicalCashAccountingReplay
 import com.amond.kmpbook.presentation.portfolio.CanonicalDailyPriceBarProjection
 import com.amond.kmpbook.presentation.portfolio.CanonicalPortfolioAccountingTotals
 import com.amond.kmpbook.presentation.portfolio.CanonicalPriceHistoryRetention
@@ -275,7 +272,6 @@ import com.amond.kmpbook.presentation.portfolio.CanonicalTradeCostMode
 import com.amond.kmpbook.presentation.portfolio.CanonicalTradeCostProjection
 import com.amond.kmpbook.presentation.portfolio.canonicalDayOrderSessionClose
 import com.amond.kmpbook.presentation.portfolio.canonicalPendingTaxSettlementTradeIds
-import com.amond.kmpbook.presentation.portfolio.pendingTaxSettlementRatesMatchExecutionFacts
 import com.amond.kmpbook.presentation.portfolio.CanonicalTaxAccountingReplay
 import com.amond.kmpbook.presentation.portfolio.CanonicalTradingLedgerValidation
 import com.amond.kmpbook.presentation.portfolio.CashAdjustmentRecord
@@ -677,6 +673,7 @@ internal class SimulatorRuntime(
     private val historicalScenarioPack: HistoricalScenarioPack? = null,
     startInSetup: Boolean = false,
     private val performReferencePortfolioPreflight: Boolean = !startInSetup,
+    private val performHistoricalScenarioCoverageValidation: Boolean = true,
 ) {
     var options: NewGameOptions = initialOptions
         private set
@@ -937,7 +934,9 @@ internal class SimulatorRuntime(
             require(historicalScenarioEngine?.instrumentIds.orEmpty().all(stockById::containsKey)) {
                 "역사 시나리오에 현재 종목 카탈로그에 없는 일봉이 있습니다."
             }
-            validateHistoricalScenarioCoverage()
+            if (performHistoricalScenarioCoverageValidation) {
+                validateHistoricalScenarioCoverage()
+            }
         }
         val initialDynamics = marketDynamicsEngine.snapshot()
         macro = macro.copy(
@@ -1965,7 +1964,7 @@ internal class SimulatorRuntime(
                 corporateActions = state.corporateActionLedger,
                 currentTime = state.currentTime,
             ) == null,
-        ) { "저장된 주문·체결 원장이 canonical 생성자·상태 불변식을 위반합니다." }
+        ) { "저장된 주문·체결 원장이 기본 참조·상태 불변식을 위반합니다." }
         orders.clear()
         orders += state.orders.map { order -> order.copy() }
         trades.clear()
@@ -2049,19 +2048,8 @@ internal class SimulatorRuntime(
                 lifecycle.finalDisposition.entitledQuantity != null &&
                 lifecycle.finalDisposition.entitledCostBasis != null
         }) { "청산 대기 상태에는 확정된 수량과 원가가 필요합니다." }
-        require(holdings.all { (stockId, holding) ->
-            val contractualUnitValue = listingLifecycleStates[stockId]
-                ?.takeIf { lifecycle ->
-                    lifecycle.status == ListingLifecycleStatus.LIQUIDATION_PENDING
-                }
-                ?.finalDisposition
-                ?.takeIf { disposition ->
-                    disposition.type == ListingFinalDispositionType.CASH_LIQUIDATION
-                }
-                ?.cashPerUnit
-            val canonicalCurrentPrice = contractualUnitValue ?: quotes.getValue(stockId).price
-            holding.currentPrice.toBits() == canonicalCurrentPrice.toBits()
-        }) { "저장된 보유 현재가가 canonical 호가·계약상 청산 단가와 다릅니다." }
+        // currentPrice is a derived mark, so restore it from the injected quote/settlement state
+        // instead of requiring a bit-exact persisted cache value.
         updateHoldingPrices()
         listingLifecycleLedger.clear()
         listingLifecycleLedger += state.listingLifecycleLedger
@@ -2077,9 +2065,8 @@ internal class SimulatorRuntime(
             )
         }
         restoreTaxExchangeRateLedger(state)
-        val replayedTaxYears = replayTaxAccountingLedger(requireExistingCanonical = true)
         require(fifoCostBasisBook.lots.all { it.stockId in ids } && fifoBookMatchesHoldings()) {
-            "FIFO 세무원장과 보유 수량이 일치하지 않습니다."
+            "FIFO 세무 lot 수량과 보유 수량이 일치하지 않습니다."
         }
         foreignExchanges.clear()
         foreignExchanges += state.foreignExchangeLedger
@@ -2099,7 +2086,7 @@ internal class SimulatorRuntime(
                 readStockNewsEventIds = state.readStockNewsEventIds,
                 stocksById = stockById,
             ) == null,
-        ) { "저장된 뉴스 읽음 원장이 보존 뉴스·종목 계보와 일치하지 않습니다." }
+        ) { "저장된 뉴스 읽음 원장의 참조가 보존 뉴스·종목과 일치하지 않습니다." }
         readEventIds.clear()
         readEventIds += state.readEventIds
         readStockNewsEventIds.clear()
@@ -2110,9 +2097,9 @@ internal class SimulatorRuntime(
         watchlistedStockIds += state.watchlistedStockIds
         pendingCorporateActions.clear()
         pendingCorporateActions += state.pendingCorporateActions
-        dailyClosePerformanceExtrema = PortfolioPerformanceExtrema.derive(
-            initialCapitalKrw = options.initialCapitalKrw,
-            orderedAssetsKrw = portfolioSnapshots.map { snapshot -> snapshot.totalAssetValueKrw },
+        dailyClosePerformanceExtrema = PortfolioPerformanceExtrema(
+            peakAssetsKrw = state.peakAssetsKrw,
+            maximumDrawdown = state.maximumDrawdown,
         )
         dailyStatistics.clear()
         dailyStatistics += state.dailyStatistics
@@ -2122,20 +2109,6 @@ internal class SimulatorRuntime(
         annualTaxLedgers.putAll(state.annualTaxLedgers)
         taxPaymentNotices.clear()
         taxPaymentNotices += state.taxPaymentNotices
-        require(
-            CanonicalCashAccountingReplay.replay(
-                initialCapitalKrw = options.initialCapitalKrw,
-                campaignSeed = options.seed,
-                currentTime = currentTime,
-                trades = trades,
-                transactionCosts = transactionCosts,
-                foreignExchanges = foreignExchanges,
-                dividends = dividends,
-                taxPaymentNotices = taxPaymentNotices,
-                cashAdjustments = cashAdjustments,
-            ) == cash,
-        ) { "저장된 통화별 현금이 canonical 회계 원장 재생 결과와 다릅니다." }
-        replayedTaxYears.forEach(::recalculateAnnualTax)
 
         dailyTrackers.clear()
         for (stock in stocks) {
@@ -2152,22 +2125,9 @@ internal class SimulatorRuntime(
                 },
             )
         }
-        val marketUi = projectSimulatorMarketUi(
-            campaignSeed = options.seed,
-            currentTime = currentTime,
-            selectedStockId = selectedStockId,
-            stocksById = stockById,
-            quotes = quotes,
-            listingLifecycleStates = listingLifecycleStates,
-            protection = tradingProtectionSnapshot,
-            macro = macro,
-            activeEvents = state.activeEvents,
-        )
-        require(
-            state.marketSessions == marketUi.marketSessions &&
-                state.selectedOrderBook == marketUi.selectedOrderBook &&
-                state.quotes == marketUi.quotes,
-        ) { "저장된 시장 세션·선택 호가창이 canonical UI projection과 다릅니다." }
+        // Market sessions, selected order book, and top-of-book prices are derived UI state.
+        // Rebuild them from restored engine facts without rejecting a save for cache drift.
+        val marketUi = currentMarketUiProjection()
         quotes.clear()
         quotes.putAll(
             marketUi.quotes.mapValues { (_, quote) ->
@@ -10657,32 +10617,18 @@ internal class SimulatorRuntime(
             "세무 환율은 유한한 양수여야 합니다."
         }
         taxExchangeRatesByTradeId.putAll(savedRates)
-        val canonicalPendingSettlements = canonicalPendingTaxSettlementTradeIds(
+        pendingTaxSettlementTradeIds += canonicalPendingTaxSettlementTradeIds(
             trades = trades,
             stocksById = stockById,
             currentTime = currentTime,
         )
-        require(state.pendingTaxSettlementTradeIds == canonicalPendingSettlements) {
-            "미결제 세무 환율 원장이 미국 거래소 체결의 canonical 결제 일정과 다릅니다."
-        }
-        require(
-            pendingTaxSettlementRatesMatchExecutionFacts(
-                pendingTradeIds = canonicalPendingSettlements,
-                transactionCosts = transactionCosts,
-                taxExchangeRatesByTradeId = savedRates,
-            ),
-        ) { "미결제 미국 체결의 세무 환율이 실행 시점 환율 사실과 다릅니다." }
-        pendingTaxSettlementTradeIds += canonicalPendingSettlements
-        require(trades.filter { it.currency == Currency.KRW }.all { trade ->
-            abs(taxExchangeRatesByTradeId.getValue(trade.id) - 1.0) < TAX_RATE_EPSILON
-        }) { "국내 체결의 세무 환율은 1.0이어야 합니다." }
     }
 
     /**
      * 체결 원장을 원래 순서 그대로 다시 재생한다. 해외 미결제 체결도 임시 환율로 lot 수량을
      * 유지하고, 결제일에 환율이 확정되면 같은 재생으로 취득가액과 양도가액을 함께 고친다.
      */
-    private fun replayTaxAccountingLedger(requireExistingCanonical: Boolean = false): Set<Int> {
+    private fun replayTaxAccountingLedger(): Set<Int> {
         val replay = CanonicalTaxAccountingReplay.replay(
             stocksById = stockById,
             orders = orders,
@@ -10704,29 +10650,12 @@ internal class SimulatorRuntime(
                     holding.realizedProfit.toBits() == canonical.realizedProfit.toBits()
             }
         ) { "보유 수량·평균원가·통화·실현손익이 canonical 체결 재생 결과와 다릅니다." }
-        if (requireExistingCanonical) {
-            require(fifoCostBasisBook == replay.fifoCostBasisBook) {
-                "저장된 FIFO 세무원장이 canonical 거래·기업행동·ROC 재생 결과와 다릅니다."
-            }
-            require(realizedGains == replay.realizedGains) {
-                "저장된 실현손익 원장이 canonical 거래·FIFO 재생 결과와 다릅니다."
-            }
-            require(distributionEntitlementOrigins.all { origin ->
-                replay.originExcessReturnOfCapitalGainKrw.getValue(origin.id) ==
-                    origin.excessReturnOfCapitalGainKrw
-            }) { "저장된 ETF ex-date 초과 ROC 원장이 canonical FIFO 재생 결과와 다릅니다." }
-            require(dividends.all { dividend ->
-                replay.dividendExcessReturnOfCapitalGainKrw.getValue(dividend.id) ==
-                    dividend.excessReturnOfCapitalGainKrw
-            }) { "저장된 분배 초과 ROC 원장이 canonical FIFO 재생 결과와 다릅니다." }
-        } else {
-            for (index in distributionEntitlementOrigins.indices) {
-                val origin = distributionEntitlementOrigins[index]
-                distributionEntitlementOrigins[index] = origin.copy(
-                    excessReturnOfCapitalGainKrw =
-                        replay.originExcessReturnOfCapitalGainKrw.getValue(origin.id),
-                )
-            }
+        for (index in distributionEntitlementOrigins.indices) {
+            val origin = distributionEntitlementOrigins[index]
+            distributionEntitlementOrigins[index] = origin.copy(
+                excessReturnOfCapitalGainKrw =
+                    replay.originExcessReturnOfCapitalGainKrw.getValue(origin.id),
+            )
         }
         fifoCostBasisBook = replay.fifoCostBasisBook
         realizedGains.clear()
@@ -11106,22 +11035,25 @@ internal class SimulatorRuntime(
         val WEEKEND = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
         val DEBUG_MUTABLE_PHASES = setOf(GamePhase.PLAYING, GamePhase.PAUSED)
 
-        fun restore(
+        /**
+         * Reconstructs a runtime from a state prepared by its caller. External save payloads must
+         * pass persistence-safety and active-content binding checks before reaching this boundary;
+         * runtime-generated rollback snapshots can be restored directly.
+         */
+        fun restorePreparedState(
             state: SimulatorUiState,
             catalog: InstrumentCatalogSnapshot,
             historicalScenario: HistoricalScenarioPack? = null,
         ): SimulatorRuntime? {
-            if (validateSimulatorUiState(state, catalog) != null ||
-                validateHistoricalScenarioBinding(state, historicalScenario) != null
-            ) {
-                return null
-            }
             return runCatching {
                 SimulatorRuntime(
                     initialOptions = state.options,
                     instrumentCatalog = catalog,
                     historicalScenarioPack = historicalScenario,
                     performReferencePortfolioPreflight = false,
+                    // The app loader already verified the immutable pack; restore must not scan
+                    // every historical daily bar again for the same runtime instance.
+                    performHistoricalScenarioCoverageValidation = false,
                 ).apply { restoreFrom(state) }
             }.getOrElse { error ->
                 if (error is CancellationException) throw error

@@ -21,8 +21,11 @@ import com.amond.kmpbook.domain.simulation.market.MarketMicrostructure
 import com.amond.kmpbook.domain.simulation.event.DebugEventGuide
 import com.amond.kmpbook.domain.time.GameCalendar
 import com.amond.kmpbook.modding.model.ModCapability
-import com.amond.kmpbook.persistence.validation.validateSimulatorUiState
+import com.amond.kmpbook.persistence.validation.diagnoseHistoricalScenarioCanonicalConsistency
+import com.amond.kmpbook.persistence.validation.diagnoseSimulatorUiStateCanonicalConsistency
 import com.amond.kmpbook.persistence.validation.validateHistoricalScenarioBinding
+import com.amond.kmpbook.persistence.validation.validateInstrumentCatalogBinding
+import com.amond.kmpbook.persistence.validation.validateSimulatorUiStatePersistenceSafety
 import com.amond.kmpbook.presentation.trading.OrderRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -135,19 +138,17 @@ class SimulatorViewModel(
         }
     }
 
-    /**
-     * Validates the exact snapshot that will be handed to persistence against the active catalog.
-     * The storage layer can only enforce intrinsic wire invariants because it does not own the
-     * executable catalog; canonical methodology checks therefore belong at this boundary.
-     */
-    fun validateStateForPersistence(state: SimulatorUiState): String? =
-        validateAgainstActiveContent(state, lastCatalog)
-
-    private fun validateAgainstActiveContent(
+    /** Expensive deterministic replay reserved for explicit debug diagnostics. */
+    private fun diagnoseAgainstActiveContent(
         state: SimulatorUiState,
         catalog: InstrumentCatalogSnapshot,
-    ): String? = validateSimulatorUiState(state, catalog)
+    ): String? = validateSimulatorUiStatePersistenceSafety(state)
+        ?: validateInstrumentCatalogBinding(state, catalog)
         ?: validateHistoricalScenarioBinding(state, historicalScenario)
+        ?: diagnoseSimulatorUiStateCanonicalConsistency(state, catalog)
+        ?: historicalScenario?.let { scenario ->
+            diagnoseHistoricalScenarioCanonicalConsistency(state, scenario)
+        }
 
     suspend fun newGame(
         options: NewGameOptions = NewGameOptions(),
@@ -200,7 +201,7 @@ class SimulatorViewModel(
         }
     }
 
-    /** 파일 I/O 없이 저장 계층이 전달한 불변 상태를 검증·복원한다. */
+    /** 저장 계층이 필수 구조를 확인한 상태를 현재 카탈로그·시나리오에 결박해 복원한다. */
     suspend fun restoreGame(
         state: SimulatorUiState,
         catalog: InstrumentCatalogSnapshot,
@@ -222,9 +223,12 @@ class SimulatorViewModel(
         }
         val candidate = state.withDetachedActiveMods()
         val (restored, restoredSnapshot, validationError) = withContext(Dispatchers.Default) {
-            val candidateError = validateAgainstActiveContent(candidate, catalog)
+            // Storage has already checked the untrusted wire payload. Rebind it once here to the
+            // catalog and historical scenario selected after resolving the save's active mods.
+            val candidateError = validateInstrumentCatalogBinding(candidate, catalog)
+                ?: validateHistoricalScenarioBinding(candidate, historicalScenario)
             val preparedRuntime = if (candidateError == null) {
-                SimulatorRuntime.restore(candidate, catalog, historicalScenario)
+                SimulatorRuntime.restorePreparedState(candidate, catalog, historicalScenario)
             } else {
                 null
             }
@@ -919,9 +923,9 @@ class SimulatorViewModel(
     }
 
     internal fun debugValidationStatus(): DebugRuntimeResult {
-        val problem = validateAgainstActiveContent(currentState, lastCatalog)
+        val problem = diagnoseAgainstActiveContent(currentState, lastCatalog)
         return if (problem == null) {
-            DebugRuntimeResult.success("현재 게임 상태가 저장 불변식 검사를 통과했습니다.")
+            DebugRuntimeResult.success("현재 게임 상태가 정밀 일관성 진단을 통과했습니다.")
         } else {
             DebugRuntimeResult.failure("현재 게임 상태가 유효하지 않습니다: $problem")
         }
@@ -1114,10 +1118,10 @@ class SimulatorViewModel(
                 return@withRuntimeAccess result
             }
             val candidate = runtime.snapshot().withDetachedActiveMods()
-            val problem = validateAgainstActiveContent(candidate, lastCatalog)
+            val problem = diagnoseAgainstActiveContent(candidate, lastCatalog)
             if (problem != null) {
                 runtime = requireNotNull(
-                    SimulatorRuntime.restore(before, lastCatalog, historicalScenario),
+                    SimulatorRuntime.restorePreparedState(before, lastCatalog, historicalScenario),
                 )
                 publish()
                 return@withRuntimeAccess DebugRuntimeResult.failure(
@@ -1144,7 +1148,11 @@ class SimulatorViewModel(
             )
         val restoredRuntime = withContext(Dispatchers.Default) {
             checkNotNull(
-                SimulatorRuntime.restore(canonicalState, commandCatalog, historicalScenario),
+                SimulatorRuntime.restorePreparedState(
+                    canonicalState,
+                    commandCatalog,
+                    historicalScenario,
+                ),
             ) {
                 "A Runtime-generated command boundary could not be restored"
             }

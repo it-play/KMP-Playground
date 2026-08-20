@@ -140,7 +140,7 @@ import com.amond.kmpbook.persistence.result.GameSaveDeleted
 import com.amond.kmpbook.persistence.result.GameSaveFailure
 import com.amond.kmpbook.persistence.result.GameSaveResult
 import com.amond.kmpbook.persistence.result.GameSaveSuccess
-import com.amond.kmpbook.persistence.validation.validateSimulatorUiStateIntrinsic
+import com.amond.kmpbook.persistence.validation.validateSimulatorUiStatePersistenceSafety
 import com.amond.kmpbook.presentation.simulator.NewGameOptions
 import com.amond.kmpbook.presentation.portfolio.roundCurrencyForAccounting
 import com.amond.kmpbook.presentation.simulator.SimulatorUiState
@@ -245,7 +245,7 @@ actual class GameSaveStorage actual constructor() {
                 ),
             )
         }
-        val validationError = validateSimulatorUiStateIntrinsic(state)
+        val validationError = validateSimulatorUiStatePersistenceSafety(state)
         if (validationError != null) {
             return@withContext GameSaveFailure(
                 path = targetPath.toString(),
@@ -483,7 +483,7 @@ actual class GameSaveStorage actual constructor() {
                     "검증·복원 pass 사이에 raw payload, JSON 구조 또는 metadata가 달라졌습니다.",
                 )
             }
-            val validationError = validateSimulatorUiStateIntrinsic(envelope.state)
+            val validationError = validateSimulatorUiStatePersistenceSafety(envelope.state)
             if (validationError != null) {
                 return GameLoadFailure(
                     path = targetPath.toString(),

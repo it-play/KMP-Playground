@@ -270,19 +270,39 @@ private val REFERENCE_PORTFOLIO_ASSET_ID_PATTERN =
 private val FIXED_INCOME_ASSET_ID_PATTERN =
     Regex("FI:([a-z0-9][a-z0-9._-]{2,159}):v([0-9]+):([A-Z]+):r([0-9]+):g([0-9]+)")
 
-internal fun validateSimulatorUiState(
+/**
+ * 신뢰할 수 없는 저장 payload를 엔진에 넘기기 전에 필수 안전 불변식만 검증한다.
+ *
+ * 이 경로는 참조 형식·현재 시각·유한 숫자·핵심 ID 참조·중복·가격 봉의 구조만
+ * 확인한다. 회계·세무·뉴스·방법론 원장을 재생하거나 파생 UI/cache를 bit-exact로
+ * 재계산하지 않는다. 현재 실행 콘텐츠와의 결박은 별도 함수에서 확인한다.
+ */
+internal fun validateSimulatorUiStatePersistenceSafety(
+    state: SimulatorUiState,
+): String? = validateSimulatorUiStatePersistenceSafetyInternal(state)
+
+/** 저장 스냅샷이 현재 실행 카탈로그와 같은 콘텐츠에 결박되었는지만 확인한다. */
+internal fun validateInstrumentCatalogBinding(
     state: SimulatorUiState,
     catalog: InstrumentCatalogSnapshot,
-): String? = validateSimulatorUiStateInternal(state, catalog)
+): String? = when {
+    !hasValidCatalogReference(state) ->
+        "저장 데이터의 종목 카탈로그 참조 구조가 유효하지 않습니다."
+    state.catalogReference != catalog.reference ->
+        "저장 데이터의 종목 카탈로그 참조가 현재 번들·모드 종목팩과 일치하지 않습니다."
+    else -> null
+}
+
+/** 전체 결정론적 재생은 일반 save/load가 아닌 명시적 debug 진단에서만 사용한다. */
+internal fun diagnoseSimulatorUiStateCanonicalConsistency(
+    state: SimulatorUiState,
+    catalog: InstrumentCatalogSnapshot? = null,
+): String? = diagnoseSimulatorUiStateCanonicalConsistencyInternal(state, catalog)
 
 /**
- * 카탈로그를 해석하기 전 저장 데이터 자체에서 검증할 수 있는 불변식만 확인한다.
- * 설치된 모드팩이 필요한 canonical 종목·일정 비교는 전체 검증에 맡긴다.
+ * 저장 스냅샷의 역사 콘텐츠 결박과 불변 pregame prefix 비저장만 확인한다.
+ * 역사 뉴스·분할 원장 재생은 [diagnoseHistoricalScenarioCanonicalConsistency]의 명시적 진단이다.
  */
-internal fun validateSimulatorUiStateIntrinsic(state: SimulatorUiState): String? =
-    validateSimulatorUiStateInternal(state, catalog = null)
-
-/** 저장 스냅샷이 현재 실행 중인 역사 팩과 정확히 같은 콘텐츠에 결박되었는지 확인한다. */
 internal fun validateHistoricalScenarioBinding(
     state: SimulatorUiState,
     currentScenario: HistoricalScenarioPack?,
@@ -299,21 +319,17 @@ internal fun validateHistoricalScenarioBinding(
                 "저장 데이터의 역사 시나리오 ID·버전·콘텐츠 해시가 현재 팩과 일치하지 않습니다."
         }
     }
-    if (currentScenario == null) {
-        val hasHistoricalPrefix = state.chartPriceHistory.values.any { histories ->
-            histories.values.any { bars ->
-                bars.any { bar -> bar.endTime <= GameCalendar.startInstant }
-            }
-        }
-        return if (hasHistoricalPrefix) {
-            "역사 시나리오가 없는 저장 데이터에 게임 시작 전 가격 prefix가 포함되어 있습니다."
-        } else {
-            null
-        }
-    }
-    return validateHistoricalNewsLedger(state, currentScenario)
-        ?: validateHistoricalDailyPrefix(state, currentScenario)
+    val gameplayStartsAt = currentScenario?.definition?.gameplayStartsAt ?: GameCalendar.startInstant
+    return validateNoEmbeddedHistoricalDailyPrefix(state, gameplayStartsAt)
 }
+
+/** 역사 뉴스·분할을 현재 팩에서 재생하는 고비용 debug 진단이다. */
+internal fun diagnoseHistoricalScenarioCanonicalConsistency(
+    state: SimulatorUiState,
+    scenario: HistoricalScenarioPack,
+): String? = validateHistoricalScenarioBinding(state, scenario)
+    ?: validateHistoricalScenarioInstrumentReferences(state, scenario)
+    ?: validateHistoricalNewsLedger(state, scenario)
 
 private fun validateHistoricalNewsLedger(
     state: SimulatorUiState,
@@ -408,7 +424,401 @@ private fun validateHistoricalNewsLedger(
     return null
 }
 
-private fun validateSimulatorUiStateInternal(
+private fun validateSimulatorUiStatePersistenceSafetyInternal(
+    state: SimulatorUiState,
+): String? {
+    if (!hasValidCatalogReference(state)) {
+        return "저장 데이터의 종목 카탈로그 참조 구조가 유효하지 않습니다."
+    }
+    if (!hasValidHistoricalScenarioReference(state)) {
+        return "저장 데이터의 역사 시나리오 참조 구조가 유효하지 않습니다."
+    }
+    if (!GameCalendar.isWithinGameRange(state.currentTime) ||
+        state.turn != GameCalendar.turnAt(state.currentTime) ||
+        state.currentTime != GameCalendar.startInstant + state.turn.hours
+    ) {
+        return "현재 게임 시각이 캠페인 범위·시간 격자·턴 번호와 일치하지 않습니다."
+    }
+    val atCampaignEnd = GameCalendar.isFinished(state.currentTime)
+    if (state.phase == GamePhase.SETUP && state.currentTime != GameCalendar.startInstant ||
+        state.phase in setOf(GamePhase.PLAYING, GamePhase.PAUSED) && atCampaignEnd ||
+        state.phase in setOf(GamePhase.SETTLEMENT, GamePhase.FINISHED) && !atCampaignEnd ||
+        state.phase in setOf(GamePhase.SETTLEMENT, GamePhase.FINISHED) && state.screen != Screen.ENDING
+    ) {
+        return "게임 단계가 캠페인 시작·종료 시각과 일치하지 않습니다."
+    }
+    if (!state.options.initialCapitalKrw.isFinite() ||
+        state.options.initialCapitalKrw < NewGameOptions.MIN_INITIAL_CAPITAL_KRW ||
+        state.options.scenarioName.isBlank() ||
+        state.options.scenarioName.length > NewGameOptions.MAX_GAME_LABEL_LENGTH ||
+        state.options.difficultyName.isBlank() ||
+        state.options.difficultyName.length > NewGameOptions.MAX_GAME_LABEL_LENGTH ||
+        state.options.activeMods.size > NewGameOptions.MAX_ACTIVE_MODS ||
+        state.options.activeMods.map { it.id }.distinct().size != state.options.activeMods.size ||
+        state.options.activeMods.any { it.validate() != null } ||
+        state.options.initialExternalMarketForces.values.any { !it.isFinite() || it !in 0.0..1.0 }
+    ) {
+        return "새 게임 옵션의 자금·이름·모드·시장 환경이 유효하지 않습니다."
+    }
+    if (state.nextSequence !in 1L..MAX_SAFE_PERSISTED_SEQUENCE ||
+        state.eventEngineSnapshot.sequence !in 0L..MAX_SAFE_PERSISTED_SEQUENCE
+    ) {
+        return "저장된 원장 시퀀스가 안전한 증가 범위가 아닙니다."
+    }
+    if (runCatching { state.macro.validatedCopy() }.isFailure) {
+        return "거시 환경의 금리·물가·성장·환율 상태가 유효하지 않습니다."
+    }
+    val dynamics = state.marketDynamicsSnapshot
+    val dynamicsValues = buildList {
+        addAll(dynamics.regimeProbabilities.values)
+        add(dynamics.conditionalVariance)
+        add(dynamics.newsExcitation)
+        add(dynamics.newsIntensity)
+        add(dynamics.eventSentimentMemory)
+        add(dynamics.liquidityStress)
+        add(dynamics.retailFlow)
+        add(dynamics.institutionalFlow)
+        add(dynamics.downsideMemory)
+        dynamics.previousObservedReturn?.let(::add)
+        addAll(dynamics.effectiveForces.values)
+        addAll(state.externalMarketForcesTarget.values)
+    }
+    if (dynamicsValues.any { !it.isFinite() }) {
+        return "시장 동역학·외부 환경 스냅샷에 유한하지 않은 숫자가 있습니다."
+    }
+
+    if (state.stocks.isEmpty() ||
+        state.stocks.any { it.id.isBlank() } ||
+        state.stocks.map(StockDefinition::id).distinct().size != state.stocks.size
+    ) {
+        return "종목 목록이 비어 있거나 종목 ID가 비어 있거나 중복되었습니다."
+    }
+    val stockIds = state.stocks.mapTo(linkedSetOf(), StockDefinition::id)
+    if (state.corporateFundamentals.any { (stockId, value) ->
+            stockId !in stockIds || value.stockId != stockId || runCatching { value.copy() }.isFailure
+        } ||
+        state.fundFinancialStates.any { (stockId, value) ->
+            stockId !in stockIds || value.stockId != stockId || runCatching { value.copy() }.isFailure
+        } ||
+        state.dailyResetStates.any { (stockId, value) ->
+            stockId !in stockIds || value.productId != stockId || runCatching { value.copy() }.isFailure
+        } ||
+        state.optionStrategyStates.any { (stockId, value) ->
+            stockId !in stockIds || value.productId != stockId || runCatching { value.copy() }.isFailure
+        } ||
+        state.cashCollateralizedPutSpreadStates.any { (stockId, value) ->
+            stockId !in stockIds || value.productId != stockId || runCatching { value.copy() }.isFailure
+        } ||
+        state.etnStates.any { (stockId, value) ->
+            stockId !in stockIds || value.productId != stockId || runCatching { value.copy() }.isFailure
+        } ||
+        state.closedEndFundStates.any { (stockId, value) ->
+            stockId !in stockIds || value.fundId != stockId || runCatching { value.copy() }.isFailure
+        } ||
+        state.lastEvaluatedDistributionDateByStock.keys.any { it !in stockIds } ||
+        state.dailyTradingSurveillance.keys.any { it !in stockIds }
+    ) {
+        return "종목별 재무·상품·감시 상태의 맵 키와 종목 ID가 유효하지 않습니다."
+    }
+    if (state.selectedStockId?.let { it !in stockIds } == true ||
+        state.watchlistedStockIds.any { it !in stockIds }
+    ) {
+        return "선택·관심 종목에 알 수 없는 종목 ID가 있습니다."
+    }
+    if (!state.cashByCurrency.keys.containsAll(Currency.entries) ||
+        state.cashByCurrency.values.any { !it.isFinite() || it < 0.0 }
+    ) {
+        return "현금 잔액에 유한하지 않거나 음수인 값이 있습니다."
+    }
+    if (state.holdings.any { (stockId, holding) ->
+            stockId !in stockIds || stockId != holding.stockId ||
+                !holding.quantity.isFinite() || holding.quantity <= 0.0 ||
+                !holding.averagePrice.isFinite() || holding.averagePrice < 0.0 ||
+                !holding.currentPrice.isFinite() || holding.currentPrice < 0.0 ||
+                !holding.realizedProfit.isFinite()
+        }
+    ) {
+        return "보유 종목의 ID·수량·가격·실현손익이 유효하지 않습니다."
+    }
+
+    if (state.quotes.keys != stockIds || state.quotes.any { (stockId, quote) ->
+            stockId != quote.stockId || quote.timestamp > state.currentTime ||
+                listOf(quote.price, quote.previousClose, quote.open, quote.high, quote.low)
+                    .any { !it.isFinite() || it < 0.0 } ||
+                listOfNotNull(quote.bidPrice, quote.askPrice).any { !it.isFinite() || it < 0.0 } ||
+                quote.high < maxOf(quote.open, quote.price, quote.low) ||
+                quote.low > minOf(quote.open, quote.price, quote.high) ||
+                quote.volume < 0L || !quote.bidQuantity.isFinite() || !quote.askQuantity.isFinite() ||
+                quote.bidQuantity < 0.0 || quote.askQuantity < 0.0 ||
+                quote.bidPrice?.let { bid -> quote.askPrice?.let { ask -> bid > ask } } == true
+        }
+    ) {
+        return "시세 맵의 ID·시각·OHLCV·호가 숫자가 유효하지 않습니다."
+    }
+    if (state.priceHistory.keys != stockIds || state.priceHistory.any { (stockId, bars) ->
+            bars.isEmpty() || bars.size > SimulatorRuntime.MAX_RECENT_BARS ||
+                bars.any { invalidPersistedPriceBar(it, stockId, PriceBarInterval.ONE_HOUR, state.currentTime) } ||
+                bars.zipWithNext().any { (previous, next) -> previous.endTime > next.startTime }
+        }
+    ) {
+        return "시간봉 가격 히스토리의 ID·시각·OHLCV·보존 한도가 유효하지 않습니다."
+    }
+    val chartIntervals = setOf(
+        PriceBarInterval.ONE_DAY,
+        PriceBarInterval.ONE_WEEK,
+        PriceBarInterval.ONE_MONTH,
+        PriceBarInterval.THREE_MONTHS,
+    )
+    if (state.chartPriceHistory.keys != stockIds || state.chartPriceHistory.any { (stockId, histories) ->
+            histories.keys != chartIntervals || histories.any { (interval, bars) ->
+                bars.size > SimulatorRuntime.MAX_CHART_BARS_PER_INTERVAL ||
+                    bars.any { invalidPersistedPriceBar(it, stockId, interval, state.currentTime) } ||
+                    bars.zipWithNext().any { (previous, next) -> previous.endTime > next.startTime }
+            }
+        }
+    ) {
+        return "주기별 차트 히스토리의 ID·시각·OHLCV·보존 한도가 유효하지 않습니다."
+    }
+
+    val orderIds = state.orders.map { it.id }
+    if (orderIds.any(String::isBlank) || orderIds.distinct().size != orderIds.size ||
+        state.orders.any { order ->
+            order.stockId !in stockIds || order.createdAt > state.currentTime ||
+                order.updatedAt > state.currentTime ||
+                !order.quantity.isFinite() || !order.filledQuantity.isFinite() ||
+                order.averageFilledPrice?.isFinite() == false ||
+                runCatching { order.copy() }.isFailure
+        }
+    ) {
+        return "주문의 ID·종목 참조·시각·수량·가격이 유효하지 않습니다."
+    }
+    val ordersById = state.orders.associateBy { it.id }
+    val tradeIds = state.trades.map { it.id }
+    if (tradeIds.any(String::isBlank) || tradeIds.distinct().size != tradeIds.size ||
+        state.trades.any { trade ->
+            trade.stockId !in stockIds || trade.orderId !in ordersById ||
+                ordersById[trade.orderId]?.stockId != trade.stockId || trade.executedAt > state.currentTime ||
+                listOf(trade.quantity, trade.price, trade.commission, trade.tax).any { !it.isFinite() } ||
+                trade.accountingSequence !in 1L until state.nextSequence ||
+                runCatching { trade.copy() }.isFailure
+        }
+    ) {
+        return "체결의 ID·주문·종목 참조·시각·숫자·시퀀스가 유효하지 않습니다."
+    }
+    val tradeIdSet = tradeIds.toSet()
+    val tradesById = state.trades.associateBy { it.id }
+    if (state.transactionCosts.mapTo(linkedSetOf()) { it.tradeId } != tradeIdSet ||
+        state.transactionCosts.any { cost ->
+            val trade = tradesById[cost.tradeId]
+            trade == null || trade.stockId != cost.stockId || trade.currency != cost.currency ||
+                cost.stockId !in stockIds || cost.paidAt > state.currentTime ||
+                !cost.commission.isFinite() || cost.commission < 0.0 ||
+                !cost.saleTax.isFinite() || cost.saleTax < 0.0 ||
+                !cost.exchangeRateToKrw.isFinite() || cost.exchangeRateToKrw <= 0.0
+        } ||
+        state.taxExchangeRatesByTradeId.keys != tradeIdSet ||
+        state.taxExchangeRatesByTradeId.values.any { !it.isFinite() || it <= 0.0 } ||
+        state.pendingTaxSettlementTradeIds.any { it !in tradeIdSet }
+    ) {
+        return "체결 비용·세무 환율 참조와 숫자가 유효하지 않습니다."
+    }
+
+    val newsIds = state.newsEvents.map(GameEvent::id)
+    val activeIds = state.activeEvents.map(GameEvent::id)
+    val engineActiveIds = state.eventEngineSnapshot.activeEvents.map(GameEvent::id)
+    if (newsIds.any(String::isBlank) || newsIds.distinct().size != newsIds.size ||
+        activeIds.any(String::isBlank) || activeIds.distinct().size != activeIds.size ||
+        engineActiveIds.any(String::isBlank) || engineActiveIds.distinct().size != engineActiveIds.size ||
+        state.newsEvents.any { it.startsAt > state.currentTime } ||
+        (state.newsEvents + state.activeEvents + state.eventEngineSnapshot.activeEvents).any { event ->
+            event.affectedStockIds.any { it !in stockIds } ||
+                listOf(
+                    event.impact.shockReturn,
+                    event.impact.hourlyDrift,
+                    event.impact.volatilityMultiplier,
+                    event.impact.volumeMultiplier,
+                    event.impact.liquidityMultiplier,
+                    event.impact.sentiment,
+                ).any { !it.isFinite() }
+        } ||
+        state.readEventIds.any { it !in newsIds } ||
+        state.readStockNewsEventIds.any { (stockId, ids) ->
+            stockId !in stockIds || ids.any { it !in newsIds }
+        }
+    ) {
+        return "이벤트 원장의 ID·시각·종목 참조·영향 숫자가 유효하지 않습니다."
+    }
+
+    if (!state.currentBenchmarkValue.isFinite() || state.currentBenchmarkValue <= 0.0 ||
+        !state.peakAssetsKrw.isFinite() || state.peakAssetsKrw < 0.0 ||
+        !state.maximumDrawdown.isFinite() || state.maximumDrawdown !in 0.0..1.0 ||
+        state.benchmarkHistory.any { point ->
+            point.timestamp > state.currentTime || !point.value.isFinite() || point.value <= 0.0 ||
+                !point.cumulativeReturn.isFinite()
+        } ||
+        state.benchmarkHistory.zipWithNext().any { (previous, next) -> previous.timestamp >= next.timestamp } ||
+        state.dailyStatistics.any { daily ->
+            listOf(
+                daily.totalAssetsKrw,
+                daily.cashValueKrw,
+                daily.stockValueKrw,
+                daily.dailyReturn,
+                daily.drawdown,
+                daily.benchmarkValue,
+                daily.usdKrw,
+            ).any { !it.isFinite() } || daily.totalAssetsKrw < 0.0 || daily.cashValueKrw < 0.0 ||
+                daily.stockValueKrw < 0.0 || daily.drawdown !in 0.0..1.0 ||
+                daily.benchmarkValue <= 0.0 || daily.usdKrw <= 0.0
+        } ||
+        state.portfolioSnapshots.any { snapshot ->
+            snapshot.timestamp > state.currentTime ||
+                snapshot.accountingSequenceExclusiveUpperBound !in 0L..state.nextSequence ||
+                runCatching { snapshot.copy() }.isFailure ||
+                snapshot.cashByCurrency.values.any { !it.isFinite() } ||
+                snapshot.exchangeRatesToKrw.values.any { !it.isFinite() } ||
+                listOf(
+                    snapshot.initialCapitalKrw,
+                    snapshot.realizedProfitKrw,
+                    snapshot.cumulativeCommissionKrw,
+                    snapshot.cumulativeTaxKrw,
+                ).any { !it.isFinite() }
+        }
+    ) {
+        return "포트폴리오·일별 통계·벤치마크의 시각과 숫자가 유효하지 않습니다."
+    }
+
+    if (state.pendingEtfReferenceReturns.any { (stockId, value) ->
+            stockId !in stockIds || !value.isFinite()
+        } ||
+        state.pendingClosedEventLogReturns.any { (stockId, value) ->
+            stockId !in stockIds || !value.isFinite()
+        } ||
+        state.pendingFundFlowRates.any { (stockId, value) ->
+            stockId !in stockIds || !value.isFinite()
+        }
+    ) {
+        return "이월 시장 영향의 종목 참조 또는 숫자가 유효하지 않습니다."
+    }
+    if (state.pendingCorporateActions.map { it.id }.hasBlankOrDuplicateIds() ||
+        state.pendingCorporateActions.any { it.stockId !in stockIds || runCatching { it.copy() }.isFailure } ||
+        state.corporateActionLedger.map { it.id }.hasBlankOrDuplicateIds() ||
+        state.corporateActionLedger.any {
+            it.stockId !in stockIds || it.effectiveAt > state.currentTime ||
+                it.accountingSequence !in 1L until state.nextSequence || runCatching { it.copy() }.isFailure
+        } ||
+        state.listingLifecycleLedger.map { it.id }.hasBlankOrDuplicateIds() ||
+        state.listingLifecycleLedger.any {
+            it.stockId !in stockIds || it.sequence <= 0L || runCatching { it.copy() }.isFailure
+        } ||
+        state.listingLifecycleStates.any { (stockId, value) ->
+            stockId !in stockIds || value.stockId != stockId || runCatching { value.copy() }.isFailure
+        }
+    ) {
+        return "기업행동·상장 원장의 ID·종목 참조·시퀀스가 유효하지 않습니다."
+    }
+    if (state.pendingDistributionEntitlements.map { it.id }.hasBlankOrDuplicateIds() ||
+        state.pendingDistributionEntitlements.any {
+            it.stockId !in stockIds || runCatching { it.copy() }.isFailure
+        } ||
+        state.distributionEntitlementOrigins.map { it.id }.hasBlankOrDuplicateIds() ||
+        state.distributionEntitlementOrigins.any {
+            it.stockId !in stockIds || it.establishedAt > state.currentTime ||
+                it.accountingSequence !in 1L until state.nextSequence ||
+                runCatching { it.copy() }.isFailure
+        } ||
+        state.dividendLedger.map { it.id }.hasBlankOrDuplicateIds() ||
+        state.dividendLedger.any {
+            it.stockId !in stockIds || it.paidAt > state.currentTime ||
+                it.accountingSequence !in 1L until state.nextSequence ||
+                listOf(
+                    it.grossPerUnit,
+                    it.entitledQuantity,
+                    it.grossAmount,
+                    it.withholdingTax,
+                    it.netAmount,
+                    it.exchangeRateToKrw,
+                    it.taxableIncomeAmount,
+                    it.returnOfCapitalAmount,
+                ).any { value -> !value.isFinite() }
+        } ||
+        state.foreignExchangeLedger.map { it.id }.hasBlankOrDuplicateIds() ||
+        state.foreignExchangeLedger.any {
+            it.executedAt > state.currentTime ||
+                it.accountingSequence !in 1L until state.nextSequence ||
+                listOf(it.sourceAmount, it.receivedAmount, it.usdKrwRate, it.spreadCostKrw)
+                    .any { value -> !value.isFinite() } ||
+                runCatching { it.copy() }.isFailure
+        } ||
+        state.cashAdjustmentLedger.map { it.id }.hasBlankOrDuplicateIds() ||
+        state.cashAdjustmentLedger.any {
+            it.adjustedAt > state.currentTime ||
+                it.accountingSequence !in 1L until state.nextSequence ||
+                runCatching { it.copy() }.isFailure
+        } ||
+        state.taxPaymentNotices.map { it.id }.hasBlankOrDuplicateIds() ||
+        state.taxPaymentNotices.any {
+            it.paidAt?.let { paidAt -> paidAt > state.currentTime } == true ||
+                it.accountingSequence?.let { sequence -> sequence !in 1L until state.nextSequence } == true ||
+                runCatching { it.copy() }.isFailure
+        }
+    ) {
+        return "분배·현금·세금 원장의 ID·종목 참조·시퀀스가 유효하지 않습니다."
+    }
+    if (runCatching { state.fifoCostBasisBook.copy() }.isFailure ||
+        state.fifoCostBasisBook.lots.any { lot ->
+            lot.stockId !in stockIds || !lot.remainingQuantity.isFinite() ||
+                runCatching { lot.copy() }.isFailure
+        } ||
+        state.realizedGains.map { it.tradeId }.distinct().size != state.realizedGains.size ||
+        state.realizedGains.any { gain ->
+            gain.tradeId !in tradeIdSet || gain.stockId !in stockIds || gain.soldAt > state.currentTime ||
+                listOf(
+                    gain.quantity,
+                    gain.proceeds,
+                    gain.costBasis,
+                    gain.commission,
+                    gain.saleTax,
+                    gain.exchangeRateToKrw,
+                ).any { !it.isFinite() }
+        }
+    ) {
+        return "FIFO·실현손익 원장의 ID·종목 참조·시각·숫자가 유효하지 않습니다."
+    }
+    val accountingSequences = buildList {
+        state.trades.mapTo(this) { it.accountingSequence }
+        state.dividendLedger.mapTo(this) { it.accountingSequence }
+        state.corporateActionLedger.mapTo(this) { it.accountingSequence }
+        state.distributionEntitlementOrigins.mapTo(this) { it.accountingSequence }
+        state.taxPaymentNotices.mapNotNullTo(this) { it.accountingSequence }
+        state.foreignExchangeLedger.mapTo(this) { it.accountingSequence }
+        state.cashAdjustmentLedger.mapTo(this) { it.accountingSequence }
+    }
+    if (accountingSequences.distinct().size != accountingSequences.size) {
+        return "전역 회계 원장 시퀀스가 중복되었습니다."
+    }
+    state.selectedOrderBook?.let { orderBook ->
+        if (orderBook.stockId !in stockIds || orderBook.timestamp > state.currentTime ||
+            runCatching { orderBook.copy() }.isFailure
+        ) {
+            return "선택 호가창의 종목 참조·시각·가격 구조가 유효하지 않습니다."
+        }
+    }
+    return null
+}
+
+private fun invalidPersistedPriceBar(
+    bar: PriceBar,
+    stockId: String,
+    interval: PriceBarInterval,
+    currentTime: kotlin.time.Instant,
+): Boolean = bar.stockId != stockId || bar.step != interval || bar.endTime > currentTime ||
+    listOf(bar.open, bar.high, bar.low, bar.close).any { !it.isFinite() } ||
+    runCatching { bar.copy() }.isFailure
+
+private fun List<String>.hasBlankOrDuplicateIds(): Boolean =
+    any(String::isBlank) || distinct().size != size
+
+private fun diagnoseSimulatorUiStateCanonicalConsistencyInternal(
     state: SimulatorUiState,
     catalog: InstrumentCatalogSnapshot?,
 ): String? {
@@ -2381,7 +2791,7 @@ private fun hasValidHistoricalScenarioReference(state: SimulatorUiState): Boolea
     ) == stored
 }.getOrDefault(false)
 
-private fun validateHistoricalDailyPrefix(
+private fun validateHistoricalScenarioInstrumentReferences(
     state: SimulatorUiState,
     scenario: HistoricalScenarioPack,
 ): String? {
@@ -2389,9 +2799,16 @@ private fun validateHistoricalDailyPrefix(
     if (!state.stocks.mapTo(hashSetOf(), StockDefinition::id).containsAll(scenarioInstrumentIds)) {
         return "현재 역사 시나리오 일봉에 저장 종목 카탈로그에 없는 종목이 있습니다."
     }
+    return null
+}
+
+private fun validateNoEmbeddedHistoricalDailyPrefix(
+    state: SimulatorUiState,
+    gameplayStartsAt: kotlin.time.Instant,
+): String? {
     val embeddedImmutablePrefix = state.chartPriceHistory.entries.firstOrNull { (_, histories) ->
         histories.values.any { bars ->
-            bars.any { bar -> bar.endTime <= scenario.definition.gameplayStartsAt }
+            bars.any { bar -> bar.endTime <= gameplayStartsAt }
         }
     }
     if (embeddedImmutablePrefix != null) {

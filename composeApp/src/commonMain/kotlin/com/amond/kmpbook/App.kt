@@ -392,14 +392,6 @@ fun App(
             try {
                 persistenceOperationMutex.withLock {
                     val stateToSave = viewModel.currentState
-                    val validationError = withContext(Dispatchers.Default) {
-                        viewModel.validateStateForPersistence(stateToSave)
-                    }
-                    if (validationError != null) {
-                        saveStatus = "현재 게임 상태가 종목 방법론과 일치하지 않아 저장하지 않았습니다: " +
-                            validationError
-                        return@withLock
-                    }
                     when (val result = storage.save(stateToSave, name)) {
                         is GameSaveSuccess -> {
                             saveStatus = "${result.path.substringAfterLast('/').substringAfterLast('\\')} 파일로 저장했습니다."
@@ -469,7 +461,7 @@ fun App(
             return@loadGameAction
         }
         isLoadingGame = true
-        persistenceOperationDetail = "저장 파일의 무결성과 장부 구조를 확인하고 있습니다."
+        persistenceOperationDetail = "저장 파일의 무결성과 필수 구조를 확인하고 있습니다."
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 persistenceOperationMutex.withLock {
