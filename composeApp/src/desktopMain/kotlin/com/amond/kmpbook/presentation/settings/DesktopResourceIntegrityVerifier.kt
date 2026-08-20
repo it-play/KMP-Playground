@@ -1,6 +1,7 @@
 package com.amond.kmpbook.presentation.settings
 
 import com.amond.kmpbook.audio.resolveBackgroundMusicPlaylist
+import com.amond.kmpbook.domain.history.DesktopHistoricalScenarioLoader
 import com.amond.kmpbook.domain.history.DesktopHistoricalScenarioParser
 import java.security.MessageDigest
 import kmpbook.composeapp.generated.resources.Res
@@ -13,11 +14,16 @@ actual class ResourceIntegrityVerifier actual constructor() {
         try {
             EXPECTED_COMPOSE_RESOURCES.forEach { (label, path, expectedHash) ->
                 val bytes = Res.readBytes(path)
-                if (bytes.sha256() != expectedHash) {
-                    return@withContext "$label 리소스가 원본과 일치하지 않습니다."
+                val actualHash = bytes.sha256()
+                if (actualHash != expectedHash) {
+                    return@withContext "$label 리소스가 원본과 일치하지 않습니다. " +
+                        "path=$path, expected=${expectedHash.take(12)}, " +
+                        "actual=${actualHash.take(12)}"
                 }
             }
-            val manifestBytes = Res.readBytes(HISTORICAL_SCENARIO_MANIFEST_PATH)
+            val manifestBytes = Res.readBytes(
+                DesktopHistoricalScenarioLoader.AUGUST_2026_MANIFEST_PATH,
+            )
             DesktopHistoricalScenarioParser.resourceReferences(manifestBytes).forEach { reference ->
                 if (Res.readBytes(reference.path).sha256() != reference.contentSha256) {
                     return@withContext "역사 시나리오 조각이 manifest와 일치하지 않습니다: ${reference.path}"
@@ -46,8 +52,8 @@ private val EXPECTED_COMPOSE_RESOURCES: List<Triple<String, String, String>> = l
     ),
     Triple(
         "2026년 8월 역사 시나리오 manifest",
-        HISTORICAL_SCENARIO_MANIFEST_PATH,
-        "08c11bd8d186693888b6ce3f6b922897707e79f79bb8ace8f2eabc748d2a834a",
+        DesktopHistoricalScenarioLoader.AUGUST_2026_MANIFEST_PATH,
+        DesktopHistoricalScenarioLoader.AUGUST_2026_MANIFEST_SHA256,
     ),
     Triple(
         "금융 사전",
@@ -90,6 +96,3 @@ private val EXPECTED_COMPOSE_RESOURCES: List<Triple<String, String, String>> = l
         "2e91915fab54df71cc9598ebf608b2bdb54c6fe3c066ac61dff0bc44fca71cc7",
     ),
 )
-
-private const val HISTORICAL_SCENARIO_MANIFEST_PATH: String =
-    "files/scenarios/august_2026/historical_scenario_v2.json"

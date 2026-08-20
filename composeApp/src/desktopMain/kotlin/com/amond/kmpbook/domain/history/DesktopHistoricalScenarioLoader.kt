@@ -17,8 +17,12 @@ object DesktopHistoricalScenarioLoader {
         val manifestBytes = withContext(Dispatchers.IO) {
             Res.readBytes(AUGUST_2026_MANIFEST_PATH)
         }
-        require(manifestBytes.sha256() == AUGUST_2026_MANIFEST_SHA256) {
-            "2026년 8월 역사 시나리오 manifest가 앱에 고정된 원본과 일치하지 않습니다."
+        val actualManifestSha256 = manifestBytes.sha256()
+        require(actualManifestSha256 == AUGUST_2026_MANIFEST_SHA256) {
+            "2026년 8월 역사 시나리오 manifest가 앱에 고정된 원본과 일치하지 않습니다. " +
+                "path=$AUGUST_2026_MANIFEST_PATH, " +
+                "expected=${AUGUST_2026_MANIFEST_SHA256.take(12)}, " +
+                "actual=${actualManifestSha256.take(12)}"
         }
         val references = withContext(Dispatchers.Default) {
             DesktopHistoricalScenarioParser.resourceReferences(manifestBytes)
