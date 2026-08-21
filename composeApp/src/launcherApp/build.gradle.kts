@@ -101,7 +101,7 @@ val signWindowsLauncherExecutable = tasks.register<SignWindowsLauncherExecutable
     description = "Authenticode-signs the launcher executable before electron-builder assembles the MSI."
     dependsOn(tasks.named("createDistributable"), validateLauncherSigningConfiguration)
     appImageDirectory.set(layout.buildDirectory.dir("compose/binaries/main/app"))
-    executableName.set("MarketLedger2040Launcher.exe")
+    executableName.set("MarketLedger2040.exe")
     buildChannel.set(releaseBuildChannel)
     certificateSha1.set(windowsSigningThumbprint.orElse(""))
 }
@@ -114,16 +114,16 @@ nucleus.application {
     mainClass = "com.amond.kmpbook.launcher.MainKt"
 
     nativeDistributions {
-        artifactName = "MarketLedger2040-Launcher-\${version}.\${ext}"
+        artifactName = "MarketLedger2040-\${version}.\${ext}"
         targetFormats(TargetFormat.Msi)
         modules("java.desktop", "jdk.crypto.ec")
         cleanupNativeLibs = true
         appResourcesRootDir.set(project.layout.projectDirectory.dir("src/main/appResources"))
-        appName = "Market Ledger 2040 Launcher"
-        packageName = "MarketLedger2040Launcher"
+        appName = "Market Ledger 2040"
+        packageName = "MarketLedger2040"
         packageVersion = appVersion
         vendor = "Market Ledger 2040"
-        description = "Market Ledger 2040 Launcher"
+        description = "Market Ledger 2040"
 
         windows {
             iconFile.set(rootProject.file("composeApp/src/desktopMain/resources/icons/market-ledger.ico"))

@@ -89,7 +89,7 @@ try {
     }
 
     $msiDirectory = Join-Path $PWD "composeApp\src\launcherApp\build\compose\binaries\main\msi"
-    $msiFiles = @(Get-ChildItem -LiteralPath $msiDirectory -Filter "MarketLedger2040-Launcher-*.msi" -File)
+    $msiFiles = @(Get-ChildItem -LiteralPath $msiDirectory -Filter "MarketLedger2040-*.msi" -File)
     if ($msiFiles.Count -ne 1) {
         throw "Expected exactly one packaged launcher MSI."
     }
@@ -106,7 +106,7 @@ try {
     $launcherExecutables = @(
         Get-ChildItem `
             -LiteralPath $launcherAppImageDirectory `
-            -Filter "MarketLedger2040Launcher.exe" `
+            -Filter "MarketLedger2040.exe" `
             -File `
             -Recurse
     )

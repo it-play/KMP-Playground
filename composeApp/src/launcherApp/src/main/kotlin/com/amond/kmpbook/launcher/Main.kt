@@ -109,7 +109,7 @@ private fun showFatal(message: String) {
     JOptionPane.showMessageDialog(
         null,
         message,
-        "Market Ledger 2040 Launcher",
+        "Market Ledger 2040",
         JOptionPane.ERROR_MESSAGE,
     )
 }

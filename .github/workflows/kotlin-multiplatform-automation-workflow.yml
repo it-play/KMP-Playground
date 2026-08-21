@@ -325,13 +325,13 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $msi = Join-Path $env:GITHUB_WORKSPACE `
-            "composeApp/src/launcherApp/build/compose/binaries/main/msi/MarketLedger2040-Launcher-$env:APP_VERSION.msi"
+            "composeApp/src/launcherApp/build/compose/binaries/main/msi/MarketLedger2040-$env:APP_VERSION.msi"
           if (-not (Test-Path -LiteralPath $msi -PathType Leaf)) { throw 'Launcher MSI is missing.' }
           $appImage = Join-Path $env:GITHUB_WORKSPACE `
             'composeApp/src/launcherApp/build/compose/binaries/main/app'
           $launchers = @(Get-ChildItem `
             -LiteralPath $appImage `
-            -Filter 'MarketLedger2040Launcher.exe' -File -Recurse)
+            -Filter 'MarketLedger2040.exe' -File -Recurse)
           if ($launchers.Count -ne 1) {
             throw 'Expected exactly one launcher executable in the packaged app image.'
           }
@@ -405,7 +405,7 @@ jobs:
           Remove-Item -LiteralPath $package -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $package | Out-Null
           $msi = Join-Path $env:GITHUB_WORKSPACE `
-            "composeApp/src/launcherApp/build/compose/binaries/main/msi/MarketLedger2040-Launcher-$env:APP_VERSION.msi"
+            "composeApp/src/launcherApp/build/compose/binaries/main/msi/MarketLedger2040-$env:APP_VERSION.msi"
           $msiName = [IO.Path]::GetFileName($msi)
           Copy-Item -LiteralPath $msi -Destination (Join-Path $package $msiName)
           $actualPackageEntries = @(Get-ChildItem -LiteralPath $package -Force)
