@@ -5,7 +5,7 @@ import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.ui.node.DelegatableNode
 
 /** A restrained ledger signal that replaces Material's radial ripple across the application. */
-object MarketPressIndication : IndicationNodeFactory {
+internal object MarketPressIndication : IndicationNodeFactory {
     override fun create(interactionSource: InteractionSource): DelegatableNode =
         MarketPressIndicationNode(interactionSource)
 
