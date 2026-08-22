@@ -7,7 +7,11 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
+import kotlin.math.roundToInt
 import org.jetbrains.skia.Image
+import org.jetbrains.skia.Rect
+import org.jetbrains.skia.SamplingMode
+import org.jetbrains.skia.Surface
 
 internal object DesktopModCoverDecoder {
     fun decode(path: String): ImageBitmap? = try {
@@ -59,9 +63,37 @@ internal object DesktopModCoverDecoder {
             ) {
                 return null
             }
-            decoded.toComposeImageBitmap()
+            decoded.toUiImageBitmap()
         } finally {
             decoded.close()
+        }
+    }
+
+    private fun Image.toUiImageBitmap(): ImageBitmap {
+        if (width <= MAX_UI_COVER_DIMENSION && height <= MAX_UI_COVER_DIMENSION) {
+            return toComposeImageBitmap()
+        }
+        val scale = MAX_UI_COVER_DIMENSION.toDouble() / maxOf(width, height).toDouble()
+        val targetWidth = (width * scale).roundToInt().coerceAtLeast(1)
+        val targetHeight = (height * scale).roundToInt().coerceAtLeast(1)
+        val surface = Surface.makeRasterN32Premul(targetWidth, targetHeight)
+        return try {
+            surface.canvas.drawImageRect(
+                image = this,
+                src = Rect.makeWH(width.toFloat(), height.toFloat()),
+                dst = Rect.makeWH(targetWidth.toFloat(), targetHeight.toFloat()),
+                samplingMode = SamplingMode.MITCHELL,
+                paint = null,
+                strict = true,
+            )
+            val resized = surface.makeImageSnapshot()
+            try {
+                resized.toComposeImageBitmap()
+            } finally {
+                resized.close()
+            }
+        } finally {
+            surface.close()
         }
     }
 
@@ -186,4 +218,6 @@ internal object DesktopModCoverDecoder {
         0xCE,
         0xCF,
     )
+
+    private const val MAX_UI_COVER_DIMENSION = 1_024
 }
