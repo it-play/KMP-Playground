@@ -1,11 +1,5 @@
 package com.amond.kmpbook.ui.screens.game
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -77,7 +71,6 @@ import com.amond.kmpbook.ui.components.StatusLabel
 import com.amond.kmpbook.ui.components.VisibleVerticalScrollbar
 import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketComponentSize
-import com.amond.kmpbook.ui.theme.MarketMotion
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
 
@@ -86,132 +79,83 @@ fun ModsScreen(
     mods: List<InstalledMod>,
     issues: List<ModLoadIssue>,
     statusMessage: String?,
+    selectedModId: String?,
     isScanning: Boolean,
     onToggleMod: (InstalledMod, Boolean) -> Unit,
-    onSettingChanged: (InstalledMod, String, String) -> Unit,
+    onSelectMod: (InstalledMod) -> Unit,
     onRefresh: () -> Unit,
     onOpenModsDirectory: () -> Unit,
     isMutating: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    var selectedModId by remember { mutableStateOf<String?>(null) }
-    var detailVisible by remember { mutableStateOf(false) }
-    val selectedMod = selectedModId?.let { id -> mods.firstOrNull { it.id == id } }
     val controlsBusy = isScanning || isMutating
     val modListState = rememberLazyListState()
 
-    LaunchedEffect(selectedModId, selectedMod) {
-        if (selectedModId != null && selectedMod == null) detailVisible = false
-    }
+    Column(modifier.fillMaxSize()) {
+        ModsHeader(
+            isScanning = isScanning,
+            isMutating = isMutating,
+            onRefresh = onRefresh,
+            onOpenModsDirectory = onOpenModsDirectory,
+        )
+        Spacer(Modifier.height(18.dp))
+        LedgerDivider()
 
-    Box(modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            ModsHeader(
-                isScanning = isScanning,
-                isMutating = isMutating,
-                onRefresh = onRefresh,
+        if (!statusMessage.isNullOrBlank()) {
+            Spacer(Modifier.height(14.dp))
+            ModStatusMessage(statusMessage)
+        }
+        if (issues.isNotEmpty()) {
+            Spacer(Modifier.height(14.dp))
+            ModIssueSummary(issues)
+        }
+
+        Spacer(Modifier.height(18.dp))
+        if (mods.isEmpty() && isScanning) {
+            ModsLoadingState(Modifier.fillMaxWidth().weight(1f))
+        } else if (mods.isEmpty()) {
+            EmptyModsState(
                 onOpenModsDirectory = onOpenModsDirectory,
+                modifier = Modifier.fillMaxWidth().weight(1f),
             )
-            Spacer(Modifier.height(18.dp))
-            LedgerDivider()
-
-            if (!statusMessage.isNullOrBlank()) {
-                Spacer(Modifier.height(14.dp))
-                ModStatusMessage(statusMessage)
-            }
-            if (issues.isNotEmpty()) {
-                Spacer(Modifier.height(14.dp))
-                ModIssueSummary(issues)
-            }
-
-            Spacer(Modifier.height(18.dp))
-            if (mods.isEmpty() && isScanning) {
-                ModsLoadingState(Modifier.fillMaxWidth().weight(1f))
-            } else if (mods.isEmpty()) {
-                EmptyModsState(
-                    onOpenModsDirectory = onOpenModsDirectory,
-                    modifier = Modifier.fillMaxWidth().weight(1f),
+        } else {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "설치된 패키지",
+                    style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
+                    color = MarketColors.Ink,
                 )
-            } else {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "설치된 패키지",
-                        style = MarketType.label.copy(fontWeight = FontWeight.SemiBold),
-                        color = MarketColors.Ink,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    Text(
-                        "행을 선택하면 상세 정보와 설정을 엽니다.",
-                        style = MarketType.caption,
-                        color = MarketColors.InkMuted,
-                    )
-                }
-                Spacer(Modifier.height(9.dp))
-                VisibleVerticalScrollbar(
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "행을 선택하면 상세 정보와 설정을 엽니다.",
+                    style = MarketType.caption,
+                    color = MarketColors.InkMuted,
+                )
+            }
+            Spacer(Modifier.height(9.dp))
+            VisibleVerticalScrollbar(
+                state = modListState,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            ) {
+                LazyColumn(
                     state = modListState,
-                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    modifier = Modifier.fillMaxSize().padding(end = 13.dp),
+                    contentPadding = PaddingValues(start = 1.dp, end = 1.dp, bottom = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    LazyColumn(
-                        state = modListState,
-                        modifier = Modifier.fillMaxSize().padding(end = 13.dp),
-                        contentPadding = PaddingValues(start = 1.dp, end = 1.dp, bottom = 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        items(items = mods, key = { it.id }) { mod ->
-                            ModListRow(
-                                mod = mod,
-                                selected = detailVisible && selectedModId == mod.id,
-                                enabled = !controlsBusy,
-                                onSelect = {
-                                    selectedModId = mod.id
-                                    detailVisible = true
-                                },
-                                onToggle = { enabled -> onToggleMod(mod, enabled) },
-                            )
-                        }
+                    items(items = mods, key = { it.id }) { mod ->
+                        ModListRow(
+                            mod = mod,
+                            selected = selectedModId == mod.id,
+                            enabled = !controlsBusy,
+                            onSelect = { onSelectMod(mod) },
+                            onToggle = { enabled -> onToggleMod(mod, enabled) },
+                        )
                     }
                 }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = detailVisible && selectedMod != null,
-            modifier = Modifier.fillMaxSize(),
-            enter = fadeIn(tween(MarketMotion.standard)),
-            exit = fadeOut(tween(MarketMotion.standard)),
-        ) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(MarketColors.Scrim)
-                    .clickable(role = Role.Button) { detailVisible = false }
-                    .semantics { contentDescription = "모드 상세 정보 닫기" },
-            )
-        }
-
-        AnimatedVisibility(
-            visible = detailVisible && selectedMod != null,
-            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-            enter = slideInHorizontally(
-                animationSpec = tween(MarketMotion.emphasized),
-                initialOffsetX = { fullWidth -> fullWidth },
-            ),
-            exit = slideOutHorizontally(
-                animationSpec = tween(MarketMotion.standard),
-                targetOffsetX = { fullWidth -> fullWidth },
-            ),
-        ) {
-            selectedMod?.let { mod ->
-                ModDetailDrawer(
-                    mod = mod,
-                    onDismiss = { detailVisible = false },
-                    onToggle = { enabled -> onToggleMod(mod, enabled) },
-                    onSettingChanged = { key, value -> onSettingChanged(mod, key, value) },
-                    controlsEnabled = !controlsBusy,
-                )
             }
         }
     }
@@ -520,7 +464,7 @@ private fun ModToggle(
 }
 
 @Composable
-private fun ModDetailDrawer(
+internal fun ModDetailDrawer(
     mod: InstalledMod,
     onDismiss: () -> Unit,
     onToggle: (Boolean) -> Unit,

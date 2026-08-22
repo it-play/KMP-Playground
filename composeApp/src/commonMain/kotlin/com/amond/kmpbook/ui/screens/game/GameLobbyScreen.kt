@@ -1,5 +1,11 @@
 package com.amond.kmpbook.ui.screens.game
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -35,6 +41,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,6 +60,7 @@ import com.amond.kmpbook.ui.components.StatusLabel
 import com.amond.kmpbook.ui.components.VisibleVerticalScrollbar
 import com.amond.kmpbook.ui.format.formatDateTimeKst
 import com.amond.kmpbook.ui.theme.MarketColors
+import com.amond.kmpbook.ui.theme.MarketMotion
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
 
@@ -92,153 +101,213 @@ fun GameLobbyScreen(
 ) {
     val latest = saves.firstOrNull()
     var selectedPanel by remember { mutableStateOf(LobbyPanel.MARKET) }
+    var selectedModId by remember { mutableStateOf<String?>(null) }
+    var isModDetailVisible by remember { mutableStateOf(false) }
+    val selectedMod = selectedModId?.let { id -> mods.firstOrNull { it.id == id } }
+    val showModDetail = selectedPanel == LobbyPanel.MODS && isModDetailVisible && selectedMod != null
     val marketCarouselState = rememberLobbyMarketCarouselState()
     LobbyMarketIndexLoader(marketCarouselState)
 
     LaunchedEffect(escapeRequest) {
-        if (escapeRequest > 0 && selectedPanel == LobbyPanel.SETTINGS) {
-            selectedPanel = LobbyPanel.MARKET
+        if (escapeRequest > 0) {
+            when {
+                showModDetail -> isModDetailVisible = false
+                selectedPanel == LobbyPanel.SETTINGS -> selectedPanel = LobbyPanel.MARKET
+            }
         }
     }
 
-    Row(modifier.fillMaxSize().background(MarketColors.Ledger)) {
-        Column(
-            Modifier
-                .width(610.dp)
-                .fillMaxHeight()
-                .background(MarketColors.Navy)
-                .padding(horizontal = 72.dp, vertical = 58.dp),
-        ) {
-            Spacer(Modifier.weight(1f))
-            Text(
-                "MARKET LEDGER\n2040",
-                style = MarketType.display.copy(fontSize = 48.sp, lineHeight = 49.sp),
-                color = Color.White,
-            )
-            Spacer(Modifier.height(34.dp))
-            LobbyMenuItem(
-                label = "게임 이어하기",
-                value = latest?.name,
-                enabled = latest != null && !isLoadingSaves && deletingSaveFileName == null,
-                emphasized = true,
-                onClick = {
-                    latest?.let { save ->
-                        selectedPanel = LobbyPanel.LOAD_GAME
-                        onContinue(save)
-                    }
-                },
-            )
-            LobbyMenuItem(
-                label = "게임 불러오기",
-                value = when {
-                    isLoadingSaves -> "확인 중"
-                    saves.isEmpty() -> null
-                    else -> "${saves.size}개"
-                },
-                enabled = saves.isNotEmpty() || isLoadingSaves,
-                selected = selectedPanel == LobbyPanel.LOAD_GAME,
-                onClick = {
-                    selectedPanel = if (selectedPanel == LobbyPanel.LOAD_GAME) {
-                        LobbyPanel.MARKET
-                    } else {
-                        LobbyPanel.LOAD_GAME
-                    }
-                },
-            )
-            LobbyMenuItem(
-                label = "새 게임",
-                selected = selectedPanel == LobbyPanel.NEW_GAME,
-                onClick = {
-                    selectedPanel = if (selectedPanel == LobbyPanel.NEW_GAME) {
-                        LobbyPanel.MARKET
-                    } else {
-                        LobbyPanel.NEW_GAME
-                    }
-                },
-            )
-            LobbyMenuItem(
-                label = "모드",
-                selected = selectedPanel == LobbyPanel.MODS,
-                onClick = {
-                    selectedPanel = if (selectedPanel == LobbyPanel.MODS) {
-                        LobbyPanel.MARKET
-                    } else {
-                        LobbyPanel.MODS
-                    }
-                },
-            )
-            LobbyMenuItem(
-                label = "설정",
-                selected = selectedPanel == LobbyPanel.SETTINGS,
-                onClick = {
-                    selectedPanel = if (selectedPanel == LobbyPanel.SETTINGS) {
-                        LobbyPanel.MARKET
-                    } else {
-                        LobbyPanel.SETTINGS
-                    }
-                },
-            )
-            LobbyMenuItem(label = "종료하기", enabled = !areModControlsBusy, onClick = onExit)
-            Spacer(Modifier.weight(1f))
-        }
+    LaunchedEffect(selectedModId, selectedMod) {
+        if (selectedModId != null && selectedMod == null) isModDetailVisible = false
+    }
 
-        Box(Modifier.weight(1f).fillMaxHeight().padding(58.dp)) {
-            when (selectedPanel) {
-                LobbyPanel.MARKET -> LobbyMarketCarousel(
-                    state = marketCarouselState,
-                    modifier = Modifier.fillMaxSize(),
+    Box(modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxSize().background(MarketColors.Ledger)) {
+            Column(
+                Modifier
+                    .width(610.dp)
+                    .fillMaxHeight()
+                    .background(MarketColors.Navy)
+                    .padding(horizontal = 72.dp, vertical = 58.dp),
+            ) {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "MARKET LEDGER\n2040",
+                    style = MarketType.display.copy(fontSize = 48.sp, lineHeight = 49.sp),
+                    color = Color.White,
                 )
-                LobbyPanel.LOAD_GAME -> SaveOverview(
-                    title = "저장 파일",
-                    saves = saves,
-                    statusMessage = saveStatus,
-                    isLoading = isLoadingSaves,
-                    deletingSaveFileName = deletingSaveFileName,
-                    onLoad = onLoad,
-                    onDelete = onDeleteSave,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                LobbyPanel.NEW_GAME -> NewGameScreen(
-                    onStart = { options ->
-                        if (
-                            isModCatalogBusy ||
-                            mods.count(InstalledMod::enabled) > NewGameOptions.MAX_ACTIVE_MODS
-                        ) {
-                            selectedPanel = LobbyPanel.MODS
-                        } else {
-                            onStartNewGame(options)
+                Spacer(Modifier.height(34.dp))
+                LobbyMenuItem(
+                    label = "게임 이어하기",
+                    value = latest?.name,
+                    enabled = latest != null && !isLoadingSaves && deletingSaveFileName == null,
+                    emphasized = true,
+                    onClick = {
+                        latest?.let { save ->
+                            selectedPanel = LobbyPanel.LOAD_GAME
+                            onContinue(save)
                         }
                     },
-                    onBack = { selectedPanel = LobbyPanel.MARKET },
-                    isBusy = isModCatalogBusy,
-                    errorMessage = newGameErrorMessage,
-                    modifier = Modifier.fillMaxSize(),
-                    embedded = true,
                 )
-                LobbyPanel.MODS -> ModsScreen(
-                    mods = mods,
-                    issues = modIssues,
-                    statusMessage = modStatusMessage,
-                    isScanning = isScanningMods,
-                    isMutating = isMutatingMods,
-                    onToggleMod = onToggleMod,
-                    onSettingChanged = onModSettingChanged,
-                    onRefresh = onRefreshMods,
-                    onOpenModsDirectory = onOpenModsDirectory,
-                    modifier = Modifier.fillMaxSize(),
+                LobbyMenuItem(
+                    label = "게임 불러오기",
+                    value = when {
+                        isLoadingSaves -> "확인 중"
+                        saves.isEmpty() -> null
+                        else -> "${saves.size}개"
+                    },
+                    enabled = saves.isNotEmpty() || isLoadingSaves,
+                    selected = selectedPanel == LobbyPanel.LOAD_GAME,
+                    onClick = {
+                        selectedPanel = if (selectedPanel == LobbyPanel.LOAD_GAME) {
+                            LobbyPanel.MARKET
+                        } else {
+                            LobbyPanel.LOAD_GAME
+                        }
+                    },
                 )
-                LobbyPanel.SETTINGS -> LobbySettingsScreen(
-                    audioSettings = audioSettings,
-                    onAudioSettingsChanged = onAudioSettingsChanged,
-                    windowDisplayMode = windowDisplayMode,
-                    onWindowDisplayModeChanged = onWindowDisplayModeChanged,
-                    maintenanceStatus = maintenanceStatus,
-                    isOpeningGameDirectory = isOpeningGameDirectory,
-                    isCheckingResources = isCheckingResources,
-                    onOpenGameDirectory = onOpenGameDirectory,
-                    onCheckResources = onCheckResources,
-                    onBack = { selectedPanel = LobbyPanel.MARKET },
-                    modifier = Modifier.fillMaxSize(),
+                LobbyMenuItem(
+                    label = "새 게임",
+                    selected = selectedPanel == LobbyPanel.NEW_GAME,
+                    onClick = {
+                        selectedPanel = if (selectedPanel == LobbyPanel.NEW_GAME) {
+                            LobbyPanel.MARKET
+                        } else {
+                            LobbyPanel.NEW_GAME
+                        }
+                    },
+                )
+                LobbyMenuItem(
+                    label = "모드",
+                    selected = selectedPanel == LobbyPanel.MODS,
+                    onClick = {
+                        selectedPanel = if (selectedPanel == LobbyPanel.MODS) {
+                            LobbyPanel.MARKET
+                        } else {
+                            LobbyPanel.MODS
+                        }
+                    },
+                )
+                LobbyMenuItem(
+                    label = "설정",
+                    selected = selectedPanel == LobbyPanel.SETTINGS,
+                    onClick = {
+                        selectedPanel = if (selectedPanel == LobbyPanel.SETTINGS) {
+                            LobbyPanel.MARKET
+                        } else {
+                            LobbyPanel.SETTINGS
+                        }
+                    },
+                )
+                LobbyMenuItem(label = "종료하기", enabled = !areModControlsBusy, onClick = onExit)
+                Spacer(Modifier.weight(1f))
+            }
+
+            Box(Modifier.weight(1f).fillMaxHeight().padding(58.dp)) {
+                when (selectedPanel) {
+                    LobbyPanel.MARKET -> LobbyMarketCarousel(
+                        state = marketCarouselState,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    LobbyPanel.LOAD_GAME -> SaveOverview(
+                        title = "저장 파일",
+                        saves = saves,
+                        statusMessage = saveStatus,
+                        isLoading = isLoadingSaves,
+                        deletingSaveFileName = deletingSaveFileName,
+                        onLoad = onLoad,
+                        onDelete = onDeleteSave,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    LobbyPanel.NEW_GAME -> NewGameScreen(
+                        onStart = { options ->
+                            if (
+                                isModCatalogBusy ||
+                                mods.count(InstalledMod::enabled) > NewGameOptions.MAX_ACTIVE_MODS
+                            ) {
+                                selectedPanel = LobbyPanel.MODS
+                            } else {
+                                onStartNewGame(options)
+                            }
+                        },
+                        onBack = { selectedPanel = LobbyPanel.MARKET },
+                        isBusy = isModCatalogBusy,
+                        errorMessage = newGameErrorMessage,
+                        modifier = Modifier.fillMaxSize(),
+                        embedded = true,
+                    )
+                    LobbyPanel.MODS -> ModsScreen(
+                        mods = mods,
+                        issues = modIssues,
+                        statusMessage = modStatusMessage,
+                        selectedModId = selectedModId.takeIf { isModDetailVisible },
+                        isScanning = isScanningMods,
+                        isMutating = isMutatingMods,
+                        onToggleMod = onToggleMod,
+                        onSelectMod = { mod ->
+                            selectedModId = mod.id
+                            isModDetailVisible = true
+                        },
+                        onRefresh = onRefreshMods,
+                        onOpenModsDirectory = onOpenModsDirectory,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    LobbyPanel.SETTINGS -> LobbySettingsScreen(
+                        audioSettings = audioSettings,
+                        onAudioSettingsChanged = onAudioSettingsChanged,
+                        windowDisplayMode = windowDisplayMode,
+                        onWindowDisplayModeChanged = onWindowDisplayModeChanged,
+                        maintenanceStatus = maintenanceStatus,
+                        isOpeningGameDirectory = isOpeningGameDirectory,
+                        isCheckingResources = isCheckingResources,
+                        onOpenGameDirectory = onOpenGameDirectory,
+                        onCheckResources = onCheckResources,
+                        onBack = { selectedPanel = LobbyPanel.MARKET },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showModDetail,
+            modifier = Modifier.fillMaxSize(),
+            enter = fadeIn(tween(MarketMotion.quick)),
+            exit = fadeOut(tween(MarketMotion.quick)),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(MarketColors.Scrim)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.Button,
+                        onClick = { isModDetailVisible = false },
+                    )
+                    .semantics { contentDescription = "모드 상세 정보 닫기" },
+            )
+        }
+
+        AnimatedVisibility(
+            visible = showModDetail,
+            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+            enter = slideInHorizontally(
+                animationSpec = tween(MarketMotion.standard),
+                initialOffsetX = { fullWidth -> fullWidth },
+            ),
+            exit = slideOutHorizontally(
+                animationSpec = tween(MarketMotion.standard),
+                targetOffsetX = { fullWidth -> fullWidth },
+            ),
+        ) {
+            selectedMod?.let { mod ->
+                ModDetailDrawer(
+                    mod = mod,
+                    onDismiss = { isModDetailVisible = false },
+                    onToggle = { enabled -> onToggleMod(mod, enabled) },
+                    onSettingChanged = { key, value -> onModSettingChanged(mod, key, value) },
+                    controlsEnabled = !areModControlsBusy,
                 )
             }
         }
