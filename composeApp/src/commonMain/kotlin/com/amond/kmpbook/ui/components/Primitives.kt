@@ -3,6 +3,8 @@ package com.amond.kmpbook.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +22,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -31,6 +34,7 @@ import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketComponentSize
 import com.amond.kmpbook.ui.theme.MarketElevation
 import com.amond.kmpbook.ui.theme.MarketLayout
+import com.amond.kmpbook.ui.theme.MarketPressIndication
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketSpacing
 import com.amond.kmpbook.ui.theme.MarketType
@@ -66,6 +70,7 @@ fun MarketButton(
     variant: MarketButtonVariant = MarketButtonVariant.Fill,
     tone: MarketButtonTone = MarketButtonTone.Primary,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     val isFill = variant == MarketButtonVariant.Fill
     val accent = when (tone) {
         MarketButtonTone.Primary -> MarketColors.Primary
@@ -83,7 +88,10 @@ fun MarketButton(
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.heightIn(min = MarketComponentSize.primaryButtonHeight),
+        modifier = modifier
+            .heightIn(min = MarketComponentSize.primaryButtonHeight)
+            .indication(interactionSource, MarketPressIndication),
+        interactionSource = interactionSource,
         shape = RoundedCornerShape(MarketRadii.medium),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (isFill) accent else weakBackground,

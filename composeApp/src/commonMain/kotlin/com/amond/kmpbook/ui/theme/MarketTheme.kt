@@ -1,6 +1,8 @@
 package com.amond.kmpbook.ui.theme
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -157,7 +159,12 @@ fun MarketSimulatorTheme(content: @Composable () -> Unit) {
             colorScheme = SimulatorColorScheme,
             typography = materialTypography,
             shapes = MarketShapes,
-            content = content,
-        )
+        ) {
+            CompositionLocalProvider(
+                LocalIndication provides MarketPressIndication,
+                LocalRippleConfiguration provides null,
+                content = content,
+            )
+        }
     }
 }
