@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -470,13 +469,12 @@ internal fun ModDetailDrawer(
     onToggle: (Boolean) -> Unit,
     onSettingChanged: (String, String) -> Unit,
     controlsEnabled: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val detailScrollState = rememberScrollState()
     VisibleVerticalScrollbar(
         state = detailScrollState,
-        modifier = Modifier
-            .width(430.dp)
-            .fillMaxHeight()
+        modifier = modifier
             .background(MarketColors.Paper)
             .border(1.dp, MarketColors.Line),
     ) {

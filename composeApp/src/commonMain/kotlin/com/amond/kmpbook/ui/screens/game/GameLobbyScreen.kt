@@ -1,11 +1,9 @@
 package com.amond.kmpbook.ui.screens.game
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -39,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -63,6 +62,8 @@ import com.amond.kmpbook.ui.theme.MarketColors
 import com.amond.kmpbook.ui.theme.MarketMotion
 import com.amond.kmpbook.ui.theme.MarketRadii
 import com.amond.kmpbook.ui.theme.MarketType
+
+private val ModDetailDrawerWidth = 430.dp
 
 @Composable
 fun GameLobbyScreen(
@@ -105,6 +106,19 @@ fun GameLobbyScreen(
     var isModDetailVisible by remember { mutableStateOf(false) }
     val selectedMod = selectedModId?.let { id -> mods.firstOrNull { it.id == id } }
     val showModDetail = selectedPanel == LobbyPanel.MODS && isModDetailVisible && selectedMod != null
+    val modDetailTransition = updateTransition(showModDetail, label = "mod detail")
+    val modDetailScrimAlpha by modDetailTransition.animateFloat(
+        transitionSpec = { tween(MarketMotion.quick) },
+        label = "mod detail scrim",
+    ) { visible ->
+        if (visible) 1f else 0f
+    }
+    val modDetailDrawerOffset by modDetailTransition.animateDp(
+        transitionSpec = { tween(MarketMotion.standard) },
+        label = "mod detail drawer",
+    ) { visible ->
+        if (visible) 0.dp else ModDetailDrawerWidth
+    }
     val marketCarouselState = rememberLobbyMarketCarouselState()
     LobbyMarketIndexLoader(marketCarouselState)
 
@@ -269,38 +283,24 @@ fun GameLobbyScreen(
             }
         }
 
-        AnimatedVisibility(
-            visible = showModDetail,
-            modifier = Modifier.fillMaxSize(),
-            enter = fadeIn(tween(MarketMotion.quick)),
-            exit = fadeOut(tween(MarketMotion.quick)),
-        ) {
+        if (modDetailTransition.currentState || modDetailTransition.targetState) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(MarketColors.Scrim)
+                    .background(
+                        MarketColors.Scrim.copy(
+                            alpha = MarketColors.Scrim.alpha * modDetailScrimAlpha,
+                        ),
+                    )
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
+                        enabled = showModDetail,
                         role = Role.Button,
                         onClick = { isModDetailVisible = false },
                     )
                     .semantics { contentDescription = "모드 상세 정보 닫기" },
             )
-        }
-
-        AnimatedVisibility(
-            visible = showModDetail,
-            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-            enter = slideInHorizontally(
-                animationSpec = tween(MarketMotion.standard),
-                initialOffsetX = { fullWidth -> fullWidth },
-            ),
-            exit = slideOutHorizontally(
-                animationSpec = tween(MarketMotion.standard),
-                targetOffsetX = { fullWidth -> fullWidth },
-            ),
-        ) {
             selectedMod?.let { mod ->
                 ModDetailDrawer(
                     mod = mod,
@@ -308,6 +308,11 @@ fun GameLobbyScreen(
                     onToggle = { enabled -> onToggleMod(mod, enabled) },
                     onSettingChanged = { key, value -> onModSettingChanged(mod, key, value) },
                     controlsEnabled = !areModControlsBusy,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .width(ModDetailDrawerWidth)
+                        .fillMaxHeight()
+                        .graphicsLayer { translationX = modDetailDrawerOffset.toPx() },
                 )
             }
         }
